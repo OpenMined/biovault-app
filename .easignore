@@ -1,0 +1,84 @@
+# Files to exclude from EAS upload
+# Docs: https://docs.expo.dev/eas/application-submissions/eas-json/#easignore
+
+# VCS
+.git/
+.gitignore
+
+# Dependency directories
+node_modules/
+.npm/
+.pnpm-store/
+.bun/
+
+# Build and cache outputs
+dist/
+web-build/
+build/
+.expo/
+.expo-shared/
+.cache/
+.tmp/
+.temp/
+coverage/
+
+# Native project directories (managed workflow)
+ios/
+android/
+.gradle/
+Pods/
+DerivedData/
+
+# Lockfiles (per user request)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+bun.lock
+
+# Credentials and sensitive files
+*.jks
+*.keystore
+*.keystore.properties
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.env
+.env.*
+.envrc
+google-services.json
+GoogleService-Info.plist
+
+# Tests and non-essential project files
+__tests__/
+**/*.test.*
+**/*.spec.*
+jest-html-reporters-*
+.github/
+.husky/
+storybook/
+examples/
+
+# Editor/OS detritus
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.iml
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Large binary artifacts and archives
+*.iso
+*.dmg
+*.zip
+*.tar
+*.gz
+*.apk
+*.aab
+*.ipa
+
+

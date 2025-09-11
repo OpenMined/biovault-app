@@ -1,45 +1,59 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-import { Platform } from 'react-native';
+import { withLayoutContext } from 'expo-router'
+import {
+	createNativeBottomTabNavigator,
+	NativeBottomTabNavigationOptions,
+	NativeBottomTabNavigationEventMap,
+} from '@bottom-tabs/react-navigation'
+import { ParamListBase, TabNavigationState } from '@react-navigation/native'
 
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+const BottomTabNavigator = createNativeBottomTabNavigator().Navigator
+
+const Tabs = withLayoutContext<
+	NativeBottomTabNavigationOptions,
+	typeof BottomTabNavigator,
+	TabNavigationState<ParamListBase>,
+	NativeBottomTabNavigationEventMap
+>(BottomTabNavigator)
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+	return (
+		<Tabs tabBarActiveTintColor={'#059669'}>
+			<Tabs.Screen
+				name="index"
+				options={{
+					title: 'My DNA',
+					tabBarIcon: () => ({ sfSymbol: 'testtube.2' }),
+				}}
+			/>
+			<Tabs.Screen
+				name="analyze"
+				options={{
+					title: 'Analyze',
+					tabBarIcon: () => ({ sfSymbol: 'rectangle.and.text.magnifyingglass' }),
+				}}
+			/>
 
-  return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: 'absolute',
-          },
-          default: {},
-        }),
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
-  );
+			<Tabs.Screen
+				name="references"
+				options={{
+					title: 'References',
+					tabBarIcon: () => ({ sfSymbol: 'server.rack' }),
+				}}
+			/>
+			<Tabs.Screen
+				name="network"
+				options={{
+					title: 'Network',
+					tabBarIcon: () => ({ sfSymbol: 'person.line.dotted.person' }),
+				}}
+			/>
+			<Tabs.Screen
+				name="guides"
+				options={{
+					title: 'Guides',
+					tabBarIcon: () => ({ sfSymbol: 'book' }),
+				}}
+			/>
+		</Tabs>
+	)
 }

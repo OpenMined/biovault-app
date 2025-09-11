@@ -37,3 +37,72 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# React Native / Native project artifacts
+ios/
+android/
+build/
+*.xcworkspace
+*.xcodeproj
+*.xcuserdata/
+*.xcuserstate
+DerivedData/
+.gradle/
+.expo-shared/
+
+# IDE/editor
+.idea/
+.vscode/
+*.iml
+
+# Package manager lockfiles
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+bun.lock
+
+# Logs and diagnostics
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.trace
+*.stackdump
+
+# OS junk
+Thumbs.db
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+.envrc
+
+# Caches and temporary files
+.cache/
+.tmp/
+.temp/
+coverage/
+.npm/
+.metro-health-check*
+
+# Build artifacts
+*.map
+*.apk
+*.aab
+*.ipa
+
+# Archives and disk images
+*.iso
+*.dmg
+*.zip
+*.tar
+*.gz
+
+# Credentials & signing (keep out of VCS)
+*.keystore
+*.keystore.properties
+# Already ignoring: *.jks, *.p8, *.p12, *.key, *.mobileprovision
