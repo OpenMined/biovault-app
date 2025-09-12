@@ -3,15 +3,36 @@
  * Aligned with biovault.net messaging and features
  */
 
-import React, { useState, useEffect } from 'react'
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Link } from 'expo-router'
 import { listUserGenomeDatabases, type UserGenomeDatabase } from '@/lib/fast-genome-storage'
+import { useSyftBox, useSyftBoxAuth } from '@/lib/syftbox-auth'
+import React, { useEffect, useState } from 'react'
+import {
+	ActivityIndicator,
+	Alert,
+	Linking,
+	ScrollView,
+	StyleSheet,
+	Text,
+	TextInput,
+	TouchableOpacity,
+	View,
+} from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function AnalyzeScreen() {
+	return <AuthTestedNetwork />
+}
+
+function AuthTestedNetwork() {
+	const { loading, isAuthenticated, email } = useSyftBoxAuth()
+	const { requestOTP, verifyOTP, signOut, listDatasite } = useSyftBox()
 	const [userDatabases, setUserDatabases] = useState<UserGenomeDatabase[]>([])
-	const [loading, setLoading] = useState(true)
+	const [loadingLocal, setLoadingLocal] = useState(true)
+	const [emailInput, setEmailInput] = useState('')
+	const [otpInput, setOtpInput] = useState('')
+	// removed datasite listing test state
+	const [yaml, setYaml] = useState<string | null>(null)
+	const [loadingYaml, setLoadingYaml] = useState(false)
 
 	useEffect(() => {
 		loadUserDatabases()
@@ -24,7 +45,25 @@ export default function AnalyzeScreen() {
 		} catch (error) {
 			console.error('Failed to load user databases:', error)
 		} finally {
-			setLoading(false)
+			setLoadingLocal(false)
+		}
+	}
+
+	const handleRequestOtp = async () => {
+		try {
+			await requestOTP(emailInput.trim())
+			Alert.alert('OTP Sent', 'Check your email for the OTP code.')
+		} catch (e: any) {
+			Alert.alert('Error', e?.message || 'Failed to request OTP')
+		}
+	}
+
+	const handleVerifyOtp = async () => {
+		try {
+			await verifyOTP(emailInput.trim(), otpInput.trim())
+			setOtpInput('')
+		} catch (e: any) {
+			Alert.alert('Error', e?.message || 'Failed to verify OTP')
 		}
 	}
 
@@ -55,6 +94,19 @@ export default function AnalyzeScreen() {
 		return (
 			<SafeAreaView style={styles.container}>
 				<ScrollView style={styles.scrollView}>
+					<AuthTestPanel
+						loadingGlobal={loading}
+						isAuthenticated={isAuthenticated}
+						email={email}
+						emailInput={emailInput}
+						setEmailInput={setEmailInput}
+						otpInput={otpInput}
+						setOtpInput={setOtpInput}
+						onRequestOtp={handleRequestOtp}
+						onVerifyOtp={handleVerifyOtp}
+						onSignOut={signOut}
+						// datasite listing removed
+					/>
 					<View style={styles.header}>
 						<Text style={styles.title}>BioVault Network</Text>
 						<Text style={styles.subtitle}>
@@ -159,6 +211,20 @@ export default function AnalyzeScreen() {
 					</Text>
 				</View>
 
+				<AuthTestPanel
+					loadingGlobal={loading}
+					isAuthenticated={isAuthenticated}
+					email={email}
+					emailInput={emailInput}
+					setEmailInput={setEmailInput}
+					otpInput={otpInput}
+					setOtpInput={setOtpInput}
+					onRequestOtp={handleRequestOtp}
+					onVerifyOtp={handleVerifyOtp}
+					onSignOut={signOut}
+					// datasite listing removed
+				/>
+
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Your Data</Text>
 
@@ -252,7 +318,151 @@ export default function AnalyzeScreen() {
 	)
 }
 
+function AuthTestPanel(props: {
+	loadingGlobal: boolean
+	isAuthenticated: boolean
+	email: string | null
+	emailInput: string
+	setEmailInput: (s: string) => void
+	otpInput: string
+	setOtpInput: (s: string) => void
+	onRequestOtp: () => void
+	onVerifyOtp: () => void
+	onSignOut: () => void
+}) {
+	const {
+		loadingGlobal,
+		isAuthenticated,
+		email,
+		emailInput,
+		setEmailInput,
+		otpInput,
+		setOtpInput,
+		onRequestOtp,
+		onVerifyOtp,
+		onSignOut,
+	} = props
+
+	return (
+		<View style={styles.authPanel}>
+			<Text style={styles.sectionTitle}>SyftBox Auth Test</Text>
+			{loadingGlobal ? (
+				<View style={styles.row}>
+					<ActivityIndicator />
+					<Text style={styles.authText}>Checking session…</Text>
+				</View>
+			) : isAuthenticated ? (
+				<View>
+					<Text style={styles.authText}>Signed in as {email || 'unknown'}</Text>
+					<View style={styles.authRow}>
+						<TouchableOpacity style={styles.secondaryButton} onPress={onSignOut}>
+							<Text style={styles.secondaryButtonText}>Sign Out</Text>
+						</TouchableOpacity>
+					</View>
+				</View>
+			) : (
+				<View>
+					<TextInput
+						value={emailInput}
+						onChangeText={setEmailInput}
+						placeholder="email@example.com"
+						autoCapitalize="none"
+						keyboardType="email-address"
+						style={styles.input}
+					/>
+					<View style={styles.authRow}>
+						<TouchableOpacity style={styles.primaryButton} onPress={onRequestOtp}>
+							<Text style={styles.primaryButtonText}>Request OTP</Text>
+						</TouchableOpacity>
+					</View>
+					<TextInput
+						value={otpInput}
+						onChangeText={setOtpInput}
+						placeholder="Enter OTP"
+						keyboardType="number-pad"
+						style={styles.input}
+					/>
+					<View style={styles.authRow}>
+						<TouchableOpacity style={styles.primaryButton} onPress={onVerifyOtp}>
+							<Text style={styles.primaryButtonText}>Verify OTP</Text>
+						</TouchableOpacity>
+					</View>
+				</View>
+			)}
+		</View>
+	)
+}
+
 const styles = StyleSheet.create({
+	authPanel: {
+		backgroundColor: 'white',
+		marginHorizontal: 20,
+		marginTop: 12,
+		marginBottom: 8,
+		padding: 16,
+		borderRadius: 12,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.1,
+		shadowRadius: 4,
+		elevation: 3,
+	},
+	row: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 8,
+	},
+	authRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 8,
+		marginTop: 8,
+	},
+	authText: {
+		marginLeft: 8,
+		color: '#333',
+	},
+	input: {
+		borderWidth: 1,
+		borderColor: '#e0e0e0',
+		borderRadius: 8,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		marginTop: 8,
+	},
+	primaryButton: {
+		backgroundColor: '#4CAF50',
+		paddingHorizontal: 16,
+		paddingVertical: 10,
+		borderRadius: 8,
+	},
+	primaryButtonText: {
+		color: 'white',
+		fontWeight: '600',
+	},
+	secondaryButton: {
+		backgroundColor: '#eee',
+		paddingHorizontal: 16,
+		paddingVertical: 10,
+		borderRadius: 8,
+	},
+	secondaryButtonText: {
+		color: '#333',
+		fontWeight: '600',
+	},
+	filesBox: {
+		marginTop: 10,
+		padding: 10,
+		backgroundColor: '#fafafa',
+		borderRadius: 8,
+		borderWidth: 1,
+		borderColor: '#eee',
+	},
+	fileLine: {
+		fontSize: 12,
+		color: '#555',
+		marginBottom: 2,
+	},
 	container: {
 		flex: 1,
 		backgroundColor: '#f5f5f5',

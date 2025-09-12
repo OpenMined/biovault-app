@@ -1,27 +1,56 @@
 import { ExpoConfig } from 'expo/config'
 
+const IS_DEV = process.env.APP_VARIANT === 'development'
+const IS_PREVIEW = process.env.APP_VARIANT === 'preview'
+
+interface EnvironmentValues {
+	name: string
+	bundleIdentifier: string
+	package: string
+}
+
+function getEnvironmentValues(): EnvironmentValues {
+	if (IS_DEV) {
+		return {
+			name: 'BioVault Dev',
+			bundleIdentifier: 'org.openmined.biovault.dev',
+			package: 'org.openmined.biovault.dev',
+		}
+	}
+	if (IS_PREVIEW) {
+		return {
+			name: 'BioVault Preview',
+			bundleIdentifier: 'org.openmined.biovault.preview',
+			package: 'org.openmined.biovault.preview',
+		}
+	}
+	return {
+		name: 'BioVault',
+		bundleIdentifier: 'org.openmined.biovault',
+		package: 'org.openmined.biovault',
+	}
+}
+
 const config: ExpoConfig = {
-	name: 'BioVault',
+	name: getEnvironmentValues().name,
 	owner: 'openmined',
 	slug: 'biovault',
-	version: '1.0.0',
+	version: '0.1.0',
 	orientation: 'portrait',
 	icon: './assets/images/biovault-icon.png',
 	scheme: 'biovaultapp',
 	userInterfaceStyle: 'light',
 	newArchEnabled: true,
 	ios: {
-		bundleIdentifier: 'org.openmined.biovault',
+		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
 		supportsTablet: true,
 		infoPlist: {
 			ITSAppUsesNonExemptEncryption: false,
 		},
 	},
 	android: {
-		adaptiveIcon: {
-			foregroundImage: './assets/images/adaptive-icon.png',
-			backgroundColor: '#ffffff',
-		},
+		package: getEnvironmentValues().package,
+		icon: './assets/images/biovault-icon.png',
 		edgeToEdgeEnabled: true,
 	},
 	web: {
@@ -55,6 +84,7 @@ const config: ExpoConfig = {
 				assets: ['./assets/clinvar_23andme.sqlite'],
 			},
 		],
+		['expo-secure-store'],
 		[
 			'expo-build-properties',
 			{
