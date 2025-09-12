@@ -1,11 +1,12 @@
+import { useColorScheme } from '@/hooks/useColorScheme'
+import { SyftBoxProvider } from '@/lib/syftbox-auth'
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native'
 import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
-import { StatusBar } from 'expo-status-bar'
-import 'react-native-reanimated'
 import { SQLiteProvider } from 'expo-sqlite'
-import { useColorScheme } from '@/hooks/useColorScheme'
+import { StatusBar } from 'expo-status-bar'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
+import 'react-native-reanimated'
 
 export default function RootLayout() {
 	const colorScheme = useColorScheme()
@@ -27,13 +28,15 @@ export default function RootLayout() {
 					forceOverwrite: true,
 				}}
 			>
-				<ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-					<Stack>
-						<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-						<Stack.Screen name="+not-found" />
-					</Stack>
-					<StatusBar style="auto" />
-				</ThemeProvider>
+				<SyftBoxProvider serverUrl="https://syftbox.net" proxyBaseUrl="http://127.0.0.1:8000">
+					<ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+						<Stack>
+							<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+							<Stack.Screen name="+not-found" />
+						</Stack>
+						<StatusBar style="auto" />
+					</ThemeProvider>
+				</SyftBoxProvider>
 			</SQLiteProvider>
 		</KeyboardProvider>
 	)

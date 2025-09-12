@@ -11,9 +11,13 @@
 		"lint": "expo lint",
 		"prebuild": "npx expo prebuild --platform ios --clean",
 		"build-dev": "npx eas build --profile development --platform ios --local --clear-cache",
+		"build-dev-android": "npx eas build --profile development --platform android --local --clear-cache",
 		"build-prod": "npx eas build --profile production --platform ios --local --clear-cache",
-		"deploy-dev": "npx eas build --profile dev --platform ios --clear-cache",
-		"deploy-prod": "npx eas build --profile prod --platform ios --auto-submit --clear-cache"
+		"build-prod-android": "npx eas build --profile production --platform android --local --clear-cache",
+		"deploy-dev": "npx eas build --profile development --platform ios --clear-cache",
+		"deploy-dev-android": "npx eas build --profile development --platform android --clear-cache",
+		"deploy-prod": "npx eas build --profile production --platform ios --auto-submit --clear-cache",
+		"deploy-prod-android": "npx eas build --profile production --platform android --auto-submit --clear-cache"
 	},
 	"dependencies": {
 		"@bottom-tabs/react-navigation": "^0.11.1",
@@ -35,6 +39,7 @@
 		"expo-image": "~3.0.7",
 		"expo-linking": "~8.0.7",
 		"expo-router": "~6.0.0",
+		"expo-secure-store": "~15.0.6",
 		"expo-splash-screen": "~31.0.8",
 		"expo-sqlite": "~16.0.8",
 		"expo-status-bar": "~3.0.7",
@@ -42,6 +47,7 @@
 		"expo-system-ui": "~6.0.7",
 		"expo-web-browser": "~15.0.6",
 		"fflate": "^0.8.2",
+		"jose": "^5.10.0",
 		"react": "19.1.0",
 		"react-dom": "19.1.0",
 		"react-native": "0.81.4",

@@ -7,12 +7,16 @@
 		"development": {
 			"developmentClient": true,
 			"distribution": "internal",
-			"ios": {
-				"resourceClass": "large"
+			"env": {
+				"APP_VARIANT": "development"
 			}
 		},
 		"preview": {
-			"distribution": "internal"
+			"distribution": "internal",
+			"env": {
+				"APP_VARIANT": "preview"
+			},
+			"autoIncrement": true
 		},
 		"production": {
 			"autoIncrement": true

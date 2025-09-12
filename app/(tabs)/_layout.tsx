@@ -1,10 +1,10 @@
-import { withLayoutContext } from 'expo-router'
 import {
 	createNativeBottomTabNavigator,
-	NativeBottomTabNavigationOptions,
 	NativeBottomTabNavigationEventMap,
+	NativeBottomTabNavigationOptions,
 } from '@bottom-tabs/react-navigation'
 import { ParamListBase, TabNavigationState } from '@react-navigation/native'
+import { withLayoutContext } from 'expo-router'
 
 const BottomTabNavigator = createNativeBottomTabNavigator().Navigator
 
@@ -22,14 +22,17 @@ export default function TabLayout() {
 				name="index"
 				options={{
 					title: 'My DNA',
-					tabBarIcon: () => ({ sfSymbol: 'testtube.2' }),
+					tabBarLabel: 'My DNA',
+					// tabBarIcon: () => ({ sfSymbol: 'testtube.2' }),
+					tabBarIcon: () => ({ uri: require('../../assets/images/home.svg') }),
 				}}
 			/>
 			<Tabs.Screen
 				name="analyze"
 				options={{
 					title: 'Analyze',
-					tabBarIcon: () => ({ sfSymbol: 'rectangle.and.text.magnifyingglass' }),
+					// tabBarIcon: () => ({ sfSymbol: 'rectangle.and.text.magnifyingglass' }),
+					tabBarIcon: () => ({ uri: require('../../assets/images/home.svg') }),
 				}}
 			/>
 
@@ -37,21 +40,24 @@ export default function TabLayout() {
 				name="references"
 				options={{
 					title: 'References',
-					tabBarIcon: () => ({ sfSymbol: 'server.rack' }),
+					// tabBarIcon: () => ({ sfSymbol: 'server.rack' }),
+					tabBarIcon: () => ({ uri: require('../../assets/images/home.svg') }),
 				}}
 			/>
 			<Tabs.Screen
 				name="network"
 				options={{
 					title: 'Network',
-					tabBarIcon: () => ({ sfSymbol: 'person.line.dotted.person' }),
+					// tabBarIcon: () => ({ sfSymbol: 'person.line.dotted.person' }),
+					tabBarIcon: () => ({ uri: require('../../assets/images/home.svg') }),
 				}}
 			/>
 			<Tabs.Screen
 				name="guides"
 				options={{
 					title: 'Guides',
-					tabBarIcon: () => ({ sfSymbol: 'book' }),
+					// tabBarIcon: () => ({ sfSymbol: 'book' }),
+					tabBarIcon: () => ({ uri: require('../../assets/images/home.svg') }),
 				}}
 			/>
 		</Tabs>
