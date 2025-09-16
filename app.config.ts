@@ -35,11 +35,7 @@ const config: ExpoConfig = {
 	name: getEnvironmentValues().name,
 	owner: 'openmined',
 	slug: 'biovault',
-<<<<<<< HEAD
-	version: '0.1.0',
-=======
 	version: '0.2.0',
->>>>>>> 04f19d7 (update build version)
 	orientation: 'portrait',
 	icon: './assets/images/biovault-icon.png',
 	scheme: 'biovaultapp',
