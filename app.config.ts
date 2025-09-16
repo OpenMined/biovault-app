@@ -77,7 +77,6 @@ const config: ExpoConfig = {
 				backgroundColor: '#ffffff',
 			},
 		],
-		['react-native-bottom-tabs'],
 		[
 			'expo-asset',
 			{
@@ -85,14 +84,6 @@ const config: ExpoConfig = {
 			},
 		],
 		['expo-secure-store'],
-		[
-			'expo-build-properties',
-			{
-				ios: {
-					useFrameworks: 'static',
-				},
-			},
-		],
 	],
 	experiments: {
 		typedRoutes: true,

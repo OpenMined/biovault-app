@@ -33,6 +33,8 @@ export default function RootLayout() {
 						<Stack>
 							<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 							<Stack.Screen name="+not-found" />
+							<Stack.Screen name="gene/[geneName]" options={{ headerShown: false }} />
+							<Stack.Screen name="example-files" options={{ headerShown: false }} />
 						</Stack>
 						<StatusBar style="auto" />
 					</ThemeProvider>

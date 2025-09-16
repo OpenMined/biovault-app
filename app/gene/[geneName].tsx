@@ -2,13 +2,13 @@
  * Gene detail screen showing all variants for a specific gene
  */
 
-import React from 'react'
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { useLocalSearchParams, router } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
-import { lookupVariantsByRsid, type ClinVarVariant } from '@/lib/database'
+import { type ClinVarVariant } from '@/lib/database'
 import { getSignificanceColor, getSignificanceDisplayText } from '@/lib/gene-grouping'
+import { router, useLocalSearchParams } from 'expo-router'
+import { useSQLiteContext } from 'expo-sqlite'
+import React from 'react'
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function GeneDetailScreen() {
 	const { geneName } = useLocalSearchParams<{ geneName: string }>()
@@ -16,11 +16,7 @@ export default function GeneDetailScreen() {
 	const [loading, setLoading] = React.useState(true)
 	const db = useSQLiteContext()
 
-	React.useEffect(() => {
-		loadGeneVariants()
-	}, [geneName])
-
-	const loadGeneVariants = async () => {
+	const loadGeneVariants = React.useCallback(async () => {
 		if (!geneName) return
 
 		try {
@@ -47,21 +43,26 @@ export default function GeneDetailScreen() {
 		} finally {
 			setLoading(false)
 		}
-	}
+	}, [geneName, db])
+
+	React.useEffect(() => {
+		loadGeneVariants()
+	}, [loadGeneVariants])
 
 	const renderVariant = (variant: ClinVarVariant, index: number) => {
-		const significance = getSignificanceDisplayText(
+		const significanceKey =
 			variant.clnsig.toLowerCase().includes('pathogenic') &&
-				!variant.clnsig.toLowerCase().includes('likely')
-				? 'Pathogenic'
+			!variant.clnsig.toLowerCase().includes('likely')
+				? ('Pathogenic' as const)
 				: variant.clnsig.toLowerCase().includes('likely_pathogenic')
-				? 'Likely_pathogenic'
+				? ('Likely_pathogenic' as const)
 				: variant.clnsig.toLowerCase().includes('conflicting')
-				? 'Conflicting'
+				? ('Conflicting' as const)
 				: variant.clnsig.toLowerCase().includes('uncertain')
-				? 'Uncertain_significance'
-				: 'Benign'
-		)
+				? ('Uncertain_significance' as const)
+				: ('Benign' as const)
+
+		const significance = getSignificanceDisplayText(significanceKey)
 
 		return (
 			<View key={index} style={styles.variantCard}>
@@ -70,7 +71,7 @@ export default function GeneDetailScreen() {
 					<View
 						style={[
 							styles.significanceTag,
-							{ backgroundColor: getSignificanceColor(significance) },
+							{ backgroundColor: getSignificanceColor(significanceKey) },
 						]}
 					>
 						<Text style={styles.significanceText}>{significance}</Text>
@@ -103,14 +104,21 @@ export default function GeneDetailScreen() {
 					)}
 
 				<TouchableOpacity
-					style={styles.learnMoreButton}
-					onPress={() => {
-						// Open ClinVar page for this variant
-						// You could use expo-web-browser here
-						console.log(`Open ClinVar for ${variant.rsid}`)
-					}}
+					style={styles.geneInfoLink}
+					onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneName}`)}
 				>
-					<Text style={styles.learnMoreText}>Learn More</Text>
+					<View style={styles.linkContent}>
+						<View style={styles.linkIconContainer}>
+							<Text style={styles.linkIcon}>🔗</Text>
+						</View>
+						<View style={styles.linkTextContainer}>
+							<Text style={styles.linkTitle}>Learn about {geneName}</Text>
+							<Text style={styles.linkSubtitle}>View detailed gene information on Genopedia</Text>
+						</View>
+						<View style={styles.externalIcon}>
+							<Text style={styles.externalIconText}>↗</Text>
+						</View>
+					</View>
 				</TouchableOpacity>
 			</View>
 		)
@@ -168,10 +176,20 @@ export default function GeneDetailScreen() {
 						<Text style={styles.backButtonText}>← Back</Text>
 					</TouchableOpacity>
 
-					<Text style={styles.geneTitle}>{geneName}</Text>
-					<Text style={styles.subtitle}>
-						{stats.totalRecords} ClinVar records • {stats.uniqueRsids} unique variants
-					</Text>
+					<View style={styles.geneHeaderContent}>
+						<View style={styles.geneTitleContainer}>
+							<Text style={styles.geneTitle}>{geneName}</Text>
+							<TouchableOpacity
+								style={styles.genopediaHeaderButton}
+								onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneName}`)}
+							>
+								<Text style={styles.genopediaHeaderButtonText}>📚 Learn More</Text>
+							</TouchableOpacity>
+						</View>
+						<Text style={styles.subtitle}>
+							{stats.totalRecords} ClinVar records • {stats.uniqueRsids} unique variants
+						</Text>
+					</View>
 				</View>
 
 				<View style={styles.statsCard}>
@@ -368,16 +386,81 @@ const styles = StyleSheet.create({
 		color: '#666',
 		marginLeft: 8,
 	},
-	learnMoreButton: {
-		backgroundColor: '#e3f2fd',
-		paddingHorizontal: 12,
-		paddingVertical: 6,
-		borderRadius: 6,
-		alignSelf: 'flex-start',
+	geneHeaderContent: {
+		flex: 1,
 	},
-	learnMoreText: {
-		fontSize: 12,
-		color: '#1976d2',
+	geneTitleContainer: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		marginBottom: 8,
+	},
+	genopediaHeaderButton: {
+		backgroundColor: '#4CAF50',
+		paddingHorizontal: 16,
+		paddingVertical: 8,
+		borderRadius: 12,
+	},
+	genopediaHeaderButtonText: {
+		color: 'white',
+		fontSize: 14,
 		fontWeight: '600',
+	},
+	geneInfoLink: {
+		backgroundColor: '#f0f8ff',
+		marginTop: 16,
+		padding: 16,
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: '#e3f2fd',
+		shadowColor: '#2196f3',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.1,
+		shadowRadius: 4,
+		elevation: 3,
+	},
+	linkContent: {
+		flexDirection: 'row',
+		alignItems: 'center',
+	},
+	linkIconContainer: {
+		width: 40,
+		height: 40,
+		borderRadius: 20,
+		backgroundColor: '#2196f3',
+		justifyContent: 'center',
+		alignItems: 'center',
+		marginRight: 12,
+	},
+	linkIcon: {
+		fontSize: 18,
+		color: 'white',
+	},
+	linkTextContainer: {
+		flex: 1,
+	},
+	linkTitle: {
+		fontSize: 16,
+		fontWeight: '700',
+		color: '#1976d2',
+		marginBottom: 2,
+	},
+	linkSubtitle: {
+		fontSize: 12,
+		color: '#666',
+		lineHeight: 16,
+	},
+	externalIcon: {
+		width: 24,
+		height: 24,
+		borderRadius: 12,
+		backgroundColor: '#2196f3',
+		justifyContent: 'center',
+		alignItems: 'center',
+	},
+	externalIconText: {
+		fontSize: 12,
+		color: 'white',
+		fontWeight: '700',
 	},
 })
