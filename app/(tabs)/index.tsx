@@ -1,5 +1,5 @@
 /**
- * My DNA tab - file management for uploaded genetic data
+ * My DNA tab - file management for locally stored genetic data
  */
 
 import { parse23andMeFile } from '@/lib/23andme-parser'
@@ -26,14 +26,9 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-// Global type for pending example file
-declare global {
-	var pendingExampleFile: { fileUri: string; fileName: string } | null
-}
-
 interface MyDNAState {
-	isUploading: boolean
-	uploadMessage: string
+	isProcessing: boolean
+	processingMessage: string
 	storedDatabases: UserGenomeDatabase[]
 	loading: boolean
 	showNamingDialog: boolean
@@ -43,8 +38,8 @@ interface MyDNAState {
 
 export default function MyDNAScreen() {
 	const [state, setState] = useState<MyDNAState>({
-		isUploading: false,
-		uploadMessage: '',
+		isProcessing: false,
+		processingMessage: '',
 		storedDatabases: [],
 		loading: true,
 		showNamingDialog: false,
@@ -70,8 +65,8 @@ export default function MyDNAScreen() {
 
 		setState((prev) => ({
 			...prev,
-			isUploading: true,
-			uploadMessage: 'Parsing genetic data...',
+			isProcessing: true,
+			processingMessage: 'Parsing genetic data...',
 		}))
 
 		try {
@@ -87,7 +82,7 @@ export default function MyDNAScreen() {
 
 			setState((prev) => ({
 				...prev,
-				uploadMessage: 'Storing data locally...',
+				processingMessage: 'Storing data locally...',
 			}))
 
 			// Create fast SQLite database with custom name
@@ -100,7 +95,7 @@ export default function MyDNAScreen() {
 				console.log('Database creation progress:', message)
 				setState((prev) => ({
 					...prev,
-					uploadMessage: message,
+					processingMessage: message,
 				}))
 			})
 
@@ -108,7 +103,7 @@ export default function MyDNAScreen() {
 
 			setState((prev) => ({
 				...prev,
-				uploadMessage: 'File uploaded successfully!',
+				processingMessage: 'File processed successfully!',
 			}))
 
 			// Refresh stored databases list
@@ -117,12 +112,12 @@ export default function MyDNAScreen() {
 
 			// Small delay to show success message
 			setTimeout(() => {
-				setState((prev) => ({ ...prev, isUploading: false }))
+				setState((prev) => ({ ...prev, isProcessing: false }))
 			}, 1000)
 		} catch (error) {
-			console.error('Upload error:', error)
-			setState((prev) => ({ ...prev, isUploading: false }))
-			Alert.alert('Upload Error', `Failed to process file: ${error}`)
+			console.error('Processing error:', error)
+			setState((prev) => ({ ...prev, isProcessing: false }))
+			Alert.alert('Processing Error', `Failed to process file: ${error}`)
 		}
 	}, [])
 
@@ -133,14 +128,7 @@ export default function MyDNAScreen() {
 	useFocusEffect(
 		React.useCallback(() => {
 			loadStoredDatabases()
-
-			// Check for pending example file when tab becomes focused
-			if (global.pendingExampleFile) {
-				const { fileUri, fileName } = global.pendingExampleFile
-				global.pendingExampleFile = null // Clear it
-				processFile(fileUri, fileName)
-			}
-		}, [processFile])
+		}, [])
 	)
 
 	const handleFilePicker = async () => {
@@ -166,7 +154,7 @@ export default function MyDNAScreen() {
 		}
 	}
 
-	const handleConfirmUpload = async () => {
+	const handleConfirmProcessing = async () => {
 		if (!state.selectedFile || !state.customFileName.trim()) {
 			Alert.alert('Error', 'Please enter a name for your DNA file')
 			return
@@ -176,7 +164,7 @@ export default function MyDNAScreen() {
 		await processFile(state.selectedFile.uri, state.customFileName.trim())
 	}
 
-	const handleCancelUpload = () => {
+	const handleCancelProcessing = () => {
 		setState((prev) => ({
 			...prev,
 			showNamingDialog: false,
@@ -222,18 +210,18 @@ export default function MyDNAScreen() {
 		)
 	}
 
-	const renderUploadingCard = () => {
-		if (!state.isUploading) return null
+	const renderProcessingCard = () => {
+		if (!state.isProcessing) return null
 
 		return (
-			<View style={styles.uploadingCard}>
-				<View style={styles.uploadingHeader}>
-					<Text style={styles.uploadingTitle}>📁 {state.customFileName}</Text>
+			<View style={styles.processingCard}>
+				<View style={styles.processingHeader}>
+					<Text style={styles.processingTitle}>📁 {state.customFileName}</Text>
 					<ActivityIndicator size="small" color="#4CAF50" />
 				</View>
-				<Text style={styles.uploadingMessage}>{state.uploadMessage}</Text>
-				<View style={styles.uploadingProgress}>
-					<View style={styles.uploadingProgressBar} />
+				<Text style={styles.processingMessage}>{state.processingMessage}</Text>
+				<View style={styles.processingProgress}>
+					<View style={styles.processingProgressBar} />
 				</View>
 			</View>
 		)
@@ -260,9 +248,9 @@ export default function MyDNAScreen() {
 								<Text style={styles.uploadIcon}>📁</Text>
 							</View>
 							<View style={styles.uploadContent}>
-								<Text style={styles.uploadTitle}>Upload Genetic Data</Text>
+								<Text style={styles.uploadTitle}>Load Genetic Data</Text>
 								<Text style={styles.uploadDescription}>
-									Add your genetic testing files to start analyzing your DNA
+									Import your genetic testing files for local analysis on your device
 								</Text>
 							</View>
 						</View>
@@ -279,30 +267,19 @@ export default function MyDNAScreen() {
 						</View>
 
 						<TouchableOpacity
-							style={[styles.premiumUploadButton, state.isUploading && styles.uploadButtonDisabled]}
+							style={[
+								styles.premiumUploadButton,
+								state.isProcessing && styles.uploadButtonDisabled,
+							]}
 							onPress={handleFilePicker}
-							disabled={state.isUploading}
+							disabled={state.isProcessing}
 						>
 							<Text style={styles.premiumUploadButtonText}>
-								{state.isUploading ? 'Processing...' : '🚀 Choose File to Upload'}
+								{state.isProcessing ? 'Processing...' : '🚀 Choose File to Load'}
 							</Text>
 						</TouchableOpacity>
-
-						<View style={styles.orDivider}>
-							<View style={styles.dividerLine} />
-							<Text style={styles.orText}>or</Text>
-							<View style={styles.dividerLine} />
-						</View>
-
-						<TouchableOpacity
-							style={styles.exampleFilesButton}
-							onPress={() => router.push('/example-files')}
-							disabled={state.isUploading}
-						>
-							<Text style={styles.exampleFilesButtonText}>📋 Try with Example Data</Text>
-						</TouchableOpacity>
 					</View>
-					{renderUploadingCard()}
+					{renderProcessingCard()}
 				</View>
 
 				{state.storedDatabases.length === 0 ? (
@@ -310,9 +287,10 @@ export default function MyDNAScreen() {
 						<View style={styles.emptyIllustration}>
 							<Text style={styles.emptyIllustrationText}>🧬</Text>
 						</View>
-						<Text style={styles.emptyTitle}>Upload Your First DNA File</Text>
+						<Text style={styles.emptyTitle}>Load Your First DNA File</Text>
 						<Text style={styles.emptyText}>
-							Start your genetic journey by uploading data from genetic testing services
+							Start your genetic journey by importing data from genetic testing services for local
+							analysis
 						</Text>
 						<View style={styles.emptyBenefits}>
 							<Text style={styles.benefitPoint}>🔒 Data stays on your device</Text>
@@ -337,8 +315,8 @@ export default function MyDNAScreen() {
 									</View>
 									<View style={styles.fileInfo}>
 										<Text style={styles.fileName}>{database.fileName}</Text>
-										<Text style={styles.fileUploadDate}>
-											Uploaded {formatDate(database.uploadDate)}
+										<Text style={styles.fileLoadDate}>
+											Loaded {formatDate(database.uploadDate)}
 										</Text>
 									</View>
 									<TouchableOpacity
@@ -394,7 +372,7 @@ export default function MyDNAScreen() {
 						</View>
 						<View style={styles.privacyPoint}>
 							<Text style={styles.privacyPointIcon}>🚫</Text>
-							<Text style={styles.privacyPointText}>Data never uploaded to servers</Text>
+							<Text style={styles.privacyPointText}>Data never leaves your device</Text>
 						</View>
 						<View style={styles.privacyPoint}>
 							<Text style={styles.privacyPointIcon}>🗑️</Text>
@@ -409,7 +387,7 @@ export default function MyDNAScreen() {
 				visible={state.showNamingDialog}
 				transparent={true}
 				animationType="fade"
-				onRequestClose={handleCancelUpload}
+				onRequestClose={handleCancelProcessing}
 			>
 				<View style={styles.modalOverlay}>
 					<View style={styles.modalContainer}>
@@ -428,11 +406,11 @@ export default function MyDNAScreen() {
 						/>
 
 						<View style={styles.modalButtons}>
-							<TouchableOpacity style={styles.modalCancelButton} onPress={handleCancelUpload}>
+							<TouchableOpacity style={styles.modalCancelButton} onPress={handleCancelProcessing}>
 								<Text style={styles.modalCancelButtonText}>Cancel</Text>
 							</TouchableOpacity>
-							<TouchableOpacity style={styles.modalConfirmButton} onPress={handleConfirmUpload}>
-								<Text style={styles.modalConfirmButtonText}>Upload File</Text>
+							<TouchableOpacity style={styles.modalConfirmButton} onPress={handleConfirmProcessing}>
+								<Text style={styles.modalConfirmButtonText}>Load File</Text>
 							</TouchableOpacity>
 						</View>
 					</View>
@@ -571,35 +549,6 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		fontWeight: '700',
 	},
-	orDivider: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		marginVertical: 20,
-	},
-	dividerLine: {
-		flex: 1,
-		height: 1,
-		backgroundColor: '#e0e0e0',
-	},
-	orText: {
-		fontSize: 14,
-		color: '#999',
-		marginHorizontal: 16,
-		fontWeight: '500',
-	},
-	exampleFilesButton: {
-		backgroundColor: '#f8f9fa',
-		paddingVertical: 14,
-		borderRadius: 12,
-		alignItems: 'center',
-		borderWidth: 1,
-		borderColor: '#e0e0e0',
-	},
-	exampleFilesButtonText: {
-		color: '#666',
-		fontSize: 14,
-		fontWeight: '600',
-	},
 	uploadButton: {
 		backgroundColor: 'white',
 		padding: 20,
@@ -624,7 +573,7 @@ const styles = StyleSheet.create({
 	uploadButtonDisabled: {
 		opacity: 0.6,
 	},
-	uploadingCard: {
+	processingCard: {
 		backgroundColor: 'white',
 		marginTop: 16,
 		padding: 16,
@@ -637,30 +586,30 @@ const styles = StyleSheet.create({
 		shadowRadius: 4,
 		elevation: 3,
 	},
-	uploadingHeader: {
+	processingHeader: {
 		flexDirection: 'row',
 		justifyContent: 'space-between',
 		alignItems: 'center',
 		marginBottom: 8,
 	},
-	uploadingTitle: {
+	processingTitle: {
 		fontSize: 16,
 		fontWeight: '600',
 		color: '#333',
 		flex: 1,
 	},
-	uploadingMessage: {
+	processingMessage: {
 		fontSize: 14,
 		color: '#4CAF50',
 		marginBottom: 12,
 	},
-	uploadingProgress: {
+	processingProgress: {
 		height: 4,
 		backgroundColor: '#e8f5e8',
 		borderRadius: 2,
 		overflow: 'hidden',
 	},
-	uploadingProgressBar: {
+	processingProgressBar: {
 		height: '100%',
 		backgroundColor: '#4CAF50',
 		width: '100%',
@@ -783,7 +732,7 @@ const styles = StyleSheet.create({
 		color: '#333',
 		marginBottom: 4,
 	},
-	fileUploadDate: {
+	fileLoadDate: {
 		fontSize: 12,
 		color: '#999',
 	},

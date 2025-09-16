@@ -451,7 +451,8 @@ export default function DiscoverScreen() {
 
 					<Text style={styles.emptyTitle}>Ready to Discover Your Genetics?</Text>
 					<Text style={styles.emptyText}>
-						Upload your genetic data to unlock personalized insights and comprehensive analysis
+						Load your genetic data to unlock personalized insights and comprehensive analysis on
+						your device
 					</Text>
 
 					<View style={styles.emptyFeatures}>
@@ -470,8 +471,8 @@ export default function DiscoverScreen() {
 					</View>
 
 					<Link href="/" asChild>
-						<TouchableOpacity style={styles.premiumUploadButton}>
-							<Text style={styles.premiumUploadButtonText}>🚀 Upload Your DNA Data</Text>
+						<TouchableOpacity style={styles.premiumLoadButton}>
+							<Text style={styles.premiumLoadButtonText}>🚀 Load Your DNA Data</Text>
 						</TouchableOpacity>
 					</Link>
 
@@ -506,8 +507,8 @@ export default function DiscoverScreen() {
 					<Text style={styles.disclaimerTitle}>⚠️ Important Notice</Text>
 					<Text style={styles.disclaimerText}>
 						This tool is for educational and research purposes only. Results are not medical advice.
-						All data processing happens locally on your device - no genetic information is uploaded
-						to servers.
+						All data processing happens locally on your device - no genetic information ever leaves
+						your device.
 					</Text>
 				</View>
 			</KeyboardAwareScrollView>
@@ -619,7 +620,7 @@ const styles = StyleSheet.create({
 		fontWeight: '600',
 		textAlign: 'center',
 	},
-	premiumUploadButton: {
+	premiumLoadButton: {
 		backgroundColor: '#4CAF50',
 		paddingHorizontal: 32,
 		paddingVertical: 16,
@@ -631,7 +632,7 @@ const styles = StyleSheet.create({
 		elevation: 6,
 		marginBottom: 16,
 	},
-	premiumUploadButtonText: {
+	premiumLoadButtonText: {
 		color: 'white',
 		fontSize: 18,
 		fontWeight: '700',
