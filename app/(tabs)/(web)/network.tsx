@@ -237,7 +237,7 @@ export default function Network() {
 					<Text style={styles.infoText}>• End-to-end encrypted communication via SyftBox</Text>
 					<Text style={styles.infoText}>• No open ports needed - works behind firewalls</Text>
 					<Text style={styles.infoText}>• Data stays on participants' devices</Text>
-					<Text style={styles.infoText}>• Collaborate without requiring data uploads</Text>
+					<Text style={styles.infoText}>• Collaborate without data ever leaving your device</Text>
 				</View>
 			</ScrollView>
 		</SafeAreaView>

@@ -193,8 +193,10 @@ export default function ResearchScreen() {
 
 					<View style={styles.workflowCard}>
 						<Text style={styles.workflowTitle}>For Participants (You)</Text>
-						<Text style={styles.workflowStep}>🧬 Upload your genetic data to the desktop app</Text>
-						<Text style={styles.workflowStep}>🔒 Data stays on your computer - never uploaded</Text>
+						<Text style={styles.workflowStep}>🧬 Load your genetic data into the desktop app</Text>
+						<Text style={styles.workflowStep}>
+							🔒 Data stays on your computer - never leaves your device
+						</Text>
 						<Text style={styles.workflowStep}>
 							👨‍🔬 Researchers run analyses locally on your machine
 						</Text>

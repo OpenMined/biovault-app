@@ -1,10 +1,10 @@
 # BioVault Mobile App
 
-A privacy-first genomic analysis app that serves as a gateway to the collaborative BioVault research network. Upload your genetic data, discover insights, and connect to the world of collaborative genomics.
+A privacy-first genomic analysis app that serves as a gateway to the collaborative BioVault research network. Load your genetic data for local analysis, discover insights, and connect to the world of collaborative genomics.
 
 ## Features
 
-- 🧬 **My DNA** - Upload and manage genetic data files (23andMe, AncestryDNA, etc.)
+- 🧬 **My DNA** - Load and manage genetic data files locally on your device (23andMe, AncestryDNA, etc.)
 - 🔍 **Insights** - Run ClinVar analysis and discover genetic insights
 - 🌐 **Research** - Connect to the BioVault collaborative genomics network
 - 📊 **Web-Only Features** - Enhanced analytics, network participants, biobanks, pipelines, and more
