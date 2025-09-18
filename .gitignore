@@ -115,3 +115,8 @@ coverage/
 *.keystore
 *.keystore.properties
 # Already ignoring: *.jks, *.p8, *.p12, *.key, *.mobileprovision
+
+notebooks/.ipynb_checkpoints/
+notebooks/downloads/
+notebooks/work/
+output/
