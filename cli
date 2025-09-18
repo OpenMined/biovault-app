@@ -1,0 +1,2 @@
+#!/bin/bash
+cargo run --manifest-path ./biovault_rust_lib/Cargo.toml "$@"

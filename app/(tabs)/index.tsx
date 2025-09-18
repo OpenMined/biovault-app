@@ -2,15 +2,15 @@
  * My DNA tab - file management for locally stored genetic data
  */
 
-import { parse23andMeFile } from '@/lib/23andme-parser'
 import {
-	createFastGenomeDatabase,
 	deleteUserGenomeDatabase,
 	listUserGenomeDatabases,
 	type UserGenomeDatabase,
 } from '@/lib/fast-genome-storage'
+import * as Biovault from '@/modules/expo-biovault'
 import { useFocusEffect } from '@react-navigation/native'
 import * as DocumentPicker from 'expo-document-picker'
+import { Paths } from 'expo-file-system'
 import { router } from 'expo-router'
 import React, { useEffect, useState } from 'react'
 import {
@@ -61,45 +61,30 @@ export default function MyDNAScreen() {
 	}
 
 	const processFile = React.useCallback(async (fileUri: string, fileName: string) => {
-		console.log('Processing file:', { fileUri, fileName })
+		console.log('Processing file with Rust:', { fileUri, fileName })
 
 		setState((prev) => ({
 			...prev,
 			isProcessing: true,
-			processingMessage: 'Parsing genetic data...',
+			processingMessage: 'Processing with Rust...',
 		}))
 
 		try {
-			// Parse the 23andMe file
-			console.log('Starting to parse 23andMe file...')
-			const genomeData = await parse23andMeFile(fileUri)
-			console.log('File parsed successfully:', {
-				fileName: genomeData.fileName,
-				totalVariants: genomeData.totalVariants,
-				rsidCount: genomeData.rsidCount,
-				parseErrorsCount: genomeData.parseErrors.length,
-			})
+			// Use the proper FileSystem API for documents directory
+			const documentsPath = Paths.document.uri.replace('file://', '')
 
 			setState((prev) => ({
 				...prev,
-				processingMessage: 'Storing data locally...',
+				processingMessage: 'Parsing genetic data with Rust...',
 			}))
 
-			// Create fast SQLite database with custom name
-			console.log('Creating SQLite database...')
-			const customGenomeData = {
-				...genomeData,
-				fileName: fileName, // Use the custom name instead of original filename
-			}
-			const userDatabase = await createFastGenomeDatabase(customGenomeData, (message) => {
-				console.log('Database creation progress:', message)
-				setState((prev) => ({
-					...prev,
-					processingMessage: message,
-				}))
-			})
+			// Convert input file URI to path for Rust
+			const inputPath = fileUri.replace('file://', '')
 
-			console.log('Database created:', userDatabase)
+			// Use Rust to parse and create SQLite database
+			console.log('Starting Rust processing...', { inputPath, documentsPath })
+			const sqlitePath = await Biovault.processGenomeFile(inputPath, fileName, documentsPath)
+			console.log('Rust processing completed:', sqlitePath)
 
 			setState((prev) => ({
 				...prev,
@@ -115,9 +100,9 @@ export default function MyDNAScreen() {
 				setState((prev) => ({ ...prev, isProcessing: false }))
 			}, 1000)
 		} catch (error) {
-			console.error('Processing error:', error)
+			console.error('Rust processing error:', error)
 			setState((prev) => ({ ...prev, isProcessing: false }))
-			Alert.alert('Processing Error', `Failed to process file: ${error}`)
+			Alert.alert('Processing Error', `Failed to process file with Rust: ${error}`)
 		}
 	}, [])
 
