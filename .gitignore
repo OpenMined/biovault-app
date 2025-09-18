@@ -42,6 +42,15 @@ app-example
 ios/
 android/
 build/
+
+# Rust build artifacts
+biovault_rust_lib/target/
+**/target/
+
+# Build outputs
+*.ipa
+*.apk
+*.aab
 *.xcworkspace
 *.xcodeproj
 *.xcuserdata/

@@ -74,6 +74,140 @@ A privacy-first genomic analysis app that serves as a gateway to the collaborati
 3. Open your browser to `http://localhost:8081` (or the port shown in terminal)
 4. The web version includes additional tabs not available on mobile
 
+## Rust Module Development
+
+This app includes a native Rust module (`modules/expo-biovault`) for high-performance genome file parsing.
+
+### Prerequisites for Rust Development
+
+- **Rust toolchain**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- **iOS development**: Xcode and iOS targets
+- **Android development**: Android Studio, NDK, and Android targets
+
+### Setting Up Rust Targets
+
+```bash
+# iOS targets
+rustup target add aarch64-apple-ios          # iOS device
+rustup target add aarch64-apple-ios-sim      # iOS simulator
+
+# Android targets
+rustup target add aarch64-linux-android      # Android ARM64
+cargo install cargo-ndk                      # Android NDK helper
+```
+
+### Building Rust Libraries
+
+**For iOS Simulator (development)**:
+
+```bash
+npm run cargo-ios -- --target='ios-sim'
+```
+
+**For iOS Device**:
+
+```bash
+npm run cargo-ios -- --target='ios'
+```
+
+**For Android**:
+
+```bash
+npm run cargo-android
+```
+
+### Android NDK Setup
+
+The Android build requires NDK configuration. Install via Android Studio:
+
+- Android Studio → SDK Manager → SDK Tools → NDK (Side by side)
+
+The build scripts automatically configure the NDK toolchain.
+
+### Module Structure
+
+```
+modules/expo-biovault/
+├── expo-module.config.json     # Module configuration
+├── index.ts                    # JS exports
+├── src/
+│   └── ExpoBiovaultModule.ts    # TypeScript definitions
+├── ios/
+│   ├── ExpoBiovault.podspec     # iOS CocoaPods spec
+│   ├── ExpoBiovaultModule.swift # iOS native implementation
+│   └── rust/                   # iOS Rust libraries (auto-generated)
+└── android/
+    ├── build.gradle
+    ├── src/main/
+    │   ├── java/.../ExpoBiovaultModule.kt  # Android native implementation
+    │   └── jniLibs/                        # Android Rust libraries (auto-generated)
+    └── AndroidManifest.xml
+```
+
+### Adding New Rust Functions
+
+1. **Add to Rust** (`biovault_rust_lib/src/lib.rs`):
+
+   ```rust
+   #[unsafe(no_mangle)]
+   pub extern "C" fn your_function(input: *const c_char) -> *mut c_char {
+       // Your implementation
+   }
+   ```
+
+2. **Add iOS binding** (`modules/expo-biovault/ios/ExpoBiovaultModule.swift`):
+
+   ```swift
+   @_silgen_name("your_function")
+   func your_function(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+
+   AsyncFunction("yourFunction") { (input: String) -> String in
+       // Convert strings and call Rust function
+   }
+   ```
+
+3. **Add Android binding** (`modules/expo-biovault/android/.../ExpoBiovaultModule.kt`):
+
+   ```kotlin
+   external fun yourFunction(input: String): String
+
+   AsyncFunction("yourFunction") { input: String ->
+       yourFunction(input)
+   }
+   ```
+
+4. **Export from module** (`modules/expo-biovault/index.ts`):
+
+   ```typescript
+   export async function yourFunction(input: string): Promise<string> {
+   	return await ExpoBiovaultModule.yourFunction(input)
+   }
+   ```
+
+5. **Rebuild libraries**:
+   ```bash
+   npm run cargo-ios -- --target='ios-sim'  # or 'ios' for device
+   npm run cargo-android
+   ```
+
+### Troubleshooting
+
+**"Cannot find native module" error**:
+
+- Run `npx expo prebuild --clean` to regenerate native projects
+- For device testing, use `npx expo run:ios --device` (not Expo Dev Client)
+
+**iOS architecture mismatch**:
+
+- Use `--target='ios-sim'` for simulator
+- Use `--target='ios'` for device
+- The build scripts automatically copy the correct library
+
+**Android linking errors**:
+
+- Ensure NDK is installed via Android Studio
+- Check that `.so` files are in `android/src/main/jniLibs/arm64-v8a/`
+
 ### Development Tools
 
 #### **Recommended Extensions**

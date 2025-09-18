@@ -29,6 +29,10 @@ android/
 Pods/
 DerivedData/
 
+# Rust build artifacts
+biovault_rust_lib/target/
+**/target/
+
 # Lockfiles (per user request)
 package-lock.json
 yarn.lock
