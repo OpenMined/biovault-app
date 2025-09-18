@@ -132,3 +132,12 @@ pub mod android {
         }
     }
 }
+/// Public, safe Rust API to process a 23andMe file and create an SQLite DB.
+/// Returns the full path to the created database file.
+pub fn process_23andme(
+    input_path: &str,
+    custom_name: &str,
+    output_dir: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    process_file_internal(input_path, custom_name, output_dir)
+}

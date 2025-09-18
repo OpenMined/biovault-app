@@ -1,0 +1,3 @@
+[submodule "biovault-data"]
+	path = biovault-data
+	url = https://github.com/OpenMined/biovault-data.git
