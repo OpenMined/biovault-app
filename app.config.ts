@@ -7,6 +7,8 @@ interface EnvironmentValues {
 	name: string
 	bundleIdentifier: string
 	package: string
+	appleTeamId: string
+	appleTeamName: string
 }
 
 function getEnvironmentValues(): EnvironmentValues {
@@ -15,6 +17,8 @@ function getEnvironmentValues(): EnvironmentValues {
 			name: 'BioVault Dev',
 			bundleIdentifier: 'org.openmined.biovault.dev',
 			package: 'org.openmined.biovault.dev',
+			appleTeamName: "OpenMined Foundation",
+			appleTeamId: "28PJ5N8D9X",
 		}
 	}
 	if (IS_PREVIEW) {
@@ -22,12 +26,17 @@ function getEnvironmentValues(): EnvironmentValues {
 			name: 'BioVault Preview',
 			bundleIdentifier: 'org.openmined.biovault.preview',
 			package: 'org.openmined.biovault.preview',
+			appleTeamName: "OpenMined Foundation",
+			appleTeamId: "28PJ5N8D9X",
+
 		}
 	}
 	return {
 		name: 'BioVault',
 		bundleIdentifier: 'org.openmined.biovault',
 		package: 'org.openmined.biovault',
+		appleTeamName: "OpenMined Foundation",
+		appleTeamId: "28PJ5N8D9X",
 	}
 }
 
@@ -43,9 +52,12 @@ const config: ExpoConfig = {
 	newArchEnabled: true,
 	ios: {
 		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
+		appleTeamId: getEnvironmentValues().appleTeamId, // seems to require name not id
 		supportsTablet: true,
 		infoPlist: {
 			ITSAppUsesNonExemptEncryption: false,
+			UIFileSharingEnabled: true,
+			LSSupportsOpeningDocumentsInPlace: true,
 		},
 	},
 	android: {

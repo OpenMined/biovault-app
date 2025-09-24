@@ -1,5 +1,6 @@
 # BioVault Mobile App
 
+
 A privacy-first genomic analysis app that serves as a gateway to the collaborative BioVault research network. Load your genetic data for local analysis, discover insights, and connect to the world of collaborative genomics.
 
 ## Features
@@ -13,11 +14,51 @@ A privacy-first genomic analysis app that serves as a gateway to the collaborati
 
 ### Prerequisites
 
-- Node.js (v18 or later)
+- Node.js
 - npm or yarn
 - Expo CLI
 - iOS Simulator (for iOS development)
 - Android Studio/Emulator (for Android development)
+
+### Quickstart
+Install NVM:
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+```
+
+```
+brew install fastlane cocoapods
+```
+
+Get node 23:
+```bash
+nvm install 23.6.1
+nvm alias default 23.6.1
+```
+
+Install packages:
+```bash
+npm install
+```
+
+Expo Doctor:
+```
+npx expo-doctor
+```
+
+iOS:
+```
+rm -rf ios
+npm run cargo-ios -- ios
+npm run prebuild
+npm run device
+```
+
+Or this script:
+```bash
+./ios.sh
+```
+
 
 ### Installation
 
@@ -214,3 +255,66 @@ modules/expo-biovault/
 
 - [Radon Extension](https://ide.swmansion.com/) - Integrated simulator management for VS Code/Cursor
 - [Expo Orbit](https://expo.dev/orbit) - Desktop app for managing simulators and builds
+
+
+## Testing the Rust via CLI
+```
+./cli parse --file /Users/madhavajay/dev/sequencing.com/23andme/genome_Madhava_Jay_v4_Full_20250611034825.zip --output madhava
+```
+
+
+## Adding a new Rust method to the app
+
+Add your FFI
+```rust
+// lib.rs
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn process_23andme_file(
+```
+
+```swift
+// ExpoBioVaultModule.swift
+@_silgen_name("process_23andme_file")
+
+func process_23andme_file(_ inputPath: UnsafePointer<CChar>, _ customName: UnsafePointer<CChar>, _ outputDir: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+///
+
+public class ExpoBiovaultModule: Module {
+  public func definition() -> ModuleDefinition {
+    Name("ExpoBiovault")
+
+    AsyncFunction("processGenomeFile") { (inputPath: String, customName: String, outputDir: String) -> String in
+      let inputCString = inputPath.cString(using: .utf8)!
+      let nameCString = customName.cString(using: .utf8)!
+      let outputCString = outputDir.cString(using: .utf8)!
+      
+      guard let resultPtr = process_23andme_file(inputCString, nameCString, outputCString) else {
+        throw Exception(name: "ProcessingError", description: "Failed to process genome file")
+      }
+      
+      let result = String(cString: resultPtr)
+      free_string(resultPtr)
+      return result
+    }
+  }
+}
+```
+
+TypeScript:
+```typescript
+// ExpoBioVaultModule.ts
+declare class ExpoBiovaultModule extends NativeModule {
+	processGenomeFile(inputPath: string, customName: string, outputDir: string): Promise<string>
+}
+
+// index.ts
+import ExpoBiovaultModule from './src/ExpoBiovaultModule'
+
+export async function processGenomeFile(
+	inputPath: string,
+	customName: string,
+	outputDir: string
+): Promise<string> {
+	return await ExpoBiovaultModule.processGenomeFile(inputPath, customName, outputDir)
+}
+```

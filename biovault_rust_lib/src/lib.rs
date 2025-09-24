@@ -65,16 +65,36 @@ fn process_file_internal(
     custom_name: &str,
     output_dir: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    eprintln!("Rust: Starting to process file: {}", input_path);
+
     // Parse the 23andMe file
     let parse_result = twenty_three_and_me::parse_23andme_file(Path::new(input_path))?;
 
-    // Create output SQLite file path
+    eprintln!("Rust: Parsed {} variants, {} with rsIDs",
+        parse_result.metadata.total_variants,
+        parse_result.metadata.rsid_count
+    );
+
+    // Create output SQLite file path in SQLite subdirectory
+    // expo-sqlite expects databases to be in Documents/SQLite/
     let timestamp = chrono::Utc::now().timestamp();
     let db_filename = format!("{}_{}.sqlite", custom_name.replace(' ', "_"), timestamp);
-    let output_path = Path::new(output_dir).join(&db_filename);
+
+    // Create SQLite subdirectory if it doesn't exist
+    let sqlite_dir = Path::new(output_dir).join("SQLite");
+    if !sqlite_dir.exists() {
+        std::fs::create_dir_all(&sqlite_dir)?;
+        eprintln!("Rust: Created SQLite directory at: {:?}", sqlite_dir);
+    }
+
+    let output_path = sqlite_dir.join(&db_filename);
+
+    eprintln!("Rust: Creating database at: {:?}", output_path);
 
     // Create SQLite database
     let _db_name = create_genome_database(parse_result, &output_path, custom_name)?;
+
+    eprintln!("Rust: Database created successfully");
 
     // Return the full path to the created database
     Ok(output_path.to_string_lossy().to_string())

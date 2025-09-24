@@ -9,11 +9,12 @@ import { type TwentyThreeAndMeVariant, type ParsedGenomeData } from './23andme-p
 export interface StoredGenomeFile {
 	id: number
 	fileName: string
-	uploadDate: string
+	sourceFormat: string
 	totalVariants: number
 	rsidCount: number
-	chromosomeCount: number
-	parseErrors: number
+	assembly: string | null
+	uploadDate: string
+	dbName: string
 }
 
 export interface UserGenomeVariant extends TwentyThreeAndMeVariant {
@@ -37,107 +38,111 @@ export async function initializeUserGenomeDatabase(): Promise<SQLite.SQLiteDatab
 	await userDbInstance.execAsync(`
 		PRAGMA journal_mode = WAL;
 
-		CREATE TABLE IF NOT EXISTS genome_files (
+		CREATE TABLE IF NOT EXISTS genome_metadata (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			fileName TEXT NOT NULL,
-			uploadDate TEXT NOT NULL,
-			totalVariants INTEGER NOT NULL,
-			rsidCount INTEGER NOT NULL,
-			chromosomeCount INTEGER NOT NULL,
-			parseErrors INTEGER NOT NULL DEFAULT 0
+			file_name TEXT NOT NULL,
+			source_format TEXT NOT NULL,
+			total_variants INTEGER NOT NULL,
+			rsid_count INTEGER NOT NULL,
+			assembly TEXT,
+			upload_date TEXT NOT NULL,
+			db_name TEXT NOT NULL
 		);
 
-		CREATE TABLE IF NOT EXISTS user_variants (
+		CREATE TABLE IF NOT EXISTS variants (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			fileId INTEGER NOT NULL,
-			rsid TEXT NOT NULL,
+			file_id INTEGER NOT NULL,
+			rsid TEXT,
 			chromosome TEXT NOT NULL,
 			position INTEGER NOT NULL,
 			genotype TEXT NOT NULL,
-			FOREIGN KEY (fileId) REFERENCES genome_files (id) ON DELETE CASCADE
+			source_format TEXT NOT NULL,
+			FOREIGN KEY (file_id) REFERENCES genome_metadata (id) ON DELETE CASCADE
 		);
 
-		CREATE INDEX IF NOT EXISTS idx_user_variants_rsid ON user_variants(rsid);
-		CREATE INDEX IF NOT EXISTS idx_user_variants_file ON user_variants(fileId);
-		CREATE INDEX IF NOT EXISTS idx_user_variants_chr_pos ON user_variants(chromosome, position);
+		CREATE INDEX IF NOT EXISTS idx_variants_rsid ON variants(rsid);
+		CREATE INDEX IF NOT EXISTS idx_variants_file ON variants(file_id);
+		CREATE INDEX IF NOT EXISTS idx_variants_chr_pos ON variants(chromosome, position);
 	`)
 
 	return userDbInstance
 }
 
-/**
- * Store parsed 23andMe data in local database
- */
-export async function storeGenomeData(
-	data: ParsedGenomeData,
-	onProgress?: (current: number, total: number) => void
-): Promise<number> {
-	const db = await initializeUserGenomeDatabase()
+// /**
+//  * Store parsed 23andMe data in local database
+//  */
+// export async function storeGenomeData(
+// 	data: ParsedGenomeData,
+// 	onProgress?: (current: number, total: number) => void
+// ): Promise<number> {
+// 	const db = await initializeUserGenomeDatabase()
 
-	// Insert file record
-	const fileResult = await db.runAsync(
-		`INSERT INTO genome_files (fileName, uploadDate, totalVariants, rsidCount, chromosomeCount, parseErrors)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		[
-			data.fileName,
-			new Date().toISOString(),
-			data.totalVariants,
-			data.rsidCount,
-			new Set(data.variants.map((v) => v.chromosome)).size,
-			data.parseErrors.length,
-		]
-	)
+// 	// Insert file record
+// 	const fileResult = await db.runAsync(
+// 		`INSERT INTO genome_metadata (file_name, source_format, total_variants, rsid_count, assembly, upload_date, db_name)
+// 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+// 		[
+// 			data.fileName,
+// 			'23andMe', // Assuming source format is always 23andMe for this example
+// 			data.totalVariants,
+// 			data.rsidCount,
+// 			data.assembly || null, // Assuming assembly is part of ParsedGenomeData
+// 			new Date().toISOString(),
+// 			`${data.fileName}_${Date.now()}` // Example dbName generation
+// 		]
+// 	)
 
-	const fileId = fileResult.lastInsertRowId
+// 	const fileId = fileResult.lastInsertRowId
 
-	// Optimized chunked insert with large batches
-	const batchSize = 5000 // Larger batches for speed
-	const totalBatches = Math.ceil(data.variants.length / batchSize)
+// 	// Optimized chunked insert with large batches
+// 	const batchSize = 5000 // Larger batches for speed
+// 	const totalBatches = Math.ceil(data.variants.length / batchSize)
 
-	// Disable sync and use WAL mode for speed
-	await db.execAsync(`
-		PRAGMA synchronous = OFF;
-		PRAGMA journal_mode = WAL;
-		BEGIN IMMEDIATE;
-	`)
+// 	// Disable sync and use WAL mode for speed
+// 	await db.execAsync(`
+// 		PRAGMA synchronous = OFF;
+// 		PRAGMA journal_mode = WAL;
+// 		BEGIN IMMEDIATE;
+// 	`)
 
-	try {
-		for (let i = 0; i < data.variants.length; i += batchSize) {
-			const batch = data.variants.slice(i, i + batchSize)
-			const currentBatch = Math.floor(i / batchSize) + 1
+// 	try {
+// 		for (let i = 0; i < data.variants.length; i += batchSize) {
+// 			const batch = data.variants.slice(i, i + batchSize)
+// 			const currentBatch = Math.floor(i / batchSize) + 1
 
-			onProgress?.(currentBatch, totalBatches)
+// 			onProgress?.(currentBatch, totalBatches)
 
-			// Build VALUES clause for this batch
-			const valuesClauses = batch.map(() => '(?, ?, ?, ?, ?)').join(',')
-			const batchValues = batch.flatMap((variant) => [
-				fileId,
-				variant.rsid,
-				variant.chromosome,
-				variant.position,
-				variant.genotype,
-			])
+// 			// Build VALUES clause for this batch
+// 			const valuesClauses = batch.map(() => '(?, ?, ?, ?, ?, ?)').join(',')
+// 			const batchValues = batch.flatMap((variant) => [
+// 				fileId,
+// 				variant.rsid,
+// 				variant.chromosome,
+// 				variant.position,
+// 				variant.genotype,
+// 				'23andMe', // Assuming source format is always 23andMe for this example
+// 			])
 
-			// Single INSERT for entire batch
-			const statement = await db.prepareAsync(
-				`INSERT INTO user_variants (fileId, rsid, chromosome, position, genotype) VALUES ${valuesClauses}`
-			)
+// 			// Single INSERT for entire batch
+// 			const statement = await db.prepareAsync(
+// 				`INSERT INTO variants (file_id, rsid, chromosome, position, genotype, source_format) VALUES ${valuesClauses}`
+// 			)
 
-			try {
-				await statement.executeAsync(batchValues)
-			} finally {
-				await statement.finalizeAsync()
-			}
-		}
+// 			try {
+// 				await statement.executeAsync(batchValues)
+// 			} finally {
+// 				await statement.finalizeAsync()
+// 			}
+// 		}
 
-		await db.execAsync('COMMIT;')
-	} catch (error) {
-		await db.execAsync('ROLLBACK;')
-		throw error
-	}
+// 		await db.execAsync('COMMIT;')
+// 	} catch (error) {
+// 		await db.execAsync('ROLLBACK;')
+// 		throw error
+// 	}
 
-	return fileId
-}
+// 	return fileId
+// }
 
 /**
  * Get all stored genome files
@@ -146,9 +151,10 @@ export async function getStoredGenomeFiles(): Promise<StoredGenomeFile[]> {
 	const db = await initializeUserGenomeDatabase()
 
 	return await db.getAllAsync<StoredGenomeFile>(
-		`SELECT id, fileName, uploadDate, totalVariants, rsidCount, chromosomeCount, parseErrors
-		 FROM genome_files
-		 ORDER BY uploadDate DESC`
+		`SELECT id, file_name as fileName, source_format as sourceFormat, total_variants as totalVariants, 
+		rsid_count as rsidCount, assembly, upload_date as uploadDate, db_name as dbName
+		 FROM genome_metadata
+		 ORDER BY upload_date DESC`
 	)
 }
 
@@ -170,9 +176,9 @@ export async function getUserVariantsByRsid(
 		const chunk = rsids.slice(i, i + chunkSize)
 		const placeholders = chunk.map(() => '?').join(',')
 		const query = `
-			SELECT id, fileId, rsid, chromosome, position, genotype
-			FROM user_variants
-			WHERE fileId = ? AND rsid IN (${placeholders})
+			SELECT id, file_id as fileId, rsid, chromosome, position, genotype
+			FROM variants
+			WHERE file_id = ? AND rsid IN (${placeholders})
 			ORDER BY chromosome, position
 		`
 
@@ -190,7 +196,7 @@ export async function getAllRsidsForFile(fileId: number): Promise<string[]> {
 	const db = await initializeUserGenomeDatabase()
 
 	const results = await db.getAllAsync<{ rsid: string }>(
-		`SELECT DISTINCT rsid FROM user_variants WHERE fileId = ? AND rsid LIKE 'rs%' ORDER BY rsid`,
+		`SELECT DISTINCT rsid FROM variants WHERE file_id = ? AND rsid LIKE 'rs%' ORDER BY rsid`,
 		[fileId]
 	)
 
@@ -203,7 +209,7 @@ export async function getAllRsidsForFile(fileId: number): Promise<string[]> {
 export async function deleteGenomeFile(fileId: number): Promise<void> {
 	const db = await initializeUserGenomeDatabase()
 
-	await db.runAsync('DELETE FROM genome_files WHERE id = ?', [fileId])
+	await db.runAsync('DELETE FROM genome_metadata WHERE id = ?', [fileId])
 	// Variants will be deleted automatically due to CASCADE
 }
 
@@ -218,11 +224,11 @@ export async function getUserGenomeStats(): Promise<{
 	const db = await initializeUserGenomeDatabase()
 
 	const fileCount = await db.getFirstAsync<{ count: number }>(
-		'SELECT COUNT(*) as count FROM genome_files'
+		'SELECT COUNT(*) as count FROM genome_metadata'
 	)
 
 	const variantCount = await db.getFirstAsync<{ count: number }>(
-		'SELECT COUNT(*) as count FROM user_variants'
+		'SELECT COUNT(*) as count FROM variants'
 	)
 
 	// Get database file size

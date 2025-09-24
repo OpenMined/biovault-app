@@ -80,6 +80,7 @@ export default function DiscoverScreen() {
 
 	const loadUserDatabases = React.useCallback(async () => {
 		try {
+			console.log('loadUserDatabases')
 			const databases = await listUserGenomeDatabases()
 			setState((prev) => {
 				// Auto-select database if passed via URL parameter

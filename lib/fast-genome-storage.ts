@@ -44,104 +44,137 @@ async function writeManifest(entries: UserGenomeDatabase[]): Promise<void> {
 }
 
 /**
+ * Add a database created by Rust to the manifest
+ */
+export async function addDatabaseToManifest(
+	dbPath: string,
+	fileName: string
+): Promise<UserGenomeDatabase> {
+	console.log('Adding database to manifest:', dbPath, fileName)
+
+	// Extract dbName from path (last component)
+	const dbName = dbPath.split('/').pop() || dbPath
+
+	// Don't try to open the database here - it's in Documents directory
+	// but SQLite.openDatabaseAsync expects SQLite directory
+	// Just create the manifest entry with basic info
+	// The actual metadata will be read when listing databases
+	const entry: UserGenomeDatabase = {
+		dbName,
+		fileName,
+		uploadDate: new Date().toISOString(),
+		totalVariants: 0, // Will be updated when actually reading the database
+		rsidCount: 0, // Will be updated when actually reading the database
+	}
+
+	// Add to manifest
+	const current = await readManifest()
+	const withoutDupes = current.filter((e) => e.dbName !== entry.dbName)
+	await writeManifest([entry, ...withoutDupes])
+
+	console.log('Database added to manifest:', entry)
+	return entry
+}
+
+/**
  * Create user genome database instantly using direct SQLite creation
  */
-export async function createFastGenomeDatabase(
-	data: ParsedGenomeData,
-	onProgress?: (message: string) => void
-): Promise<UserGenomeDatabase> {
-	onProgress?.('Creating optimized database...')
+// export async function createFastGenomeDatabase(
+// 	data: ParsedGenomeData,
+// 	onProgress?: (message: string) => void
+// ): Promise<UserGenomeDatabase> {
+// 	onProgress?.('Creating optimized database...')
 
-	// Create unique database name
-	const timestamp = Date.now()
-	const dbName = `user_genome_${timestamp}.db`
+// 	// Create unique database name
+// 	const timestamp = Date.now()
+// 	const dbName = `user_genome_${timestamp}.db`
 
-	// Open new database
-	const db = await SQLite.openDatabaseAsync(dbName)
+// 	// Open new database
+// 	const db = await SQLite.openDatabaseAsync(dbName)
 
-	try {
-		// Setup for maximum speed
-		await db.execAsync(`
-			PRAGMA journal_mode = OFF;
-			PRAGMA synchronous = OFF;
-			PRAGMA cache_size = 50000;
+// 	try {
+// 		// Setup for maximum speed
+// 		await db.execAsync(`
+// 			PRAGMA journal_mode = OFF;
+// 			PRAGMA synchronous = OFF;
+// 			PRAGMA cache_size = 50000;
 
-			CREATE TABLE genome_info (
-				fileName TEXT,
-				uploadDate TEXT,
-				totalVariants INTEGER,
-				rsidCount INTEGER,
-				chromosomeCount INTEGER,
-				parseErrors INTEGER
-			);
+// 			CREATE TABLE genome_metadata (
+// 				file_name TEXT,
+// 				upload_date TEXT,
+// 				total_variants INTEGER,
+// 				rsid_count INTEGER,
+// 				chromosomeCount INTEGER,
+// 				parseErrors INTEGER
+// 			);
 
-			CREATE TABLE variants (
-				rsid TEXT,
-				chromosome TEXT,
-				position INTEGER,
-				genotype TEXT
-			);
-		`)
+// 			CREATE TABLE variants (
+// 				rsid TEXT,
+// 				chromosome TEXT,
+// 				position INTEGER,
+// 				genotype TEXT
+// 			);
+// 		`)
 
-		onProgress?.('Inserting metadata...')
+// 		onProgress?.('Inserting metadata...')
 
-		// Insert file info
-		await db.runAsync(`INSERT INTO genome_info VALUES (?, ?, ?, ?, ?, ?)`, [
-			data.fileName,
-			new Date().toISOString(),
-			data.totalVariants,
-			data.rsidCount,
-			new Set(data.variants.map((v) => v.chromosome)).size,
-			data.parseErrors.length,
-		])
+// 		// Insert file info
+// 		await db.runAsync(`INSERT INTO genome_metadata VALUES (?, ?, ?, ?, ?, ?)`, [
+// 			data.fileName,
+// 			new Date().toISOString(),
+// 			data.totalVariants,
+// 			data.rsidCount,
+// 			new Set(data.variants.map((v) => v.chromosome)).size,
+// 			data.parseErrors.length,
+// 		])
 
-		onProgress?.('Bulk inserting all variants...')
+// 		onProgress?.('Bulk inserting all variants...')
 
-		// Create one giant INSERT statement (fastest possible)
-		const valueStrings = data.variants
-			.map(
-				(v) =>
-					`('${v.rsid.replace(/'/g, "''")}','${v.chromosome}',${v.position},'${v.genotype.replace(
-						/'/g,
-						"''"
-					)}')`
-			)
-			.join(',')
+// 		// Create one giant INSERT statement (fastest possible)
+// 		const valueStrings = data.variants
+// 			.map(
+// 				(v) =>
+// 					`('${v.rsid.replace(/'/g, "''")}','${v.chromosome}',${v.position},'${v.genotype.replace(
+// 						/'/g,
+// 						"''"
+// 					)}')`
+// 			)
+// 			.join(',')
 
-		await db.execAsync(`
-			INSERT INTO variants (rsid, chromosome, position, genotype)
-			VALUES ${valueStrings}
-		`)
+// 		await db.execAsync(`
+// 			INSERT INTO variants (rsid, chromosome, position, genotype)
+// 			VALUES ${valueStrings}
+// 		`)
 
-		onProgress?.('Creating indexes...')
+// 		onProgress?.('Creating indexes...')
 
-		// Add indexes after all data is inserted
-		await db.execAsync(`
-			CREATE INDEX idx_rsid ON variants(rsid);
-			CREATE INDEX idx_chr_pos ON variants(chromosome, position);
-			VACUUM;
-		`)
+// 		// Add indexes after all data is inserted
+// 		await db.execAsync(`
+// 			CREATE INDEX idx_rsid ON variants(rsid);
+// 			CREATE INDEX idx_chr_pos ON variants(chromosome, position);
+// 			VACUUM;
+// 		`)
 
-		onProgress?.('Database ready!')
-	} finally {
-		await db.closeAsync()
-	}
+// 		onProgress?.('Database ready!')
+// 	} finally {
+// 		await db.closeAsync()
+// 	}
 
-	const created: UserGenomeDatabase = {
-		dbName,
-		fileName: data.fileName,
-		uploadDate: new Date().toISOString(),
-		totalVariants: data.totalVariants,
-		rsidCount: data.rsidCount,
-	}
+// 	const created: UserGenomeDatabase = {
+// 		dbName,
+// 		fileName: data.fileName,
+// 		uploadDate: new Date().toISOString(),
+// 		totalVariants: data.totalVariants,
+// 		rsidCount: data.rsidCount,
+// 	}
 
-	// Persist in manifest for fast listing
-	const current = await readManifest()
-	const withoutDupes = current.filter((e) => e.dbName !== created.dbName)
-	await writeManifest([created, ...withoutDupes])
+// 	// Persist in manifest for fast listing
+// 	const current = await readManifest()
+// 	const withoutDupes = current.filter((e) => e.dbName !== created.dbName)
+// 	await writeManifest([created, ...withoutDupes])
 
-	return created
-}
+// 	return created
+// }
 
 /**
  * Get rsIDs from a user genome database for ClinVar matching
@@ -223,43 +256,59 @@ export async function listUserGenomeDatabases(): Promise<UserGenomeDatabase[]> {
 	function listSqliteFilesFrom(directory: Directory): File[] {
 		try {
 			const items = directory.list()
-			return items.filter(
+			const sqliteFiles = items.filter(
 				(item): item is File =>
 					item instanceof File && item.name.startsWith('genome') && item.name.endsWith('.sqlite')
 			)
+			sqliteFiles.forEach(file => console.log('Found SQLite file:', file.uri))
+			return sqliteFiles
 		} catch {
 			return []
 		}
 	}
 
-	// If manifest is empty, scan filesystem as a fallback
+	// Always scan filesystem to find databases
 	let sqliteFiles: File[] = []
-	if (databases.length === 0) {
-		// Check default SQLite location first, then common locations with the new FileSystem API
-		const candidates: Directory[] = [
-			new Directory(SQLite.defaultDatabaseDirectory),
-			new Directory(Paths.document),
-			new Directory(Paths.document, 'SQLite'),
-			new Directory(Paths.cache),
-			new Directory(Paths.cache, 'SQLite'),
-		]
+	// Check SQLite subdirectory where expo-sqlite expects databases
+	const candidates: Directory[] = [
+		new Directory(Paths.document, 'SQLite'),
+		new Directory(SQLite.defaultDatabaseDirectory),
+		// Also check Documents root as fallback
+		new Directory(Paths.document),
+	]
 
-		for (const dir of candidates) {
-			if (sqliteFiles.length > 0) break
-			sqliteFiles = listSqliteFilesFrom(dir)
+	console.log('Scanning directories for SQLite files...')
+	for (const dir of candidates) {
+		try {
+			if (dir.exists) {
+				console.log('Checking directory:', dir.uri)
+				const found = listSqliteFilesFrom(dir)
+				if (found.length > 0) {
+					console.log(`Found ${found.length} SQLite files in ${dir.uri}`)
+					sqliteFiles.push(...found)
+				}
+			}
+		} catch (error) {
+			console.log('Error checking directory:', dir.uri, error)
 		}
 	}
 
 	for (const file of sqliteFiles) {
 		try {
-			const db = await SQLite.openDatabaseAsync(file.name)
-
+			// Just use the filename - SQLite will look in its default directory
+			const dbName = file.name
+			console.log('Opening database:', dbName)
+			const db = await SQLite.openDatabaseAsync(dbName)
+			const tables = await db.getAllAsync<{ name: string }>(
+				"SELECT name FROM sqlite_master WHERE type='table'"
+			)
+			console.log('Tables in database:', tables.map(table => table.name))
 			const info = await db.getFirstAsync<{
 				fileName: string
 				uploadDate: string
 				totalVariants: number
 				rsidCount: number
-			}>('SELECT * FROM genome_info LIMIT 1')
+			}>('SELECT * FROM genome_metadata LIMIT 1')
 
 			await db.closeAsync()
 

@@ -3,6 +3,7 @@
  */
 
 import {
+	addDatabaseToManifest,
 	deleteUserGenomeDatabase,
 	listUserGenomeDatabases,
 	type UserGenomeDatabase,
@@ -91,6 +92,9 @@ export default function MyDNAScreen() {
 				processingMessage: 'File processed successfully!',
 			}))
 
+			// Add the newly created database to the manifest
+			await addDatabaseToManifest(sqlitePath, fileName)
+
 			// Refresh stored databases list
 			console.log('Refreshing stored databases list...')
 			await loadStoredDatabases()
@@ -126,10 +130,18 @@ export default function MyDNAScreen() {
 			if (!result.canceled && result.assets[0]) {
 				const file = result.assets[0]
 				// Show naming dialog instead of processing immediately
+				// Clean filename: remove .zip, spaces, and special chars
+				const cleanName = file.name
+					.replace('.zip', '')
+					.replace(/\s+/g, '_') // Replace spaces with underscores
+					.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars except _ and -
+					.replace(/_+/g, '_') // Replace multiple underscores with single
+					.replace(/-+/g, '-') // Replace multiple dashes with single
+
 				setState((prev) => ({
 					...prev,
 					selectedFile: { uri: file.uri, name: file.name },
-					customFileName: file.name.replace('.zip', '').replace(/[^a-zA-Z0-9\s-]/g, ''),
+					customFileName: cleanName,
 					showNamingDialog: true,
 				}))
 			}
@@ -145,8 +157,15 @@ export default function MyDNAScreen() {
 			return
 		}
 
+		// Clean the filename again in case user edited it
+		const finalName = state.customFileName.trim()
+			.replace(/\s+/g, '_') // Replace spaces with underscores
+			.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars
+			.replace(/_+/g, '_') // Collapse multiple underscores
+			.replace(/-+/g, '-') // Collapse multiple dashes
+
 		setState((prev) => ({ ...prev, showNamingDialog: false }))
-		await processFile(state.selectedFile.uri, state.customFileName.trim())
+		await processFile(state.selectedFile.uri, finalName)
 	}
 
 	const handleCancelProcessing = () => {
