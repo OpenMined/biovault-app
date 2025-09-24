@@ -102,4 +102,5 @@ const config: ExpoConfig = {
 	},
 }
 
+// ts-prune-ignore-next
 export default config

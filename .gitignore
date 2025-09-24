@@ -120,3 +120,6 @@ notebooks/.ipynb_checkpoints/
 notebooks/downloads/
 notebooks/work/
 output/
+
+.claude/*
+data/*

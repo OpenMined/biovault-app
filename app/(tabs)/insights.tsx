@@ -52,6 +52,7 @@ interface AnalyzeState {
 	searchQuery: string
 }
 
+// ts-prune-ignore-next
 export default function DiscoverScreen() {
 	const { selectedDb } = useLocalSearchParams<{ selectedDb?: string }>()
 	const db = useSQLiteContext()

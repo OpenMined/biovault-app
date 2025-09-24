@@ -2,6 +2,10 @@
 	"name": "biovault-app",
 	"main": "expo-router/entry",
 	"version": "1.0.0",
+	"engines": {
+		"node": ">=23.6.1",
+		"npm": ">=10.0.0"
+	},
 	"scripts": {
 		"start": "expo start",
 		"reset-project": "node ./scripts/reset-project.js",

@@ -37,6 +37,7 @@ interface MyDNAState {
 	customFileName: string
 }
 
+// ts-prune-ignore-next
 export default function MyDNAScreen() {
 	const [state, setState] = useState<MyDNAState>({
 		isProcessing: false,

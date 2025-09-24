@@ -5,7 +5,6 @@
 
 import * as SQLite from 'expo-sqlite'
 import { Directory, File, Paths } from 'expo-file-system'
-import { type ParsedGenomeData } from './23andme-parser'
 
 export interface UserGenomeDatabase {
 	dbName: string
@@ -20,12 +19,20 @@ const MANIFEST_FILE_NAME = 'user_genomes.json'
 async function readManifest(): Promise<UserGenomeDatabase[]> {
 	try {
 		const manifest = new File(Paths.document, MANIFEST_FILE_NAME)
-		if (!manifest.exists) return []
+		if (!manifest.exists) {
+			console.log('Manifest file does not exist')
+			return []
+		}
 		const content = await manifest.text()
-		if (!content) return []
+		if (!content) {
+			console.log('Manifest file is empty')
+			return []
+		}
+		console.log('📋 Manifest contents:', content)
 		const parsed = JSON.parse(content)
 		return Array.isArray(parsed) ? (parsed as UserGenomeDatabase[]) : []
-	} catch {
+	} catch (error) {
+		console.error('Error reading manifest:', error)
 		return []
 	}
 }
@@ -37,8 +44,11 @@ async function writeManifest(entries: UserGenomeDatabase[]): Promise<void> {
 			// Ensure file exists
 			manifest.create()
 		}
-		await manifest.write(JSON.stringify(entries))
-	} catch {
+		const content = JSON.stringify(entries, null, 2)
+		console.log('📝 Writing manifest:', content)
+		await manifest.write(content)
+	} catch (error) {
+		console.error('Failed to write manifest:', error)
 		// Ignore manifest write failures; listing will still fall back to scanning
 	}
 }
@@ -192,56 +202,86 @@ export async function getRsidsFromUserDatabase(dbName: string): Promise<string[]
 	}
 }
 
-/**
- * Get user's genotype for specific rsIDs
- */
-export async function getUserGenotypes(
-	dbName: string,
-	rsids: string[]
-): Promise<
-	{
-		rsid: string
-		chromosome: string
-		position: number
-		genotype: string
-	}[]
-> {
-	if (rsids.length === 0) return []
+// /**
+//  * Get user's genotype for specific rsIDs
+//  */
+// export async function getUserGenotypes(
+// 	dbName: string,
+// 	rsids: string[]
+// ): Promise<
+// 	{
+// 		rsid: string
+// 		chromosome: string
+// 		position: number
+// 		genotype: string
+// 	}[]
+// > {
+// 	if (rsids.length === 0) return []
 
-	const db = await SQLite.openDatabaseAsync(dbName)
+// 	const db = await SQLite.openDatabaseAsync(dbName)
+
+// 	try {
+// 		const results: {
+// 			rsid: string
+// 			chromosome: string
+// 			position: number
+// 			genotype: string
+// 		}[] = []
+
+// 		// Process in chunks
+// 		const chunkSize = 999
+// 		for (let i = 0; i < rsids.length; i += chunkSize) {
+// 			const chunk = rsids.slice(i, i + chunkSize)
+// 			const placeholders = chunk.map(() => '?').join(',')
+
+// 			const chunkResults = await db.getAllAsync<{
+// 				rsid: string
+// 				chromosome: string
+// 				position: number
+// 				genotype: string
+// 			}>(
+// 				`SELECT rsid, chromosome, position, genotype
+// 				 FROM variants
+// 				 WHERE rsid IN (${placeholders})`,
+// 				chunk
+// 			)
+
+// 			results.push(...chunkResults)
+// 		}
+
+// 		return results
+// 	} finally {
+// 		await db.closeAsync()
+// 	}
+// }
+
+/**
+ * Clean up orphaned database files that aren't in the manifest
+ */
+async function cleanOrphanedDatabases(manifestEntries: UserGenomeDatabase[]): Promise<void> {
+	const manifestDbNames = new Set(manifestEntries.map(e => e.dbName))
+
+	// Check SQLite directory for orphaned files
+	const sqliteDir = new Directory(Paths.document, 'SQLite')
+	if (!sqliteDir.exists) return
 
 	try {
-		const results: {
-			rsid: string
-			chromosome: string
-			position: number
-			genotype: string
-		}[] = []
-
-		// Process in chunks
-		const chunkSize = 999
-		for (let i = 0; i < rsids.length; i += chunkSize) {
-			const chunk = rsids.slice(i, i + chunkSize)
-			const placeholders = chunk.map(() => '?').join(',')
-
-			const chunkResults = await db.getAllAsync<{
-				rsid: string
-				chromosome: string
-				position: number
-				genotype: string
-			}>(
-				`SELECT rsid, chromosome, position, genotype
-				 FROM variants
-				 WHERE rsid IN (${placeholders})`,
-				chunk
-			)
-
-			results.push(...chunkResults)
+		const items = sqliteDir.list()
+		for (const item of items) {
+			if (item instanceof File && item.name.endsWith('.sqlite')) {
+				if (!manifestDbNames.has(item.name) && item.name.startsWith('genome')) {
+					console.log('🧹 Found orphaned database, removing:', item.name)
+					try {
+						await SQLite.deleteDatabaseAsync(item.name)
+						console.log('Orphaned database removed:', item.name)
+					} catch (error) {
+						console.error('Failed to remove orphaned database:', item.name, error)
+					}
+				}
+			}
 		}
-
-		return results
-	} finally {
-		await db.closeAsync()
+	} catch (error) {
+		console.error('Error cleaning orphaned databases:', error)
 	}
 }
 
@@ -251,92 +291,52 @@ export async function getUserGenotypes(
 export async function listUserGenomeDatabases(): Promise<UserGenomeDatabase[]> {
 	// Prefer manifest for speed and cross-platform compatibility
 	const fromManifest = await readManifest()
+
+	// Clean up any orphaned database files
+	await cleanOrphanedDatabases(fromManifest)
+
 	const databases: UserGenomeDatabase[] = [...fromManifest]
 
-	function listSqliteFilesFrom(directory: Directory): File[] {
-		try {
-			const items = directory.list()
-			const sqliteFiles = items.filter(
-				(item): item is File =>
-					item instanceof File && item.name.startsWith('genome') && item.name.endsWith('.sqlite')
-			)
-			sqliteFiles.forEach(file => console.log('Found SQLite file:', file.uri))
-			return sqliteFiles
-		} catch {
-			return []
-		}
-	}
+	// Now update the manifest with actual metadata from the databases
+	const updatedDatabases: UserGenomeDatabase[] = []
 
-	// Always scan filesystem to find databases
-	let sqliteFiles: File[] = []
-	// Check SQLite subdirectory where expo-sqlite expects databases
-	const candidates: Directory[] = [
-		new Directory(Paths.document, 'SQLite'),
-		new Directory(SQLite.defaultDatabaseDirectory),
-		// Also check Documents root as fallback
-		new Directory(Paths.document),
-	]
-
-	console.log('Scanning directories for SQLite files...')
-	for (const dir of candidates) {
+	for (const entry of databases) {
 		try {
-			if (dir.exists) {
-				console.log('Checking directory:', dir.uri)
-				const found = listSqliteFilesFrom(dir)
-				if (found.length > 0) {
-					console.log(`Found ${found.length} SQLite files in ${dir.uri}`)
-					sqliteFiles.push(...found)
-				}
-			}
-		} catch (error) {
-			console.log('Error checking directory:', dir.uri, error)
-		}
-	}
+			console.log('Reading metadata for:', entry.dbName)
+			const db = await SQLite.openDatabaseAsync(entry.dbName)
 
-	for (const file of sqliteFiles) {
-		try {
-			// Just use the filename - SQLite will look in its default directory
-			const dbName = file.name
-			console.log('Opening database:', dbName)
-			const db = await SQLite.openDatabaseAsync(dbName)
-			const tables = await db.getAllAsync<{ name: string }>(
-				"SELECT name FROM sqlite_master WHERE type='table'"
-			)
-			console.log('Tables in database:', tables.map(table => table.name))
 			const info = await db.getFirstAsync<{
-				fileName: string
-				uploadDate: string
-				totalVariants: number
-				rsidCount: number
-			}>('SELECT * FROM genome_metadata LIMIT 1')
+				file_name: string
+				upload_date: string
+				total_variants: number
+				rsid_count: number
+			}>('SELECT file_name, upload_date, total_variants, rsid_count FROM genome_metadata LIMIT 1')
 
 			await db.closeAsync()
 
 			if (info) {
-				const entry: UserGenomeDatabase = {
-					dbName: file.name,
-					fileName: info.fileName,
-					uploadDate: info.uploadDate,
-					totalVariants: info.totalVariants,
-					rsidCount: info.rsidCount,
-				}
-
-				// De-dupe by dbName
-				if (!databases.some((d) => d.dbName === entry.dbName)) {
-					databases.push(entry)
-				}
+				updatedDatabases.push({
+					dbName: entry.dbName,
+					fileName: info.file_name || entry.fileName,
+					uploadDate: info.upload_date || entry.uploadDate,
+					totalVariants: info.total_variants || 0,
+					rsidCount: info.rsid_count || 0,
+				})
+			} else {
+				// Keep the original entry if no metadata found
+				updatedDatabases.push(entry)
 			}
 		} catch (error) {
-			console.warn(`Failed to read ${file.name}:`, error)
+			console.warn(`Failed to read metadata for ${entry.dbName}:`, error)
+			// Keep the original entry if error reading
+			updatedDatabases.push(entry)
 		}
 	}
 
-	// Update manifest with the merged set
-	const unique = databases.reduce<UserGenomeDatabase[]>((acc, cur) => {
-		if (!acc.some((e) => e.dbName === cur.dbName)) acc.push(cur)
-		return acc
-	}, [])
-	await writeManifest(unique)
+	// Update manifest with the actual metadata
+	if (JSON.stringify(databases) !== JSON.stringify(updatedDatabases)) {
+		await writeManifest(updatedDatabases)
+	}
 
 	return databases.sort(
 		(a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
@@ -347,9 +347,18 @@ export async function listUserGenomeDatabases(): Promise<UserGenomeDatabase[]> {
  * Delete a user genome database
  */
 export async function deleteUserGenomeDatabase(dbName: string): Promise<void> {
-	await SQLite.deleteDatabaseAsync(dbName)
+	console.log('🗑️ Deleting database:', dbName)
+
+	try {
+		await SQLite.deleteDatabaseAsync(dbName)
+		console.log('Database file deleted')
+	} catch (error) {
+		console.error('Error deleting database file:', error)
+	}
 
 	// Remove from manifest
 	const current = await readManifest()
-	await writeManifest(current.filter((e) => e.dbName !== dbName))
+	const updated = current.filter((e) => e.dbName !== dbName)
+	console.log(`Removing from manifest: ${current.length} entries -> ${updated.length} entries`)
+	await writeManifest(updated)
 }

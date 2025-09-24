@@ -2,10 +2,11 @@ import { spawnSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 
-const TARGETS = {
+const TARGETS: Record<string, string> = {
 	ios: 'aarch64-apple-ios',
 	'ios-sim': 'aarch64-apple-ios-sim',
 	'ios-sim-x86': 'x86_64-apple-ios',
+	universal: 'universal-apple-darwin', // Add universal target
 }
 
 function cargoBuild(target: string) {
@@ -31,6 +32,10 @@ function getTarget() {
 function main() {
 	const targetKey = getTarget()
 	const target = TARGETS[targetKey]
+	if (!target) {
+		console.error(`Target not found for key: ${targetKey}`)
+		process.exit(1)
+	}
 	console.log(`Building ios for target ${target}`)
 
 	process.chdir('biovault_rust_lib')

@@ -10,6 +10,7 @@ import React from 'react'
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+// ts-prune-ignore-next
 export default function GeneDetailScreen() {
 	const { geneName } = useLocalSearchParams<{ geneName: string }>()
 	const [variants, setVariants] = React.useState<ClinVarVariant[]>([])
@@ -52,15 +53,15 @@ export default function GeneDetailScreen() {
 	const renderVariant = (variant: ClinVarVariant, index: number) => {
 		const significanceKey =
 			variant.clnsig.toLowerCase().includes('pathogenic') &&
-			!variant.clnsig.toLowerCase().includes('likely')
+				!variant.clnsig.toLowerCase().includes('likely')
 				? ('Pathogenic' as const)
 				: variant.clnsig.toLowerCase().includes('likely_pathogenic')
-				? ('Likely_pathogenic' as const)
-				: variant.clnsig.toLowerCase().includes('conflicting')
-				? ('Conflicting' as const)
-				: variant.clnsig.toLowerCase().includes('uncertain')
-				? ('Uncertain_significance' as const)
-				: ('Benign' as const)
+					? ('Likely_pathogenic' as const)
+					: variant.clnsig.toLowerCase().includes('conflicting')
+						? ('Conflicting' as const)
+						: variant.clnsig.toLowerCase().includes('uncertain')
+							? ('Uncertain_significance' as const)
+							: ('Benign' as const)
 
 		const significance = getSignificanceDisplayText(significanceKey)
 

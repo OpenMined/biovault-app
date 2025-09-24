@@ -3,70 +3,70 @@
  * Stores uploaded 23andMe data locally on device
  */
 
-import * as SQLite from 'expo-sqlite'
-import { type TwentyThreeAndMeVariant, type ParsedGenomeData } from './23andme-parser'
+// import * as SQLite from 'expo-sqlite'
+// import { type TwentyThreeAndMeVariant } from './23andme-parser'
 
-export interface StoredGenomeFile {
-	id: number
-	fileName: string
-	sourceFormat: string
-	totalVariants: number
-	rsidCount: number
-	assembly: string | null
-	uploadDate: string
-	dbName: string
-}
+// export interface StoredGenomeFile {
+// 	id: number
+// 	fileName: string
+// 	sourceFormat: string
+// 	totalVariants: number
+// 	rsidCount: number
+// 	assembly: string | null
+// 	uploadDate: string
+// 	dbName: string
+// }
 
-export interface UserGenomeVariant extends TwentyThreeAndMeVariant {
-	id: number
-	fileId: number
-}
+// export interface UserGenomeVariant extends TwentyThreeAndMeVariant {
+// 	id: number
+// 	fileId: number
+// }
 
-let userDbInstance: SQLite.SQLiteDatabase | null = null
+// let userDbInstance: SQLite.SQLiteDatabase | null = null
 
-/**
- * Initialize user genome database
- */
-export async function initializeUserGenomeDatabase(): Promise<SQLite.SQLiteDatabase> {
-	if (userDbInstance) {
-		return userDbInstance
-	}
+// /**
+//  * Initialize user genome database
+//  */
+// export async function initializeUserGenomeDatabase(): Promise<SQLite.SQLiteDatabase> {
+// 	if (userDbInstance) {
+// 		return userDbInstance
+// 	}
 
-	userDbInstance = await SQLite.openDatabaseAsync('user_genome.db')
+// 	userDbInstance = await SQLite.openDatabaseAsync('user_genome.db')
 
-	// Create tables for user data
-	await userDbInstance.execAsync(`
-		PRAGMA journal_mode = WAL;
+// 	// Create tables for user data
+// 	await userDbInstance.execAsync(`
+// 		PRAGMA journal_mode = WAL;
 
-		CREATE TABLE IF NOT EXISTS genome_metadata (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			file_name TEXT NOT NULL,
-			source_format TEXT NOT NULL,
-			total_variants INTEGER NOT NULL,
-			rsid_count INTEGER NOT NULL,
-			assembly TEXT,
-			upload_date TEXT NOT NULL,
-			db_name TEXT NOT NULL
-		);
+// 		CREATE TABLE IF NOT EXISTS genome_metadata (
+// 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+// 			file_name TEXT NOT NULL,
+// 			source_format TEXT NOT NULL,
+// 			total_variants INTEGER NOT NULL,
+// 			rsid_count INTEGER NOT NULL,
+// 			assembly TEXT,
+// 			upload_date TEXT NOT NULL,
+// 			db_name TEXT NOT NULL
+// 		);
 
-		CREATE TABLE IF NOT EXISTS variants (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			file_id INTEGER NOT NULL,
-			rsid TEXT,
-			chromosome TEXT NOT NULL,
-			position INTEGER NOT NULL,
-			genotype TEXT NOT NULL,
-			source_format TEXT NOT NULL,
-			FOREIGN KEY (file_id) REFERENCES genome_metadata (id) ON DELETE CASCADE
-		);
+// 		CREATE TABLE IF NOT EXISTS variants (
+// 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+// 			file_id INTEGER NOT NULL,
+// 			rsid TEXT,
+// 			chromosome TEXT NOT NULL,
+// 			position INTEGER NOT NULL,
+// 			genotype TEXT NOT NULL,
+// 			source_format TEXT NOT NULL,
+// 			FOREIGN KEY (file_id) REFERENCES genome_metadata (id) ON DELETE CASCADE
+// 		);
 
-		CREATE INDEX IF NOT EXISTS idx_variants_rsid ON variants(rsid);
-		CREATE INDEX IF NOT EXISTS idx_variants_file ON variants(file_id);
-		CREATE INDEX IF NOT EXISTS idx_variants_chr_pos ON variants(chromosome, position);
-	`)
+// 		CREATE INDEX IF NOT EXISTS idx_variants_rsid ON variants(rsid);
+// 		CREATE INDEX IF NOT EXISTS idx_variants_file ON variants(file_id);
+// 		CREATE INDEX IF NOT EXISTS idx_variants_chr_pos ON variants(chromosome, position);
+// 	`)
 
-	return userDbInstance
-}
+// 	return userDbInstance
+// }
 
 // /**
 //  * Store parsed 23andMe data in local database
@@ -144,102 +144,102 @@ export async function initializeUserGenomeDatabase(): Promise<SQLite.SQLiteDatab
 // 	return fileId
 // }
 
-/**
- * Get all stored genome files
- */
-export async function getStoredGenomeFiles(): Promise<StoredGenomeFile[]> {
-	const db = await initializeUserGenomeDatabase()
+// /**
+//  * Get all stored genome files
+//  */
+// export async function getStoredGenomeFiles(): Promise<StoredGenomeFile[]> {
+// 	const db = await initializeUserGenomeDatabase()
 
-	return await db.getAllAsync<StoredGenomeFile>(
-		`SELECT id, file_name as fileName, source_format as sourceFormat, total_variants as totalVariants, 
-		rsid_count as rsidCount, assembly, upload_date as uploadDate, db_name as dbName
-		 FROM genome_metadata
-		 ORDER BY upload_date DESC`
-	)
-}
+// 	return await db.getAllAsync<StoredGenomeFile>(
+// 		`SELECT id, file_name as fileName, source_format as sourceFormat, total_variants as totalVariants,
+// 		rsid_count as rsidCount, assembly, upload_date as uploadDate, db_name as dbName
+// 		 FROM genome_metadata
+// 		 ORDER BY upload_date DESC`
+// 	)
+// }
 
-/**
- * Get user variants by rsID list for matching against ClinVar
- */
-export async function getUserVariantsByRsid(
-	fileId: number,
-	rsids: string[]
-): Promise<UserGenomeVariant[]> {
-	if (rsids.length === 0) return []
+// /**
+//  * Get user variants by rsID list for matching against ClinVar
+//  */
+// export async function getUserVariantsByRsid(
+// 	fileId: number,
+// 	rsids: string[]
+// ): Promise<UserGenomeVariant[]> {
+// 	if (rsids.length === 0) return []
+//
+// 	const db = await initializeUserGenomeDatabase()
+// 	const results: UserGenomeVariant[] = []
+//
+// 	// Process in chunks to stay under SQLite parameter limit
+// 	const chunkSize = 999
+// 	for (let i = 0; i < rsids.length; i += chunkSize) {
+// 		const chunk = rsids.slice(i, i + chunkSize)
+// 		const placeholders = chunk.map(() => '?').join(',')
+// 		const query = `
+// 			SELECT id, file_id as fileId, rsid, chromosome, position, genotype
+// 			FROM variants
+// 			WHERE file_id = ? AND rsid IN (${placeholders})
+// 			ORDER BY chromosome, position
+// 		`
+//
+// 		const chunkResults = await db.getAllAsync<UserGenomeVariant>(query, [fileId, ...chunk])
+// 		results.push(...chunkResults)
+// 	}
+//
+// 	return results
+// }
 
-	const db = await initializeUserGenomeDatabase()
-	const results: UserGenomeVariant[] = []
+// /**
+//  * Get all rsIDs for a file (for ClinVar matching)
+//  */
+// export async function getAllRsidsForFile(fileId: number): Promise<string[]> {
+// 	const db = await initializeUserGenomeDatabase()
+//
+// 	const results = await db.getAllAsync<{ rsid: string }>(
+// 		`SELECT DISTINCT rsid FROM variants WHERE file_id = ? AND rsid LIKE 'rs%' ORDER BY rsid`,
+// 		[fileId]
+// 	)
+//
+// 	return results.map((r) => r.rsid)
+// }
 
-	// Process in chunks to stay under SQLite parameter limit
-	const chunkSize = 999
-	for (let i = 0; i < rsids.length; i += chunkSize) {
-		const chunk = rsids.slice(i, i + chunkSize)
-		const placeholders = chunk.map(() => '?').join(',')
-		const query = `
-			SELECT id, file_id as fileId, rsid, chromosome, position, genotype
-			FROM variants
-			WHERE file_id = ? AND rsid IN (${placeholders})
-			ORDER BY chromosome, position
-		`
+// /**
+//  * Delete a genome file and all its variants
+//  */
+// export async function deleteGenomeFile(fileId: number): Promise<void> {
+// 	const db = await initializeUserGenomeDatabase()
+//
+// 	await db.runAsync('DELETE FROM genome_metadata WHERE id = ?', [fileId])
+// 	// Variants will be deleted automatically due to CASCADE
+// }
 
-		const chunkResults = await db.getAllAsync<UserGenomeVariant>(query, [fileId, ...chunk])
-		results.push(...chunkResults)
-	}
-
-	return results
-}
-
-/**
- * Get all rsIDs for a file (for ClinVar matching)
- */
-export async function getAllRsidsForFile(fileId: number): Promise<string[]> {
-	const db = await initializeUserGenomeDatabase()
-
-	const results = await db.getAllAsync<{ rsid: string }>(
-		`SELECT DISTINCT rsid FROM variants WHERE file_id = ? AND rsid LIKE 'rs%' ORDER BY rsid`,
-		[fileId]
-	)
-
-	return results.map((r) => r.rsid)
-}
-
-/**
- * Delete a genome file and all its variants
- */
-export async function deleteGenomeFile(fileId: number): Promise<void> {
-	const db = await initializeUserGenomeDatabase()
-
-	await db.runAsync('DELETE FROM genome_metadata WHERE id = ?', [fileId])
-	// Variants will be deleted automatically due to CASCADE
-}
-
-/**
- * Get storage statistics
- */
-export async function getUserGenomeStats(): Promise<{
-	totalFiles: number
-	totalVariants: number
-	totalStorage: string
-}> {
-	const db = await initializeUserGenomeDatabase()
-
-	const fileCount = await db.getFirstAsync<{ count: number }>(
-		'SELECT COUNT(*) as count FROM genome_metadata'
-	)
-
-	const variantCount = await db.getFirstAsync<{ count: number }>(
-		'SELECT COUNT(*) as count FROM variants'
-	)
-
-	// Get database file size
-	const dbPath = `${SQLite.defaultDatabaseDirectory}/user_genome.db`
-	// Note: You'd need expo-file-system to get actual file size
-	// For now, estimate based on variant count
-	const estimatedSizeMB = Math.round(((variantCount?.count || 0) * 100) / 1024 / 1024)
-
-	return {
-		totalFiles: fileCount?.count || 0,
-		totalVariants: variantCount?.count || 0,
-		totalStorage: `~${estimatedSizeMB} MB`,
-	}
-}
+// /**
+//  * Get storage statistics
+//  */
+// export async function getUserGenomeStats(): Promise<{
+// 	totalFiles: number
+// 	totalVariants: number
+// 	totalStorage: string
+// }> {
+// 	const db = await initializeUserGenomeDatabase()
+//
+// 	const fileCount = await db.getFirstAsync<{ count: number }>(
+// 		'SELECT COUNT(*) as count FROM genome_metadata'
+// 	)
+//
+// 	const variantCount = await db.getFirstAsync<{ count: number }>(
+// 		'SELECT COUNT(*) as count FROM variants'
+// 	)
+//
+// 	// Get database file size
+// 	// const dbPath = `${SQLite.defaultDatabaseDirectory}/user_genome.db`
+// 	// Note: You'd need expo-file-system to get actual file size
+// 	// For now, estimate based on variant count
+// 	const estimatedSizeMB = Math.round(((variantCount?.count || 0) * 100) / 1024 / 1024)
+//
+// 	return {
+// 		totalFiles: fileCount?.count || 0,
+// 		totalVariants: variantCount?.count || 0,
+// 		totalStorage: `~${estimatedSizeMB} MB`,
+// 	}
+// }
