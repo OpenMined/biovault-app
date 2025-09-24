@@ -225,7 +225,7 @@ export async function listUserGenomeDatabases(): Promise<UserGenomeDatabase[]> {
 			const items = directory.list()
 			return items.filter(
 				(item): item is File =>
-					item instanceof File && item.name.startsWith('user_genome_') && item.name.endsWith('.db')
+					item instanceof File && item.name.startsWith('genome') && item.name.endsWith('.sqlite')
 			)
 		} catch {
 			return []

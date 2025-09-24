@@ -7,7 +7,7 @@ import {
 	listUserGenomeDatabases,
 	type UserGenomeDatabase,
 } from '@/lib/fast-genome-storage'
-import * as Biovault from '@/modules/expo-biovault'
+import * as BioVault from '@/modules/expo-biovault'
 import { useFocusEffect } from '@react-navigation/native'
 import * as DocumentPicker from 'expo-document-picker'
 import { Paths } from 'expo-file-system'
@@ -83,7 +83,7 @@ export default function MyDNAScreen() {
 
 			// Use Rust to parse and create SQLite database
 			console.log('Starting Rust processing...', { inputPath, documentsPath })
-			const sqlitePath = await Biovault.processGenomeFile(inputPath, fileName, documentsPath)
+			const sqlitePath = await BioVault.processGenomeFile(inputPath, fileName, documentsPath)
 			console.log('Rust processing completed:', sqlitePath)
 
 			setState((prev) => ({

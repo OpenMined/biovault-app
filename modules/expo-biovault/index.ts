@@ -7,3 +7,7 @@ export async function processGenomeFile(
 ): Promise<string> {
 	return await ExpoBiovaultModule.processGenomeFile(inputPath, customName, outputDir)
 }
+
+export function rust_add(a: number, b: number): number {
+	return ExpoBiovaultModule.rust_add(a, b)
+}

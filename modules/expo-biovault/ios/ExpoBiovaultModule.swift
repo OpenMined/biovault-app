@@ -27,5 +27,9 @@ public class ExpoBiovaultModule: Module {
       free_string(resultPtr)
       return result
     }
+
+    Function("rust_add") { (a: Int32, b: Int32) -> Int32 in
+      return rust_add(a, b)
+    }
   }
 }
