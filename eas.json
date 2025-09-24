@@ -9,17 +9,20 @@
 			"distribution": "internal",
 			"env": {
 				"APP_VARIANT": "development"
-			}
+			},
+			"resourceClass": "large"
 		},
 		"preview": {
 			"distribution": "internal",
 			"env": {
 				"APP_VARIANT": "preview"
 			},
-			"autoIncrement": true
+			"autoIncrement": true,
+			"resourceClass": "large"
 		},
 		"production": {
-			"autoIncrement": true
+			"autoIncrement": true,
+			"resourceClass": "large"
 		}
 	},
 	"submit": {

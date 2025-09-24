@@ -1,0 +1,163 @@
+mod database;
+mod parsers;
+
+use database::create_genome_database;
+use parsers::twenty_three_and_me;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+use std::path::Path;
+
+/// Process a 23andMe file and create an SQLite database.
+///
+/// Returns a newly-allocated C string containing the full path to the
+/// created database file on success, or a null pointer on error.
+///
+/// # Safety
+/// - `input_path`, `custom_name`, and `output_dir` must be valid pointers to
+///   NUL-terminated UTF-8 strings and remain valid for the duration of the call.
+/// - The returned pointer must be freed by calling `free_string` exactly once.
+/// - Passing null or invalid pointers, or freeing the returned pointer by any
+///   other means is undefined behavior.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn process_23andme_file(
+    input_path: *const c_char,
+    custom_name: *const c_char,
+    output_dir: *const c_char,
+) -> *mut c_char {
+    let input_path = unsafe {
+        match CStr::from_ptr(input_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    let custom_name = unsafe {
+        match CStr::from_ptr(custom_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    let output_dir = unsafe {
+        match CStr::from_ptr(output_dir).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    match process_file_internal(input_path, custom_name, output_dir) {
+        Ok(db_name) => match CString::new(db_name) {
+            Ok(c_string) => c_string.into_raw(),
+            Err(e) => {
+                eprintln!("Failed to create CString: {}", e);
+                std::ptr::null_mut()
+            }
+        },
+        Err(e) => {
+            eprintln!("Rust processing failed: {}", e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+fn process_file_internal(
+    input_path: &str,
+    custom_name: &str,
+    output_dir: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    eprintln!("Rust: Starting to process file: {}", input_path);
+
+    // Parse the 23andMe file
+    let parse_result = twenty_three_and_me::parse_23andme_file(Path::new(input_path))?;
+
+    eprintln!(
+        "Rust: Parsed {} variants, {} with rsIDs",
+        parse_result.metadata.total_variants, parse_result.metadata.rsid_count
+    );
+
+    // Create output SQLite file path in SQLite subdirectory
+    // expo-sqlite expects databases to be in Documents/SQLite/
+    let timestamp = chrono::Utc::now().timestamp();
+    let db_filename = format!("{}_{}.sqlite", custom_name.replace(' ', "_"), timestamp);
+
+    // Create SQLite subdirectory if it doesn't exist
+    let sqlite_dir = Path::new(output_dir).join("SQLite");
+    if !sqlite_dir.exists() {
+        std::fs::create_dir_all(&sqlite_dir)?;
+        eprintln!("Rust: Created SQLite directory at: {:?}", sqlite_dir);
+    }
+
+    let output_path = sqlite_dir.join(&db_filename);
+
+    eprintln!("Rust: Creating database at: {:?}", output_path);
+
+    // Create SQLite database
+    let _db_name = create_genome_database(parse_result, &output_path, custom_name)?;
+
+    eprintln!("Rust: Database created successfully");
+
+    // Return the full path to the created database
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+/// Free memory allocated by `process_23andme_file`.
+///
+/// # Safety
+/// - `ptr` must be a pointer previously returned by `process_23andme_file`.
+/// - It must not have been freed already.
+/// - Passing any other pointer, or double-freeing, is undefined behavior.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_string(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        unsafe {
+            let _ = CString::from_raw(ptr);
+        }
+    }
+}
+
+// Keep the existing add function for testing
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+/// cbindgen:ignore
+#[cfg(target_os = "android")]
+pub mod android {
+    use crate::rust_add;
+    use jni::JNIEnv;
+    use jni::objects::JClass;
+    use jni::sys::jint;
+
+    /// JNI entrypoint used by the Android module to process a genome file.
+    ///
+    /// # Safety
+    /// - Called by the JVM with valid JNI references and strings.
+    /// - Follows standard JNI safety rules; misuse on the caller side is UB.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_processGenomeFile(
+        mut env: JNIEnv,
+        _class: JClass,
+        input_path: jni::objects::JString,
+        custom_name: jni::objects::JString,
+        output_dir: jni::objects::JString,
+    ) -> jni::objects::JString {
+        let input_path_str: String = env.get_string(&input_path).unwrap().into();
+        let custom_name_str: String = env.get_string(&custom_name).unwrap().into();
+        let output_dir_str: String = env.get_string(&output_dir).unwrap().into();
+
+        match process_file_internal(&input_path_str, &custom_name_str, &output_dir_str) {
+            Ok(result) => env.new_string(result).unwrap(),
+            Err(_) => env.new_string("ERROR").unwrap(),
+        }
+    }
+}
+/// Public, safe Rust API to process a 23andMe file and create an SQLite DB.
+/// Returns the full path to the created database file.
+pub fn process_23andme(
+    input_path: &str,
+    custom_name: &str,
+    output_dir: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    process_file_internal(input_path, custom_name, output_dir)
+}

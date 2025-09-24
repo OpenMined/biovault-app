@@ -22,12 +22,16 @@ build/
 .temp/
 coverage/
 
-# Native project directories (managed workflow)
-ios/
-android/
+# Native project directories (managed workflow - root level only)
+/ios/
+/android/
 .gradle/
 Pods/
 DerivedData/
+
+# Rust build artifacts
+biovault_rust_lib/target/
+**/target/
 
 # Lockfiles (per user request)
 package-lock.json

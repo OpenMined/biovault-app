@@ -1,14 +1,12 @@
-import { Badge, Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs'
+import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs'
 import { Platform } from 'react-native'
 
+// ts-prune-ignore-next
 export default function TabLayout() {
 	return (
 		<NativeTabs
-			tintColor={Platform.OS === 'web' ? 'white' : Platform.OS === 'ios' ? '#059669' : undefined}
-			backgroundColor={Platform.OS === 'web' ? 'white' : undefined}
+			tintColor={Platform.OS === 'ios' ? '#059669' : undefined}
 			indicatorColor={'#059669'}
-			badgeBackgroundColor={Platform.OS === 'web' ? '#059669' : undefined}
-			labelStyle={Platform.OS === 'web' ? { color: 'black' } : {}}
 		>
 			<NativeTabs.Trigger name="index">
 				<Label>My DNA</Label>
@@ -41,67 +39,6 @@ export default function TabLayout() {
 					drawable="ic_menu_share"
 				/>
 			</NativeTabs.Trigger>
-			{Platform.OS === 'web' && (
-				<NativeTabs.Trigger name="(web)/network">
-					<Label>Network</Label>
-					<Icon
-						sf={{
-							default: 'network',
-							selected: 'network',
-						}}
-						drawable="ic_menu_network"
-					/>
-				</NativeTabs.Trigger>
-			)}
-			{Platform.OS === 'web' && (
-				<NativeTabs.Trigger name="(web)/biobanks">
-					<Label>Biobanks</Label>
-					<Icon
-						sf={{
-							default: 'building.2.fill',
-							selected: 'building.2.fill',
-						}}
-						drawable="ic_menu_biobanks"
-					/>
-				</NativeTabs.Trigger>
-			)}
-			{Platform.OS === 'web' && (
-				<NativeTabs.Trigger name="(web)/inbox">
-					<Badge selectedBackgroundColor={'#059669'}>2</Badge>
-					<Label>Inbox</Label>
-					<Icon
-						sf={{
-							default: 'tray.fill',
-							selected: 'tray.fill',
-						}}
-						drawable="ic_menu_inbox"
-					/>
-				</NativeTabs.Trigger>
-			)}
-			{Platform.OS === 'web' && (
-				<NativeTabs.Trigger name="(web)/pipelines">
-					<Label>Pipelines</Label>
-					<Icon
-						sf={{
-							default: 'flowchart.fill',
-							selected: 'flowchart.fill',
-						}}
-						drawable="ic_menu_pipelines"
-					/>
-				</NativeTabs.Trigger>
-			)}
-			{Platform.OS === 'web' && (
-				<NativeTabs.Trigger name="(web)/profile">
-					<Label>Profile</Label>
-					<Icon
-						sf={{
-							default: 'person.circle.fill',
-							selected: 'person.circle.fill',
-						}}
-						drawable="ic_menu_profile"
-					/>
-				</NativeTabs.Trigger>
-			)}
 		</NativeTabs>
 	)
 }

@@ -13,6 +13,7 @@ interface DesktopBenefit {
 	description: string
 }
 
+// ts-prune-ignore-next
 export default function ResearchScreen() {
 	const [showInstallGuide, setShowInstallGuide] = useState(false)
 

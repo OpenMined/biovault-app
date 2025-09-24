@@ -52,6 +52,7 @@ interface AnalyzeState {
 	searchQuery: string
 }
 
+// ts-prune-ignore-next
 export default function DiscoverScreen() {
 	const { selectedDb } = useLocalSearchParams<{ selectedDb?: string }>()
 	const db = useSQLiteContext()
@@ -80,6 +81,7 @@ export default function DiscoverScreen() {
 
 	const loadUserDatabases = React.useCallback(async () => {
 		try {
+			console.log('loadUserDatabases')
 			const databases = await listUserGenomeDatabases()
 			setState((prev) => {
 				// Auto-select database if passed via URL parameter

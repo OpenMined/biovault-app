@@ -1,0 +1,9 @@
+{
+  "ignores": [
+    "expo-asset",
+    "expo-secure-store",
+    "expo-splash-screen",
+    "expo-web-browser",
+    "typescript"
+  ]
+}

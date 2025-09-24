@@ -2,15 +2,16 @@
  * My DNA tab - file management for locally stored genetic data
  */
 
-import { parse23andMeFile } from '@/lib/23andme-parser'
 import {
-	createFastGenomeDatabase,
+	addDatabaseToManifest,
 	deleteUserGenomeDatabase,
 	listUserGenomeDatabases,
 	type UserGenomeDatabase,
 } from '@/lib/fast-genome-storage'
+import * as BioVault from '@/modules/expo-biovault'
 import { useFocusEffect } from '@react-navigation/native'
 import * as DocumentPicker from 'expo-document-picker'
+import { Paths } from 'expo-file-system'
 import { router } from 'expo-router'
 import React, { useEffect, useState } from 'react'
 import {
@@ -36,6 +37,7 @@ interface MyDNAState {
 	customFileName: string
 }
 
+// ts-prune-ignore-next
 export default function MyDNAScreen() {
 	const [state, setState] = useState<MyDNAState>({
 		isProcessing: false,
@@ -61,50 +63,38 @@ export default function MyDNAScreen() {
 	}
 
 	const processFile = React.useCallback(async (fileUri: string, fileName: string) => {
-		console.log('Processing file:', { fileUri, fileName })
+		console.log('Processing file with Rust:', { fileUri, fileName })
 
 		setState((prev) => ({
 			...prev,
 			isProcessing: true,
-			processingMessage: 'Parsing genetic data...',
+			processingMessage: 'Processing with Rust...',
 		}))
 
 		try {
-			// Parse the 23andMe file
-			console.log('Starting to parse 23andMe file...')
-			const genomeData = await parse23andMeFile(fileUri)
-			console.log('File parsed successfully:', {
-				fileName: genomeData.fileName,
-				totalVariants: genomeData.totalVariants,
-				rsidCount: genomeData.rsidCount,
-				parseErrorsCount: genomeData.parseErrors.length,
-			})
+			// Use the proper FileSystem API for documents directory
+			const documentsPath = Paths.document.uri.replace('file://', '')
 
 			setState((prev) => ({
 				...prev,
-				processingMessage: 'Storing data locally...',
+				processingMessage: 'Parsing genetic data with Rust...',
 			}))
 
-			// Create fast SQLite database with custom name
-			console.log('Creating SQLite database...')
-			const customGenomeData = {
-				...genomeData,
-				fileName: fileName, // Use the custom name instead of original filename
-			}
-			const userDatabase = await createFastGenomeDatabase(customGenomeData, (message) => {
-				console.log('Database creation progress:', message)
-				setState((prev) => ({
-					...prev,
-					processingMessage: message,
-				}))
-			})
+			// Convert input file URI to path for Rust
+			const inputPath = fileUri.replace('file://', '')
 
-			console.log('Database created:', userDatabase)
+			// Use Rust to parse and create SQLite database
+			console.log('Starting Rust processing...', { inputPath, documentsPath })
+			const sqlitePath = await BioVault.processGenomeFile(inputPath, fileName, documentsPath)
+			console.log('Rust processing completed:', sqlitePath)
 
 			setState((prev) => ({
 				...prev,
 				processingMessage: 'File processed successfully!',
 			}))
+
+			// Add the newly created database to the manifest
+			await addDatabaseToManifest(sqlitePath, fileName)
 
 			// Refresh stored databases list
 			console.log('Refreshing stored databases list...')
@@ -115,9 +105,9 @@ export default function MyDNAScreen() {
 				setState((prev) => ({ ...prev, isProcessing: false }))
 			}, 1000)
 		} catch (error) {
-			console.error('Processing error:', error)
+			console.error('Rust processing error:', error)
 			setState((prev) => ({ ...prev, isProcessing: false }))
-			Alert.alert('Processing Error', `Failed to process file: ${error}`)
+			Alert.alert('Processing Error', `Failed to process file with Rust: ${error}`)
 		}
 	}, [])
 
@@ -141,10 +131,18 @@ export default function MyDNAScreen() {
 			if (!result.canceled && result.assets[0]) {
 				const file = result.assets[0]
 				// Show naming dialog instead of processing immediately
+				// Clean filename: remove .zip, spaces, and special chars
+				const cleanName = file.name
+					.replace('.zip', '')
+					.replace(/\s+/g, '_') // Replace spaces with underscores
+					.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars except _ and -
+					.replace(/_+/g, '_') // Replace multiple underscores with single
+					.replace(/-+/g, '-') // Replace multiple dashes with single
+
 				setState((prev) => ({
 					...prev,
 					selectedFile: { uri: file.uri, name: file.name },
-					customFileName: file.name.replace('.zip', '').replace(/[^a-zA-Z0-9\s-]/g, ''),
+					customFileName: cleanName,
 					showNamingDialog: true,
 				}))
 			}
@@ -160,8 +158,15 @@ export default function MyDNAScreen() {
 			return
 		}
 
+		// Clean the filename again in case user edited it
+		const finalName = state.customFileName.trim()
+			.replace(/\s+/g, '_') // Replace spaces with underscores
+			.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars
+			.replace(/_+/g, '_') // Collapse multiple underscores
+			.replace(/-+/g, '-') // Collapse multiple dashes
+
 		setState((prev) => ({ ...prev, showNamingDialog: false }))
-		await processFile(state.selectedFile.uri, state.customFileName.trim())
+		await processFile(state.selectedFile.uri, finalName)
 	}
 
 	const handleCancelProcessing = () => {

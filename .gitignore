@@ -38,10 +38,19 @@ yarn-error.*
 
 app-example
 
-# React Native / Native project artifacts
-ios/
-android/
+# React Native / Native project artifacts (root level only)
+/ios/
+/android/
 build/
+
+# Rust build artifacts
+biovault_rust_lib/target/
+**/target/
+
+# Build outputs
+*.ipa
+*.apk
+*.aab
 *.xcworkspace
 *.xcodeproj
 *.xcuserdata/
@@ -106,3 +115,11 @@ coverage/
 *.keystore
 *.keystore.properties
 # Already ignoring: *.jks, *.p8, *.p12, *.key, *.mobileprovision
+
+notebooks/.ipynb_checkpoints/
+notebooks/downloads/
+notebooks/work/
+output/
+
+.claude/*
+data/*

@@ -1,5 +1,4 @@
 import { useColorScheme } from '@/hooks/useColorScheme'
-import { SyftBoxProvider } from '@/lib/syftbox-auth'
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native'
 import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
@@ -8,6 +7,7 @@ import { StatusBar } from 'expo-status-bar'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import 'react-native-reanimated'
 
+// ts-prune-ignore-next
 export default function RootLayout() {
 	const colorScheme = useColorScheme()
 	const [loaded] = useFonts({
@@ -24,21 +24,19 @@ export default function RootLayout() {
 			<SQLiteProvider
 				databaseName="clinvar_23andme.sqlite"
 				assetSource={{
+					// eslint-disable-next-line @typescript-eslint/no-require-imports
 					assetId: require('../assets/clinvar_23andme.sqlite'),
 					forceOverwrite: true,
 				}}
 			>
-				<SyftBoxProvider serverUrl="https://syftbox.net" proxyBaseUrl="http://127.0.0.1:8000">
-					<ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-						<Stack>
-							<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-							<Stack.Screen name="+not-found" />
-							<Stack.Screen name="gene/[geneName]" options={{ headerShown: false }} />
-							<Stack.Screen name="example-files" options={{ headerShown: false }} />
-						</Stack>
-						<StatusBar style="auto" />
-					</ThemeProvider>
-				</SyftBoxProvider>
+				<ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+					<Stack>
+						<Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+						<Stack.Screen name="+not-found" />
+						<Stack.Screen name="gene/[geneName]" options={{ headerShown: false }} />
+					</Stack>
+					<StatusBar style="auto" />
+				</ThemeProvider>
 			</SQLiteProvider>
 		</KeyboardProvider>
 	)
