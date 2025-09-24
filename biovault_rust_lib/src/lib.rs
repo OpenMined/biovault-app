@@ -70,9 +70,9 @@ fn process_file_internal(
     // Parse the 23andMe file
     let parse_result = twenty_three_and_me::parse_23andme_file(Path::new(input_path))?;
 
-    eprintln!("Rust: Parsed {} variants, {} with rsIDs",
-        parse_result.metadata.total_variants,
-        parse_result.metadata.rsid_count
+    eprintln!(
+        "Rust: Parsed {} variants, {} with rsIDs",
+        parse_result.metadata.total_variants, parse_result.metadata.rsid_count
     );
 
     // Create output SQLite file path in SQLite subdirectory

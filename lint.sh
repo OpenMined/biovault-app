@@ -43,6 +43,17 @@ else
 fi
 
 echo ""
+echo "🔍 Checking for unused dependencies..."
+npx --yes depcheck --ignore-dirs=notebooks
+DEPCHECK_EXIT=$?
+if [ $DEPCHECK_EXIT -ne 0 ]; then
+    echo "❌ Found unused dependencies. Consider removing them from package.json"
+    EXIT_CODE=1
+else
+    echo "✅ No unused dependencies found"
+fi
+
+echo ""
 if [ $EXIT_CODE -ne 0 ]; then
     echo "❌ Linting failed with errors. Please fix the issues above."
 else

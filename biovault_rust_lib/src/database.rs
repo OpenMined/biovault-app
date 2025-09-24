@@ -108,7 +108,10 @@ pub fn create_genome_database(
     // Analyze for better query performance
     conn.execute("ANALYZE", [])?;
 
-    eprintln!("Rust DB: Database creation completed successfully. Inserted {} variants", variant_count);
+    eprintln!(
+        "Rust DB: Database creation completed successfully. Inserted {} variants",
+        variant_count
+    );
 
     Ok(db_name)
 }
