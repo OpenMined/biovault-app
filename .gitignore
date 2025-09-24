@@ -38,9 +38,9 @@ yarn-error.*
 
 app-example
 
-# React Native / Native project artifacts
-ios/
-android/
+# React Native / Native project artifacts (root level only)
+/ios/
+/android/
 build/
 
 # Rust build artifacts
