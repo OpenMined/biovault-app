@@ -3,6 +3,7 @@
  * Focus: Participant onboarding and desktop app benefits
  */
 
+import { useAnalytics } from '@/hooks/useAnalytics'
 import React, { useState } from 'react'
 import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -15,6 +16,10 @@ interface DesktopBenefit {
 
 // ts-prune-ignore-next
 export default function ResearchScreen() {
+	useAnalytics({
+		trackScreenView: true,
+		screenProperties: { screen: 'Research' }
+	})
 	const [showInstallGuide, setShowInstallGuide] = useState(false)
 
 	const desktopBenefits: DesktopBenefit[] = [
