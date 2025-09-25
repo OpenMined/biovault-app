@@ -23,7 +23,7 @@
 		"deploy-dev-all": "npx eas build --profile development --platform all --clear-cache",
 		"deploy-dev-android": "npx eas build --profile development --platform android --clear-cache",
 		"deploy-prod": "npx eas build --profile production --platform ios --auto-submit --clear-cache",
-		"deploy-prod-android": "npx eas build --profile production --platform android --clear-cache",
+		"deploy-prod-android": "npx eas build --profile production --platform --auto-submit android --clear-cache",
 		"cargo-android": "node ./scripts/cargo-android.mts",
 		"cargo-ios": "node ./scripts/cargo-ios.mts",
 		"device": "npx expo run:ios --device"
@@ -33,7 +33,6 @@
 		"expo": "54.0.8",
 		"expo-asset": "~12.0.8",
 		"expo-constants": "~18.0.8",
-		"expo-dev-client": "~6.0.12",
 		"expo-document-picker": "~14.0.7",
 		"expo-file-system": "~19.0.11",
 		"expo-font": "~14.0.7",
@@ -62,7 +61,8 @@
 		"eas-cli": "^16.18.1",
 		"eslint": "^9.25.0",
 		"eslint-config-expo": "~10.0.0",
-		"typescript": "~5.9.2"
+		"typescript": "~5.9.2",
+		"expo-dev-client": "~6.0.12"
 	},
 	"private": true
 }
