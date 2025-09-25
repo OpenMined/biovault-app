@@ -32,7 +32,6 @@ class Analytics {
 	private sessionId: string | null = null
 	private visitorId: string | null = null
 	private lastActivityTime: number = Date.now()
-	private readonly SESSION_TIMEOUT = 30 * 60 * 1000 // 30 minutes
 	private customUserAgent: string | null = null
 	private appDomain: string = 'app.biovault.net'
 
@@ -53,46 +52,53 @@ class Analytics {
 	private initVisitor() {
 		// Get or create a persistent visitor ID
 		const storedVisitorId = Storage.getItemSync('analytics_visitor_id')
+		console.log('Analytics: Retrieved stored visitor ID:', storedVisitorId)
+
 		if (storedVisitorId) {
 			this.visitorId = storedVisitorId
+			console.log('Analytics: Using existing visitor ID:', this.visitorId)
 		} else {
 			this.visitorId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
 			Storage.setItemSync('analytics_visitor_id', this.visitorId)
+			console.log('Analytics: Created new visitor ID:', this.visitorId)
+
+			// Verify it was saved
+			const verification = Storage.getItemSync('analytics_visitor_id')
+			console.log('Analytics: Verification - stored visitor ID:', verification)
 		}
 	}
 
 	private initSession() {
-		const storedSession = Storage.getItemSync('analytics_session')
-		if (storedSession) {
-			const { id, timestamp } = JSON.parse(storedSession)
-			if (Date.now() - timestamp < this.SESSION_TIMEOUT) {
-				this.sessionId = id
-				this.lastActivityTime = timestamp
-				return
-			}
-		}
-		this.sessionId = this.generateSessionId()
-		this.saveSession()
-	}
+		// For persistent sessions, use the same session ID as visitor ID
+		// This ensures all events from the same user are in the same session
+		const storedSessionId = Storage.getItemSync('analytics_persistent_session_id')
+		console.log('Analytics: Retrieved stored persistent session:', storedSessionId)
 
-	private generateSessionId(): string {
-		return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+		if (storedSessionId) {
+			this.sessionId = storedSessionId
+			console.log('Analytics: Using existing persistent session:', this.sessionId)
+		} else {
+			// Create a persistent session ID that matches the visitor ID pattern
+			this.sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+			Storage.setItemSync('analytics_persistent_session_id', this.sessionId)
+			console.log('Analytics: Created new persistent session:', this.sessionId)
+
+			// Verify it was saved
+			const verification = Storage.getItemSync('analytics_persistent_session_id')
+			console.log('Analytics: Verification - stored session ID:', verification)
+		}
+
+		// Update last activity time
+		this.lastActivityTime = Date.now()
 	}
 
 	private saveSession() {
-		Storage.setItemSync(
-			'analytics_session',
-			JSON.stringify({
-				id: this.sessionId,
-				timestamp: this.lastActivityTime,
-			})
-		)
+		// Just update the activity timestamp - session ID never changes
+		Storage.setItemSync('analytics_last_activity', this.lastActivityTime.toString())
 	}
 
 	private checkSession() {
-		if (Date.now() - this.lastActivityTime > this.SESSION_TIMEOUT) {
-			this.sessionId = this.generateSessionId()
-		}
+		// For persistent sessions, just update the activity time
 		this.lastActivityTime = Date.now()
 		this.saveSession()
 	}
@@ -137,6 +143,8 @@ class Analytics {
 				type: event.type,
 				pathname: event.pathname,
 				site_id: this.siteId,
+				visitor_id: event.visitor_id,
+				session_id: event.session_id,
 				endpoint: `${this.apiEndpoint}/track`,
 			})
 
@@ -259,8 +267,8 @@ class Analytics {
 	}
 
 	public async startSession() {
-		this.sessionId = this.generateSessionId()
-		this.saveSession()
+		// Session is already initialized and persistent, just send start event
+		console.log('Analytics: Starting session event for persistent session:', this.sessionId)
 
 		await this.sendEvent({
 			type: 'custom_event',
@@ -298,8 +306,9 @@ class Analytics {
 			viewport_height: Math.round(Dimensions.get('window').height || 926),
 		})
 
-		Storage.removeItemSync('analytics_session')
-		this.sessionId = null
+		// For persistent sessions, just update the timestamp
+		this.saveSession()
+		console.log('Analytics: Session end event sent, keeping persistent session:', this.sessionId)
 	}
 }
 
@@ -307,7 +316,10 @@ let analyticsInstance: Analytics | null = null
 
 export const initAnalytics = (siteId: string, apiEndpoint?: string, appDomain?: string) => {
 	if (!analyticsInstance) {
+		console.log('Analytics: Initializing new analytics instance')
 		analyticsInstance = new Analytics(siteId, apiEndpoint, appDomain)
+	} else {
+		console.log('Analytics: Using existing analytics instance')
 	}
 	return analyticsInstance
 }
