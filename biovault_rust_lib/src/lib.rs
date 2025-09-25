@@ -135,7 +135,9 @@ pub mod android {
     /// - Called by the JVM with valid JNI references and strings.
     /// - Follows standard JNI safety rules; misuse on the caller side is UB.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_processGenomeFile<'local>(
+    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_processGenomeFile<
+        'local,
+    >(
         mut env: JNIEnv<'local>,
         _class: JClass<'local>,
         input_path: jni::objects::JString<'local>,
