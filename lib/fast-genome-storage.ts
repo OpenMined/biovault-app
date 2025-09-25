@@ -259,7 +259,7 @@ export async function getRsidsFromUserDatabase(dbName: string): Promise<string[]
  * Clean up orphaned database files that aren't in the manifest
  */
 async function cleanOrphanedDatabases(manifestEntries: UserGenomeDatabase[]): Promise<void> {
-	const manifestDbNames = new Set(manifestEntries.map(e => e.dbName))
+	const manifestDbNames = new Set(manifestEntries.map((e) => e.dbName))
 
 	// Check SQLite directory for orphaned files
 	const sqliteDir = new Directory(Paths.document, 'SQLite')
@@ -303,7 +303,7 @@ export async function listUserGenomeDatabases(): Promise<UserGenomeDatabase[]> {
 	for (const entry of databases) {
 		try {
 			console.log('Reading metadata for:', entry.dbName)
-			const db = await SQLite.openDatabaseAsync(entry.dbName)
+			const db = await SQLite.openDatabaseSync(entry.dbName)
 
 			const info = await db.getFirstAsync<{
 				file_name: string
