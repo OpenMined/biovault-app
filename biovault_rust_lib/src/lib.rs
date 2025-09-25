@@ -2,7 +2,6 @@ mod analysis;
 mod database;
 mod parsers;
 
-use analysis::analyze_clinvar_matches;
 use database::create_genome_database;
 use parsers::twenty_three_and_me;
 use std::ffi::{CStr, CString};
@@ -126,6 +125,7 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 /// cbindgen:ignore
 #[cfg(target_os = "android")]
 pub mod android {
+    use crate::analysis;
     use crate::process_file_internal;
     use jni::JNIEnv;
     use jni::objects::JClass;
@@ -180,7 +180,7 @@ pub mod android {
         let user_db_str: String = env.get_string(&user_db_path).unwrap().into();
         let clinvar_db_str: String = env.get_string(&clinvar_db_path).unwrap().into();
 
-        match analyze_clinvar_matches(&user_db_str, &clinvar_db_str) {
+        match analysis::analyze_clinvar_matches(&user_db_str, &clinvar_db_str) {
             Ok(result) => {
                 match serde_json::to_string(&result) {
                     Ok(json) => env.new_string(json).unwrap(),
@@ -211,7 +211,7 @@ pub unsafe extern "C" fn analyze_clinvar(
         }
     };
 
-    match analyze_clinvar_matches(user_db_path, clinvar_db_path) {
+    match analysis::analyze_clinvar_matches(user_db_path, clinvar_db_path) {
         Ok(result) => {
             match serde_json::to_string(&result) {
                 Ok(json) => match CString::new(json) {
@@ -249,5 +249,5 @@ pub fn analyze_clinvar_safe(
     user_db_path: &str,
     clinvar_db_path: &str,
 ) -> Result<analysis::AnalysisResult, Box<dyn std::error::Error>> {
-    analyze_clinvar_matches(user_db_path, clinvar_db_path)
+    analysis::analyze_clinvar_matches(user_db_path, clinvar_db_path)
 }
