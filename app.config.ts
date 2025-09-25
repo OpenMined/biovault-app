@@ -17,8 +17,8 @@ function getEnvironmentValues(): EnvironmentValues {
 			name: 'BioVault Dev',
 			bundleIdentifier: 'org.openmined.biovault.dev',
 			package: 'org.openmined.biovault.dev',
-			appleTeamName: "OpenMined Foundation",
-			appleTeamId: "28PJ5N8D9X",
+			appleTeamName: 'OpenMined Foundation',
+			appleTeamId: '28PJ5N8D9X',
 		}
 	}
 	if (IS_PREVIEW) {
@@ -26,17 +26,16 @@ function getEnvironmentValues(): EnvironmentValues {
 			name: 'BioVault Preview',
 			bundleIdentifier: 'org.openmined.biovault.preview',
 			package: 'org.openmined.biovault.preview',
-			appleTeamName: "OpenMined Foundation",
-			appleTeamId: "28PJ5N8D9X",
-
+			appleTeamName: 'OpenMined Foundation',
+			appleTeamId: '28PJ5N8D9X',
 		}
 	}
 	return {
 		name: 'BioVault',
 		bundleIdentifier: 'org.openmined.biovault',
 		package: 'org.openmined.biovault',
-		appleTeamName: "OpenMined Foundation",
-		appleTeamId: "28PJ5N8D9X",
+		appleTeamName: 'OpenMined Foundation',
+		appleTeamId: '28PJ5N8D9X',
 	}
 }
 
@@ -46,10 +45,10 @@ const config: ExpoConfig = {
 	slug: 'biovault',
 	version: '0.2.0',
 	orientation: 'portrait',
-	icon: './assets/images/biovault-icon.png',
 	scheme: 'biovaultapp',
 	userInterfaceStyle: 'light',
 	newArchEnabled: true,
+	icon: './assets/images/adaptive-icon.png',
 	ios: {
 		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
 		appleTeamId: getEnvironmentValues().appleTeamId, // seems to require name not id
@@ -59,16 +58,19 @@ const config: ExpoConfig = {
 			UIFileSharingEnabled: true,
 			LSSupportsOpeningDocumentsInPlace: true,
 		},
+		icon: './assets/images/icon.png',
 	},
 	android: {
 		package: getEnvironmentValues().package,
-		icon: './assets/images/biovault-icon.png',
+		adaptiveIcon: {
+			foregroundImage: './assets/images/adaptive-icon.png',
+		},
 		edgeToEdgeEnabled: true,
 	},
 	web: {
 		bundler: 'metro',
 		output: 'static',
-		favicon: './assets/images/favicon.png',
+		favicon: './assets/images/icon.png',
 	},
 	extra: {
 		eas: {
@@ -86,7 +88,6 @@ const config: ExpoConfig = {
 				image: './assets/images/splash-icon.png',
 				imageWidth: 200,
 				resizeMode: 'contain',
-				backgroundColor: '#ffffff',
 			},
 		],
 		[

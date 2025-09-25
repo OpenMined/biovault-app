@@ -12,12 +12,17 @@ class ExpoBiovaultModule : Module() {
   }
 
   external fun processGenomeFile(inputPath: String, customName: String, outputDir: String): String
+  external fun rustAdd(a: Int, b: Int): Int
 
   override fun definition() = ModuleDefinition {
     Name("ExpoBiovault")
 
     AsyncFunction("processGenomeFile") { inputPath: String, customName: String, outputDir: String ->
       processGenomeFile(inputPath, customName, outputDir)
+    }
+
+    Function("rust_add") { a: Int, b: Int ->
+      rustAdd(a, b)
     }
   }
 }

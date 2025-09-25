@@ -7,7 +7,7 @@
 		"npm": ">=10.0.0"
 	},
 	"scripts": {
-		"start": "expo start",
+		"start": "expo start --dev-client",
 		"reset-project": "node ./scripts/reset-project.js",
 		"android": "expo run:android",
 		"ios": "expo run:ios",
@@ -20,9 +20,10 @@
 		"build-preview-android": "npx eas build --profile preview --platform android --local --clear-cache",
 		"deploy-preview-android": "npx eas build --profile preview --platform android --clear-cache",
 		"deploy-dev": "npx eas build --profile development --platform ios --clear-cache",
+		"deploy-dev-all": "npx eas build --profile development --platform all --clear-cache",
 		"deploy-dev-android": "npx eas build --profile development --platform android --clear-cache",
 		"deploy-prod": "npx eas build --profile production --platform ios --auto-submit --clear-cache",
-		"deploy-prod-android": "npx eas build --profile production --platform android --auto-submit --clear-cache",
+		"deploy-prod-android": "npx eas build --profile production --platform android --clear-cache",
 		"cargo-android": "node ./scripts/cargo-android.mts",
 		"cargo-ios": "node ./scripts/cargo-ios.mts",
 		"device": "npx expo run:ios --device"
@@ -32,6 +33,7 @@
 		"expo": "54.0.8",
 		"expo-asset": "~12.0.8",
 		"expo-constants": "~18.0.8",
+		"expo-dev-client": "~6.0.12",
 		"expo-document-picker": "~14.0.7",
 		"expo-file-system": "~19.0.11",
 		"expo-font": "~14.0.7",

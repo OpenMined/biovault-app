@@ -159,7 +159,8 @@ export default function MyDNAScreen() {
 		}
 
 		// Clean the filename again in case user edited it
-		const finalName = state.customFileName.trim()
+		const finalName = state.customFileName
+			.trim()
 			.replace(/\s+/g, '_') // Replace spaces with underscores
 			.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars
 			.replace(/_+/g, '_') // Collapse multiple underscores
