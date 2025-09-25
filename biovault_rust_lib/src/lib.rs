@@ -124,10 +124,10 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 /// cbindgen:ignore
 #[cfg(target_os = "android")]
 pub mod android {
-    use crate::rust_add;
+    use crate::process_file_internal;
     use jni::JNIEnv;
     use jni::objects::JClass;
-    use jni::sys::jint;
+    use jni::sys;
 
     /// JNI entrypoint used by the Android module to process a genome file.
     ///
@@ -135,13 +135,13 @@ pub mod android {
     /// - Called by the JVM with valid JNI references and strings.
     /// - Follows standard JNI safety rules; misuse on the caller side is UB.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_processGenomeFile(
-        mut env: JNIEnv,
-        _class: JClass,
-        input_path: jni::objects::JString,
-        custom_name: jni::objects::JString,
-        output_dir: jni::objects::JString,
-    ) -> jni::objects::JString {
+    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_processGenomeFile<'local>(
+        mut env: JNIEnv<'local>,
+        _class: JClass<'local>,
+        input_path: jni::objects::JString<'local>,
+        custom_name: jni::objects::JString<'local>,
+        output_dir: jni::objects::JString<'local>,
+    ) -> jni::objects::JString<'local> {
         let input_path_str: String = env.get_string(&input_path).unwrap().into();
         let custom_name_str: String = env.get_string(&custom_name).unwrap().into();
         let output_dir_str: String = env.get_string(&output_dir).unwrap().into();
@@ -150,6 +150,17 @@ pub mod android {
             Ok(result) => env.new_string(result).unwrap(),
             Err(_) => env.new_string("ERROR").unwrap(),
         }
+    }
+
+    /// JNI entrypoint for the rust_add function.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_rustAdd(
+        _env: JNIEnv,
+        _class: JClass,
+        a: sys::jint,
+        b: sys::jint,
+    ) -> sys::jint {
+        crate::rust_add(a, b)
     }
 }
 /// Public, safe Rust API to process a 23andMe file and create an SQLite DB.
