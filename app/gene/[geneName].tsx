@@ -2,6 +2,7 @@
  * Gene detail screen showing all variants for a specific gene
  */
 
+import { useAnalytics } from '@/hooks/useAnalytics'
 import { type ClinVarVariant } from '@/lib/database'
 import { getSignificanceColor, getSignificanceDisplayText } from '@/lib/gene-grouping'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -16,6 +17,24 @@ export default function GeneDetailScreen() {
 	const [variants, setVariants] = React.useState<ClinVarVariant[]>([])
 	const [loading, setLoading] = React.useState(true)
 	const db = useSQLiteContext()
+
+	// Track gene page view with the actual gene name
+	const { trackScreen, trackEvent } = useAnalytics({
+		trackScreenView: false // We'll manually track with gene name
+	})
+
+	React.useEffect(() => {
+		if (geneName) {
+			// Track the page view with the gene name in the URL
+			trackScreen(`gene/${geneName}`, {
+				geneName: geneName
+			})
+			// Also track as an event
+			trackEvent('gene_viewed', {
+				geneName: geneName
+			})
+		}
+	}, [geneName, trackScreen, trackEvent])
 
 	const loadGeneVariants = React.useCallback(async () => {
 		if (!geneName) return

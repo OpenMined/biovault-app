@@ -2,6 +2,7 @@
  * My DNA tab - file management for locally stored genetic data
  */
 
+import { useAnalytics } from '@/hooks/useAnalytics'
 import {
 	addDatabaseToManifest,
 	deleteUserGenomeDatabase,
@@ -39,6 +40,11 @@ interface MyDNAState {
 
 // ts-prune-ignore-next
 export default function MyDNAScreen() {
+	const { trackEvent } = useAnalytics({
+		trackScreenView: true,
+		screenProperties: { screen: 'MyDNA' }
+	})
+
 	const [state, setState] = useState<MyDNAState>({
 		isProcessing: false,
 		processingMessage: '',
@@ -96,6 +102,12 @@ export default function MyDNAScreen() {
 			// Add the newly created database to the manifest
 			await addDatabaseToManifest(sqlitePath, fileName)
 
+			// Track successful file processing (without filename for privacy)
+			trackEvent('genome_file_processed', {
+				fileType: 'zip',
+				success: true
+			})
+
 			// Refresh stored databases list
 			console.log('Refreshing stored databases list...')
 			await loadStoredDatabases()
@@ -106,10 +118,14 @@ export default function MyDNAScreen() {
 			}, 1000)
 		} catch (error) {
 			console.error('Rust processing error:', error)
+			trackEvent('genome_file_processing_error', {
+				fileType: 'zip',
+				error: String(error)
+			})
 			setState((prev) => ({ ...prev, isProcessing: false }))
 			Alert.alert('Processing Error', `Failed to process file with Rust: ${error}`)
 		}
-	}, [])
+	}, [trackEvent])
 
 	useEffect(() => {
 		loadStoredDatabases()
@@ -123,6 +139,7 @@ export default function MyDNAScreen() {
 
 	const handleFilePicker = async () => {
 		try {
+			trackEvent('file_picker_opened', { source: 'MyDNA' })
 			const result = await DocumentPicker.getDocumentAsync({
 				type: 'application/zip',
 				copyToCacheDirectory: true,
@@ -191,6 +208,9 @@ export default function MyDNAScreen() {
 					onPress: async () => {
 						try {
 							await deleteUserGenomeDatabase(database.dbName)
+							trackEvent('genome_file_deleted', {
+								fileType: 'zip'
+							})
 							await loadStoredDatabases() // Refresh the list
 						} catch {
 							Alert.alert('Error', 'Failed to delete file')
@@ -353,6 +373,10 @@ export default function MyDNAScreen() {
 								<TouchableOpacity
 									style={styles.premiumAnalyzeButton}
 									onPress={() => {
+										trackEvent('analyze_button_clicked', {
+											fileType: 'zip',
+											variantCount: database.totalVariants
+										})
 										// Navigate to insights tab and pass the database name
 										router.push(`/insights?selectedDb=${encodeURIComponent(database.dbName)}`)
 									}}

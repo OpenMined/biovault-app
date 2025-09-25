@@ -2,6 +2,7 @@
  * Analyze tab - ClinVar analysis and gene matching
  */
 
+import { useAnalytics } from '@/hooks/useAnalytics'
 import { lookupVariantsByRsid, type ClinVarVariant } from '@/lib/database'
 import {
 	getRsidsFromUserDatabase,
@@ -56,6 +57,10 @@ interface AnalyzeState {
 export default function DiscoverScreen() {
 	const { selectedDb } = useLocalSearchParams<{ selectedDb?: string }>()
 	const db = useSQLiteContext()
+	const { trackEvent } = useAnalytics({
+		trackScreenView: true,
+		screenProperties: { screen: 'Insights' }
+	})
 
 	const [state, setState] = useState<AnalyzeState>({
 		isLoading: false,
@@ -135,6 +140,9 @@ export default function DiscoverScreen() {
 	)
 
 	const selectDatabaseForAnalysis = (database: UserGenomeDatabase) => {
+		trackEvent('database_selected_for_analysis', {
+			variantCount: database.totalVariants
+		})
 		setState((prev) => ({
 			...prev,
 			selectedDatabase: database,
@@ -148,6 +156,10 @@ export default function DiscoverScreen() {
 
 	const runClinVarAnalysis = async () => {
 		if (!state.selectedDatabase) return
+
+		trackEvent('clinvar_analysis_started', {
+			variantCount: state.selectedDatabase.totalVariants
+		})
 
 		setState((prev) => ({
 			...prev,
@@ -166,6 +178,12 @@ export default function DiscoverScreen() {
 			const matches = await lookupVariantsByRsid(db, rsids)
 
 			console.log(`Found ${matches.length} matches`)
+
+			// Track analysis results
+			trackEvent('clinvar_analysis_completed', {
+				rsidsSearched: rsids.length,
+				matchesFound: matches.length
+			})
 
 			// Group matches by gene
 			const geneGroups = groupVariantsByGene(matches)
