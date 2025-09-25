@@ -1,6 +1,8 @@
+mod analysis;
 mod database;
 mod parsers;
 
+use analysis::analyze_clinvar_matches;
 use database::create_genome_database;
 use parsers::twenty_three_and_me;
 use std::ffi::{CStr, CString};
@@ -164,7 +166,74 @@ pub mod android {
     ) -> sys::jint {
         crate::rust_add(a, b)
     }
+
+    /// JNI entrypoint for ClinVar analysis
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_analyzeClinVar<
+        'local,
+    >(
+        mut env: JNIEnv<'local>,
+        _class: JClass<'local>,
+        user_db_path: jni::objects::JString<'local>,
+        clinvar_db_path: jni::objects::JString<'local>,
+    ) -> jni::objects::JString<'local> {
+        let user_db_str: String = env.get_string(&user_db_path).unwrap().into();
+        let clinvar_db_str: String = env.get_string(&clinvar_db_path).unwrap().into();
+
+        match analyze_clinvar_matches(&user_db_str, &clinvar_db_str) {
+            Ok(result) => {
+                match serde_json::to_string(&result) {
+                    Ok(json) => env.new_string(json).unwrap(),
+                    Err(_) => env.new_string("ERROR_SERIALIZATION").unwrap(),
+                }
+            }
+            Err(_) => env.new_string("ERROR_ANALYSIS").unwrap(),
+        }
+    }
 }
+/// Analyze user genome against ClinVar database
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn analyze_clinvar(
+    user_db_path: *const c_char,
+    clinvar_db_path: *const c_char,
+) -> *mut c_char {
+    let user_db_path = unsafe {
+        match CStr::from_ptr(user_db_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    let clinvar_db_path = unsafe {
+        match CStr::from_ptr(clinvar_db_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    match analyze_clinvar_matches(user_db_path, clinvar_db_path) {
+        Ok(result) => {
+            match serde_json::to_string(&result) {
+                Ok(json) => match CString::new(json) {
+                    Ok(c_string) => c_string.into_raw(),
+                    Err(e) => {
+                        eprintln!("Failed to create CString: {}", e);
+                        std::ptr::null_mut()
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to serialize result: {}", e);
+                    std::ptr::null_mut()
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Rust analysis failed: {}", e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// Public, safe Rust API to process a 23andMe file and create an SQLite DB.
 /// Returns the full path to the created database file.
 pub fn process_23andme(
@@ -173,4 +242,12 @@ pub fn process_23andme(
     output_dir: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     process_file_internal(input_path, custom_name, output_dir)
+}
+
+/// Public, safe Rust API for ClinVar analysis
+pub fn analyze_clinvar_safe(
+    user_db_path: &str,
+    clinvar_db_path: &str,
+) -> Result<analysis::AnalysisResult, Box<dyn std::error::Error>> {
+    analyze_clinvar_matches(user_db_path, clinvar_db_path)
 }

@@ -7,6 +7,9 @@ func rust_add(_ a: Int32, _ b: Int32) -> Int32
 @_silgen_name("process_23andme_file")
 func process_23andme_file(_ inputPath: UnsafePointer<CChar>, _ customName: UnsafePointer<CChar>, _ outputDir: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
 
+@_silgen_name("analyze_clinvar")
+func analyze_clinvar(_ userDbPath: UnsafePointer<CChar>, _ clinvarDbPath: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+
 @_silgen_name("free_string")
 func free_string(_ ptr: UnsafeMutablePointer<CChar>)
 
@@ -21,6 +24,19 @@ public class ExpoBiovaultModule: Module {
       
       guard let resultPtr = process_23andme_file(inputCString, nameCString, outputCString) else {
         throw Exception(name: "ProcessingError", description: "Failed to process genome file")
+      }
+      
+      let result = String(cString: resultPtr)
+      free_string(resultPtr)
+      return result
+    }
+
+    AsyncFunction("analyzeClinVarMatches") { (userDbPath: String, clinvarDbPath: String) -> String in
+      let userDbCString = userDbPath.cString(using: .utf8)!
+      let clinvarDbCString = clinvarDbPath.cString(using: .utf8)!
+      
+      guard let resultPtr = analyze_clinvar(userDbCString, clinvarDbCString) else {
+        throw Exception(name: "AnalysisError", description: "Failed to analyze ClinVar matches")
       }
       
       let result = String(cString: resultPtr)

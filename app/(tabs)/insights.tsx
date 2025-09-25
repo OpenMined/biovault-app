@@ -3,18 +3,9 @@
  */
 
 import { useAnalytics } from '@/hooks/useAnalytics'
-import { lookupVariantsByRsid, type ClinVarVariant } from '@/lib/database'
-import {
-	getRsidsFromUserDatabase,
-	listUserGenomeDatabases,
-	type UserGenomeDatabase,
-} from '@/lib/fast-genome-storage'
-import {
-	getSignificanceColor,
-	getSignificanceDisplayText,
-	groupVariantsByGene,
-	type GeneGroup,
-} from '@/lib/gene-grouping'
+import { listUserGenomeDatabases, type UserGenomeDatabase } from '@/lib/genome-storage'
+import * as BioVault from '@/modules/expo-biovault'
+import { Paths } from 'expo-file-system'
 import { useFocusEffect } from '@react-navigation/native'
 import { Link, useLocalSearchParams } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
@@ -31,6 +22,74 @@ import {
 } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+// Types moved from deleted files
+export interface ClinVarVariant {
+	rsid: string
+	chrom: string
+	pos: number
+	ref: string
+	alt: string
+	gene: string
+	clnsig: string
+	clnrevstat: string
+	condition: string
+}
+
+export interface GeneGroup {
+	gene: string
+	variants: ClinVarVariant[]
+	mostSignificant:
+		| 'Pathogenic'
+		| 'Likely_pathogenic'
+		| 'Uncertain_significance'
+		| 'Conflicting'
+		| 'Benign'
+	significanceScore: number
+	pathogenicCount: number
+	likelyPathogenicCount: number
+	uncertainCount: number
+	conflictingCount: number
+	totalVariants: number
+	uniqueRsids: number
+	conditions: string[]
+	alleles: { ref: string; alt: string; count: number }[]
+}
+
+// UI helper functions moved from gene-grouping.ts
+function getSignificanceColor(significance: GeneGroup['mostSignificant']): string {
+	switch (significance) {
+		case 'Pathogenic':
+			return '#d32f2f'
+		case 'Likely_pathogenic':
+			return '#f57c00'
+		case 'Uncertain_significance':
+			return '#fbc02d'
+		case 'Conflicting':
+			return '#7b1fa2'
+		case 'Benign':
+			return '#388e3c'
+		default:
+			return '#757575'
+	}
+}
+
+function getSignificanceDisplayText(significance: GeneGroup['mostSignificant']): string {
+	switch (significance) {
+		case 'Pathogenic':
+			return 'Pathogenic'
+		case 'Likely_pathogenic':
+			return 'Likely Pathogenic'
+		case 'Uncertain_significance':
+			return 'Uncertain'
+		case 'Conflicting':
+			return 'Conflicting'
+		case 'Benign':
+			return 'Benign'
+		default:
+			return 'Unknown'
+	}
+}
 
 interface ReferenceDatabase {
 	id: string
@@ -164,29 +223,70 @@ export default function DiscoverScreen() {
 		setState((prev) => ({
 			...prev,
 			isLoading: true,
-			loadingMessage: 'Searching for ClinVar matches...',
+			loadingMessage: 'Running analysis with Rust engine...',
 			geneGroups: [],
 		}))
 
 		try {
-			// Get all rsIDs from user database
-			const rsids = await getRsidsFromUserDatabase(state.selectedDatabase.dbName)
+			// Use Rust for the entire analysis pipeline
+			console.log('Starting Rust ClinVar analysis...')
 
-			console.log(`Searching ${rsids.length} rsIDs against ClinVar database...`)
+			// Construct full paths for Rust function
+			const documentsPath = Paths.document.uri.replace('file://', '')
+			const userDbPath = `${documentsPath}/SQLite/${state.selectedDatabase.dbName}`
+			const clinvarDbPath = `${documentsPath}/SQLite/clinvar_23andme.sqlite`
 
-			// Query database for matches
-			const matches = await lookupVariantsByRsid(db, rsids)
+			console.log('Database paths:', { userDbPath, clinvarDbPath })
 
-			console.log(`Found ${matches.length} matches`)
+			const result = await BioVault.analyzeClinVarMatches(userDbPath, clinvarDbPath)
+
+			console.log(
+				`Rust analysis completed: ${result.matches_found} matches in ${result.gene_groups.length} genes`
+			)
 
 			// Track analysis results
 			trackEvent('clinvar_analysis_completed', {
-				rsidsSearched: rsids.length,
-				matchesFound: matches.length,
+				rsidsSearched: result.rsids_searched,
+				matchesFound: result.matches_found,
 			})
 
-			// Group matches by gene
-			const geneGroups = groupVariantsByGene(matches)
+			// Convert Rust types to our JavaScript types for UI compatibility
+			const geneGroups: GeneGroup[] = result.gene_groups.map((group) => ({
+				gene: group.gene,
+				variants: group.variants.map((v) => ({
+					rsid: v.rsid,
+					chrom: v.chrom,
+					pos: v.pos,
+					ref: v.ref_allele,
+					alt: v.alt_allele,
+					gene: v.gene,
+					clnsig: v.clnsig,
+					clnrevstat: v.clnrevstat,
+					condition: v.condition,
+				})),
+				mostSignificant: group.most_significant as GeneGroup['mostSignificant'],
+				significanceScore: group.significance_score,
+				pathogenicCount: group.pathogenic_count,
+				likelyPathogenicCount: group.likely_pathogenic_count,
+				uncertainCount: group.uncertain_count,
+				conflictingCount: group.conflicting_count,
+				totalVariants: group.total_variants,
+				uniqueRsids: group.unique_rsids,
+				conditions: group.conditions,
+				alleles: [], // Not implemented in Rust yet, could add later
+			}))
+
+			const matches: ClinVarVariant[] = result.matches.map((v) => ({
+				rsid: v.rsid,
+				chrom: v.chrom,
+				pos: v.pos,
+				ref: v.ref_allele,
+				alt: v.alt_allele,
+				gene: v.gene,
+				clnsig: v.clnsig,
+				clnrevstat: v.clnrevstat,
+				condition: v.condition,
+			}))
 
 			setState((prev) => ({
 				...prev,
@@ -197,7 +297,7 @@ export default function DiscoverScreen() {
 				isLoading: false,
 			}))
 		} catch (error) {
-			console.error('Analysis error:', error)
+			console.error('Rust analysis error:', error)
 			setState((prev) => ({ ...prev, isLoading: false }))
 			Alert.alert('Analysis Error', `Failed to analyze data: ${error}`)
 		}

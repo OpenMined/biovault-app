@@ -12,6 +12,7 @@ class ExpoBiovaultModule : Module() {
   }
 
   external fun processGenomeFile(inputPath: String, customName: String, outputDir: String): String
+  external fun analyzeClinVar(userDbPath: String, clinvarDbPath: String): String
   external fun rustAdd(a: Int, b: Int): Int
 
   override fun definition() = ModuleDefinition {
@@ -19,6 +20,10 @@ class ExpoBiovaultModule : Module() {
 
     AsyncFunction("processGenomeFile") { inputPath: String, customName: String, outputDir: String ->
       processGenomeFile(inputPath, customName, outputDir)
+    }
+
+    AsyncFunction("analyzeClinVarMatches") { userDbPath: String, clinvarDbPath: String ->
+      analyzeClinVar(userDbPath, clinvarDbPath)
     }
 
     Function("rust_add") { a: Int, b: Int ->
