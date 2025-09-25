@@ -13,13 +13,7 @@ export default function TabLayout() {
 				{Platform.OS === 'ios' ? (
 					<Icon sf={{ default: 'testtube.2', selected: 'testtube.2' }} />
 				) : (
-					<Icon
-						selectedColor={'white'}
-						src={{
-							default: require('../../assets/tabbar/dna.svg'),
-							selected: require('../../assets/tabbar/dna.svg'),
-						}}
-					/>
+					<Icon selectedColor={'white'} drawable="ic_menu_compass" />
 				)}
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="insights">
@@ -30,16 +24,9 @@ export default function TabLayout() {
 							default: 'brain.head.profile',
 							selected: 'brain.filled.head.profile',
 						}}
-						drawable="ic_menu_search"
 					/>
 				) : (
-					<Icon
-						selectedColor={'white'}
-						src={{
-							default: require('../../assets/tabbar/brain.svg'),
-							selected: require('../../assets/tabbar/brain.svg'),
-						}}
-					/>
+					<Icon selectedColor={'white'} drawable="ic_menu_search" />
 				)}
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="feed">
@@ -47,13 +34,7 @@ export default function TabLayout() {
 				{Platform.OS === 'ios' ? (
 					<Icon sf={{ default: 'newspaper', selected: 'newspaper.fill' }} />
 				) : (
-					<Icon
-						selectedColor={'white'}
-						src={{
-							default: require('../../assets/tabbar/newspaper.svg'),
-							selected: require('../../assets/tabbar/newspaper.svg'),
-						}}
-					/>
+					<Icon selectedColor={'white'} drawable="ic_menu_agenda" />
 				)}
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="research">
@@ -67,13 +48,7 @@ export default function TabLayout() {
 						drawable="ic_menu_share"
 					/>
 				) : (
-					<Icon
-						selectedColor={'white'}
-						src={{
-							default: require('../../assets/tabbar/microscope.svg'),
-							selected: require('../../assets/tabbar/microscope.svg'),
-						}}
-					/>
+					<Icon selectedColor={'white'} drawable="ic_menu_share" />
 				)}
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="settings">
@@ -81,13 +56,7 @@ export default function TabLayout() {
 				{Platform.OS === 'ios' ? (
 					<Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
 				) : (
-					<Icon
-						selectedColor={'white'}
-						src={{
-							default: require('../../assets/tabbar/settings.svg'),
-							selected: require('../../assets/tabbar/settings.svg'),
-						}}
-					/>
+					<Icon selectedColor={'white'} drawable="ic_menu_preferences" />
 				)}
 			</NativeTabs.Trigger>
 		</NativeTabs>
