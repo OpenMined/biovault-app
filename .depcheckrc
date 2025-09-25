@@ -4,6 +4,7 @@
     "expo-secure-store",
     "expo-splash-screen",
     "expo-web-browser",
+    "expo-dev-client",
     "typescript"
   ]
 }
