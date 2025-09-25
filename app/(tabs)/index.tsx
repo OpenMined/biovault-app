@@ -8,7 +8,7 @@ import {
 	deleteUserGenomeDatabase,
 	listUserGenomeDatabases,
 	type UserGenomeDatabase,
-} from '@/lib/fast-genome-storage'
+} from '@/lib/genome-storage'
 import * as BioVault from '@/modules/expo-biovault'
 import { useFocusEffect } from '@react-navigation/native'
 import * as DocumentPicker from 'expo-document-picker'
@@ -42,7 +42,7 @@ interface MyDNAState {
 export default function MyDNAScreen() {
 	const { trackEvent } = useAnalytics({
 		trackScreenView: true,
-		screenProperties: { screen: 'MyDNA' }
+		screenProperties: { screen: 'MyDNA' },
 	})
 
 	const [state, setState] = useState<MyDNAState>({
@@ -68,64 +68,67 @@ export default function MyDNAScreen() {
 		}
 	}
 
-	const processFile = React.useCallback(async (fileUri: string, fileName: string) => {
-		console.log('Processing file with Rust:', { fileUri, fileName })
-
-		setState((prev) => ({
-			...prev,
-			isProcessing: true,
-			processingMessage: 'Processing with Rust...',
-		}))
-
-		try {
-			// Use the proper FileSystem API for documents directory
-			const documentsPath = Paths.document.uri.replace('file://', '')
+	const processFile = React.useCallback(
+		async (fileUri: string, fileName: string) => {
+			console.log('Processing file with Rust:', { fileUri, fileName })
 
 			setState((prev) => ({
 				...prev,
-				processingMessage: 'Parsing genetic data with Rust...',
+				isProcessing: true,
+				processingMessage: 'Processing with Rust...',
 			}))
 
-			// Convert input file URI to path for Rust
-			const inputPath = fileUri.replace('file://', '')
+			try {
+				// Use the proper FileSystem API for documents directory
+				const documentsPath = Paths.document.uri.replace('file://', '')
 
-			// Use Rust to parse and create SQLite database
-			console.log('Starting Rust processing...', { inputPath, documentsPath })
-			const sqlitePath = await BioVault.processGenomeFile(inputPath, fileName, documentsPath)
-			console.log('Rust processing completed:', sqlitePath)
+				setState((prev) => ({
+					...prev,
+					processingMessage: 'Parsing genetic data with Rust...',
+				}))
 
-			setState((prev) => ({
-				...prev,
-				processingMessage: 'File processed successfully!',
-			}))
+				// Convert input file URI to path for Rust
+				const inputPath = fileUri.replace('file://', '')
 
-			// Add the newly created database to the manifest
-			await addDatabaseToManifest(sqlitePath, fileName)
+				// Use Rust to parse and create SQLite database
+				console.log('Starting Rust processing...', { inputPath, documentsPath })
+				const sqlitePath = await BioVault.processGenomeFile(inputPath, fileName, documentsPath)
+				console.log('Rust processing completed:', sqlitePath)
 
-			// Track successful file processing (without filename for privacy)
-			trackEvent('genome_file_processed', {
-				fileType: 'zip',
-				success: true
-			})
+				setState((prev) => ({
+					...prev,
+					processingMessage: 'File processed successfully!',
+				}))
 
-			// Refresh stored databases list
-			console.log('Refreshing stored databases list...')
-			await loadStoredDatabases()
+				// Add the newly created database to the manifest
+				await addDatabaseToManifest(sqlitePath, fileName)
 
-			// Small delay to show success message
-			setTimeout(() => {
+				// Track successful file processing (without filename for privacy)
+				trackEvent('genome_file_processed', {
+					fileType: 'zip',
+					success: true,
+				})
+
+				// Refresh stored databases list
+				console.log('Refreshing stored databases list...')
+				await loadStoredDatabases()
+
+				// Small delay to show success message
+				setTimeout(() => {
+					setState((prev) => ({ ...prev, isProcessing: false }))
+				}, 1000)
+			} catch (error) {
+				console.error('Rust processing error:', error)
+				trackEvent('genome_file_processing_error', {
+					fileType: 'zip',
+					error: String(error),
+				})
 				setState((prev) => ({ ...prev, isProcessing: false }))
-			}, 1000)
-		} catch (error) {
-			console.error('Rust processing error:', error)
-			trackEvent('genome_file_processing_error', {
-				fileType: 'zip',
-				error: String(error)
-			})
-			setState((prev) => ({ ...prev, isProcessing: false }))
-			Alert.alert('Processing Error', `Failed to process file with Rust: ${error}`)
-		}
-	}, [trackEvent])
+				Alert.alert('Processing Error', `Failed to process file with Rust: ${error}`)
+			}
+		},
+		[trackEvent]
+	)
 
 	useEffect(() => {
 		loadStoredDatabases()
@@ -209,7 +212,7 @@ export default function MyDNAScreen() {
 						try {
 							await deleteUserGenomeDatabase(database.dbName)
 							trackEvent('genome_file_deleted', {
-								fileType: 'zip'
+								fileType: 'zip',
 							})
 							await loadStoredDatabases() // Refresh the list
 						} catch {
@@ -375,7 +378,7 @@ export default function MyDNAScreen() {
 									onPress={() => {
 										trackEvent('analyze_button_clicked', {
 											fileType: 'zip',
-											variantCount: database.totalVariants
+											variantCount: database.totalVariants,
 										})
 										// Navigate to insights tab and pass the database name
 										router.push(`/insights?selectedDb=${encodeURIComponent(database.dbName)}`)

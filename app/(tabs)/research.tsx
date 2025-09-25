@@ -18,7 +18,7 @@ interface DesktopBenefit {
 export default function ResearchScreen() {
 	useAnalytics({
 		trackScreenView: true,
-		screenProperties: { screen: 'Research' }
+		screenProperties: { screen: 'Research' },
 	})
 	const [showInstallGuide, setShowInstallGuide] = useState(false)
 
@@ -81,7 +81,7 @@ export default function ResearchScreen() {
 	const renderDesktopPromotion = () => (
 		<View style={styles.promoCard}>
 			<View style={styles.promoHeader}>
-				<Text style={styles.promoTitle}>🖥️ Unlock Full BioVault Power</Text>
+				<Text style={styles.promoTitle}>🖥️ Unlock the full power of BioVault</Text>
 				<Text style={styles.promoSubtitle}>
 					Install the desktop app to participate in collaborative genomics research
 				</Text>

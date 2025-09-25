@@ -3,13 +3,65 @@
  */
 
 import { useAnalytics } from '@/hooks/useAnalytics'
-import { type ClinVarVariant } from '@/lib/database'
-import { getSignificanceColor, getSignificanceDisplayText } from '@/lib/gene-grouping'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import React from 'react'
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+// Types and UI helpers moved from deleted files
+interface ClinVarVariant {
+	rsid: string
+	chrom: string
+	pos: number
+	ref: string
+	alt: string
+	gene: string
+	clnsig: string
+	clnrevstat: string
+	condition: string
+}
+
+type MostSignificant =
+	| 'Pathogenic'
+	| 'Likely_pathogenic'
+	| 'Uncertain_significance'
+	| 'Conflicting'
+	| 'Benign'
+
+function getSignificanceColor(significance: MostSignificant): string {
+	switch (significance) {
+		case 'Pathogenic':
+			return '#d32f2f'
+		case 'Likely_pathogenic':
+			return '#f57c00'
+		case 'Uncertain_significance':
+			return '#fbc02d'
+		case 'Conflicting':
+			return '#7b1fa2'
+		case 'Benign':
+			return '#388e3c'
+		default:
+			return '#757575'
+	}
+}
+
+function getSignificanceDisplayText(significance: MostSignificant): string {
+	switch (significance) {
+		case 'Pathogenic':
+			return 'Pathogenic'
+		case 'Likely_pathogenic':
+			return 'Likely Pathogenic'
+		case 'Uncertain_significance':
+			return 'Uncertain'
+		case 'Conflicting':
+			return 'Conflicting'
+		case 'Benign':
+			return 'Benign'
+		default:
+			return 'Unknown'
+	}
+}
 
 // ts-prune-ignore-next
 export default function GeneDetailScreen() {
@@ -20,18 +72,18 @@ export default function GeneDetailScreen() {
 
 	// Track gene page view with the actual gene name
 	const { trackScreen, trackEvent } = useAnalytics({
-		trackScreenView: false // We'll manually track with gene name
+		trackScreenView: false, // We'll manually track with gene name
 	})
 
 	React.useEffect(() => {
 		if (geneName) {
 			// Track the page view with the gene name in the URL
 			trackScreen(`gene/${geneName}`, {
-				geneName: geneName
+				geneName: geneName,
 			})
 			// Also track as an event
 			trackEvent('gene_viewed', {
-				geneName: geneName
+				geneName: geneName,
 			})
 		}
 	}, [geneName, trackScreen, trackEvent])
@@ -72,15 +124,15 @@ export default function GeneDetailScreen() {
 	const renderVariant = (variant: ClinVarVariant, index: number) => {
 		const significanceKey =
 			variant.clnsig.toLowerCase().includes('pathogenic') &&
-				!variant.clnsig.toLowerCase().includes('likely')
+			!variant.clnsig.toLowerCase().includes('likely')
 				? ('Pathogenic' as const)
 				: variant.clnsig.toLowerCase().includes('likely_pathogenic')
-					? ('Likely_pathogenic' as const)
-					: variant.clnsig.toLowerCase().includes('conflicting')
-						? ('Conflicting' as const)
-						: variant.clnsig.toLowerCase().includes('uncertain')
-							? ('Uncertain_significance' as const)
-							: ('Benign' as const)
+				? ('Likely_pathogenic' as const)
+				: variant.clnsig.toLowerCase().includes('conflicting')
+				? ('Conflicting' as const)
+				: variant.clnsig.toLowerCase().includes('uncertain')
+				? ('Uncertain_significance' as const)
+				: ('Benign' as const)
 
 		const significance = getSignificanceDisplayText(significanceKey)
 

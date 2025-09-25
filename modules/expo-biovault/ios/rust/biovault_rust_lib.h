@@ -29,3 +29,8 @@ char *process_23andme_file(const char *input_path, const char *custom_name, cons
 void free_string(char *ptr);
 
 int32_t rust_add(int32_t a, int32_t b);
+
+/**
+ * Analyze user genome against ClinVar database
+ */
+char *analyze_clinvar(const char *user_db_path, const char *clinvar_db_path);
