@@ -1,7 +1,6 @@
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs'
 import { Platform } from 'react-native'
 
-// ts-prune-ignore-next
 export default function TabLayout() {
 	return (
 		<NativeTabs
