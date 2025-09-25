@@ -1,310 +1,317 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
-import * as Device from 'expo-device';
-import { Dimensions, Platform } from 'react-native';
+import AsyncStorage from 'expo-sqlite/kv-store'
+import Constants from 'expo-constants'
+import * as Device from 'expo-device'
+import { Dimensions, Platform } from 'react-native'
 
 interface AnalyticsEvent {
-  type: 'pageview' | 'custom_event' | 'performance';
-  site_id: string;
-  hostname: string;
-  pathname: string;
-  querystring: string;
-  screenWidth: number;
-  screenHeight: number;
-  language: string;
-  page_title?: string;
-  referrer: string;
-  event_name?: string;
-  // Additional fields for custom events
-  properties?: string;
-  // Browser-like fields to avoid bot detection
-  user_agent?: string;
-  viewport_width?: number;
-  viewport_height?: number;
-  // Session tracking
-  visitor_id?: string;
-  session_id?: string;
+	type: 'pageview' | 'custom_event' | 'performance'
+	site_id: string
+	hostname: string
+	pathname: string
+	querystring: string
+	screenWidth: number
+	screenHeight: number
+	language: string
+	page_title?: string
+	referrer: string
+	event_name?: string
+	// Additional fields for custom events
+	properties?: string
+	// Browser-like fields to avoid bot detection
+	user_agent?: string
+	viewport_width?: number
+	viewport_height?: number
+	// Session tracking
+	visitor_id?: string
+	session_id?: string
 }
 
 class Analytics {
-  private siteId: string;
-  private apiEndpoint: string;
-  private sessionId: string | null = null;
-  private visitorId: string | null = null;
-  private lastActivityTime: number = Date.now();
-  private readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
-  private customUserAgent: string | null = null;
-  private appDomain: string = 'app.biovault.net';
+	private siteId: string
+	private apiEndpoint: string
+	private sessionId: string | null = null
+	private visitorId: string | null = null
+	private lastActivityTime: number = Date.now()
+	private readonly SESSION_TIMEOUT = 30 * 60 * 1000 // 30 minutes
+	private customUserAgent: string | null = null
+	private appDomain: string = 'app.biovault.net'
 
-  constructor(siteId: string, apiEndpoint: string = 'https://metrics.syftbox.net/api', appDomain?: string) {
-    this.siteId = siteId;
-    this.apiEndpoint = apiEndpoint;
-    if (appDomain) {
-      this.appDomain = appDomain;
-    }
-    this.initSession();
-    this.initVisitor();
-  }
+	constructor(
+		siteId: string,
+		apiEndpoint: string = 'https://metrics.syftbox.net/api',
+		appDomain?: string
+	) {
+		this.siteId = siteId
+		this.apiEndpoint = apiEndpoint
+		if (appDomain) {
+			this.appDomain = appDomain
+		}
+		this.initSession()
+		this.initVisitor()
+	}
 
-  private async initVisitor() {
-    // Get or create a persistent visitor ID
-    const storedVisitorId = await AsyncStorage.getItem('analytics_visitor_id');
-    if (storedVisitorId) {
-      this.visitorId = storedVisitorId;
-    } else {
-      this.visitorId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-      await AsyncStorage.setItem('analytics_visitor_id', this.visitorId);
-    }
-  }
+	private async initVisitor() {
+		// Get or create a persistent visitor ID
+		const storedVisitorId = await AsyncStorage.getItem('analytics_visitor_id')
+		if (storedVisitorId) {
+			this.visitorId = storedVisitorId
+		} else {
+			this.visitorId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+			await AsyncStorage.setItem('analytics_visitor_id', this.visitorId)
+		}
+	}
 
-  private async initSession() {
-    const storedSession = await AsyncStorage.getItem('analytics_session');
-    if (storedSession) {
-      const { id, timestamp } = JSON.parse(storedSession);
-      if (Date.now() - timestamp < this.SESSION_TIMEOUT) {
-        this.sessionId = id;
-        this.lastActivityTime = timestamp;
-        return;
-      }
-    }
-    this.sessionId = this.generateSessionId();
-    await this.saveSession();
-  }
+	private async initSession() {
+		const storedSession = await AsyncStorage.getItem('analytics_session')
+		if (storedSession) {
+			const { id, timestamp } = JSON.parse(storedSession)
+			if (Date.now() - timestamp < this.SESSION_TIMEOUT) {
+				this.sessionId = id
+				this.lastActivityTime = timestamp
+				return
+			}
+		}
+		this.sessionId = this.generateSessionId()
+		await this.saveSession()
+	}
 
-  private generateSessionId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-  }
+	private generateSessionId(): string {
+		return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+	}
 
-  private async saveSession() {
-    await AsyncStorage.setItem('analytics_session', JSON.stringify({
-      id: this.sessionId,
-      timestamp: this.lastActivityTime
-    }));
-  }
+	private async saveSession() {
+		await AsyncStorage.setItem(
+			'analytics_session',
+			JSON.stringify({
+				id: this.sessionId,
+				timestamp: this.lastActivityTime,
+			})
+		)
+	}
 
-  private async checkSession() {
-    if (Date.now() - this.lastActivityTime > this.SESSION_TIMEOUT) {
-      this.sessionId = this.generateSessionId();
-    }
-    this.lastActivityTime = Date.now();
-    await this.saveSession();
-  }
+	private async checkSession() {
+		if (Date.now() - this.lastActivityTime > this.SESSION_TIMEOUT) {
+			this.sessionId = this.generateSessionId()
+		}
+		this.lastActivityTime = Date.now()
+		await this.saveSession()
+	}
 
+	public setUserAgent(userAgent: string) {
+		this.customUserAgent = userAgent
+	}
 
-  public setUserAgent(userAgent: string) {
-    this.customUserAgent = userAgent;
-  }
+	private getUserAgent(): string {
+		if (this.customUserAgent) {
+			return this.customUserAgent
+		}
 
-  private getUserAgent(): string {
-    if (this.customUserAgent) {
-      return this.customUserAgent;
-    }
+		// Create a realistic mobile browser user agent based on the actual device
+		const platform = Platform.OS
+		const osVersion = Device.osVersion?.replace('.', '_') || '18_0'
+		const appVersion = Constants.expoConfig?.version || '1.0.0'
 
-    // Create a realistic mobile browser user agent based on the actual device
-    const platform = Platform.OS;
-    const osVersion = Device.osVersion?.replace('.', '_') || '18_0';
-    const appVersion = Constants.expoConfig?.version || '1.0.0';
+		if (platform === 'ios') {
+			// iOS Safari user agent format
+			const deviceModel = Device.modelName || 'iPhone'
+			return `Mozilla/5.0 (${deviceModel}; CPU iPhone OS ${osVersion} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1 BioVault/${appVersion}`
+		} else if (platform === 'android') {
+			// Android Chrome user agent format
+			const androidVersion = Device.osVersion || '14'
+			const deviceModel = Device.modelName || 'Pixel'
+			return `Mozilla/5.0 (Linux; Android ${androidVersion}; ${deviceModel}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 BioVault/${appVersion}`
+		}
 
-    if (platform === 'ios') {
-      // iOS Safari user agent format
-      const deviceModel = Device.modelName || 'iPhone';
-      return `Mozilla/5.0 (${deviceModel}; CPU iPhone OS ${osVersion} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1 BioVault/${appVersion}`;
-    } else if (platform === 'android') {
-      // Android Chrome user agent format
-      const androidVersion = Device.osVersion || '14';
-      const deviceModel = Device.modelName || 'Pixel';
-      return `Mozilla/5.0 (Linux; Android ${androidVersion}; ${deviceModel}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 BioVault/${appVersion}`;
-    }
+		// Fallback
+		return `Mozilla/5.0 (Mobile; ${Device.osName}/${Device.osVersion}) BioVault/${appVersion}`
+	}
 
-    // Fallback
-    return `Mozilla/5.0 (Mobile; ${Device.osName}/${Device.osVersion}) BioVault/${appVersion}`;
-  }
+	private async sendEvent(event: AnalyticsEvent) {
+		try {
+			await this.checkSession()
 
+			// Don't include extra fields, just send what the API expects
+			const payload = event
 
-  private async sendEvent(event: AnalyticsEvent) {
-    try {
-      await this.checkSession();
+			console.log('Analytics payload:', {
+				type: event.type,
+				pathname: event.pathname,
+				site_id: this.siteId,
+				endpoint: `${this.apiEndpoint}/track`,
+			})
 
-      // Don't include extra fields, just send what the API expects
-      const payload = event;
+			const response = await fetch(`${this.apiEndpoint}/track`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Origin: `https://${this.appDomain}`,
+					Referer: `https://${this.appDomain}/`,
+					'User-Agent': this.getUserAgent(),
+					Accept: 'application/json, text/plain, */*',
+					'Accept-Language': 'en-US,en;q=0.9',
+					'Cache-Control': 'no-cache',
+					Pragma: 'no-cache',
+				},
+				body: JSON.stringify(payload),
+			})
 
-      console.log('Analytics payload:', {
-        type: event.type,
-        pathname: event.pathname,
-        site_id: this.siteId,
-        endpoint: `${this.apiEndpoint}/track`
-      });
+			if (!response.ok) {
+				const errorText = await response.text()
+				console.log('payload', JSON.stringify(payload, null, 2))
+				console.warn('Analytics tracking failed:', {
+					status: response.status,
+					statusText: response.statusText,
+					error: errorText,
+					payload: {
+						type: event.type,
+						site_id: this.siteId,
+						pathname: event.pathname,
+					},
+				})
+			} else {
+				console.log('Analytics event sent successfully:', event.type)
+			}
+		} catch (error) {
+			console.warn('Analytics error:', error)
+		}
+	}
 
-      const response = await fetch(`${this.apiEndpoint}/track`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': `https://${this.appDomain}`,
-          'Referer': `https://${this.appDomain}/`,
-          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 BioVault/1.0.0',
-          'Accept': 'application/json, text/plain, */*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        },
-        body: JSON.stringify(payload)
-      });
+	public async trackScreen(screenName: string, properties?: Record<string, any>) {
+		// If the screenName already contains a path (like "gene/BRCA1"), use it directly
+		// Otherwise, convert camelCase screen names to URL paths
+		let urlPath: string
+		if (screenName.includes('/')) {
+			urlPath = screenName
+		} else {
+			urlPath = screenName
+				.replace(/Screen$/, '')
+				.replace(/([A-Z])/g, '-$1')
+				.toLowerCase()
+				.replace(/^-/, '')
+		}
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('Analytics tracking failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText,
-          payload: {
-            type: event.type,
-            site_id: this.siteId,
-            pathname: event.pathname
-          }
-        });
-      } else {
-        console.log('Analytics event sent successfully:', event.type);
-      }
-    } catch (error) {
-      console.warn('Analytics error:', error);
-    }
-  }
+		await this.sendEvent({
+			type: 'pageview',
+			site_id: this.siteId,
+			hostname: this.appDomain,
+			pathname: `/${urlPath}`,
+			querystring: '',
+			screenWidth: Math.round(Dimensions.get('window').width || 428),
+			screenHeight: Math.round(Dimensions.get('window').height || 926),
+			language: 'en-US',
+			page_title: screenName.includes('/')
+				? `${screenName.replace('/', ': ')} - BioVault`
+				: `${screenName} - BioVault`,
+			referrer: properties?.referrer || '',
+			event_name: '',
+			user_agent: this.getUserAgent(),
+			viewport_width: Math.round(Dimensions.get('window').width || 428),
+			viewport_height: Math.round(Dimensions.get('window').height || 926),
+			visitor_id: this.visitorId || undefined,
+			session_id: this.sessionId || undefined,
+		})
+	}
 
-  public async trackScreen(screenName: string, properties?: Record<string, any>) {
-    // If the screenName already contains a path (like "gene/BRCA1"), use it directly
-    // Otherwise, convert camelCase screen names to URL paths
-    let urlPath: string;
-    if (screenName.includes('/')) {
-      urlPath = screenName;
-    } else {
-      urlPath = screenName
-        .replace(/Screen$/, '')
-        .replace(/([A-Z])/g, '-$1')
-        .toLowerCase()
-        .replace(/^-/, '');
-    }
+	public async trackEvent(eventName: string, properties?: Record<string, any>) {
+		await this.sendEvent({
+			type: 'custom_event',
+			site_id: this.siteId,
+			hostname: this.appDomain,
+			pathname: '',
+			querystring: '',
+			screenWidth: Math.round(Dimensions.get('window').width || 428),
+			screenHeight: Math.round(Dimensions.get('window').height || 926),
+			language: 'en-US',
+			page_title: '',
+			referrer: '',
+			event_name: eventName,
+			properties: properties ? JSON.stringify(properties) : undefined,
+			user_agent: this.getUserAgent(),
+			viewport_width: Math.round(Dimensions.get('window').width || 428),
+			viewport_height: Math.round(Dimensions.get('window').height || 926),
+			visitor_id: this.visitorId || undefined,
+			session_id: this.sessionId || undefined,
+		})
+	}
 
-    await this.sendEvent({
-      type: 'pageview',
-      site_id: this.siteId,
-      hostname: this.appDomain,
-      pathname: `/${urlPath}`,
-      querystring: '',
-      screenWidth: Dimensions.get('window').width || 428,
-      screenHeight: Dimensions.get('window').height || 926,
-      language: 'en-US',
-      page_title: screenName.includes('/') ? `${screenName.replace('/', ': ')} - BioVault` : `${screenName} - BioVault`,
-      referrer: properties?.referrer || '',
-      event_name: '',
-      user_agent: this.getUserAgent(),
-      viewport_width: Dimensions.get('window').width || 428,
-      viewport_height: Dimensions.get('window').height || 926,
-      visitor_id: this.visitorId || undefined,
-      session_id: this.sessionId || undefined
-    });
-  }
+	public async trackError(error: Error, context?: Record<string, any>) {
+		await this.sendEvent({
+			type: 'custom_event',
+			site_id: this.siteId,
+			hostname: this.appDomain,
+			pathname: '',
+			querystring: '',
+			screenWidth: Math.round(Dimensions.get('window').width || 428),
+			screenHeight: Math.round(Dimensions.get('window').height || 926),
+			language: 'en-US',
+			page_title: '',
+			referrer: '',
+			event_name: 'error',
+			properties: JSON.stringify({
+				message: error.message,
+				stack: error.stack,
+				...context,
+			}),
+			user_agent: this.getUserAgent(),
+			viewport_width: Math.round(Dimensions.get('window').width || 428),
+			viewport_height: Math.round(Dimensions.get('window').height || 926),
+		})
+	}
 
-  public async trackEvent(eventName: string, properties?: Record<string, any>) {
-    await this.sendEvent({
-      type: 'custom_event',
-      site_id: this.siteId,
-      hostname: this.appDomain,
-      pathname: '',
-      querystring: '',
-      screenWidth: Dimensions.get('window').width || 428,
-      screenHeight: Dimensions.get('window').height || 926,
-      language: 'en-US',
-      page_title: '',
-      referrer: '',
-      event_name: eventName,
-      properties: properties ? JSON.stringify(properties) : undefined,
-      user_agent: this.getUserAgent(),
-      viewport_width: Dimensions.get('window').width || 428,
-      viewport_height: Dimensions.get('window').height || 926,
-      visitor_id: this.visitorId || undefined,
-      session_id: this.sessionId || undefined
-    });
-  }
+	public async startSession() {
+		this.sessionId = this.generateSessionId()
+		await this.saveSession()
 
-  public async trackError(error: Error, context?: Record<string, any>) {
-    await this.sendEvent({
-      type: 'custom_event',
-      site_id: this.siteId,
-      hostname: this.appDomain,
-      pathname: '',
-      querystring: '',
-      screenWidth: Dimensions.get('window').width || 428,
-      screenHeight: Dimensions.get('window').height || 926,
-      language: 'en-US',
-      page_title: '',
-      referrer: '',
-      event_name: 'error',
-      properties: JSON.stringify({
-        message: error.message,
-        stack: error.stack,
-        ...context
-      }),
-      user_agent: this.getUserAgent(),
-      viewport_width: Dimensions.get('window').width || 428,
-      viewport_height: Dimensions.get('window').height || 926
-    });
-  }
+		await this.sendEvent({
+			type: 'custom_event',
+			site_id: this.siteId,
+			hostname: this.appDomain,
+			pathname: '',
+			querystring: '',
+			screenWidth: Math.round(Dimensions.get('window').width || 428),
+			screenHeight: Math.round(Dimensions.get('window').height || 926),
+			language: 'en-US',
+			page_title: '',
+			referrer: '',
+			event_name: 'session_start',
+			user_agent: this.getUserAgent(),
+			viewport_width: Math.round(Dimensions.get('window').width || 428),
+			viewport_height: Math.round(Dimensions.get('window').height || 926),
+		})
+	}
 
-  public async startSession() {
-    this.sessionId = this.generateSessionId();
-    await this.saveSession();
+	public async endSession() {
+		await this.sendEvent({
+			type: 'custom_event',
+			site_id: this.siteId,
+			hostname: this.appDomain,
+			pathname: '',
+			querystring: '',
+			screenWidth: Math.round(Dimensions.get('window').width || 428),
+			screenHeight: Math.round(Dimensions.get('window').height || 926),
+			language: 'en-US',
+			page_title: '',
+			referrer: '',
+			event_name: 'session_end',
+			user_agent: this.getUserAgent(),
+			viewport_width: Math.round(Dimensions.get('window').width || 428),
+			viewport_height: Math.round(Dimensions.get('window').height || 926),
+		})
 
-    await this.sendEvent({
-      type: 'custom_event',
-      site_id: this.siteId,
-      hostname: this.appDomain,
-      pathname: '',
-      querystring: '',
-      screenWidth: Dimensions.get('window').width || 428,
-      screenHeight: Dimensions.get('window').height || 926,
-      language: 'en-US',
-      page_title: '',
-      referrer: '',
-      event_name: 'session_start',
-      user_agent: this.getUserAgent(),
-      viewport_width: Dimensions.get('window').width || 428,
-      viewport_height: Dimensions.get('window').height || 926
-    });
-  }
-
-  public async endSession() {
-    await this.sendEvent({
-      type: 'custom_event',
-      site_id: this.siteId,
-      hostname: this.appDomain,
-      pathname: '',
-      querystring: '',
-      screenWidth: Dimensions.get('window').width || 428,
-      screenHeight: Dimensions.get('window').height || 926,
-      language: 'en-US',
-      page_title: '',
-      referrer: '',
-      event_name: 'session_end',
-      user_agent: this.getUserAgent(),
-      viewport_width: Dimensions.get('window').width || 428,
-      viewport_height: Dimensions.get('window').height || 926
-    });
-
-    await AsyncStorage.removeItem('analytics_session');
-    this.sessionId = null;
-  }
+		await AsyncStorage.removeItem('analytics_session')
+		this.sessionId = null
+	}
 }
 
-let analyticsInstance: Analytics | null = null;
+let analyticsInstance: Analytics | null = null
 
 export const initAnalytics = (siteId: string, apiEndpoint?: string, appDomain?: string) => {
-  if (!analyticsInstance) {
-    analyticsInstance = new Analytics(siteId, apiEndpoint, appDomain);
-  }
-  return analyticsInstance;
-};
+	if (!analyticsInstance) {
+		analyticsInstance = new Analytics(siteId, apiEndpoint, appDomain)
+	}
+	return analyticsInstance
+}
 
 export const getAnalytics = (): Analytics | null => {
-  return analyticsInstance;
-};
-
+	return analyticsInstance
+}
