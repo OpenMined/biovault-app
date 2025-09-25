@@ -42,7 +42,20 @@ export default function TabLayout() {
 					/>
 				)}
 			</NativeTabs.Trigger>
-
+			<NativeTabs.Trigger name="feed">
+				<Label>Feed</Label>
+				{Platform.OS === 'ios' ? (
+					<Icon sf={{ default: 'newspaper', selected: 'newspaper.fill' }} />
+				) : (
+					<Icon
+						selectedColor={'white'}
+						src={{
+							default: require('../../assets/tabbar/newspaper.svg'),
+							selected: require('../../assets/tabbar/newspaper.svg'),
+						}}
+					/>
+				)}
+			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="research">
 				<Label>Research</Label>
 				{Platform.OS === 'ios' ? (
@@ -59,6 +72,20 @@ export default function TabLayout() {
 						src={{
 							default: require('../../assets/tabbar/microscope.svg'),
 							selected: require('../../assets/tabbar/microscope.svg'),
+						}}
+					/>
+				)}
+			</NativeTabs.Trigger>
+			<NativeTabs.Trigger name="settings">
+				<Label>Settings</Label>
+				{Platform.OS === 'ios' ? (
+					<Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+				) : (
+					<Icon
+						selectedColor={'white'}
+						src={{
+							default: require('../../assets/tabbar/settings.svg'),
+							selected: require('../../assets/tabbar/settings.svg'),
 						}}
 					/>
 				)}

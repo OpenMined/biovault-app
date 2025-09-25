@@ -59,7 +59,7 @@ export default function DiscoverScreen() {
 	const db = useSQLiteContext()
 	const { trackEvent } = useAnalytics({
 		trackScreenView: true,
-		screenProperties: { screen: 'Insights' }
+		screenProperties: { screen: 'Insights' },
 	})
 
 	const [state, setState] = useState<AnalyzeState>({
@@ -141,7 +141,7 @@ export default function DiscoverScreen() {
 
 	const selectDatabaseForAnalysis = (database: UserGenomeDatabase) => {
 		trackEvent('database_selected_for_analysis', {
-			variantCount: database.totalVariants
+			variantCount: database.totalVariants,
 		})
 		setState((prev) => ({
 			...prev,
@@ -158,7 +158,7 @@ export default function DiscoverScreen() {
 		if (!state.selectedDatabase) return
 
 		trackEvent('clinvar_analysis_started', {
-			variantCount: state.selectedDatabase.totalVariants
+			variantCount: state.selectedDatabase.totalVariants,
 		})
 
 		setState((prev) => ({
@@ -182,7 +182,7 @@ export default function DiscoverScreen() {
 			// Track analysis results
 			trackEvent('clinvar_analysis_completed', {
 				rsidsSearched: rsids.length,
-				matchesFound: matches.length
+				matchesFound: matches.length,
 			})
 
 			// Group matches by gene

@@ -1,4 +1,4 @@
-import AsyncStorage from 'expo-sqlite/kv-store'
+import Storage from 'expo-sqlite/kv-store'
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import { Dimensions, Platform } from 'react-native'
@@ -50,19 +50,19 @@ class Analytics {
 		this.initVisitor()
 	}
 
-	private async initVisitor() {
+	private initVisitor() {
 		// Get or create a persistent visitor ID
-		const storedVisitorId = await AsyncStorage.getItem('analytics_visitor_id')
+		const storedVisitorId = Storage.getItemSync('analytics_visitor_id')
 		if (storedVisitorId) {
 			this.visitorId = storedVisitorId
 		} else {
 			this.visitorId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-			await AsyncStorage.setItem('analytics_visitor_id', this.visitorId)
+			Storage.setItemSync('analytics_visitor_id', this.visitorId)
 		}
 	}
 
-	private async initSession() {
-		const storedSession = await AsyncStorage.getItem('analytics_session')
+	private initSession() {
+		const storedSession = Storage.getItemSync('analytics_session')
 		if (storedSession) {
 			const { id, timestamp } = JSON.parse(storedSession)
 			if (Date.now() - timestamp < this.SESSION_TIMEOUT) {
@@ -72,15 +72,15 @@ class Analytics {
 			}
 		}
 		this.sessionId = this.generateSessionId()
-		await this.saveSession()
+		this.saveSession()
 	}
 
 	private generateSessionId(): string {
 		return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
 	}
 
-	private async saveSession() {
-		await AsyncStorage.setItem(
+	private saveSession() {
+		Storage.setItemSync(
 			'analytics_session',
 			JSON.stringify({
 				id: this.sessionId,
@@ -89,12 +89,12 @@ class Analytics {
 		)
 	}
 
-	private async checkSession() {
+	private checkSession() {
 		if (Date.now() - this.lastActivityTime > this.SESSION_TIMEOUT) {
 			this.sessionId = this.generateSessionId()
 		}
 		this.lastActivityTime = Date.now()
-		await this.saveSession()
+		this.saveSession()
 	}
 
 	public setUserAgent(userAgent: string) {
@@ -128,7 +128,7 @@ class Analytics {
 
 	private async sendEvent(event: AnalyticsEvent) {
 		try {
-			await this.checkSession()
+			this.checkSession()
 
 			// Don't include extra fields, just send what the API expects
 			const payload = event
@@ -260,7 +260,7 @@ class Analytics {
 
 	public async startSession() {
 		this.sessionId = this.generateSessionId()
-		await this.saveSession()
+		this.saveSession()
 
 		await this.sendEvent({
 			type: 'custom_event',
@@ -298,7 +298,7 @@ class Analytics {
 			viewport_height: Math.round(Dimensions.get('window').height || 926),
 		})
 
-		await AsyncStorage.removeItem('analytics_session')
+		Storage.removeItemSync('analytics_session')
 		this.sessionId = null
 	}
 }
