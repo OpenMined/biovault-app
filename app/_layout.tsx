@@ -8,6 +8,7 @@ import 'react-native-reanimated'
 
 const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.biovault.net')
 
+// ts-prune-ignore-next
 export default function RootLayout() {
 	useEffect(() => {
 		analytics.startSession().catch(console.error)
@@ -21,6 +22,7 @@ export default function RootLayout() {
 			<SQLiteProvider
 				databaseName="clinvar_23andme.sqlite"
 				assetSource={{
+					// eslint-disable-next-line @typescript-eslint/no-require-imports
 					assetId: require('../assets/clinvar_23andme.sqlite'),
 					forceOverwrite: true,
 				}}

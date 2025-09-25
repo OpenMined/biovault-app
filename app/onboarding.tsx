@@ -91,6 +91,7 @@ function OnboardingScreen({
 	)
 }
 
+// ts-prune-ignore-next
 export default function OnboardingFlow() {
 	const [currentIndex, setCurrentIndex] = useState(0)
 	const ref = useRef<FlatList>(null)

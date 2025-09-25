@@ -24,6 +24,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 // Types moved from deleted files
+// ts-prune-ignore-next
 export interface ClinVarVariant {
 	rsid: string
 	chrom: string
@@ -36,6 +37,7 @@ export interface ClinVarVariant {
 	condition: string
 }
 
+// ts-prune-ignore-next
 export interface GeneGroup {
 	gene: string
 	variants: ClinVarVariant[]

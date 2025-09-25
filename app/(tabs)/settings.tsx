@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Storage } from 'expo-sqlite/kv-store'
 
+// ts-prune-ignore-next
 export default function SettingsScreen() {
 	const handleResetOnboarding = () => {
 		Alert.alert(
