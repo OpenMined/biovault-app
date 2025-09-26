@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useAnalytics } from '@/hooks/useAnalytics'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useFocusEffect } from '@react-navigation/native'
 
@@ -9,6 +10,11 @@ import { useFocusEffect } from '@react-navigation/native'
 export default function FeedScreen() {
 	const { theme } = useTheme()
 	const [favoriteGenes, setFavoriteGenes] = useState<string[]>([])
+
+	useAnalytics({
+		trackScreenView: true,
+		screenProperties: { screen: 'Feed' },
+	})
 
 	const loadFavorites = async () => {
 		try {
