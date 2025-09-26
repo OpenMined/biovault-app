@@ -81,23 +81,23 @@ export default function SettingsScreen() {
 			<ScrollView style={layout.contentContainer}>
 				<Text style={[typography.largeTitle, { color: theme.primaryAlt }]}>Settings</Text>
 
-				<View style={layout.section}>
+				<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Appearance</Text>
-					<TouchableOpacity style={[buttons.secondary, { backgroundColor: theme.surface }]} onPress={handleThemeToggle}>
+					<TouchableOpacity style={[buttons.secondary, { backgroundColor: theme.surface, marginTop: 12 }]} onPress={handleThemeToggle}>
 						<Text style={[typography.buttonTextSmall, { color: theme.textPrimary }]}>
 							{getThemeDisplayName()}
 						</Text>
 					</TouchableOpacity>
 				</View>
 
-				<View style={layout.section}>
+				<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>App Information</Text>
-					<View style={[cards.base, { backgroundColor: theme.surface }]}>
-						<View style={layout.rowBetween}>
+					<View style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]}>
+						<View style={layout.spacedRow}>
 							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Version</Text>
 							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>{Constants.expoConfig?.version || '1.0.0'}</Text>
 						</View>
-						<View style={[layout.rowBetween, layout.marginTopSmall]}>
+						<View style={[layout.spacedRow, { marginTop: 8 }]}>
 							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Build</Text>
 							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>
 								{Constants.expoConfig?.extra?.eas?.projectId ? 'Production' : 'Development'}
@@ -106,30 +106,30 @@ export default function SettingsScreen() {
 					</View>
 				</View>
 
-				<View style={layout.section}>
+				<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Privacy & Security</Text>
-					<View style={[cards.base, { backgroundColor: theme.surface }]}>
+					<View style={[cards.standard, { backgroundColor: theme.surface, marginTop: 12 }]}>
 						<Text style={[typography.cardTitle, { color: theme.primary }]}>🔒 Your Data Stays Local</Text>
 						<Text style={[typography.bodyText, { color: theme.textSecondary, marginTop: 12 }]}>
 							All your genetic data is processed and stored locally on your device. Nothing ever
 							leaves your device without your explicit consent.
 						</Text>
-						<View style={[layout.rowStart, { marginTop: 16, gap: 12 }]}>
-							<TouchableOpacity style={[buttons.small, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handlePrivacyPolicy}>
+						<View style={[layout.row, { marginTop: 16, gap: 12 }]}>
+							<TouchableOpacity style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handlePrivacyPolicy}>
 								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>Privacy Policy</Text>
 							</TouchableOpacity>
-							<TouchableOpacity style={[buttons.small, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handleTermsOfService}>
+							<TouchableOpacity style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handleTermsOfService}>
 								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>Terms of Service</Text>
 							</TouchableOpacity>
 						</View>
 					</View>
 				</View>
 
-				<View style={layout.section}>
+				<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Support</Text>
-					<TouchableOpacity style={[cards.base, { backgroundColor: theme.surface }]} onPress={handleContactSupport}>
-						<View style={layout.rowBetween}>
-							<View style={layout.rowStart}>
+					<TouchableOpacity style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]} onPress={handleContactSupport}>
+						<View style={layout.spacedRow}>
+							<View style={layout.row}>
 								<Text style={{ fontSize: 24, marginRight: 16 }}>📧</Text>
 								<View>
 									<Text style={[typography.cardTitle, { color: theme.textPrimary }]}>Contact Support</Text>
@@ -141,14 +141,14 @@ export default function SettingsScreen() {
 					</TouchableOpacity>
 				</View>
 
-				<View style={layout.section}>
+				<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Developer Options</Text>
-					<TouchableOpacity style={buttons.destructive} onPress={handleResetOnboarding}>
+					<TouchableOpacity style={[buttons.destructive, { marginTop: 12 }]} onPress={handleResetOnboarding}>
 						<Text style={typography.buttonTextSmall}>Reset Onboarding</Text>
 					</TouchableOpacity>
 				</View>
 
-				<View style={[layout.centerContent, { paddingVertical: 32 }]}>
+				<View style={[layout.centeredContainer, { paddingVertical: 32 }]}>
 					<Text style={[typography.cardTitle, { color: theme.primary, textAlign: 'center' }]}>BioVault - Secure Genomic Data Management</Text>
 					<Text style={[typography.caption, { color: theme.textSecondary, textAlign: 'center', marginTop: 4 }]}>Made with privacy and security in mind</Text>
 				</View>
