@@ -5,8 +5,9 @@
 
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { useState } from 'react'
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { layout, researchStyles } from '@/styles'
 
 interface DesktopBenefit {
 	icon: string
@@ -222,25 +223,17 @@ export default function ResearchScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	container: {
-		flex: 1,
-		backgroundColor: '#f5f5f5',
-	},
+const styles = {
+	...researchStyles,
+	container: layout.screenContainer,
 	scrollView: {
 		flex: 1,
 	},
-	scrollContent: {
-		flexGrow: 1,
-		paddingBottom: 100, // Increased padding for Android tab bar
-	},
-	header: {
-		padding: 20,
-		paddingBottom: 16,
-	},
+	scrollContent: layout.scrollContent,
+	header: layout.headerSection,
 	title: {
 		fontSize: 28,
-		fontWeight: '700',
+		fontWeight: '700' as const,
 		color: '#333',
 		marginBottom: 4,
 	},
@@ -248,213 +241,6 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		color: '#666',
 		lineHeight: 22,
-	},
-	// Desktop Promotion Styles
-	promoCard: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
-		marginBottom: 20,
-		padding: 24,
-		borderRadius: 16,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	promoHeader: {
-		alignItems: 'center',
-		marginBottom: 24,
-	},
-	promoTitle: {
-		fontSize: 24,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 8,
-		textAlign: 'center',
-	},
-	promoSubtitle: {
-		fontSize: 16,
-		color: '#666',
-		textAlign: 'center',
-		lineHeight: 22,
-	},
-	benefitsList: {
-		marginBottom: 24,
-	},
-	benefitCard: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		backgroundColor: 'white',
-		padding: 16,
-		borderRadius: 12,
-		marginBottom: 12,
-		borderWidth: 1,
-		borderColor: '#e0e0e0',
-	},
-	benefitIconContainer: {
-		width: 44,
-		height: 44,
-		borderRadius: 22,
-		backgroundColor: '#f0f8f0',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginRight: 12,
-	},
-	benefitIcon: {
-		fontSize: 20,
-	},
-	benefitContent: {
-		flex: 1,
-	},
-	benefitTitle: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#333',
-		marginBottom: 2,
-	},
-	benefitDescription: {
-		fontSize: 13,
-		color: '#666',
-		lineHeight: 18,
-	},
-	benefitArrow: {
-		width: 24,
-		height: 24,
-		borderRadius: 12,
-		backgroundColor: '#4CAF50',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginLeft: 8,
-	},
-	arrowText: {
-		fontSize: 12,
-		color: 'white',
-		fontWeight: '600',
-	},
-	installButton: {
-		backgroundColor: '#4CAF50',
-		paddingVertical: 16,
-		borderRadius: 12,
-		alignItems: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.2,
-		shadowRadius: 8,
-		elevation: 4,
-	},
-	installButtonText: {
-		fontSize: 18,
-		fontWeight: '700',
-		color: 'white',
-	},
-	// Installation Guide Styles
-	guideCard: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
-		marginBottom: 20,
-		padding: 20,
-		borderRadius: 16,
-		borderWidth: 2,
-		borderColor: '#4CAF50',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	guideHeader: {
-		flexDirection: 'row',
-		justifyContent: 'space-between',
-		alignItems: 'center',
-		marginBottom: 20,
-	},
-	guideTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
-	},
-	closeButton: {
-		fontSize: 18,
-		color: '#666',
-		fontWeight: '600',
-	},
-	stepCard: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		marginBottom: 16,
-	},
-	stepNumber: {
-		width: 28,
-		height: 28,
-		borderRadius: 14,
-		backgroundColor: '#4CAF50',
-		color: 'white',
-		fontSize: 14,
-		fontWeight: '700',
-		textAlign: 'center',
-		lineHeight: 28,
-		marginRight: 12,
-	},
-	stepContent: {
-		flex: 1,
-	},
-	stepTitle: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#333',
-		marginBottom: 4,
-	},
-	stepDescription: {
-		fontSize: 14,
-		color: '#666',
-		lineHeight: 18,
-	},
-	visitWebsiteButton: {
-		backgroundColor: '#4CAF50',
-		paddingVertical: 12,
-		borderRadius: 8,
-		alignItems: 'center',
-		marginTop: 8,
-	},
-	visitWebsiteButtonText: {
-		color: 'white',
-		fontSize: 16,
-		fontWeight: '600',
-	},
-	// Network Overview Styles
-	networkOverview: {
-		marginHorizontal: 20,
-		marginBottom: 20,
-	},
-	overviewTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 16,
-	},
-	workflowCard: {
-		backgroundColor: 'white',
-		padding: 20,
-		borderRadius: 12,
-		marginBottom: 12,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	workflowTitle: {
-		fontSize: 16,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 12,
-	},
-	workflowStep: {
-		fontSize: 14,
-		color: '#666',
-		marginBottom: 8,
-		lineHeight: 18,
 	},
 	// Supported Formats Styles
 	supportedFormats: {
@@ -533,4 +319,4 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: 'white',
 	},
-})
+}

@@ -1,10 +1,32 @@
-import { TouchableOpacity, Text, StyleSheet, Alert, View } from 'react-native'
+import { TouchableOpacity, Text, Alert, View, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Storage } from 'expo-sqlite/kv-store'
+import { layout, typography, buttons } from '@/styles'
+import { useTheme } from '@/contexts/ThemeContext'
 
 // ts-prune-ignore-next
 export default function SettingsScreen() {
+	const { theme, themeMode, setThemeMode } = useTheme()
+
+	const handleThemeToggle = () => {
+		const modes: ('system' | 'light' | 'dark')[] = ['system', 'light', 'dark']
+		const currentIndex = modes.indexOf(themeMode)
+		const nextIndex = (currentIndex + 1) % modes.length
+		const nextMode = modes[nextIndex]
+		if (nextMode) {
+			setThemeMode(nextMode)
+		}
+	}
+
+	const getThemeDisplayName = () => {
+		switch (themeMode) {
+			case 'light': return '☀️ Light'
+			case 'dark': return '🌙 Dark'
+			case 'system': return '📱 System'
+		}
+	}
+
 	const handleResetOnboarding = () => {
 		Alert.alert(
 			'Reset Onboarding',
@@ -36,12 +58,21 @@ export default function SettingsScreen() {
 	}
 
 	return (
-		<SafeAreaView style={styles.container}>
+		<SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
 			<View style={styles.content}>
-				<Text style={styles.title}>Settings</Text>
+				<Text style={[styles.title, { color: theme.primaryAlt }]}>Settings</Text>
 
 				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Developer Options</Text>
+					<Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Appearance</Text>
+					<TouchableOpacity style={[styles.themeButton, { backgroundColor: theme.surface }]} onPress={handleThemeToggle}>
+						<Text style={[styles.themeButtonText, { color: theme.textPrimary }]}>
+							{getThemeDisplayName()}
+						</Text>
+					</TouchableOpacity>
+				</View>
+
+				<View style={styles.section}>
+					<Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Developer Options</Text>
 					<TouchableOpacity style={styles.resetButton} onPress={handleResetOnboarding}>
 						<Text style={styles.resetButtonText}>🔄 Reset Onboarding</Text>
 					</TouchableOpacity>
@@ -53,37 +84,25 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
 	container: {
-		flex: 1,
-		backgroundColor: '#ffffff',
+		...layout.screenContainer,
 	},
-	content: {
-		flex: 1,
-		padding: 20,
-	},
+	content: layout.contentContainer,
 	title: {
-		fontSize: 32,
-		fontWeight: 'bold',
-		color: '#059669',
+		...typography.largeTitle,
 		marginBottom: 30,
 	},
 	section: {
 		marginBottom: 30,
 	},
 	sectionTitle: {
-		fontSize: 18,
-		fontWeight: '600',
-		color: '#374151',
+		...typography.cardTitle,
 		marginBottom: 15,
 	},
-	resetButton: {
-		backgroundColor: '#ef4444',
-		padding: 12,
-		borderRadius: 8,
-		alignItems: 'center',
+	resetButton: buttons.destructive,
+	resetButtonText: typography.buttonTextSmall,
+	themeButton: {
+		...buttons.secondary,
+		marginBottom: 8,
 	},
-	resetButtonText: {
-		color: 'white',
-		fontSize: 14,
-		fontWeight: '500',
-	},
+	themeButtonText: typography.buttonTextSmall,
 })
