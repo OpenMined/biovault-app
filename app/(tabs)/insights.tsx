@@ -22,8 +22,10 @@ import {
 } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 // Types moved from deleted files
+// ts-prune-ignore-next
 export interface ClinVarVariant {
 	rsid: string
 	chrom: string
@@ -34,8 +36,10 @@ export interface ClinVarVariant {
 	clnsig: string
 	clnrevstat: string
 	condition: string
+	user_genotype?: string
 }
 
+// ts-prune-ignore-next
 export interface GeneGroup {
 	gene: string
 	variants: ClinVarVariant[]
@@ -113,7 +117,7 @@ interface AnalyzeState {
 }
 
 // ts-prune-ignore-next
-export default function DiscoverScreen() {
+export default function InsightsScreen() {
 	const { selectedDb } = useLocalSearchParams<{ selectedDb?: string }>()
 	const db = useSQLiteContext()
 	const { trackEvent } = useAnalytics({
@@ -121,6 +125,7 @@ export default function DiscoverScreen() {
 		screenProperties: { screen: 'Insights' },
 	})
 
+	const [favoriteGenes, setFavoriteGenes] = useState<string[]>([])
 	const [state, setState] = useState<AnalyzeState>({
 		isLoading: false,
 		loadingMessage: '',
@@ -165,6 +170,36 @@ export default function DiscoverScreen() {
 		}
 	}, [selectedDb])
 
+	// Load and save favorite genes
+	const loadFavoriteGenes = React.useCallback(async () => {
+		try {
+			const saved = await AsyncStorage.getItem('favoriteGenes')
+			if (saved) {
+				setFavoriteGenes(JSON.parse(saved))
+			}
+		} catch (error) {
+			console.error('Failed to load favorite genes:', error)
+		}
+	}, [])
+
+	const toggleFavoriteGene = async (gene: string) => {
+		try {
+			const newFavorites = favoriteGenes.includes(gene)
+				? favoriteGenes.filter(g => g !== gene)
+				: [...favoriteGenes, gene]
+
+			setFavoriteGenes(newFavorites)
+			await AsyncStorage.setItem('favoriteGenes', JSON.stringify(newFavorites))
+
+			trackEvent('toggle_favorite_gene', {
+				gene,
+				action: favoriteGenes.includes(gene) ? 'remove' : 'add',
+			})
+		} catch (error) {
+			console.error('Failed to save favorite gene:', error)
+		}
+	}
+
 	const loadClinVarRecordCount = React.useCallback(async () => {
 		try {
 			// Get the actual record count from the ClinVar SQLite database
@@ -190,7 +225,8 @@ export default function DiscoverScreen() {
 	useEffect(() => {
 		loadUserDatabases()
 		loadClinVarRecordCount()
-	}, [loadUserDatabases, loadClinVarRecordCount])
+		loadFavoriteGenes()
+	}, [loadUserDatabases, loadClinVarRecordCount, loadFavoriteGenes])
 
 	useFocusEffect(
 		React.useCallback(() => {
@@ -244,6 +280,11 @@ export default function DiscoverScreen() {
 				`Rust analysis completed: ${result.matches_found} matches in ${result.gene_groups.length} genes`
 			)
 
+			// Debug: Check if genotype data is present
+			if (result.matches.length > 0) {
+				console.log('Sample match with genotype:', result.matches[0])
+			}
+
 			// Track analysis results
 			trackEvent('clinvar_analysis_completed', {
 				rsidsSearched: result.rsids_searched,
@@ -251,7 +292,7 @@ export default function DiscoverScreen() {
 			})
 
 			// Convert Rust types to our JavaScript types for UI compatibility
-			const geneGroups: GeneGroup[] = result.gene_groups.map((group) => ({
+			let geneGroups: GeneGroup[] = result.gene_groups.map((group) => ({
 				gene: group.gene,
 				variants: group.variants.map((v) => ({
 					rsid: v.rsid,
@@ -263,6 +304,7 @@ export default function DiscoverScreen() {
 					clnsig: v.clnsig,
 					clnrevstat: v.clnrevstat,
 					condition: v.condition,
+					user_genotype: v.user_genotype,
 				})),
 				mostSignificant: group.most_significant as GeneGroup['mostSignificant'],
 				significanceScore: group.significance_score,
@@ -286,7 +328,28 @@ export default function DiscoverScreen() {
 				clnsig: v.clnsig,
 				clnrevstat: v.clnrevstat,
 				condition: v.condition,
+				user_genotype: v.user_genotype,
 			}))
+
+			// Sort gene groups by YOUR actual risk
+			geneGroups.sort((a, b) => {
+				// Check if user has pathogenic variants
+				const aHasPath = a.variants.some(v => {
+					const isPath = v.clnsig.toLowerCase().includes('pathogenic')
+					const hasRisk = v.user_genotype && v.alt && v.user_genotype.includes(v.alt)
+					return isPath && hasRisk
+				})
+				const bHasPath = b.variants.some(v => {
+					const isPath = v.clnsig.toLowerCase().includes('pathogenic')
+					const hasRisk = v.user_genotype && v.alt && v.user_genotype.includes(v.alt)
+					return isPath && hasRisk
+				})
+
+				// Sort: Your pathogenic first, then by significance score
+				if (aHasPath && !bHasPath) return -1
+				if (!aHasPath && bHasPath) return 1
+				return a.significanceScore - b.significanceScore
+			})
 
 			setState((prev) => ({
 				...prev,
@@ -372,7 +435,7 @@ export default function DiscoverScreen() {
 								state.isLoading && styles.analyzeButtonTextDisabled,
 							]}
 						>
-							{state.isLoading ? '🔄 Analyzing...' : '🔬 Run ClinVar Analysis'}
+							{state.isLoading ? 'Analyzing...' : 'Run ClinVar Analysis'}
 						</Text>
 					</TouchableOpacity>
 				)}
@@ -418,6 +481,13 @@ export default function DiscoverScreen() {
 					</Text>
 				</View>
 
+				{/* Important Notice at the top */}
+				<View style={[styles.infoCard, { backgroundColor: '#fff7ed', borderColor: '#fb923c' }]}>
+					<Text style={[styles.infoCardText, { color: '#ea580c' }]}>
+						⚠️ Important: Interpretation requires a registered clinician. Remember, this app could have bugs or your sequencing could have errors. This is not medical advice.
+					</Text>
+				</View>
+
 				<View style={styles.searchContainer}>
 					<TextInput
 						style={styles.searchInput}
@@ -426,6 +496,9 @@ export default function DiscoverScreen() {
 						onChangeText={handleSearch}
 						clearButtonMode="while-editing"
 						returnKeyType="search"
+						autoCorrect={false}
+						autoCapitalize="none"
+						spellCheck={false}
 					/>
 					{state.searchQuery && (
 						<Text style={styles.searchResults}>
@@ -436,10 +509,12 @@ export default function DiscoverScreen() {
 
 				{pathogenicGenes.length > 0 && (
 					<View style={styles.categorySection}>
-						<Text style={styles.categoryTitle}>⚠️ Clinically Significant Variants</Text>
-						<Text style={styles.categoryDescription}>
-							These genes have variants with known clinical significance
-						</Text>
+						<Text style={styles.categoryTitle}>Your Variant Matches - Significant</Text>
+						<View style={[styles.infoCard, { backgroundColor: '#fef3c7', borderColor: '#fbbf24' }]}>
+							<Text style={[styles.infoCardText, { color: '#92400e' }]}>
+								These matches are considered by ClinVar to be worth paying attention to, however remember, interpretation requires a registered clinician. Remember, this app could have bugs or your sequencing could have errors.
+							</Text>
+						</View>
 						{pathogenicGenes
 							.slice(0, 10)
 							.map((geneGroup, index) => renderGeneCard(geneGroup, index))}
@@ -448,10 +523,12 @@ export default function DiscoverScreen() {
 
 				{uncertainGenes.length > 0 && (
 					<View style={styles.categorySection}>
-						<Text style={styles.categoryTitle}>❓ Variants of Uncertain Significance</Text>
-						<Text style={styles.categoryDescription}>
-							These variants have unclear clinical impact
-						</Text>
+						<Text style={styles.categoryTitle}>Your Variant Matches - Uncertain</Text>
+						<View style={[styles.infoCard, { backgroundColor: '#fff7ed', borderColor: '#fb923c' }]}>
+							<Text style={[styles.infoCardText, { color: '#ea580c' }]}>
+								Uncertain significance means that ClinVar is not sure these are pathogenic so for now you should probably not take them into consideration.
+							</Text>
+						</View>
 						{uncertainGenes
 							.slice(0, 10)
 							.map((geneGroup, index) => renderGeneCard(geneGroup, index + pathogenicGenes.length))}
@@ -460,10 +537,12 @@ export default function DiscoverScreen() {
 
 				{otherGenes.length > 0 && (
 					<View style={styles.categorySection}>
-						<Text style={styles.categoryTitle}>📊 Other Genetic Variants</Text>
-						<Text style={styles.categoryDescription}>
-							Additional variants found in your genetic data
-						</Text>
+						<Text style={styles.categoryTitle}>Your Variant Matches - Benign</Text>
+						<View style={[styles.infoCard, { backgroundColor: '#f0fdf4', borderColor: '#22c55e' }]}>
+							<Text style={[styles.infoCardText, { color: '#16a34a' }]}>
+								These were found but are considered to not have negative consequences.
+							</Text>
+						</View>
 						{otherGenes
 							.slice(0, 10)
 							.map((geneGroup, index) =>
@@ -484,7 +563,20 @@ export default function DiscoverScreen() {
 		)
 	}
 
-	const renderGeneCard = (geneGroup: any, index: number) => (
+	const renderGeneCard = (geneGroup: any, index: number) => {
+		// Check if user has any pathogenic variants in this gene
+		const hasPathogenicRisk = geneGroup.variants.some((v: ClinVarVariant) => {
+			const isPathogenic = v.clnsig.toLowerCase().includes('pathogenic')
+			const hasRisk = v.user_genotype && v.alt && v.user_genotype.includes(v.alt)
+			return isPathogenic && hasRisk
+		})
+
+		// Determine color based on whether user has the risk
+		const tagColor = hasPathogenicRisk
+			? getSignificanceColor(geneGroup.mostSignificant)
+			: '#9e9e9e' // Grey if user doesn't have the risk
+
+		return (
 		<View key={index} style={styles.geneCard}>
 			<View style={styles.geneCardHeader}>
 				<View style={styles.geneInfo}>
@@ -492,20 +584,34 @@ export default function DiscoverScreen() {
 					<View
 						style={[
 							styles.significanceTag,
-							{ backgroundColor: getSignificanceColor(geneGroup.mostSignificant) },
+							{ backgroundColor: tagColor },
 						]}
 					>
 						<Text style={styles.significanceText}>
+							{hasPathogenicRisk ? '⚠️ ' : ''}
 							{getSignificanceDisplayText(geneGroup.mostSignificant)}
 						</Text>
 					</View>
 				</View>
-				<TouchableOpacity
-					style={styles.genopediaButton}
-					onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneGroup.gene}`)}
-				>
-					<Text style={styles.genopediaButtonText}>Learn More</Text>
-				</TouchableOpacity>
+				<View style={styles.geneCardActions}>
+					<TouchableOpacity
+						style={styles.favoriteButton}
+						onPress={() => toggleFavoriteGene(geneGroup.gene)}
+					>
+						<Text style={[
+							styles.favoriteIcon,
+							favoriteGenes.includes(geneGroup.gene) && styles.favoriteIconActive
+						]}>
+							{favoriteGenes.includes(geneGroup.gene) ? '★' : '☆'}
+						</Text>
+					</TouchableOpacity>
+					<TouchableOpacity
+						style={styles.genopediaButton}
+						onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneGroup.gene}`)}
+					>
+						<Text style={styles.genopediaButtonText}>Learn More</Text>
+					</TouchableOpacity>
+				</View>
 			</View>
 
 			<View style={styles.geneStats}>
@@ -530,14 +636,24 @@ export default function DiscoverScreen() {
 			)}
 
 			<View style={styles.geneCardFooter}>
-				<Link href={`/gene/${encodeURIComponent(geneGroup.gene)}`} asChild>
+				<Link
+					href={{
+						pathname: '/gene/[geneName]',
+						params: {
+							geneName: geneGroup.gene,
+							userDb: state.selectedDatabase?.dbName || '',
+							variants: JSON.stringify(geneGroup.variants)
+						}
+					}}
+					asChild>
 					<TouchableOpacity style={styles.viewDetailsButton}>
 						<Text style={styles.viewDetailsButtonText}>View All Variants →</Text>
 					</TouchableOpacity>
 				</Link>
 			</View>
 		</View>
-	)
+		)
+	}
 
 	const renderAnalysisProgress = () => {
 		if (!state.isLoading) return null
@@ -546,7 +662,7 @@ export default function DiscoverScreen() {
 			<View style={styles.analysisProgressCard}>
 				<View style={styles.analysisProgressHeader}>
 					<Text style={styles.analysisProgressTitle}>🔬 Running Analysis</Text>
-					<ActivityIndicator size="small" color="#4CAF50" />
+					<ActivityIndicator size="small" color="#059669" />
 				</View>
 				<Text style={styles.analysisProgressMessage}>{state.loadingMessage}</Text>
 				<View style={styles.analysisProgressBar}>
@@ -677,7 +793,7 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		alignItems: 'center',
 		marginBottom: 16,
-		shadowColor: '#4CAF50',
+		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.2,
 		shadowRadius: 8,
@@ -741,11 +857,11 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 	},
 	premiumLoadButton: {
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingHorizontal: 32,
 		paddingVertical: 16,
 		borderRadius: 16,
-		shadowColor: '#4CAF50',
+		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.3,
 		shadowRadius: 8,
@@ -766,7 +882,7 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 	},
 	uploadButton: {
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingHorizontal: 24,
 		paddingVertical: 12,
 		borderRadius: 8,
@@ -818,9 +934,9 @@ const styles = StyleSheet.create({
 		elevation: 3,
 	},
 	selectedDatabase: {
-		borderColor: '#4CAF50',
-		backgroundColor: '#f8fff8',
-		shadowColor: '#4CAF50',
+		borderColor: '#059669',
+		backgroundColor: '#f0fdf4',
+		shadowColor: '#059669',
 		shadowOpacity: 0.15,
 	},
 	databaseCardHeader: {
@@ -856,7 +972,7 @@ const styles = StyleSheet.create({
 		width: 32,
 		height: 32,
 		borderRadius: 16,
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		justifyContent: 'center',
 		alignItems: 'center',
 	},
@@ -866,12 +982,12 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 	},
 	premiumAnalyzeButton: {
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingVertical: 16,
 		borderRadius: 16,
 		alignItems: 'center',
 		marginTop: 16,
-		shadowColor: '#4CAF50',
+		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.3,
 		shadowRadius: 8,
@@ -895,7 +1011,7 @@ const styles = StyleSheet.create({
 		padding: 20,
 		borderRadius: 16,
 		borderWidth: 2,
-		borderColor: '#4CAF50',
+		borderColor: '#059669',
 		shadowColor: '#000',
 		shadowOffset: { width: 0, height: 2 },
 		shadowOpacity: 0.1,
@@ -916,7 +1032,7 @@ const styles = StyleSheet.create({
 	},
 	analysisProgressMessage: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		marginBottom: 16,
 		lineHeight: 18,
 	},
@@ -928,7 +1044,7 @@ const styles = StyleSheet.create({
 	},
 	analysisProgressFill: {
 		height: '100%',
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		width: '100%',
 		borderRadius: 3,
 	},
@@ -953,7 +1069,7 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	selectedBadge: {
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingHorizontal: 8,
 		paddingVertical: 2,
 		borderRadius: 12,
@@ -968,7 +1084,7 @@ const styles = StyleSheet.create({
 		color: '#666',
 	},
 	analyzeButton: {
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingHorizontal: 20,
 		paddingVertical: 12,
 		borderRadius: 8,
@@ -1031,7 +1147,7 @@ const styles = StyleSheet.create({
 		fontSize: 20,
 		fontWeight: '700',
 		color: '#333',
-		marginBottom: 8,
+		marginBottom: 12,
 	},
 	categoryDescription: {
 		fontSize: 14,
@@ -1057,6 +1173,21 @@ const styles = StyleSheet.create({
 		justifyContent: 'space-between',
 		alignItems: 'flex-start',
 		marginBottom: 12,
+	},
+	geneCardActions: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 8,
+	},
+	favoriteButton: {
+		padding: 4,
+	},
+	favoriteIcon: {
+		fontSize: 24,
+		color: '#cbd5e1',
+	},
+	favoriteIconActive: {
+		color: '#fbbf24',
 	},
 	geneInfo: {
 		flex: 1,
@@ -1121,7 +1252,7 @@ const styles = StyleSheet.create({
 	},
 	viewDetailsButtonText: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		fontWeight: '600',
 	},
 	noResultsCard: {
@@ -1170,9 +1301,20 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		marginTop: 16,
 	},
+	infoCard: {
+		padding: 16,
+		borderRadius: 12,
+		marginBottom: 16,
+		borderWidth: 1,
+	},
+	infoCardText: {
+		fontSize: 14,
+		lineHeight: 20,
+		fontWeight: '500',
+	},
 	moreResultsText: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		fontWeight: '600',
 		marginBottom: 4,
 	},
@@ -1264,7 +1406,7 @@ const styles = StyleSheet.create({
 	},
 	alleleText: {
 		fontSize: 12,
-		color: '#4CAF50',
+		color: '#059669',
 		backgroundColor: '#e8f5e8',
 		paddingHorizontal: 6,
 		paddingVertical: 2,
@@ -1281,13 +1423,13 @@ const styles = StyleSheet.create({
 	},
 	tapHint: {
 		fontSize: 12,
-		color: '#4CAF50',
+		color: '#059669',
 		fontWeight: '600',
 		textAlign: 'right',
 	},
 	moreMatches: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		textAlign: 'center',
 		marginTop: 8,
 		fontWeight: '600',
@@ -1350,8 +1492,8 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 	},
 	checkboxSelected: {
-		backgroundColor: '#4CAF50',
-		borderColor: '#4CAF50',
+		backgroundColor: '#059669',
+		borderColor: '#059669',
 	},
 	checkboxText: {
 		color: 'white',
@@ -1447,7 +1589,7 @@ const styles = StyleSheet.create({
 	},
 	referenceDatabaseCount: {
 		fontSize: 12,
-		color: '#4CAF50',
+		color: '#059669',
 		fontWeight: '600',
 	},
 	analysisModalButtons: {
@@ -1469,7 +1611,7 @@ const styles = StyleSheet.create({
 	},
 	analysisModalRunButton: {
 		flex: 1,
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingVertical: 14,
 		borderRadius: 8,
 		alignItems: 'center',

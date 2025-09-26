@@ -1,6 +1,7 @@
 import { Storage } from 'expo-sqlite/kv-store'
 import { Redirect } from 'expo-router'
 
+// ts-prune-ignore-next
 export default function Index() {
 	const completedOnboarding = Storage.getItemSync('hasCompletedOnboarding')
 	if (completedOnboarding) {

@@ -123,3 +123,4 @@ output/
 
 .claude/*
 data/*
+*.a

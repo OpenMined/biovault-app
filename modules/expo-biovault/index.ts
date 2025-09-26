@@ -24,4 +24,5 @@ export function rust_add(a: number, b: number): number {
 }
 
 // Export types
+// ts-prune-ignore-next
 export type { AnalysisResult, ClinVarVariant, GeneGroup } from './src/ExpoBiovaultModule'

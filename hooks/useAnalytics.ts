@@ -1,6 +1,6 @@
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAnalytics } from '@/lib/analytics';
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 
 interface UseAnalyticsOptions {
@@ -20,14 +20,16 @@ export const useAnalytics = (options: UseAnalyticsOptions = {}) => {
   const appStateRef = useRef(AppState.currentState);
   const analytics = getAnalytics();
 
-  useFocusEffect(() => {
-    if (trackScreenView && route.name && analytics) {
-      analytics.trackScreen(route.name, {
-        ...screenProperties,
-        params: route.params
-      });
-    }
-  });
+  useFocusEffect(
+    React.useCallback(() => {
+      if (trackScreenView && route.name && analytics) {
+        analytics.trackScreen(route.name, {
+          ...screenProperties,
+          params: route.params
+        });
+      }
+    }, [trackScreenView, route.name])
+  );
 
   useEffect(() => {
     if (!trackAppState || !analytics) return;

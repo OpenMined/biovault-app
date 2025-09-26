@@ -1,15 +1,38 @@
-import { useAnalytics } from '@/hooks/useAnalytics'
-import { TouchableOpacity, Text, StyleSheet, Alert, View, ScrollView, Linking } from 'react-native'
+import { TouchableOpacity, Text, Alert, View, ScrollView, Linking } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Storage } from 'expo-sqlite/kv-store'
+import { layout, typography, buttons, cards } from '@/styles'
+import { useTheme } from '@/contexts/ThemeContext'
+import { useAnalytics } from '@/hooks/useAnalytics'
 import Constants from 'expo-constants'
 
+// ts-prune-ignore-next
 export default function SettingsScreen() {
+	const { theme, themeMode, setThemeMode } = useTheme()
+
 	useAnalytics({
 		trackScreenView: true,
 		screenProperties: { screen: 'Settings' },
 	})
+
+	const handleThemeToggle = () => {
+		const modes: ('system' | 'light' | 'dark')[] = ['system', 'light', 'dark']
+		const currentIndex = modes.indexOf(themeMode)
+		const nextIndex = (currentIndex + 1) % modes.length
+		const nextMode = modes[nextIndex]
+		if (nextMode) {
+			setThemeMode(nextMode)
+		}
+	}
+
+	const getThemeDisplayName = () => {
+		switch (themeMode) {
+			case 'light': return '☀️ Light'
+			case 'dark': return '🌙 Dark'
+			case 'system': return '📱 System'
+		}
+	}
 
 	const handleResetOnboarding = () => {
 		Alert.alert(
@@ -54,248 +77,82 @@ export default function SettingsScreen() {
 	}
 
 	return (
-		<SafeAreaView style={styles.container}>
-			<ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-				<View style={styles.header}>
-					<Text style={styles.title}>Settings</Text>
-					<Text style={styles.subtitle}>Manage your BioVault experience</Text>
+		<SafeAreaView style={[layout.screenContainer, { backgroundColor: theme.background }]}>
+			<ScrollView style={layout.contentContainer}>
+				<Text style={[typography.largeTitle, { color: theme.primaryAlt }]}>Settings</Text>
+
+				<View style={{ marginBottom: 24 }}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Appearance</Text>
+					<TouchableOpacity style={[buttons.secondary, { backgroundColor: theme.surface, marginTop: 12 }]} onPress={handleThemeToggle}>
+						<Text style={[typography.buttonTextSmall, { color: theme.textPrimary }]}>
+							{getThemeDisplayName()}
+						</Text>
+					</TouchableOpacity>
 				</View>
 
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>App Information</Text>
-					<View style={styles.infoCard}>
-						<View style={styles.infoRow}>
-							<Text style={styles.infoLabel}>Version</Text>
-							<Text style={styles.infoValue}>{Constants.expoConfig?.version || '1.0.0'}</Text>
+				<View style={{ marginBottom: 24 }}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>App Information</Text>
+					<View style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]}>
+						<View style={layout.spacedRow}>
+							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Version</Text>
+							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>{Constants.expoConfig?.version || '1.0.0'}</Text>
 						</View>
-						<View style={styles.infoRow}>
-							<Text style={styles.infoLabel}>Build</Text>
-							<Text style={styles.infoValue}>
+						<View style={[layout.spacedRow, { marginTop: 8 }]}>
+							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Build</Text>
+							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>
 								{Constants.expoConfig?.extra?.eas?.projectId ? 'Production' : 'Development'}
 							</Text>
 						</View>
 					</View>
 				</View>
 
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Privacy & Security</Text>
-					<View style={styles.settingsCard}>
-						<View style={styles.privacyHeader}>
-							<Text style={styles.privacyTitle}>🔒 Your Data Stays Local</Text>
-						</View>
-						<Text style={styles.privacyDescription}>
+				<View style={{ marginBottom: 24 }}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Privacy & Security</Text>
+					<View style={[cards.standard, { backgroundColor: theme.surface, marginTop: 12 }]}>
+						<Text style={[typography.cardTitle, { color: theme.primary }]}>🔒 Your Data Stays Local</Text>
+						<Text style={[typography.bodyText, { color: theme.textSecondary, marginTop: 12 }]}>
 							All your genetic data is processed and stored locally on your device. Nothing ever
 							leaves your device without your explicit consent.
 						</Text>
-						<View style={styles.privacyActions}>
-							<TouchableOpacity style={styles.linkButton} onPress={handlePrivacyPolicy}>
-								<Text style={styles.linkButtonText}>Privacy Policy</Text>
+						<View style={[layout.row, { marginTop: 16, gap: 12 }]}>
+							<TouchableOpacity style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handlePrivacyPolicy}>
+								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>Privacy Policy</Text>
 							</TouchableOpacity>
-							<TouchableOpacity style={styles.linkButton} onPress={handleTermsOfService}>
-								<Text style={styles.linkButtonText}>Terms of Service</Text>
+							<TouchableOpacity style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handleTermsOfService}>
+								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>Terms of Service</Text>
 							</TouchableOpacity>
 						</View>
 					</View>
 				</View>
 
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Support</Text>
-					<View style={styles.settingsCard}>
-						<TouchableOpacity style={styles.supportButton} onPress={handleContactSupport}>
-							<View style={styles.supportButtonContent}>
-								<Text style={styles.supportIcon}>📧</Text>
-								<View style={styles.supportText}>
-									<Text style={styles.supportTitle}>Contact Support</Text>
-									<Text style={styles.supportDescription}>Get help with your BioVault app</Text>
+				<View style={{ marginBottom: 24 }}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Support</Text>
+					<TouchableOpacity style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]} onPress={handleContactSupport}>
+						<View style={layout.spacedRow}>
+							<View style={layout.row}>
+								<Text style={{ fontSize: 24, marginRight: 16 }}>📧</Text>
+								<View>
+									<Text style={[typography.cardTitle, { color: theme.textPrimary }]}>Contact Support</Text>
+									<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Get help with your BioVault app</Text>
 								</View>
-								<Text style={styles.chevron}>›</Text>
 							</View>
-						</TouchableOpacity>
-					</View>
+							<Text style={[typography.bodyText, { color: theme.textSecondary, fontSize: 20 }]}>›</Text>
+						</View>
+					</TouchableOpacity>
 				</View>
 
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Developer Options</Text>
-					<View style={styles.settingsCard}>
-						<TouchableOpacity style={styles.devButton} onPress={handleResetOnboarding}>
-							<Text style={styles.devButtonText}>🔄 Reset Onboarding</Text>
-						</TouchableOpacity>
-					</View>
+				<View style={{ marginBottom: 24 }}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Developer Options</Text>
+					<TouchableOpacity style={[buttons.destructive, { marginTop: 12 }]} onPress={handleResetOnboarding}>
+						<Text style={typography.buttonTextSmall}>Reset Onboarding</Text>
+					</TouchableOpacity>
 				</View>
 
-				<View style={styles.footer}>
-					<Text style={styles.footerText}>BioVault - Secure Genomic Data Management</Text>
-					<Text style={styles.footerSubtext}>Made with privacy and security in mind</Text>
+				<View style={[layout.centeredContainer, { paddingVertical: 32 }]}>
+					<Text style={[typography.cardTitle, { color: theme.primary, textAlign: 'center' }]}>BioVault - Secure Genomic Data Management</Text>
+					<Text style={[typography.caption, { color: theme.textSecondary, textAlign: 'center', marginTop: 4 }]}>Made with privacy and security in mind</Text>
 				</View>
 			</ScrollView>
 		</SafeAreaView>
 	)
 }
-
-const styles = StyleSheet.create({
-	container: {
-		flex: 1,
-		backgroundColor: '#f5f5f5',
-	},
-	scrollView: {
-		flex: 1,
-	},
-	scrollContent: {
-		flexGrow: 1,
-		paddingBottom: 100,
-	},
-	header: {
-		padding: 20,
-		paddingBottom: 16,
-	},
-	title: {
-		fontSize: 32,
-		fontWeight: '800',
-		color: '#333',
-		marginBottom: 8,
-	},
-	subtitle: {
-		fontSize: 16,
-		color: '#666',
-		lineHeight: 22,
-	},
-	section: {
-		marginBottom: 24,
-		paddingHorizontal: 20,
-	},
-	sectionTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 12,
-	},
-	settingsCard: {
-		backgroundColor: 'white',
-		borderRadius: 16,
-		padding: 20,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 8,
-		elevation: 3,
-	},
-	infoCard: {
-		backgroundColor: 'white',
-		borderRadius: 16,
-		padding: 16,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 8,
-		elevation: 3,
-	},
-	infoRow: {
-		flexDirection: 'row',
-		justifyContent: 'space-between',
-		alignItems: 'center',
-		paddingVertical: 8,
-		borderBottomWidth: 1,
-		borderBottomColor: '#f0f0f0',
-	},
-	infoLabel: {
-		fontSize: 16,
-		color: '#666',
-		fontWeight: '500',
-	},
-	infoValue: {
-		fontSize: 16,
-		color: '#333',
-		fontWeight: '600',
-	},
-	privacyHeader: {
-		marginBottom: 12,
-	},
-	privacyTitle: {
-		fontSize: 18,
-		fontWeight: '700',
-		color: '#059669',
-	},
-	privacyDescription: {
-		fontSize: 14,
-		color: '#666',
-		lineHeight: 20,
-		marginBottom: 16,
-	},
-	privacyActions: {
-		flexDirection: 'row',
-		gap: 12,
-	},
-	linkButton: {
-		flex: 1,
-		backgroundColor: '#e8f5e8',
-		paddingVertical: 8,
-		paddingHorizontal: 12,
-		borderRadius: 8,
-		alignItems: 'center',
-	},
-	linkButtonText: {
-		fontSize: 12,
-		color: '#059669',
-		fontWeight: '600',
-	},
-	supportButton: {
-		borderRadius: 12,
-	},
-	supportButtonContent: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		paddingVertical: 4,
-	},
-	supportIcon: {
-		fontSize: 24,
-		marginRight: 16,
-	},
-	supportText: {
-		flex: 1,
-	},
-	supportTitle: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#333',
-		marginBottom: 2,
-	},
-	supportDescription: {
-		fontSize: 14,
-		color: '#666',
-	},
-	chevron: {
-		fontSize: 20,
-		color: '#ccc',
-		fontWeight: '300',
-	},
-	devButton: {
-		backgroundColor: '#f8f9fa',
-		padding: 12,
-		borderRadius: 8,
-		alignItems: 'center',
-		borderWidth: 1,
-		borderColor: '#e0e0e0',
-	},
-	devButtonText: {
-		color: '#666',
-		fontSize: 14,
-		fontWeight: '500',
-	},
-	footer: {
-		alignItems: 'center',
-		paddingVertical: 32,
-		paddingHorizontal: 20,
-	},
-	footerText: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#059669',
-		marginBottom: 4,
-		textAlign: 'center',
-	},
-	footerSubtext: {
-		fontSize: 12,
-		color: '#999',
-		textAlign: 'center',
-	},
-})

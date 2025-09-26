@@ -4,9 +4,11 @@
  */
 
 import { useAnalytics } from '@/hooks/useAnalytics'
-import React, { useState } from 'react'
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useState } from 'react'
+import { Alert, Linking, ScrollView, Text, TouchableOpacity, View, Modal, TextInput, ActivityIndicator } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { layout, researchStyles } from '@/styles'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface DesktopBenefit {
 	icon: string
@@ -21,6 +23,10 @@ export default function ResearchScreen() {
 		screenProperties: { screen: 'Research' },
 	})
 	const [showInstallGuide, setShowInstallGuide] = useState(false)
+	const [showEmailModal, setShowEmailModal] = useState(false)
+	const [email, setEmail] = useState('')
+	const [isSubmitting, setIsSubmitting] = useState(false)
+	const { theme } = useTheme()
 
 	const desktopBenefits: DesktopBenefit[] = [
 		{
@@ -56,15 +62,47 @@ export default function ResearchScreen() {
 	]
 
 	const handleInstallDesktop = () => {
-		Alert.alert(
-			'Install Biovault Desktop',
-			'Ready to unlock the full power of collaborative genomics?',
-			[
-				{ text: 'Not Now', style: 'cancel' },
-				{ text: 'Installation Guide', onPress: () => setShowInstallGuide(true) },
-				{ text: 'Visit BioVault.net', onPress: () => Linking.openURL('https://biovault.net') },
-			]
-		)
+		setShowEmailModal(true)
+	}
+
+	const handleEmailSubmit = async () => {
+		if (!email || !email.includes('@')) {
+			Alert.alert('Invalid Email', 'Please enter a valid email address')
+			return
+		}
+
+		setIsSubmitting(true)
+		try {
+			const response = await fetch('https://biovault.net/api/waitlist', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: `email=${encodeURIComponent(email)}`,
+			})
+
+			if (response.ok) {
+				Alert.alert(
+					'Success!',
+					'Thanks we will be in touch soon.',
+					[
+						{
+							text: 'OK',
+							onPress: () => {
+								setShowEmailModal(false)
+								setEmail('')
+							}
+						}
+					]
+				)
+			} else {
+				Alert.alert('Error', 'Something went wrong. Please try again later.')
+			}
+		} catch {
+			Alert.alert('Error', 'Unable to connect to server. Please check your internet connection.')
+		} finally {
+			setIsSubmitting(false)
+		}
 	}
 
 	const handleLearnMore = (feature: string) => {
@@ -81,9 +119,9 @@ export default function ResearchScreen() {
 	const renderDesktopPromotion = () => (
 		<View style={styles.promoCard}>
 			<View style={styles.promoHeader}>
-				<Text style={styles.promoTitle}>🖥️ Unlock the full power of BioVault</Text>
+				<Text style={styles.promoTitle}>BioVault Research</Text>
 				<Text style={styles.promoSubtitle}>
-					Install the desktop app to participate in collaborative genomics research
+					Collaborative genomics with privacy-first data science
 				</Text>
 			</View>
 
@@ -109,7 +147,7 @@ export default function ResearchScreen() {
 			</View>
 
 			<TouchableOpacity style={styles.installButton} onPress={handleInstallDesktop}>
-				<Text style={styles.installButtonText}>🚀 Install Biovault Desktop</Text>
+				<Text style={styles.installButtonText}>Register Interest</Text>
 			</TouchableOpacity>
 		</View>
 	)
@@ -181,18 +219,128 @@ export default function ResearchScreen() {
 				contentContainerStyle={styles.scrollContent}
 				showsVerticalScrollIndicator={false}
 			>
-				<View style={styles.header}>
-					<Text style={styles.title}>BioVault Research</Text>
-					<Text style={styles.subtitle}>
-						Collaborative genomics with privacy-first data science
-					</Text>
-				</View>
-
 				{/* Comment out SyftBox auth for now since features require desktop */}
 				{/* {renderSyftBoxAuth()} */}
 
 				{renderDesktopPromotion()}
 				{renderInstallationGuide()}
+
+				{/* Email Registration Modal */}
+				<Modal
+					visible={showEmailModal}
+					animationType="fade"
+					transparent={true}
+					onRequestClose={() => setShowEmailModal(false)}
+				>
+					<View style={{
+						flex: 1,
+						justifyContent: 'center',
+						alignItems: 'center',
+						backgroundColor: 'rgba(0, 0, 0, 0.5)',
+					}}>
+						<View style={{
+							backgroundColor: theme.background,
+							borderRadius: 20,
+							padding: 30,
+							width: '85%',
+							maxWidth: 400,
+							shadowColor: '#000',
+							shadowOffset: { width: 0, height: 4 },
+							shadowOpacity: 0.25,
+							shadowRadius: 12,
+							elevation: 10,
+						}}>
+							<Text style={{
+								fontSize: 24,
+								fontWeight: '700',
+								color: theme.textPrimary,
+								marginBottom: 12,
+								textAlign: 'center',
+							}}>
+								Join the Beta Waitlist
+							</Text>
+							<Text style={{
+								fontSize: 14,
+								color: theme.textSecondary,
+								marginBottom: 20,
+								textAlign: 'center',
+								lineHeight: 20,
+							}}>
+								Be the first to know when BioVault Desktop is ready for collaborative genomics research
+							</Text>
+							<TextInput
+								style={{
+									height: 50,
+									borderWidth: 1,
+									borderColor: theme.border,
+									borderRadius: 12,
+									paddingHorizontal: 16,
+									fontSize: 16,
+									color: theme.textPrimary,
+									backgroundColor: theme.surface,
+									marginBottom: 20,
+								}}
+								placeholder="Enter your email for beta access"
+								placeholderTextColor={theme.textSecondary}
+								value={email}
+								onChangeText={setEmail}
+								keyboardType="email-address"
+								autoCapitalize="none"
+								autoCorrect={false}
+								editable={!isSubmitting}
+							/>
+							<View style={{
+								flexDirection: 'row',
+								gap: 12,
+							}}>
+								<TouchableOpacity
+									style={{
+										flex: 1,
+										paddingVertical: 14,
+										borderRadius: 12,
+										borderWidth: 2,
+										borderColor: theme.border,
+										alignItems: 'center',
+									}}
+									onPress={() => setShowEmailModal(false)}
+									disabled={isSubmitting}
+								>
+									<Text style={{
+										fontSize: 16,
+										fontWeight: '600',
+										color: theme.textPrimary,
+									}}>
+										Cancel
+									</Text>
+								</TouchableOpacity>
+								<TouchableOpacity
+									style={{
+										flex: 1,
+										backgroundColor: '#059669',
+										paddingVertical: 14,
+										borderRadius: 12,
+										alignItems: 'center',
+										opacity: isSubmitting ? 0.7 : 1,
+									}}
+									onPress={handleEmailSubmit}
+									disabled={isSubmitting}
+								>
+									{isSubmitting ? (
+										<ActivityIndicator color="white" />
+									) : (
+										<Text style={{
+											fontSize: 16,
+											fontWeight: '600',
+											color: 'white',
+										}}>
+											Join Beta
+										</Text>
+									)}
+								</TouchableOpacity>
+							</View>
+						</View>
+					</View>
+				</Modal>
 
 				<View style={styles.networkOverview}>
 					<Text style={styles.overviewTitle}>How BioVault Works</Text>
@@ -222,25 +370,17 @@ export default function ResearchScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	container: {
-		flex: 1,
-		backgroundColor: '#f5f5f5',
-	},
+const styles = {
+	...researchStyles,
+	container: layout.screenContainer,
 	scrollView: {
 		flex: 1,
 	},
-	scrollContent: {
-		flexGrow: 1,
-		paddingBottom: 100, // Increased padding for Android tab bar
-	},
-	header: {
-		padding: 20,
-		paddingBottom: 16,
-	},
+	scrollContent: layout.scrollContent,
+	header: layout.headerSection,
 	title: {
 		fontSize: 28,
-		fontWeight: '700',
+		fontWeight: '700' as const,
 		color: '#333',
 		marginBottom: 4,
 	},
@@ -248,213 +388,6 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		color: '#666',
 		lineHeight: 22,
-	},
-	// Desktop Promotion Styles
-	promoCard: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
-		marginBottom: 20,
-		padding: 24,
-		borderRadius: 16,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	promoHeader: {
-		alignItems: 'center',
-		marginBottom: 24,
-	},
-	promoTitle: {
-		fontSize: 24,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 8,
-		textAlign: 'center',
-	},
-	promoSubtitle: {
-		fontSize: 16,
-		color: '#666',
-		textAlign: 'center',
-		lineHeight: 22,
-	},
-	benefitsList: {
-		marginBottom: 24,
-	},
-	benefitCard: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		backgroundColor: 'white',
-		padding: 16,
-		borderRadius: 12,
-		marginBottom: 12,
-		borderWidth: 1,
-		borderColor: '#e0e0e0',
-	},
-	benefitIconContainer: {
-		width: 44,
-		height: 44,
-		borderRadius: 22,
-		backgroundColor: '#f0f8f0',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginRight: 12,
-	},
-	benefitIcon: {
-		fontSize: 20,
-	},
-	benefitContent: {
-		flex: 1,
-	},
-	benefitTitle: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#333',
-		marginBottom: 2,
-	},
-	benefitDescription: {
-		fontSize: 13,
-		color: '#666',
-		lineHeight: 18,
-	},
-	benefitArrow: {
-		width: 24,
-		height: 24,
-		borderRadius: 12,
-		backgroundColor: '#4CAF50',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginLeft: 8,
-	},
-	arrowText: {
-		fontSize: 12,
-		color: 'white',
-		fontWeight: '600',
-	},
-	installButton: {
-		backgroundColor: '#4CAF50',
-		paddingVertical: 16,
-		borderRadius: 12,
-		alignItems: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.2,
-		shadowRadius: 8,
-		elevation: 4,
-	},
-	installButtonText: {
-		fontSize: 18,
-		fontWeight: '700',
-		color: 'white',
-	},
-	// Installation Guide Styles
-	guideCard: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
-		marginBottom: 20,
-		padding: 20,
-		borderRadius: 16,
-		borderWidth: 2,
-		borderColor: '#4CAF50',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	guideHeader: {
-		flexDirection: 'row',
-		justifyContent: 'space-between',
-		alignItems: 'center',
-		marginBottom: 20,
-	},
-	guideTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
-	},
-	closeButton: {
-		fontSize: 18,
-		color: '#666',
-		fontWeight: '600',
-	},
-	stepCard: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		marginBottom: 16,
-	},
-	stepNumber: {
-		width: 28,
-		height: 28,
-		borderRadius: 14,
-		backgroundColor: '#4CAF50',
-		color: 'white',
-		fontSize: 14,
-		fontWeight: '700',
-		textAlign: 'center',
-		lineHeight: 28,
-		marginRight: 12,
-	},
-	stepContent: {
-		flex: 1,
-	},
-	stepTitle: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#333',
-		marginBottom: 4,
-	},
-	stepDescription: {
-		fontSize: 14,
-		color: '#666',
-		lineHeight: 18,
-	},
-	visitWebsiteButton: {
-		backgroundColor: '#4CAF50',
-		paddingVertical: 12,
-		borderRadius: 8,
-		alignItems: 'center',
-		marginTop: 8,
-	},
-	visitWebsiteButtonText: {
-		color: 'white',
-		fontSize: 16,
-		fontWeight: '600',
-	},
-	// Network Overview Styles
-	networkOverview: {
-		marginHorizontal: 20,
-		marginBottom: 20,
-	},
-	overviewTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 16,
-	},
-	workflowCard: {
-		backgroundColor: 'white',
-		padding: 20,
-		borderRadius: 12,
-		marginBottom: 12,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	workflowTitle: {
-		fontSize: 16,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 12,
-	},
-	workflowStep: {
-		fontSize: 14,
-		color: '#666',
-		marginBottom: 8,
-		lineHeight: 18,
 	},
 	// Supported Formats Styles
 	supportedFormats: {
@@ -533,4 +466,4 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		color: 'white',
 	},
-})
+}

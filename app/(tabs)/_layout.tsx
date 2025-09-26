@@ -1,64 +1,124 @@
-import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs'
-import { Platform } from 'react-native'
+import { Tabs } from 'expo-router'
+import { Platform, Text } from 'react-native'
 
+// ts-prune-ignore-next
 export default function TabLayout() {
 	return (
-		<NativeTabs
-			tintColor={Platform.OS === 'ios' ? '#059669' : undefined}
-			indicatorColor={'#059669'}
-			iconColor={Platform.OS === 'ios' ? undefined : '#059669'}
+		<Tabs
+			screenOptions={{
+				tabBarActiveTintColor: 'white',
+				tabBarInactiveTintColor: 'gray',
+				headerShown: false,
+				tabBarStyle: {
+					backgroundColor: '#ffffff',
+					borderTopWidth: 1,
+					borderTopColor: '#e0e0e0',
+					height: Platform.OS === 'ios' ? 85 : 70,
+					paddingBottom: Platform.OS === 'ios' ? 25 : 8,
+					paddingTop: 8,
+					paddingHorizontal: 10,
+					position: 'absolute',
+					bottom: 0,
+				},
+				tabBarItemStyle: {
+					borderRadius: 8,
+					marginHorizontal: 3,
+					marginVertical: 2,
+					height: 46,
+				},
+				tabBarActiveBackgroundColor: '#059669',
+				tabBarInactiveBackgroundColor: 'transparent',
+				tabBarShowLabel: true,
+				tabBarLabelStyle: {
+					fontSize: 10,
+					fontWeight: '600',
+					marginTop: -2,
+				},
+			}}
 		>
-			<NativeTabs.Trigger name="index">
-				<Label>My DNA</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'testtube.2', selected: 'testtube.2' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_compass" />
-				)}
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="insights">
-				<Label>Insights</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon
-						sf={{
-							default: 'brain.head.profile',
-							selected: 'brain.filled.head.profile',
-						}}
-					/>
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_search" />
-				)}
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="feed">
-				<Label>Feed</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'newspaper', selected: 'newspaper.fill' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_agenda" />
-				)}
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="research">
-				<Label>Research</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon
-						sf={{
-							default: 'person.line.dotted.person',
-							selected: 'person.line.dotted.person.fill',
-						}}
-						drawable="ic_menu_share"
-					/>
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_share" />
-				)}
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="settings">
-				<Label>Settings</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_preferences" />
-				)}
-			</NativeTabs.Trigger>
-		</NativeTabs>
+			<Tabs.Screen
+				name="index"
+				options={{
+					title: 'My DNA',
+					tabBarIcon: ({ color }) => {
+						if (Platform.OS === 'ios') {
+							return <TabBarIcon name="testtube.2" color={color} />
+						}
+						return <TabBarIcon name="dna" color={color} />
+					},
+				}}
+			/>
+			<Tabs.Screen
+				name="insights"
+				options={{
+					title: 'Insights',
+					tabBarIcon: ({ color }) => {
+						if (Platform.OS === 'ios') {
+							return <TabBarIcon name="brain.head.profile" color={color} />
+						}
+						return <TabBarIcon name="brain" color={color} />
+					},
+				}}
+			/>
+			<Tabs.Screen
+				name="feed"
+				options={{
+					title: 'Feed',
+					tabBarIcon: ({ color }) => {
+						if (Platform.OS === 'ios') {
+							return <TabBarIcon name="newspaper" color={color} />
+						}
+						return <TabBarIcon name="newspaper" color={color} />
+					},
+				}}
+			/>
+			<Tabs.Screen
+				name="research"
+				options={{
+					title: 'Research',
+					tabBarIcon: ({ color }) => {
+						if (Platform.OS === 'ios') {
+							return <TabBarIcon name="person.line.dotted.person" color={color} />
+						}
+						return <TabBarIcon name="microscope" color={color} />
+					},
+				}}
+			/>
+			<Tabs.Screen
+				name="settings"
+				options={{
+					title: 'Settings',
+					tabBarIcon: ({ color }) => {
+						if (Platform.OS === 'ios') {
+							return <TabBarIcon name="gearshape" color={color} />
+						}
+						return <TabBarIcon name="settings" color={color} />
+					},
+				}}
+			/>
+		</Tabs>
+	)
+}
+
+// Simple icon component for now - you can replace with actual icons
+function TabBarIcon({ name, color }: { name: string; color: string }) {
+	// For now, return text emojis based on the name
+	// You can replace this with actual icon libraries like @expo/vector-icons
+	const iconMap: { [key: string]: string } = {
+		'testtube.2': '🧪',
+		'dna': '🧬',
+		'brain.head.profile': '🧠',
+		'brain': '🧠',
+		'newspaper': '📰',
+		'person.line.dotted.person': '👥',
+		'microscope': '🔬',
+		'gearshape': '⚙️',
+		'settings': '⚙️',
+	}
+
+	return (
+		<Text style={{ color, fontSize: 24 }}>
+			{iconMap[name] || '📱'}
+		</Text>
 	)
 }

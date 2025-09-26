@@ -5,6 +5,7 @@
     "expo-splash-screen",
     "expo-web-browser",
     "expo-dev-client",
+    "expo-font",
     "typescript"
   ]
 }

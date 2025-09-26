@@ -1,65 +1,102 @@
-import { useAnalytics } from '@/hooks/useAnalytics'
-import { StyleSheet, Text, View, ScrollView } from 'react-native'
+import React, { useState } from 'react'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useTheme } from '@/contexts/ThemeContext'
+import { useAnalytics } from '@/hooks/useAnalytics'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { useFocusEffect } from '@react-navigation/native'
 
+// ts-prune-ignore-next
 export default function FeedScreen() {
+	const { theme } = useTheme()
+	const [favoriteGenes, setFavoriteGenes] = useState<string[]>([])
+
 	useAnalytics({
 		trackScreenView: true,
 		screenProperties: { screen: 'Feed' },
 	})
 
+	const loadFavorites = async () => {
+		try {
+			const saved = await AsyncStorage.getItem('favoriteGenes')
+			if (saved) {
+				setFavoriteGenes(JSON.parse(saved))
+			}
+		} catch (error) {
+			console.error('Failed to load favorite genes:', error)
+		}
+	}
+
+	const removeFavorite = async (gene: string) => {
+		try {
+			const newFavorites = favoriteGenes.filter(g => g !== gene)
+			setFavoriteGenes(newFavorites)
+			await AsyncStorage.setItem('favoriteGenes', JSON.stringify(newFavorites))
+		} catch (error) {
+			console.error('Failed to remove favorite:', error)
+		}
+	}
+
+	useFocusEffect(
+		React.useCallback(() => {
+			loadFavorites()
+		}, [])
+	)
+
 	return (
-		<SafeAreaView style={styles.container}>
-			<ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-				<View style={styles.header}>
-					<Text style={styles.title}>Feed</Text>
-					<Text style={styles.subtitle}>Stay updated with the latest in genomics</Text>
-				</View>
+		<SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+			<ScrollView style={styles.content}>
+				<Text style={[styles.title, { color: theme.textPrimary }]}>Feed</Text>
 
-				<View style={styles.comingSoonCard}>
-					<View style={styles.comingSoonIllustration}>
-						<Text style={styles.comingSoonIcon}>📰</Text>
+				{favoriteGenes.length > 0 ? (
+					<View>
+						<Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+							Your Favorite Genes
+						</Text>
+						{favoriteGenes.map((gene, index) => (
+							<View key={index} style={[styles.geneCard, { backgroundColor: theme.surface }]}>
+								<View style={styles.geneHeader}>
+									<Text style={[styles.geneName, { color: theme.textPrimary }]}>
+										{gene}
+									</Text>
+									<TouchableOpacity
+										style={styles.removeButton}
+										onPress={() => {
+											Alert.alert(
+												'Remove Favorite',
+												`Are you sure you want to unfavorite ${gene}?`,
+												[
+													{ text: 'Cancel', style: 'cancel' },
+													{ text: 'Remove', onPress: () => removeFavorite(gene), style: 'destructive' }
+												]
+											)
+										}}
+									>
+										<Text style={[styles.removeIcon, { color: '#fbbf24' }]}>★</Text>
+									</TouchableOpacity>
+								</View>
+								<TouchableOpacity
+									style={[styles.learnButton, { borderColor: theme.primary }]}
+									onPress={() => Linking.openURL(`https://biovault.net/genes/${gene.toLowerCase()}`)}
+								>
+									<Text style={[styles.learnButtonText, { color: theme.primary }]}>
+										Learn More
+									</Text>
+								</TouchableOpacity>
+							</View>
+						))}
 					</View>
-					<Text style={styles.comingSoonTitle}>Coming Soon</Text>
-					<Text style={styles.comingSoonText}>
-						We&apos;re building an amazing feed experience that will bring you:
-					</Text>
-
-					<View style={styles.featuresList}>
-						<View style={styles.featureItem}>
-							<Text style={styles.featureIcon}>🧬</Text>
-							<Text style={styles.featureText}>Latest genomics research and breakthroughs</Text>
-						</View>
-						<View style={styles.featureItem}>
-							<Text style={styles.featureIcon}>📊</Text>
-							<Text style={styles.featureText}>
-								Personalized insights based on your genetic data
-							</Text>
-						</View>
-						<View style={styles.featureItem}>
-							<Text style={styles.featureIcon}>🔬</Text>
-							<Text style={styles.featureText}>Community discussions and scientific updates</Text>
-						</View>
-						<View style={styles.featureItem}>
-							<Text style={styles.featureIcon}>🎯</Text>
-							<Text style={styles.featureText}>
-								Curated content relevant to your genetic profile
-							</Text>
-						</View>
+				) : (
+					<View style={[styles.comingSoonContainer, { backgroundColor: theme.surface }]}>
+						<Text style={[styles.comingSoonEmoji]}>⭐</Text>
+						<Text style={[styles.comingSoonTitle, { color: theme.textPrimary }]}>
+							No Favorite Genes Yet
+						</Text>
+						<Text style={[styles.comingSoonText, { color: theme.textSecondary }]}>
+							Star genes in the Insights tab to see them here. Stay tuned for updates and research breakthroughs related to your genes of interest.
+						</Text>
 					</View>
-
-					<View style={styles.timelineHint}>
-						<Text style={styles.timelineText}>Expected in a future update</Text>
-					</View>
-				</View>
-
-				<View style={styles.privacyNote}>
-					<Text style={styles.privacyNoteTitle}>🔒 Privacy First</Text>
-					<Text style={styles.privacyNoteText}>
-						When available, your feed will be personalized while keeping your genetic data
-						completely private and local to your device.
-					</Text>
-				</View>
+				)}
 			</ScrollView>
 		</SafeAreaView>
 	)
@@ -68,36 +105,19 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
-		backgroundColor: '#f5f5f5',
 	},
-	scrollView: {
+	content: {
 		flex: 1,
-	},
-	scrollContent: {
-		flexGrow: 1,
-		paddingBottom: 100,
-	},
-	header: {
 		padding: 20,
-		paddingBottom: 16,
 	},
 	title: {
 		fontSize: 32,
 		fontWeight: '800',
-		color: '#333',
-		marginBottom: 8,
+		marginBottom: 20,
 	},
-	subtitle: {
-		fontSize: 16,
-		color: '#666',
-		lineHeight: 22,
-	},
-	comingSoonCard: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
-		marginVertical: 20,
-		padding: 32,
+	comingSoonContainer: {
 		borderRadius: 20,
+		padding: 30,
 		alignItems: 'center',
 		shadowColor: '#000',
 		shadowOffset: { width: 0, height: 4 },
@@ -105,89 +125,60 @@ const styles = StyleSheet.create({
 		shadowRadius: 12,
 		elevation: 6,
 	},
-	comingSoonIllustration: {
-		width: 100,
-		height: 100,
-		borderRadius: 50,
-		backgroundColor: '#e8f5e8',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginBottom: 24,
-		shadowColor: '#059669',
-		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.2,
-		shadowRadius: 8,
-		elevation: 4,
-	},
-	comingSoonIcon: {
-		fontSize: 48,
+	comingSoonEmoji: {
+		fontSize: 60,
+		marginBottom: 20,
 	},
 	comingSoonTitle: {
-		fontSize: 28,
+		fontSize: 24,
 		fontWeight: '700',
-		color: '#333',
 		marginBottom: 12,
-		textAlign: 'center',
 	},
 	comingSoonText: {
 		fontSize: 16,
-		color: '#666',
 		textAlign: 'center',
-		lineHeight: 22,
-		marginBottom: 32,
-		maxWidth: 280,
+		lineHeight: 24,
 	},
-	featuresList: {
-		width: '100%',
-		marginBottom: 32,
-	},
-	featureItem: {
-		flexDirection: 'row',
-		alignItems: 'center',
+	sectionTitle: {
+		fontSize: 20,
+		fontWeight: '700',
 		marginBottom: 16,
-		paddingHorizontal: 16,
 	},
-	featureIcon: {
-		fontSize: 24,
-		marginRight: 16,
-		width: 32,
-		textAlign: 'center',
+	geneCard: {
+		borderRadius: 12,
+		padding: 16,
+		marginBottom: 12,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.1,
+		shadowRadius: 4,
+		elevation: 3,
 	},
-	featureText: {
-		fontSize: 14,
-		color: '#666',
-		flex: 1,
-		lineHeight: 20,
+	geneHeader: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		marginBottom: 12,
 	},
-	timelineHint: {
-		backgroundColor: '#e8f5e8',
-		paddingHorizontal: 16,
-		paddingVertical: 8,
-		borderRadius: 20,
-	},
-	timelineText: {
-		fontSize: 12,
-		color: '#059669',
+	geneName: {
+		fontSize: 18,
 		fontWeight: '600',
 	},
-	privacyNote: {
-		backgroundColor: '#e8f5e8',
-		marginHorizontal: 20,
-		marginBottom: 20,
-		padding: 20,
-		borderRadius: 16,
+	removeButton: {
+		padding: 4,
+	},
+	removeIcon: {
+		fontSize: 24,
+	},
+	learnButton: {
 		borderWidth: 1,
-		borderColor: '#059669',
+		borderRadius: 8,
+		paddingVertical: 8,
+		paddingHorizontal: 12,
+		alignSelf: 'flex-start',
 	},
-	privacyNoteTitle: {
-		fontSize: 16,
-		fontWeight: '700',
-		color: '#059669',
-		marginBottom: 8,
-	},
-	privacyNoteText: {
+	learnButtonText: {
 		fontSize: 14,
-		color: '#059669',
-		lineHeight: 20,
+		fontWeight: '500',
 	},
 })
