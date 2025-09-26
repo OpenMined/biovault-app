@@ -14,6 +14,7 @@ pub struct ClinVarVariant {
     pub clnsig: String,
     pub clnrevstat: String,
     pub condition: String,
+    pub user_genotype: Option<String>,  // Added to store user's actual genotype
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,34 +76,41 @@ fn get_significance_label(clnsig: &str) -> String {
     "Uncertain_significance".to_string()
 }
 
-/// Extract rsIDs from user genome database
-pub fn get_rsids_from_user_database(db_path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+/// Extract rsIDs and genotypes from user genome database
+pub fn get_rsids_and_genotypes_from_user_database(db_path: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
     let conn = Connection::open(db_path)?;
-    
+
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT rsid FROM variants WHERE rsid LIKE 'rs%' ORDER BY rsid"
+        "SELECT DISTINCT rsid, genotype FROM variants WHERE rsid LIKE 'rs%' ORDER BY rsid"
     )?;
-    
+
     let rsid_iter = stmt.query_map([], |row| {
-        Ok(row.get::<_, String>(0)?)
+        Ok((
+            row.get::<_, String>(0)?,  // rsid
+            row.get::<_, String>(1)?   // genotype
+        ))
     })?;
-    
-    let mut rsids = Vec::new();
-    for rsid in rsid_iter {
-        rsids.push(rsid?);
+
+    let mut rsid_genotype_map = HashMap::new();
+    for result in rsid_iter {
+        let (rsid, genotype) = result?;
+        rsid_genotype_map.insert(rsid, genotype);
     }
-    
-    Ok(rsids)
+
+    Ok(rsid_genotype_map)
 }
 
 /// Lookup variants by rsID list with batching
 pub fn lookup_variants_by_rsid(
     clinvar_db_path: &str,
-    rsids: Vec<String>,
+    rsid_genotype_map: &HashMap<String, String>,
 ) -> Result<Vec<ClinVarVariant>, Box<dyn Error>> {
     let conn = Connection::open(clinvar_db_path)?;
     let mut results = Vec::new();
-    
+
+    // Convert HashMap keys to Vec for chunking
+    let rsids: Vec<String> = rsid_genotype_map.keys().cloned().collect();
+
     // Process in chunks of 999 to stay under SQLite parameter limit
     const CHUNK_SIZE: usize = 999;
     for chunk in rsids.chunks(CHUNK_SIZE) {
@@ -126,8 +134,10 @@ pub fn lookup_variants_by_rsid(
         let variant_iter = stmt.query_map(
             rusqlite::params_from_iter(chunk.iter()),
             |row| {
+                let rsid: String = row.get(0)?;
+                let user_genotype = rsid_genotype_map.get(&rsid).cloned();
                 Ok(ClinVarVariant {
-                    rsid: row.get(0)?,
+                    rsid: rsid.clone(),
                     chrom: row.get(1)?,
                     pos: row.get(2)?,
                     ref_allele: row.get(3)?,
@@ -136,6 +146,7 @@ pub fn lookup_variants_by_rsid(
                     clnsig: row.get(6)?,
                     clnrevstat: row.get(7)?,
                     condition: row.get(8)?,
+                    user_genotype,
                 })
             },
         )?;
@@ -252,14 +263,14 @@ pub fn analyze_clinvar_matches(
     clinvar_db_path: &str,
 ) -> Result<AnalysisResult, Box<dyn Error>> {
     eprintln!("Rust Analysis: Starting ClinVar analysis...");
-    
-    // Step 1: Extract rsIDs from user database
-    let rsids = get_rsids_from_user_database(user_db_path)?;
-    let rsids_searched = rsids.len() as i32;
+
+    // Step 1: Extract rsIDs AND genotypes from user database
+    let rsid_genotype_map = get_rsids_and_genotypes_from_user_database(user_db_path)?;
+    let rsids_searched = rsid_genotype_map.len() as i32;
     eprintln!("Rust Analysis: Found {} rsIDs to search", rsids_searched);
-    
-    // Step 2: Query ClinVar for matches
-    let matches = lookup_variants_by_rsid(clinvar_db_path, rsids)?;
+
+    // Step 2: Query ClinVar for matches with genotype info
+    let matches = lookup_variants_by_rsid(clinvar_db_path, &rsid_genotype_map)?;
     let matches_found = matches.len() as i32;
     eprintln!("Rust Analysis: Found {} ClinVar matches", matches_found);
     

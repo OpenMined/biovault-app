@@ -69,9 +69,25 @@ export const layout = StyleSheet.create({
 		flexGrow: 1,
 		paddingBottom: 100,
 	},
+	bottomContainer: {
+		paddingHorizontal: 20,
+		paddingBottom: 40,
+		paddingTop: 10,
+	},
 	headerSection: {
-		padding: 20,
-		paddingBottom: 16,
+		marginBottom: 32,
+	},
+	backButton: {
+		paddingVertical: 12,
+		paddingHorizontal: 20,
+		borderRadius: 12,
+		borderWidth: 2,
+		alignSelf: 'flex-start',
+		backgroundColor: 'transparent',
+	},
+	backButtonText: {
+		fontSize: 16,
+		fontWeight: '600',
 	},
 	centeredContainer: {
 		flex: 1,
@@ -294,4 +310,16 @@ export const borderRadius = {
 	xl: 16,
 	xxl: 20,
 	round: 9999,
+}
+
+// Combined export for convenience
+// ts-prune-ignore-next
+export const sharedStyles = {
+	...typography,
+	...layout,
+	...cards,
+	...buttons,
+	...forms,
+	...badges,
+	...modals,
 }

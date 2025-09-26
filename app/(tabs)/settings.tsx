@@ -74,7 +74,7 @@ export default function SettingsScreen() {
 				<View style={styles.section}>
 					<Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Developer Options</Text>
 					<TouchableOpacity style={styles.resetButton} onPress={handleResetOnboarding}>
-						<Text style={styles.resetButtonText}>🔄 Reset Onboarding</Text>
+						<Text style={styles.resetButtonText}>Reset Onboarding</Text>
 					</TouchableOpacity>
 				</View>
 			</View>

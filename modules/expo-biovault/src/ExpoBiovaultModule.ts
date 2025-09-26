@@ -17,6 +17,7 @@ export interface ClinVarVariant {
 	clnsig: string
 	clnrevstat: string
 	condition: string
+	user_genotype?: string
 }
 
 export interface GeneGroup {

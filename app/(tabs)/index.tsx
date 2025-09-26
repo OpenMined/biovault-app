@@ -232,7 +232,7 @@ export default function MyDNAScreen() {
 		return (
 			<SafeAreaView style={styles.container}>
 				<View style={styles.loadingContainer}>
-					<ActivityIndicator size="large" color="#4CAF50" />
+					<ActivityIndicator size="large" color="#059669" />
 					<Text style={styles.loadingText}>Loading your DNA files...</Text>
 				</View>
 			</SafeAreaView>
@@ -246,7 +246,7 @@ export default function MyDNAScreen() {
 			<View style={styles.processingCard}>
 				<View style={styles.processingHeader}>
 					<Text style={styles.processingTitle}>📁 {state.customFileName}</Text>
-					<ActivityIndicator size="small" color="#4CAF50" />
+					<ActivityIndicator size="small" color="#059669" />
 				</View>
 				<Text style={styles.processingMessage}>{state.processingMessage}</Text>
 				<View style={styles.processingProgress}>
@@ -270,56 +270,16 @@ export default function MyDNAScreen() {
 					</View>
 				</View>
 
-				<View style={styles.uploadSection}>
-					<View style={styles.uploadCard}>
-						<View style={styles.uploadHeader}>
-							<View style={styles.uploadIconContainer}>
-								<Text style={styles.uploadIcon}>📁</Text>
-							</View>
-							<View style={styles.uploadContent}>
-								<Text style={styles.uploadTitle}>Load Genetic Data</Text>
-								<Text style={styles.uploadDescription}>
-									Import your genetic testing files for local analysis on your device
-								</Text>
-							</View>
-						</View>
 
-						<View style={styles.supportedFormats}>
-							<Text style={styles.formatsLabel}>Supported formats:</Text>
-							<View style={styles.formatsList}>
-								{['23andMe', 'AncestryDNA', 'MyHeritage', 'Other ZIP files'].map((format) => (
-									<View key={format} style={styles.formatChip}>
-										<Text style={styles.formatText}>{format}</Text>
-									</View>
-								))}
-							</View>
-						</View>
-
-						<TouchableOpacity
-							style={[
-								styles.premiumUploadButton,
-								state.isProcessing && styles.uploadButtonDisabled,
-							]}
-							onPress={handleFilePicker}
-							disabled={state.isProcessing}
-						>
-							<Text style={styles.premiumUploadButtonText}>
-								{state.isProcessing ? 'Processing...' : '🚀 Choose File to Load'}
-							</Text>
-						</TouchableOpacity>
-					</View>
-					{renderProcessingCard()}
-				</View>
-
-				{state.storedDatabases.length === 0 ? (
-					<View style={styles.emptyState}>
+				{/* Show empty state only when no data exists */}
+				{state.storedDatabases.length === 0 && (
+					<View style={[styles.emptyState, { marginBottom: 40 }]}>
 						<View style={styles.emptyIllustration}>
 							<Text style={styles.emptyIllustrationText}>🧬</Text>
 						</View>
-						<Text style={styles.emptyTitle}>Load Your First DNA File</Text>
+						<Text style={styles.emptyTitle}>No Genetic Data Yet</Text>
 						<Text style={styles.emptyText}>
-							Start your genetic journey by importing data from genetic testing services for local
-							analysis
+							Start your genetic journey by importing data from genetic testing services for local analysis
 						</Text>
 						<View style={styles.emptyBenefits}>
 							<Text style={styles.benefitPoint}>🔒 Data stays on your device</Text>
@@ -327,7 +287,10 @@ export default function MyDNAScreen() {
 							<Text style={styles.benefitPoint}>🧬 Discover genetic insights</Text>
 						</View>
 					</View>
-				) : (
+				)}
+
+				{/* Show genetic data if available */}
+				{state.storedDatabases.length > 0 && (
 					<View style={styles.filesSection}>
 						<View style={styles.filesSectionHeader}>
 							<Text style={styles.filesTitle}>Your Genetic Data</Text>
@@ -381,15 +344,67 @@ export default function MyDNAScreen() {
 											variantCount: database.totalVariants,
 										})
 										// Navigate to insights tab and pass the database name
-										router.push(`/insights?selectedDb=${encodeURIComponent(database.dbName)}`)
+										router.push(`/(tabs)/insights?selectedDb=${encodeURIComponent(database.dbName)}`)
 									}}
 								>
-									<Text style={styles.premiumAnalyzeButtonText}>🔍 Analyze This Data</Text>
+									<Text style={styles.premiumAnalyzeButtonText}>Analyze This Data</Text>
 								</TouchableOpacity>
 							</View>
 						))}
 					</View>
 				)}
+
+				{/* Upload Section - Always visible, shows after data if exists */}
+				<View style={styles.uploadSection}>
+					<View style={styles.uploadCard}>
+						<View style={styles.uploadHeader}>
+							<View style={styles.uploadIconContainer}>
+								<Text style={styles.uploadIcon}>🧬</Text>
+							</View>
+							<View style={styles.uploadContent}>
+								<Text style={styles.uploadTitle}>
+									{state.storedDatabases.length > 0 ? 'Add More Data' : 'Load Genetic Data'}
+								</Text>
+								<Text style={styles.uploadDescription}>
+									Import {state.storedDatabases.length > 0 ? 'additional' : 'your'} genetic testing files for local analysis on your device
+								</Text>
+							</View>
+						</View>
+
+						<View style={styles.supportedFormats}>
+							<Text style={styles.formatsLabel}>Supported formats:</Text>
+							<View style={styles.formatsList}>
+								{['23andMe', 'AncestryDNA', 'MyHeritage', 'Other ZIP files'].map((format) => (
+									<View key={format} style={styles.formatChip}>
+										<Text style={styles.formatText}>{format}</Text>
+									</View>
+								))}
+							</View>
+						</View>
+
+						<TouchableOpacity
+							style={[
+								styles.premiumUploadButton,
+								state.isProcessing && styles.uploadButtonDisabled,
+							]}
+							onPress={handleFilePicker}
+							disabled={state.isProcessing}
+						>
+							<Text style={styles.premiumUploadButtonText}>
+								{state.isProcessing ? 'Processing...' : 'Choose File to Load'}
+							</Text>
+						</TouchableOpacity>
+
+						{/* Guide link */}
+						<TouchableOpacity
+							style={styles.guideButton}
+							onPress={() => router.push('/how-to-get-file' as any)}
+						>
+							<Text style={styles.guideButtonText}>How do I get my DNA file?</Text>
+						</TouchableOpacity>
+					</View>
+					{renderProcessingCard()}
+				</View>
 
 				<View style={styles.privacyCard}>
 					<View style={styles.privacyHeader}>
@@ -563,15 +578,15 @@ const styles = StyleSheet.create({
 	},
 	formatText: {
 		fontSize: 10,
-		color: '#4CAF50',
+		color: '#059669',
 		fontWeight: '600',
 	},
 	premiumUploadButton: {
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingVertical: 16,
-		borderRadius: 16,
+		borderRadius: 12,
 		alignItems: 'center',
-		shadowColor: '#4CAF50',
+		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.3,
 		shadowRadius: 8,
@@ -584,7 +599,8 @@ const styles = StyleSheet.create({
 	},
 	uploadButton: {
 		backgroundColor: 'white',
-		padding: 20,
+		paddingVertical: 16,
+		paddingHorizontal: 20,
 		borderRadius: 12,
 		alignItems: 'center',
 		shadowColor: '#000',
@@ -596,7 +612,7 @@ const styles = StyleSheet.create({
 	uploadButtonText: {
 		fontSize: 18,
 		fontWeight: '600',
-		color: '#4CAF50',
+		color: '#059669',
 		marginBottom: 4,
 	},
 	uploadHint: {
@@ -612,7 +628,7 @@ const styles = StyleSheet.create({
 		padding: 16,
 		borderRadius: 12,
 		borderWidth: 2,
-		borderColor: '#4CAF50',
+		borderColor: '#059669',
 		shadowColor: '#000',
 		shadowOffset: { width: 0, height: 2 },
 		shadowOpacity: 0.1,
@@ -633,7 +649,7 @@ const styles = StyleSheet.create({
 	},
 	processingMessage: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		marginBottom: 12,
 	},
 	processingProgress: {
@@ -644,7 +660,7 @@ const styles = StyleSheet.create({
 	},
 	processingProgressBar: {
 		height: '100%',
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		width: '100%',
 		borderRadius: 2,
 	},
@@ -668,7 +684,7 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		alignItems: 'center',
 		marginBottom: 24,
-		shadowColor: '#4CAF50',
+		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.2,
 		shadowRadius: 8,
@@ -698,9 +714,39 @@ const styles = StyleSheet.create({
 	},
 	benefitPoint: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		marginBottom: 8,
 		fontWeight: '500',
+	},
+	howToGetFileButton: {
+		backgroundColor: '#059669',
+		paddingVertical: 14,
+		paddingHorizontal: 24,
+		borderRadius: 12,
+		marginTop: 20,
+		marginBottom: 12,
+		alignItems: 'center',
+		shadowColor: '#059669',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.2,
+		shadowRadius: 4,
+		elevation: 3,
+	},
+	howToGetFileButtonText: {
+		color: 'white',
+		fontSize: 16,
+		fontWeight: '600',
+	},
+	guideButton: {
+		marginTop: 16,
+		alignItems: 'center',
+		paddingVertical: 12,
+	},
+	guideButtonText: {
+		color: '#059669',
+		fontSize: 15,
+		fontWeight: '500',
+		textDecorationLine: 'underline',
 	},
 	filesSection: {
 		paddingHorizontal: 20,
@@ -719,7 +765,7 @@ const styles = StyleSheet.create({
 	},
 	filesCount: {
 		fontSize: 14,
-		color: '#4CAF50',
+		color: '#059669',
 		fontWeight: '600',
 		backgroundColor: '#e8f5e8',
 		paddingHorizontal: 12,
@@ -797,7 +843,7 @@ const styles = StyleSheet.create({
 	statNumber: {
 		fontSize: 16,
 		fontWeight: '700',
-		color: '#4CAF50',
+		color: '#059669',
 		marginBottom: 4,
 	},
 	statLabel: {
@@ -807,11 +853,11 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 	},
 	premiumAnalyzeButton: {
-		backgroundColor: '#4CAF50',
-		paddingVertical: 12,
+		backgroundColor: '#059669',
+		paddingVertical: 16,
 		borderRadius: 12,
 		alignItems: 'center',
-		shadowColor: '#4CAF50',
+		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 2 },
 		shadowOpacity: 0.2,
 		shadowRadius: 4,
@@ -923,7 +969,7 @@ const styles = StyleSheet.create({
 		padding: 16,
 		borderRadius: 12,
 		borderWidth: 1,
-		borderColor: '#4CAF50',
+		borderColor: '#059669',
 	},
 	storageTitle: {
 		fontSize: 16,
@@ -997,7 +1043,7 @@ const styles = StyleSheet.create({
 	},
 	modalConfirmButton: {
 		flex: 1,
-		backgroundColor: '#4CAF50',
+		backgroundColor: '#059669',
 		paddingVertical: 12,
 		borderRadius: 8,
 		alignItems: 'center',

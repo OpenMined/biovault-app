@@ -61,119 +61,119 @@ export interface ColorTheme {
 // ts-prune-ignore-next
 export const lightTheme: ColorTheme = {
 	// Primary colors
-	primary: '#4CAF50',
-	primaryAlt: '#059669',
-	primaryLight: '#e8f5e9',
-	primaryDark: '#2e7d32',
+	primary: '#059669',
+	primaryAlt: '#6b9080',
+	primaryLight: '#e0f2e7',
+	primaryDark: '#2d5a4f',
 
 	// Backgrounds
-	background: '#f5f5f5',
+	background: '#f8fffe',
 	surface: '#ffffff',
-	surfaceAlt: '#f8f9fa',
+	surfaceAlt: '#f8fffe',
 
 	// Text colors
-	textPrimary: '#333333',
+	textPrimary: '#2d5a4f',
 	textSecondary: '#666666',
-	textTertiary: '#999999',
+	textTertiary: '#4a5568',
 	textInverse: '#ffffff',
 
 	// Clinical significance colors
-	pathogenic: '#d32f2f',
-	pathogenicBg: '#ffebee',
-	likelyPathogenic: '#f57c00',
-	likelyPathogenicBg: '#fff3e0',
-	uncertain: '#fbc02d',
-	uncertainBg: '#fffde7',
+	pathogenic: '#c53030',
+	pathogenicBg: '#fee',
+	likelyPathogenic: '#d69e2e',
+	likelyPathogenicBg: '#fffbf0',
+	uncertain: '#d69e2e',
+	uncertainBg: '#fffbf0',
 	conflicting: '#7b1fa2',
 	conflictingBg: '#f3e5f5',
-	benign: '#388e3c',
-	benignBg: '#e8f5e9',
+	benign: '#22543d',
+	benignBg: '#f0fff4',
 
 	// Status colors
-	error: '#d32f2f',
-	errorBg: '#ffebee',
-	warning: '#f57c00',
-	warningBg: '#fff3e0',
-	success: '#4CAF50',
-	successBg: '#e8f5e9',
+	error: '#c53030',
+	errorBg: '#fee',
+	warning: '#d69e2e',
+	warningBg: '#fffbf0',
+	success: '#22543d',
+	successBg: '#f0fff4',
 	info: '#2196f3',
 	infoBg: '#e3f2fd',
 
 	// UI elements
-	border: '#e0e0e0',
-	borderLight: '#f0f0f0',
-	divider: '#e0e0e0',
-	shadow: '#000000',
-	overlay: 'rgba(0, 0, 0, 0.6)',
+	border: '#e0f2e7',
+	borderLight: '#e0f2e7',
+	divider: '#e0f2e7',
+	shadow: '#2d5a4f',
+	overlay: 'rgba(0, 0, 0, 0.5)',
 
 	// Special elements
-	inactive: '#cbd5e1',
-	highlight: '#f0f8f0',
+	inactive: '#a4c3b2',
+	highlight: '#f0f9f6',
 
 	// Onboarding slide backgrounds
-	bgPrivacy: '#e3f2fd',
-	bgAnalysis: '#f3e5f5',
-	bgInsights: '#fff3e0',
-	bgResearch: '#e8f5e9',
-	bgControl: '#fce4ec',
+	bgPrivacy: '#e0f2e7',
+	bgAnalysis: '#f0f9f6',
+	bgInsights: '#e8f5f0',
+	bgResearch: '#e0f2e7',
+	bgControl: '#f8fffe',
 }
 
 // ts-prune-ignore-next
 export const darkTheme: ColorTheme = {
 	// Primary colors
-	primary: '#66bb6a',
-	primaryAlt: '#10b981',
-	primaryLight: '#1b5e20',
-	primaryDark: '#81c784',
+	primary: '#059669',
+	primaryAlt: '#7ea995',
+	primaryLight: '#2d5a4f',
+	primaryDark: '#a4c3b2',
 
 	// Backgrounds
-	background: '#121212',
-	surface: '#1e1e1e',
-	surfaceAlt: '#2a2a2a',
+	background: '#1a2f2a',
+	surface: '#1e3a32',
+	surfaceAlt: '#243f37',
 
 	// Text colors
-	textPrimary: '#ffffff',
-	textSecondary: '#b3b3b3',
-	textTertiary: '#808080',
-	textInverse: '#000000',
+	textPrimary: '#e8f5f0',
+	textSecondary: '#a4c3b2',
+	textTertiary: '#9db5a8',
+	textInverse: '#1a2f2a',
 
 	// Clinical significance colors
-	pathogenic: '#ef5350',
-	pathogenicBg: '#311b1b',
-	likelyPathogenic: '#ff9800',
-	likelyPathogenicBg: '#332519',
-	uncertain: '#fdd835',
-	uncertainBg: '#333319',
-	conflicting: '#ab47bc',
-	conflictingBg: '#2a1b31',
-	benign: '#66bb6a',
-	benignBg: '#1b301c',
+	pathogenic: '#fc8181',
+	pathogenicBg: 'rgba(197, 48, 48, 0.2)',
+	likelyPathogenic: '#f6e05e',
+	likelyPathogenicBg: 'rgba(214, 158, 46, 0.2)',
+	uncertain: '#f6e05e',
+	uncertainBg: 'rgba(214, 158, 46, 0.2)',
+	conflicting: '#b794f4',
+	conflictingBg: 'rgba(128, 90, 213, 0.2)',
+	benign: '#68d391',
+	benignBg: 'rgba(34, 84, 61, 0.2)',
 
 	// Status colors
-	error: '#ef5350',
-	errorBg: '#311b1b',
-	warning: '#ff9800',
-	warningBg: '#332519',
-	success: '#66bb6a',
-	successBg: '#1b301c',
-	info: '#42a5f5',
-	infoBg: '#1a2b3d',
+	error: '#fc8181',
+	errorBg: 'rgba(197, 48, 48, 0.2)',
+	warning: '#f6e05e',
+	warningBg: 'rgba(214, 158, 46, 0.2)',
+	success: '#68d391',
+	successBg: 'rgba(34, 84, 61, 0.2)',
+	info: '#63b3ed',
+	infoBg: 'rgba(66, 153, 225, 0.2)',
 
 	// UI elements
-	border: '#333333',
-	borderLight: '#2a2a2a',
-	divider: '#333333',
+	border: '#2d5a4f',
+	borderLight: '#3a6d5f',
+	divider: '#2d5a4f',
 	shadow: '#000000',
-	overlay: 'rgba(0, 0, 0, 0.8)',
+	overlay: 'rgba(0, 0, 0, 0.7)',
 
 	// Special elements
-	inactive: '#4a5568',
-	highlight: '#1a3a1a',
+	inactive: '#3a6d5f',
+	highlight: '#2a4d43',
 
 	// Onboarding slide backgrounds
-	bgPrivacy: '#1a2b3d',
-	bgAnalysis: '#2a1b31',
-	bgInsights: '#332519',
-	bgResearch: '#1b301c',
-	bgControl: '#3d1a2b',
+	bgPrivacy: '#1a2f2a',
+	bgAnalysis: '#243f37',
+	bgInsights: '#2d5a4f',
+	bgResearch: '#1a2f2a',
+	bgControl: '#0f1f1a',
 }
