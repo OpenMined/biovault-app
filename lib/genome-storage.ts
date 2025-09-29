@@ -5,6 +5,7 @@
 
 import * as SQLite from 'expo-sqlite'
 import { Directory, File, Paths } from 'expo-file-system'
+import { Platform } from 'react-native'
 
 export interface UserGenomeDatabase {
 	dbName: string
@@ -70,6 +71,13 @@ export async function addDatabaseToManifest(
  */
 export async function listUserGenomeDatabases(): Promise<UserGenomeDatabase[]> {
 	console.log('📂 Scanning SQLite directory for genome databases...')
+
+	// Web doesn't support file system directory listing
+	if (Platform.OS === 'web') {
+		console.log('⚠️  Web platform: File system scanning not supported')
+		return []
+	}
+
 	const databases: UserGenomeDatabase[] = []
 
 	// Check SQLite directory for database files
