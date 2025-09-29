@@ -1,11 +1,11 @@
 import { TouchableOpacity, Text, Alert, View, ScrollView, Linking } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { Storage } from 'expo-sqlite/kv-store'
 import { layout, typography, buttons, cards } from '@/styles'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import Constants from 'expo-constants'
 import { lightTheme } from '@/styles/colors'
+import { Storage } from '@/lib/storage'
 
 // ts-prune-ignore-next
 export default function SettingsScreen() {
@@ -15,7 +15,6 @@ export default function SettingsScreen() {
 		trackScreenView: true,
 		screenProperties: { screen: 'Settings' },
 	})
-
 
 	const handleResetOnboarding = () => {
 		Alert.alert(
@@ -64,12 +63,16 @@ export default function SettingsScreen() {
 			<ScrollView style={layout.contentContainer}>
 				<Text style={[typography.largeTitle, { color: theme.primaryAlt }]}>Settings</Text>
 
-			<View style={{ marginBottom: 24 }}>
-					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>App Information</Text>
+				<View style={{ marginBottom: 24 }}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>
+						App Information
+					</Text>
 					<View style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]}>
 						<View style={layout.spacedRow}>
 							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Version</Text>
-							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>{Constants.expoConfig?.version || '1.0.0'}</Text>
+							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>
+								{Constants.expoConfig?.version || '1.0.0'}
+							</Text>
 						</View>
 						<View style={[layout.spacedRow, { marginTop: 8 }]}>
 							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Build</Text>
@@ -81,19 +84,33 @@ export default function SettingsScreen() {
 				</View>
 
 				<View style={{ marginBottom: 24 }}>
-					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Privacy & Security</Text>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>
+						Privacy & Security
+					</Text>
 					<View style={[cards.standard, { backgroundColor: theme.surface, marginTop: 12 }]}>
-						<Text style={[typography.cardTitle, { color: theme.primary }]}>🔒 Your Data Stays Local</Text>
+						<Text style={[typography.cardTitle, { color: theme.primary }]}>
+							🔒 Your Data Stays Local
+						</Text>
 						<Text style={[typography.bodyText, { color: theme.textSecondary, marginTop: 12 }]}>
 							All your genetic data is processed and stored locally on your device. Nothing ever
 							leaves your device without your explicit consent.
 						</Text>
 						<View style={[layout.row, { marginTop: 16, gap: 12 }]}>
-							<TouchableOpacity style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handlePrivacyPolicy}>
-								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>Privacy Policy</Text>
+							<TouchableOpacity
+								style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]}
+								onPress={handlePrivacyPolicy}
+							>
+								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>
+									Privacy Policy
+								</Text>
 							</TouchableOpacity>
-							<TouchableOpacity style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]} onPress={handleTermsOfService}>
-								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>Terms of Service</Text>
+							<TouchableOpacity
+								style={[buttons.primarySmall, { backgroundColor: theme.primaryLight, flex: 1 }]}
+								onPress={handleTermsOfService}
+							>
+								<Text style={[typography.buttonTextSmall, { color: theme.primary }]}>
+									Terms of Service
+								</Text>
 							</TouchableOpacity>
 						</View>
 					</View>
@@ -101,30 +118,53 @@ export default function SettingsScreen() {
 
 				<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Support</Text>
-					<TouchableOpacity style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]} onPress={handleContactSupport}>
+					<TouchableOpacity
+						style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]}
+						onPress={handleContactSupport}
+					>
 						<View style={layout.spacedRow}>
 							<View style={layout.row}>
 								<Text style={{ fontSize: 24, marginRight: 16 }}>📧</Text>
 								<View>
-									<Text style={[typography.cardTitle, { color: theme.textPrimary }]}>Contact Support</Text>
-									<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Get help with your BioVault app</Text>
+									<Text style={[typography.cardTitle, { color: theme.textPrimary }]}>
+										Contact Support
+									</Text>
+									<Text style={[typography.bodyText, { color: theme.textSecondary }]}>
+										Get help with your BioVault app
+									</Text>
 								</View>
 							</View>
-							<Text style={[typography.bodyText, { color: theme.textSecondary, fontSize: 20 }]}>›</Text>
+							<Text style={[typography.bodyText, { color: theme.textSecondary, fontSize: 20 }]}>
+								›
+							</Text>
 						</View>
 					</TouchableOpacity>
 				</View>
 
 				<View style={{ marginBottom: 24 }}>
-					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Developer Options</Text>
-					<TouchableOpacity style={[buttons.destructive, { marginTop: 12 }]} onPress={handleResetOnboarding}>
+					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>
+						Developer Options
+					</Text>
+					<TouchableOpacity
+						style={[buttons.destructive, { marginTop: 12 }]}
+						onPress={handleResetOnboarding}
+					>
 						<Text style={typography.buttonTextSmall}>Reset Onboarding</Text>
 					</TouchableOpacity>
 				</View>
 
 				<View style={[layout.centeredContainer, { paddingVertical: 32 }]}>
-					<Text style={[typography.cardTitle, { color: theme.primary, textAlign: 'center' }]}>BioVault - Secure Genomic Data Management</Text>
-					<Text style={[typography.caption, { color: theme.textSecondary, textAlign: 'center', marginTop: 4 }]}>Made with privacy and security in mind</Text>
+					<Text style={[typography.cardTitle, { color: theme.primary, textAlign: 'center' }]}>
+						BioVault - Secure Genomic Data Management
+					</Text>
+					<Text
+						style={[
+							typography.caption,
+							{ color: theme.textSecondary, textAlign: 'center', marginTop: 4 },
+						]}
+					>
+						Made with privacy and security in mind
+					</Text>
 				</View>
 			</ScrollView>
 		</SafeAreaView>

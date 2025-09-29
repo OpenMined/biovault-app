@@ -1,35 +1,7 @@
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import { Dimensions, Platform } from 'react-native'
-
-// Platform-specific storage
-const Storage = (() => {
-	if (Platform.OS === 'web') {
-		// Web implementation using localStorage
-		return {
-			getItemSync: (key: string): string | null => {
-				try {
-					return localStorage.getItem(key)
-				} catch (e) {
-					console.warn('localStorage.getItem error:', e)
-					return null
-				}
-			},
-			setItemSync: (key: string, value: string): void => {
-				try {
-					localStorage.setItem(key, value)
-				} catch (e) {
-					console.warn('localStorage.setItem error:', e)
-				}
-			},
-		}
-	} else {
-		// Native implementation using expo-sqlite/kv-store
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const KVStore = require('expo-sqlite/kv-store')
-		return KVStore.default || KVStore
-	}
-})()
+import { Storage } from './storage'
 
 interface AnalyticsEvent {
 	type: 'pageview' | 'custom_event' | 'performance'

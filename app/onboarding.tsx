@@ -12,8 +12,8 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { Storage } from 'expo-sqlite/kv-store'
 import { lightTheme } from '@/styles/colors'
+import { Storage } from '@/lib/storage'
 
 const { width } = Dimensions.get('window')
 
