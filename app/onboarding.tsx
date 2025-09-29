@@ -9,7 +9,7 @@ import Animated, {
 	FadeInDown,
 	FadeInUp,
 	SlideInLeft,
-	SlideOutRight,
+	SlideOutLeft,
 	useAnimatedStyle,
 	withSpring,
 	withTiming,
@@ -279,7 +279,7 @@ export default function OnboardingFlow() {
 						{currentIndex > 0 && (
 							<Animated.View
 								entering={SlideInLeft.duration(300)}
-								exiting={SlideOutRight.duration(300)}
+								exiting={SlideOutLeft.duration(300)}
 							>
 								<TouchableOpacity
 									style={[styles.backButton, { borderColor: theme.primary }]}
