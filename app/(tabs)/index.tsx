@@ -27,6 +27,7 @@ import {
 	View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
 
 interface MyDNAState {
 	isProcessing: boolean
@@ -144,16 +145,16 @@ export default function MyDNAScreen() {
 		try {
 			trackEvent('file_picker_opened', { source: 'MyDNA' })
 			const result = await DocumentPicker.getDocumentAsync({
-				type: 'application/zip',
+				type: ['application/zip', 'text/plain'],
 				copyToCacheDirectory: true,
 			})
 
 			if (!result.canceled && result.assets[0]) {
 				const file = result.assets[0]
 				// Show naming dialog instead of processing immediately
-				// Clean filename: remove .zip, spaces, and special chars
+				// Clean filename: remove .zip/.txt, spaces, and special chars
 				const cleanName = file.name
-					.replace('.zip', '')
+					.replace(/\.(zip|txt)$/i, '')
 					.replace(/\s+/g, '_') // Replace spaces with underscores
 					.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars except _ and -
 					.replace(/_+/g, '_') // Replace multiple underscores with single
@@ -230,12 +231,14 @@ export default function MyDNAScreen() {
 
 	if (state.loading) {
 		return (
-			<SafeAreaView style={styles.container}>
-				<View style={styles.loadingContainer}>
-					<ActivityIndicator size="large" color="#059669" />
-					<Text style={styles.loadingText}>Loading your DNA files...</Text>
-				</View>
-			</SafeAreaView>
+			<View style={styles.container}>
+				<SafeAreaView style={styles.safeArea}>
+					<View style={styles.loadingContainer}>
+						<ActivityIndicator size="large" color="#059669" />
+						<Text style={styles.loadingText}>Loading your DNA files...</Text>
+					</View>
+				</SafeAreaView>
+			</View>
 		)
 	}
 
@@ -246,7 +249,7 @@ export default function MyDNAScreen() {
 			<View style={styles.processingCard}>
 				<View style={styles.processingHeader}>
 					<Text style={styles.processingTitle}>📁 {state.customFileName}</Text>
-					<ActivityIndicator size="small" color="#059669" />
+					<ActivityIndicator size="small" color="#10b981" />
 				</View>
 				<Text style={styles.processingMessage}>{state.processingMessage}</Text>
 				<View style={styles.processingProgress}>
@@ -257,178 +260,192 @@ export default function MyDNAScreen() {
 	}
 
 	return (
-		<SafeAreaView style={styles.container}>
-			<ScrollView
-				style={styles.scrollView}
-				contentContainerStyle={styles.scrollContent}
-				showsVerticalScrollIndicator={false}
-			>
-				<View style={styles.header}>
-					<View style={styles.headerContent}>
-						<Text style={styles.title}>My DNA</Text>
-						<Text style={styles.subtitle}>Securely manage your genetic data files</Text>
-					</View>
-				</View>
+		<View style={styles.container}>
+			<SafeAreaView style={styles.safeArea}>
+				<ScrollView
+					style={styles.scrollView}
+					contentContainerStyle={styles.scrollContent}
+					showsVerticalScrollIndicator={false}
+				>
+					<Animated.View entering={FadeInDown.duration(600)} style={styles.header}>
+						<Text style={styles.title}>🧬 Vault</Text>
+						<Text style={styles.subtitle}>Securely manage your genetic data</Text>
+					</Animated.View>
 
-
-				{/* Show empty state only when no data exists */}
-				{state.storedDatabases.length === 0 && (
-					<View style={[styles.emptyState, { marginBottom: 40 }]}>
-						<View style={styles.emptyIllustration}>
-							<Text style={styles.emptyIllustrationText}>🧬</Text>
-						</View>
-						<Text style={styles.emptyTitle}>No Genetic Data Yet</Text>
-						<Text style={styles.emptyText}>
-							Start your genetic journey by importing data from genetic testing services for local analysis
-						</Text>
-						<View style={styles.emptyBenefits}>
-							<Text style={styles.benefitPoint}>🔒 Data stays on your device</Text>
-							<Text style={styles.benefitPoint}>⚡ Instant analysis results</Text>
-							<Text style={styles.benefitPoint}>🧬 Discover genetic insights</Text>
-						</View>
-					</View>
-				)}
-
-				{/* Show genetic data if available */}
-				{state.storedDatabases.length > 0 && (
-					<View style={styles.filesSection}>
-						<View style={styles.filesSectionHeader}>
-							<Text style={styles.filesTitle}>Your Genetic Data</Text>
-							<Text style={styles.filesCount}>
-								{state.storedDatabases.length} file{state.storedDatabases.length !== 1 ? 's' : ''}
+					{/* Show empty state only when no data exists */}
+					{state.storedDatabases.length === 0 && (
+						<Animated.View
+							entering={FadeInUp.duration(700).delay(200)}
+							style={[styles.emptyState, { marginBottom: 40 }]}
+						>
+							<View style={styles.emptyIllustration}>
+								<Text style={styles.emptyIllustrationText}>🧬</Text>
+							</View>
+							<Text style={styles.emptyTitle}>No Genetic Data Yet</Text>
+							<Text style={styles.emptyText}>
+								Start your genetic journey by importing data from genetic testing services for local
+								analysis
 							</Text>
-						</View>
+							<View style={styles.emptyBenefits}>
+								<Text style={styles.benefitPoint}>🔒 Data stays on your device</Text>
+								<Text style={styles.benefitPoint}>⚡ Instant analysis results</Text>
+								<Text style={styles.benefitPoint}>🧬 Discover genetic insights</Text>
+							</View>
+						</Animated.View>
+					)}
 
-						{state.storedDatabases.map((database, index) => (
-							<View key={index} style={styles.premiumFileCard}>
-								<View style={styles.fileCardHeader}>
-									<View style={styles.fileIconContainer}>
-										<Text style={styles.fileIcon}>🧬</Text>
-									</View>
-									<View style={styles.fileInfo}>
-										<Text style={styles.fileName}>{database.fileName}</Text>
-										<Text style={styles.fileLoadDate}>
-											Loaded {formatDate(database.uploadDate)}
-										</Text>
-									</View>
-									<TouchableOpacity
-										style={styles.deleteButton}
-										onPress={() => handleDeleteDatabase(database)}
-									>
-										<Text style={styles.deleteButtonText}>✕</Text>
-									</TouchableOpacity>
-								</View>
+					{/* Show genetic data if available */}
+					{state.storedDatabases.length > 0 && (
+						<Animated.View entering={FadeIn.duration(600)} style={styles.filesSection}>
+							<View style={styles.filesSectionHeader}>
+								<Text style={styles.filesTitle}>Your Genetic Data</Text>
+								<Text style={styles.filesCount}>
+									{state.storedDatabases.length} file{state.storedDatabases.length !== 1 ? 's' : ''}
+								</Text>
+							</View>
 
-								<View style={styles.fileStats}>
-									<View style={styles.statItem}>
-										<Text style={styles.statNumber}>{database.totalVariants.toLocaleString()}</Text>
-										<Text style={styles.statLabel}>Variants</Text>
-									</View>
-									<View style={styles.statItem}>
-										<Text style={styles.statNumber}>{database.rsidCount.toLocaleString()}</Text>
-										<Text style={styles.statLabel}>rsIDs</Text>
-									</View>
-									<View style={styles.statItem}>
-										<Text style={styles.statNumber}>
-											{((database.totalVariants * 4) / 1024 / 1024).toFixed(1)}MB
-										</Text>
-										<Text style={styles.statLabel}>Storage</Text>
-									</View>
-								</View>
-
-								<TouchableOpacity
-									style={styles.premiumAnalyzeButton}
-									onPress={() => {
-										trackEvent('analyze_button_clicked', {
-											fileType: 'zip',
-											variantCount: database.totalVariants,
-										})
-										// Navigate to insights tab and pass the database name
-										router.push(`/(tabs)/insights?selectedDb=${encodeURIComponent(database.dbName)}`)
-									}}
+							{state.storedDatabases.map((database, index) => (
+								<Animated.View
+									key={index}
+									entering={FadeInUp.duration(500).delay(index * 100)}
+									style={styles.premiumFileCard}
 								>
-									<Text style={styles.premiumAnalyzeButtonText}>Analyze This Data</Text>
-								</TouchableOpacity>
-							</View>
-						))}
-					</View>
-				)}
-
-				{/* Upload Section - Always visible, shows after data if exists */}
-				<View style={styles.uploadSection}>
-					<View style={styles.uploadCard}>
-						<View style={styles.uploadHeader}>
-							<View style={styles.uploadIconContainer}>
-								<Text style={styles.uploadIcon}>🧬</Text>
-							</View>
-							<View style={styles.uploadContent}>
-								<Text style={styles.uploadTitle}>
-									{state.storedDatabases.length > 0 ? 'Add More Data' : 'Load Genetic Data'}
-								</Text>
-								<Text style={styles.uploadDescription}>
-									Import {state.storedDatabases.length > 0 ? 'additional' : 'your'} genetic testing files for local analysis on your device
-								</Text>
-							</View>
-						</View>
-
-						<View style={styles.supportedFormats}>
-							<Text style={styles.formatsLabel}>Supported formats:</Text>
-							<View style={styles.formatsList}>
-								{['23andMe', 'AncestryDNA', 'MyHeritage', 'Other ZIP files'].map((format) => (
-									<View key={format} style={styles.formatChip}>
-										<Text style={styles.formatText}>{format}</Text>
+									<View style={styles.fileCardHeader}>
+										<View style={styles.fileIconContainer}>
+											<Text style={styles.fileIcon}>🧬</Text>
+										</View>
+										<View style={styles.fileInfo}>
+											<Text style={styles.fileName}>{database.fileName}</Text>
+											<Text style={styles.fileLoadDate}>
+												Loaded {formatDate(database.uploadDate)}
+											</Text>
+										</View>
+										<TouchableOpacity
+											style={styles.deleteButton}
+											onPress={() => handleDeleteDatabase(database)}
+										>
+											<Text style={styles.deleteButtonText}>✕</Text>
+										</TouchableOpacity>
 									</View>
-								))}
+
+									<View style={styles.fileStats}>
+										<View style={styles.statItem}>
+											<Text style={styles.statNumber}>
+												{database.totalVariants.toLocaleString()}
+											</Text>
+											<Text style={styles.statLabel}>Variants</Text>
+										</View>
+										<View style={styles.statItem}>
+											<Text style={styles.statNumber}>{database.rsidCount.toLocaleString()}</Text>
+											<Text style={styles.statLabel}>rsIDs</Text>
+										</View>
+										<View style={styles.statItem}>
+											<Text style={styles.statNumber}>
+												{((database.totalVariants * 4) / 1024 / 1024).toFixed(1)}MB
+											</Text>
+											<Text style={styles.statLabel}>Storage</Text>
+										</View>
+									</View>
+
+									<TouchableOpacity
+										style={styles.premiumAnalyzeButton}
+										onPress={() => {
+											trackEvent('analyze_button_clicked', {
+												fileType: 'zip',
+												variantCount: database.totalVariants,
+											})
+											// Navigate to insights tab and pass the database name
+											router.push(
+												`/(tabs)/insights?selectedDb=${encodeURIComponent(database.dbName)}`
+											)
+										}}
+									>
+										<Text style={styles.premiumAnalyzeButtonText}>Analyze This Data</Text>
+									</TouchableOpacity>
+								</Animated.View>
+							))}
+						</Animated.View>
+					)}
+
+					{/* Upload Section - Always visible, shows after data if exists */}
+					<Animated.View entering={FadeInUp.duration(600).delay(300)} style={styles.uploadSection}>
+						<View style={styles.uploadCard}>
+							<View style={styles.uploadHeader}>
+								<View style={styles.uploadIconContainer}>
+									<Text style={styles.uploadIcon}>🧬</Text>
+								</View>
+								<View style={styles.uploadContent}>
+									<Text style={styles.uploadTitle}>
+										{state.storedDatabases.length > 0 ? 'Add More Data' : 'Load Genetic Data'}
+									</Text>
+									<Text style={styles.uploadDescription}>
+										Import {state.storedDatabases.length > 0 ? 'additional' : 'your'} genetic
+										testing files for local analysis on your device
+									</Text>
+								</View>
+							</View>
+
+							<View style={styles.supportedFormats}>
+								<Text style={styles.formatsLabel}>Supported formats:</Text>
+								<View style={styles.formatsList}>
+									{['23andMe', 'AncestryDNA', 'MyHeritage', 'ZIP files', 'TXT files'].map(
+										(format) => (
+											<View key={format} style={styles.formatChip}>
+												<Text style={styles.formatText}>{format}</Text>
+											</View>
+										)
+									)}
+								</View>
+							</View>
+
+							<TouchableOpacity
+								style={[
+									styles.premiumUploadButton,
+									state.isProcessing && styles.uploadButtonDisabled,
+								]}
+								onPress={handleFilePicker}
+								disabled={state.isProcessing}
+							>
+								<Text style={styles.premiumUploadButtonText}>
+									{state.isProcessing ? 'Processing...' : 'Choose File to Load'}
+								</Text>
+							</TouchableOpacity>
+
+							{/* Guide link */}
+							<TouchableOpacity
+								style={styles.guideButton}
+								onPress={() => router.push('/how-to-get-file' as any)}
+							>
+								<Text style={styles.guideButtonText}>How do I get my DNA file?</Text>
+							</TouchableOpacity>
+						</View>
+						{renderProcessingCard()}
+					</Animated.View>
+
+					<Animated.View entering={FadeInUp.duration(600).delay(400)} style={styles.privacyCard}>
+						<View style={styles.privacyHeader}>
+							<View style={styles.privacyIconContainer}>
+								<Text style={styles.privacyIcon}>🔒</Text>
+							</View>
+							<Text style={styles.privacyTitle}>Your Privacy Matters</Text>
+						</View>
+						<View style={styles.privacyPoints}>
+							<View style={styles.privacyPoint}>
+								<Text style={styles.privacyPointIcon}>📱</Text>
+								<Text style={styles.privacyPointText}>Files stored locally on your device</Text>
+							</View>
+							<View style={styles.privacyPoint}>
+								<Text style={styles.privacyPointIcon}>🚫</Text>
+								<Text style={styles.privacyPointText}>Data never leaves your device</Text>
+							</View>
+							<View style={styles.privacyPoint}>
+								<Text style={styles.privacyPointIcon}>🗑️</Text>
+								<Text style={styles.privacyPointText}>Delete files anytime to free space</Text>
 							</View>
 						</View>
-
-						<TouchableOpacity
-							style={[
-								styles.premiumUploadButton,
-								state.isProcessing && styles.uploadButtonDisabled,
-							]}
-							onPress={handleFilePicker}
-							disabled={state.isProcessing}
-						>
-							<Text style={styles.premiumUploadButtonText}>
-								{state.isProcessing ? 'Processing...' : 'Choose File to Load'}
-							</Text>
-						</TouchableOpacity>
-
-						{/* Guide link */}
-						<TouchableOpacity
-							style={styles.guideButton}
-							onPress={() => router.push('/how-to-get-file' as any)}
-						>
-							<Text style={styles.guideButtonText}>How do I get my DNA file?</Text>
-						</TouchableOpacity>
-					</View>
-					{renderProcessingCard()}
-				</View>
-
-				<View style={styles.privacyCard}>
-					<View style={styles.privacyHeader}>
-						<View style={styles.privacyIconContainer}>
-							<Text style={styles.privacyIcon}>🔒</Text>
-						</View>
-						<Text style={styles.privacyTitle}>Your Privacy Matters</Text>
-					</View>
-					<View style={styles.privacyPoints}>
-						<View style={styles.privacyPoint}>
-							<Text style={styles.privacyPointIcon}>📱</Text>
-							<Text style={styles.privacyPointText}>Files stored locally on your device</Text>
-						</View>
-						<View style={styles.privacyPoint}>
-							<Text style={styles.privacyPointIcon}>🚫</Text>
-							<Text style={styles.privacyPointText}>Data never leaves your device</Text>
-						</View>
-						<View style={styles.privacyPoint}>
-							<Text style={styles.privacyPointIcon}>🗑️</Text>
-							<Text style={styles.privacyPointText}>Delete files anytime to free space</Text>
-						</View>
-					</View>
-				</View>
-			</ScrollView>
+					</Animated.View>
+				</ScrollView>
+			</SafeAreaView>
 
 			{/* File Naming Modal */}
 			<Modal
@@ -464,138 +481,171 @@ export default function MyDNAScreen() {
 					</View>
 				</View>
 			</Modal>
-		</SafeAreaView>
+		</View>
 	)
 }
 
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
-		backgroundColor: '#f5f5f5',
+		backgroundColor: '#e0f2e7',
+	},
+	safeArea: {
+		flex: 1,
 	},
 	scrollView: {
 		flex: 1,
 	},
 	scrollContent: {
 		flexGrow: 1,
-		paddingBottom: 100, // Increased padding for Android tab bar
+		paddingBottom: 100,
 	},
 	loadingContainer: {
 		flex: 1,
 		justifyContent: 'center',
 		alignItems: 'center',
+		backgroundColor: '#e0f2e7',
 	},
 	loadingText: {
-		marginTop: 12,
-		fontSize: 16,
-		color: '#666',
+		marginTop: 16,
+		fontSize: 17,
+		color: '#475569',
 		textAlign: 'center',
+		fontWeight: '600',
 	},
 	header: {
-		padding: 20,
-		paddingBottom: 16,
-	},
-	headerContent: {
-		alignItems: 'flex-start',
+		paddingHorizontal: 28,
+		paddingTop: 20,
+		paddingBottom: 28,
+		alignItems: 'center',
 	},
 	title: {
-		fontSize: 32,
-		fontWeight: '800',
-		color: '#333',
+		fontSize: 38,
+		fontWeight: '900',
+		color: '#059669',
 		marginBottom: 8,
+		letterSpacing: -0.8,
+		textAlign: 'center',
 	},
 	subtitle: {
-		fontSize: 16,
-		color: '#666',
-		lineHeight: 22,
+		fontSize: 17,
+		color: '#475569',
+		lineHeight: 24,
+		fontWeight: '500',
+		textAlign: 'center',
+		opacity: 0.8,
 	},
 	uploadSection: {
-		paddingHorizontal: 20,
-		marginBottom: 24,
+		paddingHorizontal: 28,
+		marginBottom: 20,
+		marginTop: 8,
 	},
 	uploadCard: {
-		backgroundColor: 'white',
-		padding: 24,
-		borderRadius: 20,
+		backgroundColor: 'rgba(255,255,255,0.95)',
+		padding: 28,
+		borderRadius: 28,
 		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
+		shadowOffset: { width: 0, height: 6 },
 		shadowOpacity: 0.1,
-		shadowRadius: 12,
+		shadowRadius: 16,
 		elevation: 6,
+		borderWidth: 0,
 	},
 	uploadHeader: {
-		flexDirection: 'row',
 		alignItems: 'center',
-		marginBottom: 20,
+		marginBottom: 24,
 	},
 	uploadIconContainer: {
-		width: 56,
-		height: 56,
-		borderRadius: 28,
-		backgroundColor: '#e8f5e8',
+		width: 80,
+		height: 80,
+		borderRadius: 40,
+		backgroundColor: '#d1fae5',
 		justifyContent: 'center',
 		alignItems: 'center',
-		marginRight: 16,
+		marginBottom: 16,
+		shadowColor: '#059669',
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.2,
+		shadowRadius: 8,
+		elevation: 4,
 	},
 	uploadIcon: {
-		fontSize: 28,
+		fontSize: 40,
 	},
 	uploadContent: {
-		flex: 1,
+		alignItems: 'center',
 	},
 	uploadTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 4,
+		fontSize: 24,
+		fontWeight: '900',
+		color: '#0f172a',
+		marginBottom: 8,
+		letterSpacing: -0.5,
+		textAlign: 'center',
 	},
 	uploadDescription: {
-		fontSize: 14,
-		color: '#666',
-		lineHeight: 20,
+		fontSize: 16,
+		color: '#475569',
+		lineHeight: 24,
+		fontWeight: '500',
+		textAlign: 'center',
 	},
 	supportedFormats: {
-		marginBottom: 20,
+		marginBottom: 24,
+		backgroundColor: 'rgba(241, 254, 248, 0.6)',
+		padding: 18,
+		borderRadius: 20,
+		borderWidth: 0,
 	},
 	formatsLabel: {
-		fontSize: 12,
-		color: '#999',
-		marginBottom: 8,
-		fontWeight: '600',
+		fontSize: 13,
+		color: '#475569',
+		marginBottom: 14,
+		fontWeight: '700',
+		textTransform: 'uppercase',
+		letterSpacing: 0.8,
+		textAlign: 'center',
 	},
 	formatsList: {
 		flexDirection: 'row',
 		flexWrap: 'wrap',
-		gap: 6,
+		gap: 10,
+		justifyContent: 'center',
 	},
 	formatChip: {
-		backgroundColor: '#f0f8f0',
-		paddingHorizontal: 8,
-		paddingVertical: 4,
-		borderRadius: 12,
-		borderWidth: 1,
-		borderColor: '#e0e0e0',
+		backgroundColor: 'white',
+		paddingHorizontal: 14,
+		paddingVertical: 8,
+		borderRadius: 20,
+		borderWidth: 0,
+		shadowColor: '#059669',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.08,
+		shadowRadius: 6,
+		elevation: 2,
 	},
 	formatText: {
-		fontSize: 10,
+		fontSize: 12,
 		color: '#059669',
-		fontWeight: '600',
+		fontWeight: '700',
+		letterSpacing: 0.3,
 	},
 	premiumUploadButton: {
 		backgroundColor: '#059669',
-		paddingVertical: 16,
-		borderRadius: 12,
+		paddingVertical: 19,
+		borderRadius: 20,
 		alignItems: 'center',
-		shadowColor: '#059669',
-		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.3,
-		shadowRadius: 8,
-		elevation: 6,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 6 },
+		shadowOpacity: 0.25,
+		shadowRadius: 14,
+		elevation: 8,
 	},
 	premiumUploadButtonText: {
 		color: 'white',
-		fontSize: 16,
-		fontWeight: '700',
+		fontSize: 17,
+		fontWeight: '900',
+		letterSpacing: 0.5,
 	},
 	uploadButton: {
 		backgroundColor: 'white',
@@ -620,103 +670,111 @@ const styles = StyleSheet.create({
 		color: '#666',
 	},
 	uploadButtonDisabled: {
-		opacity: 0.6,
+		opacity: 0.5,
+		backgroundColor: '#cbd5e1',
 	},
 	processingCard: {
-		backgroundColor: 'white',
-		marginTop: 16,
-		padding: 16,
-		borderRadius: 12,
-		borderWidth: 2,
-		borderColor: '#059669',
+		backgroundColor: 'rgba(255, 255, 255, 0.95)',
+		marginTop: 20,
+		padding: 22,
+		borderRadius: 24,
+		borderWidth: 0,
 		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.12,
+		shadowRadius: 10,
+		elevation: 6,
 	},
 	processingHeader: {
 		flexDirection: 'row',
 		justifyContent: 'space-between',
 		alignItems: 'center',
-		marginBottom: 8,
-	},
-	processingTitle: {
-		fontSize: 16,
-		fontWeight: '600',
-		color: '#333',
-		flex: 1,
-	},
-	processingMessage: {
-		fontSize: 14,
-		color: '#059669',
 		marginBottom: 12,
 	},
+	processingTitle: {
+		fontSize: 17,
+		fontWeight: '700',
+		color: '#0f172a',
+		flex: 1,
+		letterSpacing: -0.2,
+	},
+	processingMessage: {
+		fontSize: 15,
+		color: '#10b981',
+		marginBottom: 16,
+		fontWeight: '600',
+	},
 	processingProgress: {
-		height: 4,
-		backgroundColor: '#e8f5e8',
-		borderRadius: 2,
+		height: 6,
+		backgroundColor: '#d1fae5',
+		borderRadius: 3,
 		overflow: 'hidden',
 	},
 	processingProgressBar: {
 		height: '100%',
-		backgroundColor: '#059669',
+		backgroundColor: '#10b981',
 		width: '100%',
-		borderRadius: 2,
+		borderRadius: 3,
 	},
 	emptyState: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
-		padding: 32,
-		borderRadius: 20,
+		backgroundColor: 'rgba(255,255,255,0.95)',
+		marginHorizontal: 28,
+		padding: 40,
+		borderRadius: 32,
 		alignItems: 'center',
 		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
+		shadowOffset: { width: 0, height: 6 },
 		shadowOpacity: 0.1,
-		shadowRadius: 12,
+		shadowRadius: 16,
 		elevation: 6,
+		borderWidth: 0,
 	},
 	emptyIllustration: {
-		width: 100,
-		height: 100,
-		borderRadius: 50,
-		backgroundColor: '#e8f5e8',
+		width: 140,
+		height: 140,
+		borderRadius: 70,
+		backgroundColor: '#d1fae5',
 		justifyContent: 'center',
 		alignItems: 'center',
-		marginBottom: 24,
+		marginBottom: 32,
 		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.2,
-		shadowRadius: 8,
+		shadowOpacity: 0.15,
+		shadowRadius: 10,
 		elevation: 4,
+		borderWidth: 0,
 	},
 	emptyIllustrationText: {
-		fontSize: 48,
+		fontSize: 64,
 	},
 	emptyTitle: {
-		fontSize: 24,
-		fontWeight: '700',
-		color: '#333',
-		marginBottom: 12,
+		fontSize: 28,
+		fontWeight: '900',
+		color: '#0f172a',
+		marginBottom: 16,
 		textAlign: 'center',
+		letterSpacing: -0.8,
 	},
 	emptyText: {
-		fontSize: 16,
-		color: '#666',
+		fontSize: 17,
+		color: '#475569',
 		textAlign: 'center',
-		lineHeight: 22,
-		marginBottom: 24,
-		maxWidth: 280,
+		lineHeight: 26,
+		marginBottom: 32,
+		maxWidth: 320,
+		fontWeight: '500',
 	},
 	emptyBenefits: {
 		alignItems: 'center',
-		marginBottom: 24,
+		marginBottom: 0,
+		gap: 14,
 	},
 	benefitPoint: {
-		fontSize: 14,
+		fontSize: 16,
 		color: '#059669',
-		marginBottom: 8,
-		fontWeight: '500',
+		marginBottom: 0,
+		fontWeight: '700',
+		letterSpacing: 0.3,
 	},
 	howToGetFileButton: {
 		backgroundColor: '#059669',
@@ -738,135 +796,152 @@ const styles = StyleSheet.create({
 		fontWeight: '600',
 	},
 	guideButton: {
-		marginTop: 16,
+		marginTop: 20,
 		alignItems: 'center',
 		paddingVertical: 12,
 	},
 	guideButtonText: {
 		color: '#059669',
 		fontSize: 15,
-		fontWeight: '500',
+		fontWeight: '700',
+		letterSpacing: 0.3,
 		textDecorationLine: 'underline',
 	},
 	filesSection: {
-		paddingHorizontal: 20,
+		paddingHorizontal: 28,
 		marginBottom: 20,
 	},
 	filesSectionHeader: {
 		flexDirection: 'row',
 		justifyContent: 'space-between',
 		alignItems: 'center',
-		marginBottom: 16,
+		marginBottom: 20,
 	},
 	filesTitle: {
-		fontSize: 22,
-		fontWeight: '700',
-		color: '#333',
+		fontSize: 26,
+		fontWeight: '900',
+		color: '#0f172a',
+		letterSpacing: -0.8,
 	},
 	filesCount: {
-		fontSize: 14,
+		fontSize: 13,
 		color: '#059669',
-		fontWeight: '600',
-		backgroundColor: '#e8f5e8',
-		paddingHorizontal: 12,
-		paddingVertical: 4,
-		borderRadius: 12,
+		fontWeight: '800',
+		backgroundColor: 'rgba(209, 250, 229, 0.8)',
+		paddingHorizontal: 14,
+		paddingVertical: 6,
+		borderRadius: 20,
+		borderWidth: 0,
+		letterSpacing: 0.5,
 	},
 	premiumFileCard: {
-		backgroundColor: 'white',
-		padding: 20,
-		borderRadius: 16,
+		backgroundColor: 'rgba(255,255,255,0.95)',
+		padding: 24,
+		borderRadius: 28,
 		marginBottom: 16,
 		shadowColor: '#000',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.08,
 		shadowRadius: 12,
 		elevation: 6,
-		borderWidth: 1,
-		borderColor: '#f0f0f0',
+		borderWidth: 0,
 	},
 	fileCardHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
-		marginBottom: 16,
+		marginBottom: 20,
 	},
 	fileIconContainer: {
-		width: 48,
-		height: 48,
-		borderRadius: 24,
-		backgroundColor: '#e8f5e8',
+		width: 56,
+		height: 56,
+		borderRadius: 18,
+		backgroundColor: '#d1fae5',
 		justifyContent: 'center',
 		alignItems: 'center',
-		marginRight: 12,
+		marginRight: 14,
+		shadowColor: '#10b981',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.15,
+		shadowRadius: 4,
+		elevation: 2,
 	},
 	fileIcon: {
-		fontSize: 24,
+		fontSize: 28,
 	},
 	fileInfo: {
 		flex: 1,
 	},
 	fileName: {
-		fontSize: 18,
-		fontWeight: '700',
-		color: '#333',
+		fontSize: 19,
+		fontWeight: '800',
+		color: '#0f172a',
 		marginBottom: 4,
+		letterSpacing: -0.3,
 	},
 	fileLoadDate: {
-		fontSize: 12,
-		color: '#999',
+		fontSize: 13,
+		color: '#94a3b8',
+		fontWeight: '600',
 	},
 	deleteButton: {
-		width: 32,
-		height: 32,
-		borderRadius: 16,
-		backgroundColor: '#ffebee',
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: '#fee2e2',
 		justifyContent: 'center',
 		alignItems: 'center',
+		borderWidth: 1,
+		borderColor: '#fecaca',
 	},
 	deleteButtonText: {
-		fontSize: 14,
-		color: '#d32f2f',
-		fontWeight: '600',
+		fontSize: 16,
+		color: '#dc2626',
+		fontWeight: '700',
 	},
 	fileStats: {
 		flexDirection: 'row',
 		justifyContent: 'space-around',
-		marginBottom: 16,
-		paddingVertical: 12,
-		backgroundColor: '#f8f9fa',
-		borderRadius: 12,
+		marginBottom: 20,
+		paddingVertical: 18,
+		backgroundColor: 'rgba(241, 254, 248, 0.5)',
+		borderRadius: 18,
+		borderWidth: 0,
 	},
 	statItem: {
 		alignItems: 'center',
 		flex: 1,
 	},
 	statNumber: {
-		fontSize: 16,
-		fontWeight: '700',
+		fontSize: 20,
+		fontWeight: '900',
 		color: '#059669',
-		marginBottom: 4,
+		marginBottom: 6,
+		letterSpacing: -0.5,
 	},
 	statLabel: {
-		fontSize: 10,
-		color: '#666',
-		fontWeight: '600',
+		fontSize: 11,
+		color: '#475569',
+		fontWeight: '700',
 		textAlign: 'center',
+		textTransform: 'uppercase',
+		letterSpacing: 0.8,
 	},
 	premiumAnalyzeButton: {
 		backgroundColor: '#059669',
 		paddingVertical: 16,
-		borderRadius: 12,
+		borderRadius: 18,
 		alignItems: 'center',
-		shadowColor: '#059669',
-		shadowOffset: { width: 0, height: 2 },
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.2,
-		shadowRadius: 4,
-		elevation: 3,
+		shadowRadius: 10,
+		elevation: 6,
 	},
 	premiumAnalyzeButtonText: {
 		color: 'white',
-		fontSize: 14,
-		fontWeight: '700',
+		fontSize: 16,
+		fontWeight: '900',
+		letterSpacing: 0.5,
 	},
 	fileCard: {
 		backgroundColor: 'white',
@@ -908,40 +983,46 @@ const styles = StyleSheet.create({
 		fontWeight: '600',
 	},
 	privacyCard: {
-		backgroundColor: 'white',
-		marginHorizontal: 20,
+		backgroundColor: 'rgba(255,255,255,0.95)',
+		marginHorizontal: 28,
 		marginVertical: 20,
-		padding: 20,
-		borderRadius: 16,
+		padding: 28,
+		borderRadius: 28,
 		shadowColor: '#000',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.08,
 		shadowRadius: 12,
 		elevation: 6,
-		borderWidth: 1,
-		borderColor: '#e8f5e8',
+		borderWidth: 0,
 	},
 	privacyHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
-		marginBottom: 16,
+		marginBottom: 24,
+		justifyContent: 'center',
 	},
 	privacyIconContainer: {
-		width: 40,
-		height: 40,
-		borderRadius: 20,
-		backgroundColor: '#e8f5e8',
+		width: 52,
+		height: 52,
+		borderRadius: 26,
+		backgroundColor: '#d1fae5',
 		justifyContent: 'center',
 		alignItems: 'center',
-		marginRight: 12,
+		marginRight: 14,
+		shadowColor: '#059669',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.12,
+		shadowRadius: 6,
+		elevation: 2,
 	},
 	privacyIcon: {
-		fontSize: 20,
+		fontSize: 26,
 	},
 	privacyTitle: {
-		fontSize: 18,
-		fontWeight: '700',
-		color: '#333',
+		fontSize: 22,
+		fontWeight: '900',
+		color: '#0f172a',
+		letterSpacing: -0.5,
 	},
 	privacyPoints: {
 		gap: 12,
@@ -949,18 +1030,23 @@ const styles = StyleSheet.create({
 	privacyPoint: {
 		flexDirection: 'row',
 		alignItems: 'center',
+		backgroundColor: 'rgba(241, 254, 248, 0.5)',
+		padding: 14,
+		borderRadius: 16,
+		borderWidth: 0,
 	},
 	privacyPointIcon: {
-		fontSize: 16,
-		marginRight: 12,
-		width: 20,
+		fontSize: 20,
+		marginRight: 14,
+		width: 24,
 		textAlign: 'center',
 	},
 	privacyPointText: {
-		fontSize: 14,
-		color: '#666',
+		fontSize: 15,
+		color: '#475569',
 		flex: 1,
-		lineHeight: 18,
+		lineHeight: 22,
+		fontWeight: '600',
 	},
 	storageInfo: {
 		backgroundColor: '#e8f5e8',
@@ -985,72 +1071,94 @@ const styles = StyleSheet.create({
 	// Modal styles
 	modalOverlay: {
 		flex: 1,
-		backgroundColor: 'rgba(0, 0, 0, 0.5)',
+		backgroundColor: 'rgba(0, 0, 0, 0.6)',
 		justifyContent: 'center',
 		alignItems: 'center',
-		padding: 20,
+		padding: 28,
 	},
 	modalContainer: {
-		backgroundColor: 'white',
-		borderRadius: 16,
-		padding: 24,
+		backgroundColor: 'rgba(255, 255, 255, 0.98)',
+		borderRadius: 28,
+		padding: 32,
 		width: '100%',
 		maxWidth: 400,
 		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
+		shadowOffset: { width: 0, height: 10 },
 		shadowOpacity: 0.25,
-		shadowRadius: 8,
-		elevation: 8,
+		shadowRadius: 20,
+		elevation: 12,
+		borderWidth: 0,
 	},
 	modalTitle: {
-		fontSize: 20,
-		fontWeight: '700',
-		color: '#333',
+		fontSize: 26,
+		fontWeight: '900',
+		color: '#0f172a',
 		textAlign: 'center',
-		marginBottom: 8,
+		marginBottom: 12,
+		letterSpacing: -0.8,
 	},
 	modalSubtitle: {
-		fontSize: 14,
-		color: '#666',
+		fontSize: 16,
+		color: '#475569',
 		textAlign: 'center',
-		marginBottom: 20,
-		lineHeight: 20,
+		marginBottom: 28,
+		lineHeight: 24,
+		fontWeight: '500',
 	},
 	modalInput: {
-		borderWidth: 1,
-		borderColor: '#e0e0e0',
-		borderRadius: 12,
-		padding: 16,
-		fontSize: 16,
-		backgroundColor: '#f8f9fa',
-		marginBottom: 20,
+		borderWidth: 0,
+		borderRadius: 18,
+		padding: 18,
+		fontSize: 17,
+		backgroundColor: 'rgba(248, 250, 251, 0.8)',
+		marginBottom: 24,
+		fontWeight: '600',
+		color: '#0f172a',
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.05,
+		shadowRadius: 4,
+		elevation: 2,
 	},
 	modalButtons: {
 		flexDirection: 'row',
-		gap: 12,
+		gap: 14,
 	},
 	modalCancelButton: {
 		flex: 1,
-		backgroundColor: '#f5f5f5',
-		paddingVertical: 12,
-		borderRadius: 8,
+		backgroundColor: 'rgba(241, 245, 249, 0.9)',
+		paddingVertical: 17,
+		borderRadius: 16,
 		alignItems: 'center',
+		borderWidth: 0,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.08,
+		shadowRadius: 6,
+		elevation: 2,
 	},
 	modalCancelButtonText: {
 		fontSize: 16,
-		fontWeight: '600',
-		color: '#666',
+		fontWeight: '800',
+		color: '#64748b',
+		letterSpacing: 0.3,
 	},
 	modalConfirmButton: {
 		flex: 1,
 		backgroundColor: '#059669',
-		paddingVertical: 12,
-		borderRadius: 8,
+		paddingVertical: 17,
+		borderRadius: 16,
 		alignItems: 'center',
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 6 },
+		shadowOpacity: 0.25,
+		shadowRadius: 14,
+		elevation: 8,
 	},
 	modalConfirmButtonText: {
 		fontSize: 16,
-		fontWeight: '600',
+		fontWeight: '900',
 		color: 'white',
+		letterSpacing: 0.5,
 	},
 })

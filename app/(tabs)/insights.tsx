@@ -185,7 +185,7 @@ export default function InsightsScreen() {
 	const toggleFavoriteGene = async (gene: string) => {
 		try {
 			const newFavorites = favoriteGenes.includes(gene)
-				? favoriteGenes.filter(g => g !== gene)
+				? favoriteGenes.filter((g) => g !== gene)
 				: [...favoriteGenes, gene]
 
 			setFavoriteGenes(newFavorites)
@@ -334,12 +334,12 @@ export default function InsightsScreen() {
 			// Sort gene groups by YOUR actual risk
 			geneGroups.sort((a, b) => {
 				// Check if user has pathogenic variants
-				const aHasPath = a.variants.some(v => {
+				const aHasPath = a.variants.some((v) => {
 					const isPath = v.clnsig.toLowerCase().includes('pathogenic')
 					const hasRisk = v.user_genotype && v.alt && v.user_genotype.includes(v.alt)
 					return isPath && hasRisk
 				})
-				const bHasPath = b.variants.some(v => {
+				const bHasPath = b.variants.some((v) => {
 					const isPath = v.clnsig.toLowerCase().includes('pathogenic')
 					const hasRisk = v.user_genotype && v.alt && v.user_genotype.includes(v.alt)
 					return isPath && hasRisk
@@ -484,7 +484,8 @@ export default function InsightsScreen() {
 				{/* Important Notice at the top */}
 				<View style={[styles.infoCard, { backgroundColor: '#fff7ed', borderColor: '#fb923c' }]}>
 					<Text style={[styles.infoCardText, { color: '#ea580c' }]}>
-						⚠️ Important: Interpretation requires a registered clinician. Remember, this app could have bugs or your sequencing could have errors. This is not medical advice.
+						⚠️ Important: Interpretation requires a registered clinician. Remember, this app could
+						have bugs or your sequencing could have errors. This is not medical advice.
 					</Text>
 				</View>
 
@@ -512,7 +513,9 @@ export default function InsightsScreen() {
 						<Text style={styles.categoryTitle}>Your Variant Matches - Significant</Text>
 						<View style={[styles.infoCard, { backgroundColor: '#fef3c7', borderColor: '#fbbf24' }]}>
 							<Text style={[styles.infoCardText, { color: '#92400e' }]}>
-								These matches are considered by ClinVar to be worth paying attention to, however remember, interpretation requires a registered clinician. Remember, this app could have bugs or your sequencing could have errors.
+								These matches are considered by ClinVar to be worth paying attention to, however
+								remember, interpretation requires a registered clinician. Remember, this app could
+								have bugs or your sequencing could have errors.
 							</Text>
 						</View>
 						{pathogenicGenes
@@ -526,7 +529,8 @@ export default function InsightsScreen() {
 						<Text style={styles.categoryTitle}>Your Variant Matches - Uncertain</Text>
 						<View style={[styles.infoCard, { backgroundColor: '#fff7ed', borderColor: '#fb923c' }]}>
 							<Text style={[styles.infoCardText, { color: '#ea580c' }]}>
-								Uncertain significance means that ClinVar is not sure these are pathogenic so for now you should probably not take them into consideration.
+								Uncertain significance means that ClinVar is not sure these are pathogenic so for
+								now you should probably not take them into consideration.
 							</Text>
 						</View>
 						{uncertainGenes
@@ -572,86 +576,82 @@ export default function InsightsScreen() {
 		})
 
 		// Determine color based on whether user has the risk
-		const tagColor = hasPathogenicRisk
-			? getSignificanceColor(geneGroup.mostSignificant)
-			: '#9e9e9e' // Grey if user doesn't have the risk
+		const tagColor = hasPathogenicRisk ? getSignificanceColor(geneGroup.mostSignificant) : '#9e9e9e' // Grey if user doesn't have the risk
 
 		return (
-		<View key={index} style={styles.geneCard}>
-			<View style={styles.geneCardHeader}>
-				<View style={styles.geneInfo}>
-					<Text style={styles.geneName}>{geneGroup.gene}</Text>
-					<View
-						style={[
-							styles.significanceTag,
-							{ backgroundColor: tagColor },
-						]}
-					>
-						<Text style={styles.significanceText}>
-							{hasPathogenicRisk ? '⚠️ ' : ''}
-							{getSignificanceDisplayText(geneGroup.mostSignificant)}
-						</Text>
+			<View key={index} style={styles.geneCard}>
+				<View style={styles.geneCardHeader}>
+					<View style={styles.geneInfo}>
+						<Text style={styles.geneName}>{geneGroup.gene}</Text>
+						<View style={[styles.significanceTag, { backgroundColor: tagColor }]}>
+							<Text style={styles.significanceText}>
+								{hasPathogenicRisk ? '⚠️ ' : ''}
+								{getSignificanceDisplayText(geneGroup.mostSignificant)}
+							</Text>
+						</View>
+					</View>
+					<View style={styles.geneCardActions}>
+						<TouchableOpacity
+							style={styles.favoriteButton}
+							onPress={() => toggleFavoriteGene(geneGroup.gene)}
+						>
+							<Text
+								style={[
+									styles.favoriteIcon,
+									favoriteGenes.includes(geneGroup.gene) && styles.favoriteIconActive,
+								]}
+							>
+								{favoriteGenes.includes(geneGroup.gene) ? '★' : '☆'}
+							</Text>
+						</TouchableOpacity>
+						<TouchableOpacity
+							style={styles.genopediaButton}
+							onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneGroup.gene}`)}
+						>
+							<Text style={styles.genopediaButtonText}>Learn More</Text>
+						</TouchableOpacity>
 					</View>
 				</View>
-				<View style={styles.geneCardActions}>
-					<TouchableOpacity
-						style={styles.favoriteButton}
-						onPress={() => toggleFavoriteGene(geneGroup.gene)}
-					>
-						<Text style={[
-							styles.favoriteIcon,
-							favoriteGenes.includes(geneGroup.gene) && styles.favoriteIconActive
-						]}>
-							{favoriteGenes.includes(geneGroup.gene) ? '★' : '☆'}
+
+				<View style={styles.geneStats}>
+					<Text style={styles.variantCount}>
+						{geneGroup.uniqueRsids} variants • {geneGroup.totalVariants} records
+					</Text>
+					{geneGroup.pathogenicCount > 0 && (
+						<Text style={styles.pathogenicCount}>
+							{geneGroup.pathogenicCount} pathogenic variants
 						</Text>
-					</TouchableOpacity>
-					<TouchableOpacity
-						style={styles.genopediaButton}
-						onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneGroup.gene}`)}
-					>
-						<Text style={styles.genopediaButtonText}>Learn More</Text>
-					</TouchableOpacity>
+					)}
 				</View>
-			</View>
 
-			<View style={styles.geneStats}>
-				<Text style={styles.variantCount}>
-					{geneGroup.uniqueRsids} variants • {geneGroup.totalVariants} records
-				</Text>
-				{geneGroup.pathogenicCount > 0 && (
-					<Text style={styles.pathogenicCount}>
-						{geneGroup.pathogenicCount} pathogenic variants
-					</Text>
+				{geneGroup.conditions.length > 0 && (
+					<View style={styles.conditionsContainer}>
+						<Text style={styles.conditionsLabel}>Associated conditions:</Text>
+						<Text style={styles.conditionsText} numberOfLines={3}>
+							{geneGroup.conditions.slice(0, 3).join(', ')}
+							{geneGroup.conditions.length > 3 && '...'}
+						</Text>
+					</View>
 				)}
-			</View>
 
-			{geneGroup.conditions.length > 0 && (
-				<View style={styles.conditionsContainer}>
-					<Text style={styles.conditionsLabel}>Associated conditions:</Text>
-					<Text style={styles.conditionsText} numberOfLines={3}>
-						{geneGroup.conditions.slice(0, 3).join(', ')}
-						{geneGroup.conditions.length > 3 && '...'}
-					</Text>
+				<View style={styles.geneCardFooter}>
+					<Link
+						href={{
+							pathname: '/gene/[geneName]',
+							params: {
+								geneName: geneGroup.gene,
+								userDb: state.selectedDatabase?.dbName || '',
+								variants: JSON.stringify(geneGroup.variants),
+							},
+						}}
+						asChild
+					>
+						<TouchableOpacity style={styles.viewDetailsButton}>
+							<Text style={styles.viewDetailsButtonText}>View All Variants →</Text>
+						</TouchableOpacity>
+					</Link>
 				</View>
-			)}
-
-			<View style={styles.geneCardFooter}>
-				<Link
-					href={{
-						pathname: '/gene/[geneName]',
-						params: {
-							geneName: geneGroup.gene,
-							userDb: state.selectedDatabase?.dbName || '',
-							variants: JSON.stringify(geneGroup.variants)
-						}
-					}}
-					asChild>
-					<TouchableOpacity style={styles.viewDetailsButton}>
-						<Text style={styles.viewDetailsButtonText}>View All Variants →</Text>
-					</TouchableOpacity>
-				</Link>
 			</View>
-		</View>
 		)
 	}
 
