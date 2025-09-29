@@ -77,7 +77,7 @@ export default function SettingsScreen() {
 						<View style={[layout.spacedRow, { marginTop: 8 }]}>
 							<Text style={[typography.bodyText, { color: theme.textSecondary }]}>Build</Text>
 							<Text style={[typography.bodyText, { color: theme.textPrimary, fontWeight: '600' }]}>
-								{Constants.expoConfig?.extra?.eas?.projectId ? 'Production' : 'Development'}
+								{__DEV__ ? 'Development' : 'Production'}
 							</Text>
 						</View>
 					</View>

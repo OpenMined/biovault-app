@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import {
 	View,
+	FlatList,
 	TouchableOpacity,
 	Text,
 	StyleSheet,
+	Dimensions,
 	Image,
 	Linking,
 	Alert,
@@ -14,95 +16,347 @@ import { router } from 'expo-router'
 import { lightTheme } from '@/styles/colors'
 import { Storage } from '@/lib/storage'
 import Animated, {
-	FadeIn,
-	FadeInDown,
-	FadeInUp,
 	SlideInLeft,
 	SlideOutLeft,
 	useAnimatedStyle,
-	withSpring,
 	withTiming,
 	useSharedValue,
+	Easing,
+	interpolate,
+	Extrapolation,
 } from 'react-native-reanimated'
+
+const { width } = Dimensions.get('window')
+
+// Inline illustration components
+const LogoSVG = () => (
+	<View style={illustrationStyles.imageContainer}>
+		<Image
+			source={require('@/assets/images/logo.png')}
+			style={illustrationStyles.image}
+			resizeMode="contain"
+		/>
+	</View>
+)
+
+const FolderSVG = () => (
+	<View style={illustrationStyles.imageContainer}>
+		<Image
+			source={require('@/assets/images/folder.png')}
+			style={illustrationStyles.image}
+			resizeMode="contain"
+		/>
+	</View>
+)
+
+const ResearchSVG = () => (
+	<View style={illustrationStyles.imageContainer}>
+		<Image
+			source={require('@/assets/images/research.png')}
+			style={illustrationStyles.image}
+			resizeMode="contain"
+		/>
+	</View>
+)
+
+const AlertsSVG = () => (
+	<View style={illustrationStyles.imageContainer}>
+		<Image
+			source={require('@/assets/images/alerts.png')}
+			style={illustrationStyles.image}
+			resizeMode="contain"
+		/>
+	</View>
+)
+
+const WarningSVG = () => (
+	<View style={illustrationStyles.imageContainer}>
+		<Image
+			source={require('@/assets/images/warning.png')}
+			style={illustrationStyles.image}
+			resizeMode="contain"
+		/>
+	</View>
+)
+
+const SyftBoxSVG = () => (
+	<View style={illustrationStyles.imageContainer}>
+		<Image
+			source={require('@/assets/images/syftbox-icon.png')}
+			style={illustrationStyles.image}
+			resizeMode="contain"
+		/>
+	</View>
+)
 
 const slides = [
 	{
 		key: 'welcome',
 		title: 'Welcome to BioVault',
 		description:
-			'A free, open-source network for collaborative genomics. Your data stays on your device — encrypted, private, and under your control.',
-		image: require('@/assets/images/logo.png'),
-		gradient: ['#e0f2e7', '#f0f9f6'],
+			'BioVault is a free, open-source network for collaborative genomics. Your data **stays on your device** — encrypted, private, and under your control.',
+		Illustration: LogoSVG,
+		backgroundColor: '#f8fffe',
 	},
 	{
 		key: 'private',
 		title: 'Keep Your Data Private',
 		description:
-			'Supports DNA files from 23andMe. Analysis happens offline on your phone. Get free weekly ClinVar updates without sharing any data. Your data never leaves your device.',
-		bullets: ['Offline Analysis', 'Weekly Updates', 'Zero Data Sharing', 'Full Privacy'],
-		image: require('@/assets/images/folder.png'),
-		gradient: ['#f0f9f6', '#e8f5f0'],
+			'• Supports DNA files from **23andMe**\n• Does analysis offline on your phone\n• Get **free** weekly ClinVar updates without sharing any data\n• **Stays on your device** - never uploaded\n\n**Coming soon:** Ancestry, MyHeritage, Sequencing.com, Nebula, CariGenetics.com etc',
+		Illustration: FolderSVG,
+		backgroundColor: '#f8fffe',
 	},
 	{
 		key: 'updates',
-		title: 'Stay Informed',
-		description: 'Star genes of interest and get notified of breaking news, research, and papers.',
-		bullets: ['Gene Tracking', 'Research Updates', 'News Alerts', 'Scientific Papers'],
-		image: require('@/assets/images/alerts.png'),
-		gradient: ['#e8f5f0', '#e0f2e7'],
+		title: 'Updates & Notifications',
+		description:
+			'• Star genes of interest\n• Updates for new ClinVar databases every few weeks\n• Get notified of breaking news, research and papers',
+		Illustration: AlertsSVG,
+		backgroundColor: '#f8fffe',
 	},
 	{
 		key: 'contribute',
-		title: 'Advance Medicine',
+		title: 'Help Advance Medicine',
 		description:
-			'See research projects matching your variants. Connect anonymously with scientists. Run research on your device. You control what to share.',
-		image: require('@/assets/images/research.png'),
-		gradient: ['#e0f2e7', '#f8fffe'],
+			'See research projects being proposed by scientists which match your variants.\n\nOnly if you want to reveal yourself, contact them privately and anonymously through the app to enroll.\n\nTheir research can be run on your device and you choose to share results or not.',
+		Illustration: ResearchSVG,
+		backgroundColor: '#f8fffe',
 	},
 	{
 		key: 'privacy',
-		title: 'Built on Trust',
+		title: 'Privacy First',
 		description:
-			'End-to-end encryption. Open source & transparent. Free forever. Apache 2.0 Licensed.\n\nPowered by SyftBox.net from OpenMined.org 501(c)(3)',
+			'• **End-to-end encryption**\n• Decentralized network\n• Open Source — Transparent\n• **Free** — Apache 2.0 Licensed\n• Permissionless — Join instantly\n\nRuns on **SyftBox.net** from **OpenMined.org** 501(c)(3)',
 		links: [
-			{ text: 'SyftBox', url: 'https://syftbox.net' },
-			{ text: 'OpenMined', url: 'https://www.openmined.org' },
+			{ text: 'SyftBox.net', url: 'https://syftbox.net' },
+			{ text: 'OpenMined.org', url: 'https://www.openmined.org' },
 		],
-		image: require('@/assets/images/syftbox-icon.png'),
-		gradient: ['#f8fffe', '#e0f2e7'],
+		Illustration: SyftBoxSVG,
+		backgroundColor: '#f8fffe',
 	},
 	{
 		key: 'disclaimer',
-		title: 'Research Prototype',
+		title: 'Research Prototype — Use with Care',
 		description:
 			'This is an early-stage research tool, not medical advice. We make no guarantees about accuracy or security. Use at your own risk.',
-		image: require('@/assets/images/warning.png'),
-		gradient: ['#fff9f0', '#ffe5cc'],
+		shortDescription: true,
+		Illustration: WarningSVG,
+		backgroundColor: '#f8fffe',
 		requiresAgreement: true,
 	},
 ]
 
+// Inline OnboardingScreen component
+interface OnboardingScreenProps {
+	title: string
+	description: string
+	links?: { text: string; url: string | null }[]
+	Illustration?: React.ComponentType
+	backgroundColor?: string
+	shortDescription?: boolean
+	requiresAgreement?: boolean
+	hasAgreed?: boolean
+	onAgreementChange?: (agreed: boolean) => void
+	isActive: boolean
+}
+
+function OnboardingScreen({
+	title,
+	description,
+	links,
+	Illustration,
+	backgroundColor = '#f8fafc',
+	shortDescription = false,
+	requiresAgreement = false,
+	hasAgreed = false,
+	onAgreementChange,
+	isActive,
+}: OnboardingScreenProps) {
+	const theme = lightTheme
+	const isWeb = Platform.OS === 'web'
+
+	// Smooth fade and slide from top animation
+	const animProgress = useSharedValue(0)
+
+	useEffect(() => {
+		if (isActive) {
+			animProgress.value = withTiming(1, {
+				duration: 600,
+				easing: Easing.bezier(0.25, 0.1, 0.25, 1), // Custom ease-out curve
+			})
+		} else {
+			animProgress.value = 0
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [isActive])
+
+	const imageStyle = useAnimatedStyle(() => ({
+		opacity: interpolate(animProgress.value, [0, 1], [0, 1], Extrapolation.CLAMP),
+		transform: [
+			{
+				translateY: interpolate(animProgress.value, [0, 1], [-30, 0], Extrapolation.CLAMP),
+			},
+			{
+				scale: interpolate(animProgress.value, [0, 1], [0.9, 1], Extrapolation.CLAMP),
+			},
+		],
+	}))
+
+	const titleStyle = useAnimatedStyle(() => ({
+		opacity: interpolate(animProgress.value, [0, 0.3, 1], [0, 0, 1], Extrapolation.CLAMP),
+		transform: [
+			{
+				translateY: interpolate(animProgress.value, [0, 1], [-20, 0], Extrapolation.CLAMP),
+			},
+		],
+	}))
+
+	const descStyle = useAnimatedStyle(() => ({
+		opacity: interpolate(animProgress.value, [0, 0.5, 1], [0, 0, 1], Extrapolation.CLAMP),
+		transform: [
+			{
+				translateY: interpolate(animProgress.value, [0, 1], [-15, 0], Extrapolation.CLAMP),
+			},
+		],
+	}))
+
+	const extraStyle = useAnimatedStyle(() => ({
+		opacity: interpolate(animProgress.value, [0, 0.7, 1], [0, 0, 1], Extrapolation.CLAMP),
+		transform: [
+			{
+				translateY: interpolate(animProgress.value, [0, 1], [-10, 0], Extrapolation.CLAMP),
+			},
+		],
+	}))
+
+	const handleLinkPress = (url: string) => {
+		if (isWeb) {
+			window.open(url, '_blank')
+		} else {
+			Alert.alert(
+				'Open External Link',
+				`Do you want to open ${url}?`,
+				[
+					{
+						text: 'Cancel',
+						style: 'cancel',
+					},
+					{
+						text: 'Open',
+						onPress: () => Linking.openURL(url),
+					},
+				],
+				{ cancelable: true }
+			)
+		}
+	}
+
+	// Parse description for bold text marked with **
+	const parseDescription = (text: string) => {
+		const parts = text.split(/(\*\*[^*]+\*\*)/g)
+		return parts.map((part, index) => {
+			if (part.startsWith('**') && part.endsWith('**')) {
+				return (
+					<Text key={index} style={{ fontWeight: 'bold' }}>
+						{part.slice(2, -2)}
+					</Text>
+				)
+			}
+			return <Text key={index}>{part}</Text>
+		})
+	}
+
+	return (
+		<View style={[onboardingScreenStyles.container, { backgroundColor }]}>
+			<Animated.View style={[onboardingScreenStyles.illustrationContainer, imageStyle]}>
+				{Illustration && <Illustration />}
+			</Animated.View>
+			<Animated.Text
+				style={[onboardingScreenStyles.title, { color: theme.textPrimary }, titleStyle]}
+			>
+				{title}
+			</Animated.Text>
+			<Animated.Text
+				style={[
+					onboardingScreenStyles.description,
+					{ color: theme.textSecondary, textAlign: 'center' },
+					shortDescription && onboardingScreenStyles.shortDescription,
+					descStyle,
+				]}
+			>
+				{parseDescription(description)}
+			</Animated.Text>
+
+			{links && (
+				<Animated.View style={[onboardingScreenStyles.linksContainer, extraStyle]}>
+					<Text style={[onboardingScreenStyles.linksLabel, { color: theme.textSecondary }]}>
+						Learn more: {'  '}
+					</Text>
+					{links.map((link, index) => (
+						<React.Fragment key={index}>
+							<TouchableOpacity onPress={() => link.url && handleLinkPress(link.url)}>
+								<Text
+									style={[
+										onboardingScreenStyles.linkText,
+										{ color: '#059669', textDecorationLine: 'underline' },
+									]}
+								>
+									{link.text}
+								</Text>
+							</TouchableOpacity>
+							{index < links.length - 1 && (
+								<Text style={[onboardingScreenStyles.linkText, { color: theme.textSecondary }]}>
+									{'  •  '}
+								</Text>
+							)}
+						</React.Fragment>
+					))}
+				</Animated.View>
+			)}
+
+			{requiresAgreement && (
+				<Animated.View style={[onboardingScreenStyles.agreementWrapper, extraStyle]}>
+					<TouchableOpacity
+						style={onboardingScreenStyles.agreementContainer}
+						onPress={() => onAgreementChange?.(!hasAgreed)}
+						activeOpacity={0.7}
+					>
+						<View
+							style={[
+								onboardingScreenStyles.checkbox,
+								{ borderColor: '#059669' },
+								hasAgreed && { backgroundColor: '#059669' },
+							]}
+						>
+							{hasAgreed && <Text style={onboardingScreenStyles.checkmark}>✓</Text>}
+						</View>
+						<Text style={[onboardingScreenStyles.agreementText, { color: theme.textPrimary }]}>
+							I agree to use this research prototype at my own risk
+						</Text>
+					</TouchableOpacity>
+				</Animated.View>
+			)}
+		</View>
+	)
+}
+
+// ts-prune-ignore-next
 export default function OnboardingFlow() {
 	const [currentIndex, setCurrentIndex] = useState(0)
 	const [hasAgreed, setHasAgreed] = useState(false)
 	const theme = lightTheme
-	const isWeb = Platform.OS === 'web'
+	const ref = useRef<FlatList>(null)
 
 	const progress = useSharedValue(0)
-	const imageScale = useSharedValue(1)
 
-	const currentSlide = slides[currentIndex]!
+	const currentSlide = slides[currentIndex]
 	const isLastSlide = currentIndex === slides.length - 1
-	const canProceed = !currentSlide.requiresAgreement || hasAgreed
+	const canProceed = !currentSlide?.requiresAgreement || hasAgreed
 
 	useEffect(() => {
-		progress.value = withSpring((currentIndex + 1) / slides.length, {
-			damping: 20,
-			stiffness: 90,
-		})
-		imageScale.value = withSpring(1, {
-			damping: 15,
-			stiffness: 100,
+		progress.value = withTiming((currentIndex + 1) / slides.length, {
+			duration: 400,
+			easing: Easing.bezier(0.25, 0.1, 0.25, 1),
 		})
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [currentIndex])
@@ -111,17 +365,9 @@ export default function OnboardingFlow() {
 		width: `${progress.value * 100}%`,
 	}))
 
-	const imageScaleStyle = useAnimatedStyle(() => ({
-		transform: [{ scale: imageScale.value }],
-	}))
-
 	const handleNext = () => {
 		if (currentIndex < slides.length - 1) {
-			imageScale.value = withTiming(0.8, { duration: 200 }, () => {
-				imageScale.value = withSpring(1)
-			})
-			setCurrentIndex(currentIndex + 1)
-			setHasAgreed(false)
+			ref.current?.scrollToIndex({ index: currentIndex + 1 })
 		} else if (canProceed) {
 			Storage.setItemSync('hasCompletedOnboarding', 'true')
 			router.replace('/(tabs)')
@@ -130,149 +376,69 @@ export default function OnboardingFlow() {
 
 	const handleBack = () => {
 		if (currentIndex > 0) {
-			setCurrentIndex(currentIndex - 1)
-			setHasAgreed(false)
-		}
-	}
-
-	const handleLinkPress = (url: string) => {
-		if (isWeb) {
-			window.open(url, '_blank')
-		} else {
-			Alert.alert(
-				'Open Link',
-				`Open ${url}?`,
-				[
-					{ text: 'Cancel', style: 'cancel' },
-					{ text: 'Open', onPress: () => Linking.openURL(url) },
-				],
-				{ cancelable: true }
-			)
+			ref.current?.scrollToIndex({ index: currentIndex - 1 })
 		}
 	}
 
 	return (
-		<View
-			style={[
-				styles.fullScreen,
-				{
-					backgroundColor: currentSlide.gradient[0],
-				},
-			]}
-		>
+		<View style={[styles.fullScreen, { backgroundColor: '#f8fffe' }]}>
 			<SafeAreaView style={styles.safeArea}>
-				{/* Header with Progress Bar */}
-				<View style={styles.header}>
-					<View style={styles.progressBarContainer}>
-						<Animated.View
-							style={[styles.progressBar, progressStyle, { backgroundColor: theme.primary }]}
-						/>
-					</View>
-					<Text style={[styles.stepIndicator, { color: theme.textSecondary }]}>
-						{currentIndex + 1} of {slides.length}
-					</Text>
-				</View>
-
-				<View style={styles.content}>
-					{/* Image */}
+				{/* Animated Progress Bar */}
+				<View style={styles.progressBarContainer}>
 					<Animated.View
-						key={`image-${currentIndex}`}
-						entering={FadeIn.duration(600).delay(200)}
-						style={[styles.imageContainer, imageScaleStyle]}
-					>
-						<Image source={currentSlide.image} style={styles.image} resizeMode="contain" />
-					</Animated.View>
-
-					{/* Content */}
-					<View style={styles.contentContainer}>
-						<Animated.Text
-							key={`title-${currentIndex}`}
-							entering={FadeInDown.duration(500).delay(300)}
-							style={[styles.title, { color: theme.primary }]}
-						>
-							{currentSlide.title}
-						</Animated.Text>
-
-						<Animated.Text
-							key={`desc-${currentIndex}`}
-							entering={FadeInDown.duration(500).delay(400)}
-							style={[styles.description, { color: theme.textSecondary }]}
-						>
-							{currentSlide.description}
-						</Animated.Text>
-
-						{/* Bullet Points */}
-						{currentSlide.bullets && (
-							<View style={styles.bulletsContainer}>
-								{currentSlide.bullets.map((bullet, index) => (
-									<Animated.View
-										key={bullet}
-										entering={FadeInRight.duration(400).delay(500 + index * 100)}
-										style={styles.bulletItem}
-									>
-										<View style={[styles.bulletDot, { backgroundColor: theme.primary }]} />
-										<Text style={[styles.bulletText, { color: theme.textPrimary }]}>{bullet}</Text>
-									</Animated.View>
-								))}
-							</View>
-						)}
-
-						{/* Links */}
-						{currentSlide.links && (
-							<Animated.View
-								entering={FadeInUp.duration(500).delay(600)}
-								style={styles.linksContainer}
-							>
-								<Text style={[styles.linksLabel, { color: theme.textSecondary }]}>
-									Learn more:{' '}
-								</Text>
-								{currentSlide.links.map((link, index) => (
-									<React.Fragment key={index}>
-										<TouchableOpacity
-											onPress={() => handleLinkPress(link.url)}
-											style={styles.linkButton}
-										>
-											<Text style={[styles.linkText, { color: theme.primary }]}>{link.text}</Text>
-										</TouchableOpacity>
-										{index < currentSlide.links.length - 1 && (
-											<Text style={[styles.linksLabel, { color: theme.textSecondary }]}> • </Text>
-										)}
-									</React.Fragment>
-								))}
-							</Animated.View>
-						)}
-
-						{/* Agreement Checkbox */}
-						{currentSlide.requiresAgreement && (
-							<Animated.View entering={FadeInUp.duration(500).delay(500)}>
-								<TouchableOpacity
-									style={styles.agreementContainer}
-									onPress={() => setHasAgreed(!hasAgreed)}
-									activeOpacity={0.7}
-								>
-									<View
-										style={[
-											styles.checkbox,
-											{ borderColor: theme.primary },
-											hasAgreed && { backgroundColor: theme.primary },
-										]}
-									>
-										{hasAgreed && <Text style={styles.checkmark}>✓</Text>}
-									</View>
-									<Text style={[styles.agreementText, { color: theme.textPrimary }]}>
-										I understand this is a research prototype and agree to use it at my own risk
-									</Text>
-								</TouchableOpacity>
-							</Animated.View>
-						)}
-					</View>
+						style={[styles.progressBar, progressStyle, { backgroundColor: '#059669' }]}
+					/>
 				</View>
 
-				{/* Bottom Navigation */}
-				<Animated.View
-					entering={FadeInUp.duration(500).delay(700)}
-					style={[styles.bottomNav, { backgroundColor: 'transparent' }]}
-				>
+				<FlatList
+					ref={ref}
+					horizontal
+					pagingEnabled
+					showsHorizontalScrollIndicator={false}
+					scrollEventThrottle={16}
+					onScroll={(e) => {
+						const index = Math.round(e.nativeEvent.contentOffset.x / width)
+						if (index !== currentIndex) {
+							setCurrentIndex(index)
+							setHasAgreed(false)
+						}
+					}}
+					data={slides}
+					renderItem={({ item, index }) => {
+						const { key, ...rest } = item
+						return (
+							<OnboardingScreen
+								key={key}
+								{...rest}
+								isActive={index === currentIndex}
+								hasAgreed={index === currentIndex ? hasAgreed : false}
+								onAgreementChange={(agreed) => {
+									if (index === currentIndex) {
+										setHasAgreed(agreed)
+									}
+								}}
+							/>
+						)
+					}}
+					keyExtractor={(item) => item.key}
+				/>
+
+				<View style={[styles.bottomContainer, { backgroundColor: 'transparent' }]}>
+					<View style={styles.indicatorContainer}>
+						{slides.map((_, index) => (
+							<View
+								key={index}
+								style={[
+									styles.indicator,
+									{
+										backgroundColor: index === currentIndex ? '#059669' : theme.inactive,
+										width: index === currentIndex ? 20 : 8,
+									},
+								]}
+							/>
+						))}
+					</View>
+
 					<View style={styles.buttonRow}>
 						{currentIndex > 0 && (
 							<Animated.View
@@ -280,10 +446,10 @@ export default function OnboardingFlow() {
 								exiting={SlideOutLeft.duration(300)}
 							>
 								<TouchableOpacity
-									style={[styles.backButton, { borderColor: theme.primary }]}
+									style={[styles.backButton, { borderColor: '#059669' }]}
 									onPress={handleBack}
 								>
-									<Text style={[styles.backButtonText, { color: theme.primary }]}>← Back</Text>
+									<Text style={[styles.backButtonText, { color: '#059669' }]}>← Back</Text>
 								</TouchableOpacity>
 							</Animated.View>
 						)}
@@ -291,28 +457,27 @@ export default function OnboardingFlow() {
 						<TouchableOpacity
 							style={[
 								styles.nextButton,
-								{
-									backgroundColor: canProceed ? theme.primary : theme.inactive,
-									opacity: canProceed ? 1 : 0.5,
-								},
-								currentIndex === 0 && styles.fullWidthButton,
+								currentIndex === 0 && styles.singleButton,
+								{ backgroundColor: canProceed ? '#059669' : theme.inactive },
 							]}
 							onPress={handleNext}
 							disabled={!canProceed}
-							activeOpacity={0.8}
 						>
-							<Text style={[styles.nextButtonText, { color: '#ffffff' }]}>
-								{isLastSlide ? '🚀 Get Started' : 'Next →'}
+							<Text
+								style={[
+									styles.buttonText,
+									{ color: canProceed ? theme.textInverse : theme.textSecondary },
+								]}
+							>
+								{isLastSlide ? 'Start Using BioVault' : 'Next →'}
 							</Text>
 						</TouchableOpacity>
 					</View>
-				</Animated.View>
+				</View>
 			</SafeAreaView>
 		</View>
 	)
 }
-
-const FadeInRight = FadeInDown
 
 const styles = StyleSheet.create({
 	fullScreen: {
@@ -323,113 +488,117 @@ const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
 	},
-	header: {
-		paddingHorizontal: 24,
-		paddingTop: 16,
-		paddingBottom: 8,
-	},
 	progressBarContainer: {
-		height: 4,
+		height: 3,
 		backgroundColor: 'rgba(0,0,0,0.08)',
+		marginHorizontal: 20,
+		marginTop: 12,
+		marginBottom: 8,
 		borderRadius: 2,
 		overflow: 'hidden',
-		marginBottom: 8,
 	},
 	progressBar: {
 		height: '100%',
 		borderRadius: 2,
 	},
-	stepIndicator: {
-		fontSize: 13,
-		fontWeight: '600',
-		textAlign: 'center',
-		opacity: 0.6,
-	},
-	content: {
+	container: {
 		flex: 1,
+	},
+	bottomContainer: {
+		paddingHorizontal: 20,
+		paddingBottom: 40,
+		paddingTop: 10,
+	},
+	indicatorContainer: {
+		flexDirection: 'row',
+		justifyContent: 'center',
+		marginBottom: 30,
+		gap: 6,
+	},
+	indicator: {
+		height: 8,
+		borderRadius: 4,
+	},
+	buttonRow: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		gap: 12,
+	},
+	backButton: {
+		paddingVertical: 16,
+		paddingHorizontal: 24,
+		borderRadius: 12,
+		borderWidth: 2,
+		backgroundColor: 'transparent',
+	},
+	backButtonText: {
+		fontSize: 16,
+		fontWeight: '600',
+	},
+	nextButton: {
+		flex: 1,
+		paddingVertical: 16,
+		borderRadius: 12,
+		alignItems: 'center',
+		shadowColor: '#000',
+		shadowOffset: {
+			width: 0,
+			height: 2,
+		},
+		shadowOpacity: 0.1,
+		shadowRadius: 3.84,
+		elevation: 5,
+	},
+	singleButton: {
+		marginLeft: 0,
+	},
+	buttonText: {
+		fontSize: 18,
+		fontWeight: '600',
+	},
+})
+
+const onboardingScreenStyles = StyleSheet.create({
+	container: {
+		width,
 		alignItems: 'center',
 		justifyContent: 'center',
 		paddingHorizontal: 20,
-		paddingVertical: 12,
+		paddingVertical: 16,
+		flex: 1,
 	},
-	imageContainer: {
-		width: 140,
-		height: 140,
-		marginBottom: 20,
+	illustrationContainer: {
+		height: 180,
+		marginBottom: 24,
 		justifyContent: 'center',
 		alignItems: 'center',
 	},
-	image: {
-		width: '100%',
-		height: '100%',
-	},
-	contentContainer: {
-		width: '100%',
-		maxWidth: 600,
-		alignItems: 'center',
-		flex: 1,
-		justifyContent: 'flex-start',
-		paddingHorizontal: 4,
-	},
 	title: {
-		fontSize: 28,
-		fontWeight: '900',
+		fontSize: 26,
+		fontWeight: 'bold',
+		color: '#059669',
 		textAlign: 'center',
 		marginBottom: 12,
-		lineHeight: 34,
-		letterSpacing: -0.5,
+		paddingHorizontal: 16,
+		alignSelf: 'stretch',
 	},
 	description: {
 		fontSize: 15,
 		textAlign: 'center',
+		color: '#64748b',
 		lineHeight: 22,
-		marginBottom: 16,
-		fontWeight: '400',
+		paddingHorizontal: 16,
+		alignSelf: 'stretch',
+		marginBottom: 8,
 	},
-	bulletsContainer: {
+	shortDescription: {
+		marginBottom: 20,
+	},
+	agreementWrapper: {
+		paddingHorizontal: 0,
 		width: '100%',
-		maxWidth: 400,
-		marginTop: 4,
-		marginBottom: 12,
-	},
-	bulletItem: {
-		flexDirection: 'row',
 		alignItems: 'center',
-		marginBottom: 10,
-		paddingHorizontal: 12,
-	},
-	bulletDot: {
-		width: 6,
-		height: 6,
-		borderRadius: 3,
-		marginRight: 10,
-	},
-	bulletText: {
-		fontSize: 14,
-		fontWeight: '600',
-		flex: 1,
-	},
-	linksContainer: {
-		flexDirection: 'row',
-		flexWrap: 'wrap',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginTop: 8,
-		marginBottom: 12,
-	},
-	linksLabel: {
-		fontSize: 13,
-		lineHeight: 20,
-	},
-	linkButton: {
-		paddingHorizontal: 4,
-		paddingVertical: 2,
-	},
-	linkText: {
-		fontSize: 13,
-		lineHeight: 20,
-		textDecorationLine: 'underline',
-		fontWeight: '700',
 	},
 	agreementContainer: {
 		flexDirection: 'row',
@@ -438,90 +607,62 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 14,
 		paddingVertical: 14,
 		backgroundColor: 'rgba(255,255,255,0.9)',
-		borderRadius: 12,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.05,
-		shadowRadius: 8,
-		elevation: 2,
+		borderRadius: 10,
+		maxWidth: '100%',
 		width: '100%',
 	},
 	checkbox: {
-		width: 20,
-		height: 20,
-		borderRadius: 5,
+		width: 22,
+		height: 22,
+		borderRadius: 6,
 		borderWidth: 2,
-		marginRight: 12,
-		marginTop: 2,
+		marginRight: 10,
 		alignItems: 'center',
 		justifyContent: 'center',
+		marginTop: 1,
 		flexShrink: 0,
 	},
 	checkmark: {
 		color: 'white',
-		fontSize: 13,
+		fontSize: 14,
 		fontWeight: 'bold',
-		lineHeight: 13,
+		lineHeight: 14,
 	},
 	agreementText: {
 		flex: 1,
 		fontSize: 13,
-		lineHeight: 19,
+		lineHeight: 18,
 		fontWeight: '500',
+		textAlign: 'left',
 		color: '#2d5a4f',
 	},
-	bottomNav: {
-		paddingHorizontal: 20,
-		paddingVertical: 16,
-		paddingBottom: 20,
-	},
-	buttonRow: {
+	linksContainer: {
 		flexDirection: 'row',
+		flexWrap: 'wrap',
 		justifyContent: 'center',
 		alignItems: 'center',
-		gap: 12,
-		maxWidth: 600,
+		marginTop: 8,
+		paddingHorizontal: 16,
+	},
+	linksLabel: {
+		fontSize: 14,
+		lineHeight: 22,
+	},
+	linkText: {
+		fontSize: 14,
+		lineHeight: 22,
+	},
+})
+
+const illustrationStyles = StyleSheet.create({
+	imageContainer: {
+		width: 160,
+		height: 160,
+		justifyContent: 'center',
+		alignItems: 'center',
+	},
+	image: {
 		width: '100%',
-		alignSelf: 'center',
-	},
-	backButton: {
-		paddingVertical: 16,
-		paddingHorizontal: 28,
-		borderRadius: 16,
-		borderWidth: 2.5,
-		backgroundColor: 'rgba(255,255,255,0.9)',
-		minWidth: 110,
-		alignItems: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.08,
-		shadowRadius: 8,
-		elevation: 3,
-	},
-	backButtonText: {
-		fontSize: 17,
-		fontWeight: '800',
-	},
-	nextButton: {
-		flex: 1,
-		paddingVertical: 18,
-		paddingHorizontal: 32,
-		borderRadius: 16,
-		alignItems: 'center',
-		justifyContent: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 6 },
-		shadowOpacity: 0.2,
-		shadowRadius: 12,
-		elevation: 8,
-		minHeight: 56,
-	},
-	fullWidthButton: {
-		flex: 1,
-	},
-	nextButtonText: {
-		fontSize: 18,
-		fontWeight: '800',
-		letterSpacing: 0.3,
+		height: '100%',
 	},
 })

@@ -136,6 +136,12 @@ class Analytics {
 		try {
 			this.checkSession()
 
+			// Skip analytics in development mode
+			if (__DEV__) {
+				console.log('Analytics: Skipping in development mode')
+				return
+			}
+
 			// Don't include extra fields, just send what the API expects
 			const payload = event
 
