@@ -1,12 +1,12 @@
 import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { useTheme } from '@/contexts/ThemeContext'
+import { lightTheme } from '@/styles/colors'
 import { useAnalytics } from '@/hooks/useAnalytics'
 
 // ts-prune-ignore-next
 export default function NebulaWizard() {
-	const { theme } = useTheme()
+	const theme = lightTheme
 	const { trackEvent } = useAnalytics({
 		trackScreenView: true,
 		screenProperties: {
@@ -76,7 +76,7 @@ export default function NebulaWizard() {
 						fontSize: 18,
 						fontWeight: '600',
 						color: theme.primary,
-						marginBottom: 16,
+						marginBottom: 16,g
 						textAlign: 'center',
 					}}>
 						Coming Soon

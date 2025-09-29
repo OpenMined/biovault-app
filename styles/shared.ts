@@ -1,8 +1,6 @@
 import { StyleSheet } from 'react-native'
 import { lightTheme } from './colors'
 
-// Default to light theme for static styles
-// Components should use useTheme() hook for dynamic theming
 // ts-prune-ignore-next
 export const colors = lightTheme
 

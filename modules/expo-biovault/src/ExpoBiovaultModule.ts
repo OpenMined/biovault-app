@@ -1,4 +1,5 @@
 import { NativeModule, requireNativeModule } from 'expo'
+import { Platform } from 'react-native'
 
 export interface AnalysisResult {
 	matches: ClinVarVariant[]
@@ -40,5 +41,39 @@ declare class ExpoBiovaultModule extends NativeModule {
 	rust_add(a: number, b: number): number
 }
 
-// This call loads the native module object from the JSI.
-export default requireNativeModule<ExpoBiovaultModule>('ExpoBiovault')
+// Platform-specific module loading
+const createModule = (): ExpoBiovaultModule => {
+	if (Platform.OS === 'web') {
+		// Web fallback - create a mock module
+		console.warn('BioVault Rust module is not available on web. Using fallback implementation.')
+
+		return {
+			processGenomeFile: async (
+				_inputPath: string,
+				_customName: string,
+				_outputDir: string
+			): Promise<string> => {
+				throw new Error(
+					'Genome processing is not available on web. Please use the iOS or Android app.'
+				)
+			},
+			analyzeClinVarMatches: async (
+				_userDbPath: string,
+				_clinvarDbPath: string
+			): Promise<string> => {
+				throw new Error(
+					'ClinVar analysis is not available on web. Please use the iOS or Android app.'
+				)
+			},
+			rust_add: (a: number, b: number): number => {
+				// Simple fallback for testing
+				return a + b
+			},
+		} as ExpoBiovaultModule
+	}
+
+	// Native platforms - load the actual native module
+	return requireNativeModule<ExpoBiovaultModule>('ExpoBiovault')
+}
+
+export default createModule()

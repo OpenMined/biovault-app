@@ -5,10 +5,20 @@
 
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { useState } from 'react'
-import { Alert, Linking, ScrollView, Text, TouchableOpacity, View, Modal, TextInput, ActivityIndicator } from 'react-native'
+import {
+	Alert,
+	Linking,
+	ScrollView,
+	Text,
+	TouchableOpacity,
+	View,
+	Modal,
+	TextInput,
+	ActivityIndicator,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { layout, researchStyles } from '@/styles'
-import { useTheme } from '@/contexts/ThemeContext'
+import { lightTheme } from '@/styles/colors'
 
 interface DesktopBenefit {
 	icon: string
@@ -26,7 +36,7 @@ export default function ResearchScreen() {
 	const [showEmailModal, setShowEmailModal] = useState(false)
 	const [email, setEmail] = useState('')
 	const [isSubmitting, setIsSubmitting] = useState(false)
-	const { theme } = useTheme()
+	const theme = lightTheme
 
 	const desktopBenefits: DesktopBenefit[] = [
 		{
@@ -82,19 +92,15 @@ export default function ResearchScreen() {
 			})
 
 			if (response.ok) {
-				Alert.alert(
-					'Success!',
-					'Thanks we will be in touch soon.',
-					[
-						{
-							text: 'OK',
-							onPress: () => {
-								setShowEmailModal(false)
-								setEmail('')
-							}
-						}
-					]
-				)
+				Alert.alert('Success!', 'Thanks we will be in touch soon.', [
+					{
+						text: 'OK',
+						onPress: () => {
+							setShowEmailModal(false)
+							setEmail('')
+						},
+					},
+				])
 			} else {
 				Alert.alert('Error', 'Something went wrong. Please try again later.')
 			}
@@ -232,41 +238,50 @@ export default function ResearchScreen() {
 					transparent={true}
 					onRequestClose={() => setShowEmailModal(false)}
 				>
-					<View style={{
-						flex: 1,
-						justifyContent: 'center',
-						alignItems: 'center',
-						backgroundColor: 'rgba(0, 0, 0, 0.5)',
-					}}>
-						<View style={{
-							backgroundColor: theme.background,
-							borderRadius: 20,
-							padding: 30,
-							width: '85%',
-							maxWidth: 400,
-							shadowColor: '#000',
-							shadowOffset: { width: 0, height: 4 },
-							shadowOpacity: 0.25,
-							shadowRadius: 12,
-							elevation: 10,
-						}}>
-							<Text style={{
-								fontSize: 24,
-								fontWeight: '700',
-								color: theme.textPrimary,
-								marginBottom: 12,
-								textAlign: 'center',
-							}}>
+					<View
+						style={{
+							flex: 1,
+							justifyContent: 'center',
+							alignItems: 'center',
+							backgroundColor: 'rgba(0, 0, 0, 0.5)',
+						}}
+					>
+						<View
+							style={{
+								backgroundColor: theme.background,
+								borderRadius: 20,
+								padding: 30,
+								width: '85%',
+								maxWidth: 400,
+								shadowColor: '#000',
+								shadowOffset: { width: 0, height: 4 },
+								shadowOpacity: 0.25,
+								shadowRadius: 12,
+								elevation: 10,
+							}}
+						>
+							<Text
+								style={{
+									fontSize: 24,
+									fontWeight: '700',
+									color: theme.textPrimary,
+									marginBottom: 12,
+									textAlign: 'center',
+								}}
+							>
 								Join the Beta Waitlist
 							</Text>
-							<Text style={{
-								fontSize: 14,
-								color: theme.textSecondary,
-								marginBottom: 20,
-								textAlign: 'center',
-								lineHeight: 20,
-							}}>
-								Be the first to know when BioVault Desktop is ready for collaborative genomics research
+							<Text
+								style={{
+									fontSize: 14,
+									color: theme.textSecondary,
+									marginBottom: 20,
+									textAlign: 'center',
+									lineHeight: 20,
+								}}
+							>
+								Be the first to know when BioVault Desktop is ready for collaborative genomics
+								research
 							</Text>
 							<TextInput
 								style={{
@@ -289,10 +304,12 @@ export default function ResearchScreen() {
 								autoCorrect={false}
 								editable={!isSubmitting}
 							/>
-							<View style={{
-								flexDirection: 'row',
-								gap: 12,
-							}}>
+							<View
+								style={{
+									flexDirection: 'row',
+									gap: 12,
+								}}
+							>
 								<TouchableOpacity
 									style={{
 										flex: 1,
@@ -305,11 +322,13 @@ export default function ResearchScreen() {
 									onPress={() => setShowEmailModal(false)}
 									disabled={isSubmitting}
 								>
-									<Text style={{
-										fontSize: 16,
-										fontWeight: '600',
-										color: theme.textPrimary,
-									}}>
+									<Text
+										style={{
+											fontSize: 16,
+											fontWeight: '600',
+											color: theme.textPrimary,
+										}}
+									>
 										Cancel
 									</Text>
 								</TouchableOpacity>
@@ -328,11 +347,13 @@ export default function ResearchScreen() {
 									{isSubmitting ? (
 										<ActivityIndicator color="white" />
 									) : (
-										<Text style={{
-											fontSize: 16,
-											fontWeight: '600',
-											color: 'white',
-										}}>
+										<Text
+											style={{
+												fontSize: 16,
+												fontWeight: '600',
+												color: 'white',
+											}}
+										>
 											Join Beta
 										</Text>
 									)}

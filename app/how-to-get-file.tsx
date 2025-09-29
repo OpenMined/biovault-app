@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { useTheme } from '@/contexts/ThemeContext'
+import { lightTheme } from '@/styles/colors'
 import { sharedStyles, cards } from '@/styles/shared'
 import { useAnalytics } from '@/hooks/useAnalytics'
 
@@ -66,13 +66,13 @@ const dataProviders = [
 
 // ts-prune-ignore-next
 export default function HowToGetFile() {
-	const { theme } = useTheme()
+	const theme = lightTheme
 	useAnalytics({
 		trackScreenView: true,
 		screenProperties: { screen: 'HowToGetFile' },
 	})
 
-	const handleProviderPress = (provider: typeof dataProviders[0]) => {
+	const handleProviderPress = (provider: (typeof dataProviders)[0]) => {
 		router.push(`/wizard/${provider.key}` as any)
 	}
 
@@ -103,7 +103,7 @@ export default function HowToGetFile() {
 
 					{/* All Providers */}
 					<View style={{ marginBottom: 32 }}>
-						{dataProviders.map(provider => (
+						{dataProviders.map((provider) => (
 							<TouchableOpacity
 								key={provider.key}
 								style={{
@@ -114,31 +114,39 @@ export default function HowToGetFile() {
 								}}
 								onPress={() => handleProviderPress(provider)}
 							>
-								<View style={{
-									width: 56,
-									height: 56,
-									borderRadius: 28,
-									backgroundColor: provider.available ? theme.primaryLight : theme.inactive + '20',
-									justifyContent: 'center',
-									alignItems: 'center',
-									marginRight: 16,
-								}}>
+								<View
+									style={{
+										width: 56,
+										height: 56,
+										borderRadius: 28,
+										backgroundColor: provider.available
+											? theme.primaryLight
+											: theme.inactive + '20',
+										justifyContent: 'center',
+										alignItems: 'center',
+										marginRight: 16,
+									}}
+								>
 									<Text style={{ fontSize: 28 }}>{provider.icon}</Text>
 								</View>
 
 								<View style={{ flex: 1 }}>
-									<Text style={{
-										fontSize: 18,
-										fontWeight: '600',
-										color: theme.textPrimary,
-									}}>
+									<Text
+										style={{
+											fontSize: 18,
+											fontWeight: '600',
+											color: theme.textPrimary,
+										}}
+									>
 										{provider.name}
 									</Text>
-									<Text style={{
-										fontSize: 14,
-										color: theme.textSecondary,
-										marginTop: 4,
-									}}>
+									<Text
+										style={{
+											fontSize: 14,
+											color: theme.textSecondary,
+											marginTop: 4,
+										}}
+									>
 										{provider.description}
 									</Text>
 								</View>
@@ -149,15 +157,17 @@ export default function HowToGetFile() {
 					</View>
 
 					{/* Info Card */}
-					<View style={[
-						cards.standard,
-						{
-							backgroundColor: theme.infoBg,
-							borderColor: theme.info + '30',
-							borderWidth: 1,
-							marginTop: 32,
-						}
-					]}>
+					<View
+						style={[
+							cards.standard,
+							{
+								backgroundColor: theme.infoBg,
+								borderColor: theme.info + '30',
+								borderWidth: 1,
+								marginTop: 32,
+							},
+						]}
+					>
 						<View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
 							<Text style={{ fontSize: 24, marginRight: 12 }}>💡</Text>
 							<View style={{ flex: 1 }}>
@@ -165,7 +175,8 @@ export default function HowToGetFile() {
 									Don&apos;t have genetic data yet?
 								</Text>
 								<Text style={[sharedStyles.subtitle, { color: theme.textSecondary, marginTop: 8 }]}>
-									You&apos;ll need to order a DNA test from one of these providers first. Most tests cost between $50-200 and take 6-8 weeks to process.
+									You&apos;ll need to order a DNA test from one of these providers first. Most tests
+									cost between $50-200 and take 6-8 weeks to process.
 								</Text>
 							</View>
 						</View>

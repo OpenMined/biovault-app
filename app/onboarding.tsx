@@ -1,9 +1,19 @@
 import React, { useRef, useState } from 'react'
-import { View, FlatList, TouchableOpacity, Text, StyleSheet, Dimensions, Image, Linking, Alert } from 'react-native'
+import {
+	View,
+	FlatList,
+	TouchableOpacity,
+	Text,
+	StyleSheet,
+	Dimensions,
+	Image,
+	Linking,
+	Alert,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Storage } from 'expo-sqlite/kv-store'
-import { useTheme } from '@/contexts/ThemeContext'
+import { lightTheme } from '@/styles/colors'
 
 const { width } = Dimensions.get('window')
 
@@ -149,7 +159,7 @@ function OnboardingScreen({
 	hasAgreed = false,
 	onAgreementChange,
 }: OnboardingScreenProps) {
-	const { theme } = useTheme()
+	const theme = lightTheme
 
 	const handleLinkPress = (url: string) => {
 		Alert.alert(
@@ -190,11 +200,13 @@ function OnboardingScreen({
 				{Illustration && <Illustration />}
 			</View>
 			<Text style={[onboardingScreenStyles.title, { color: theme.textPrimary }]}>{title}</Text>
-			<Text style={[
-				onboardingScreenStyles.description,
-				{ color: theme.textSecondary, textAlign: 'left' },
-				shortDescription && onboardingScreenStyles.shortDescription
-			]}>
+			<Text
+				style={[
+					onboardingScreenStyles.description,
+					{ color: theme.textSecondary, textAlign: 'left' },
+					shortDescription && onboardingScreenStyles.shortDescription,
+				]}
+			>
 				{parseDescription(description)}
 			</Text>
 
@@ -205,13 +217,13 @@ function OnboardingScreen({
 					</Text>
 					{links.map((link, index) => (
 						<React.Fragment key={index}>
-							<TouchableOpacity
-								onPress={() => link.url && handleLinkPress(link.url)}
-							>
-								<Text style={[
-									onboardingScreenStyles.linkText,
-									{ color: '#059669', textDecorationLine: 'underline' }
-								]}>
+							<TouchableOpacity onPress={() => link.url && handleLinkPress(link.url)}>
+								<Text
+									style={[
+										onboardingScreenStyles.linkText,
+										{ color: '#059669', textDecorationLine: 'underline' },
+									]}
+								>
 									{link.text}
 								</Text>
 							</TouchableOpacity>
@@ -230,11 +242,13 @@ function OnboardingScreen({
 					style={onboardingScreenStyles.agreementContainer}
 					onPress={() => onAgreementChange?.(!hasAgreed)}
 				>
-					<View style={[
-						onboardingScreenStyles.checkbox,
-						{ borderColor: '#059669' },
-						hasAgreed && { backgroundColor: '#059669' }
-					]}>
+					<View
+						style={[
+							onboardingScreenStyles.checkbox,
+							{ borderColor: '#059669' },
+							hasAgreed && { backgroundColor: '#059669' },
+						]}
+					>
 						{hasAgreed && <Text style={onboardingScreenStyles.checkmark}>✓</Text>}
 					</View>
 					<Text style={[onboardingScreenStyles.agreementText, { color: theme.textPrimary }]}>
@@ -250,7 +264,7 @@ function OnboardingScreen({
 export default function OnboardingFlow() {
 	const [currentIndex, setCurrentIndex] = useState(0)
 	const [hasAgreed, setHasAgreed] = useState(false)
-	const { theme } = useTheme()
+	const theme = lightTheme
 	const ref = useRef<FlatList>(null)
 
 	const currentSlide = slides[currentIndex]
@@ -274,7 +288,6 @@ export default function OnboardingFlow() {
 
 	return (
 		<SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-
 			<FlatList
 				ref={ref}
 				horizontal
@@ -314,7 +327,7 @@ export default function OnboardingFlow() {
 							key={index}
 							style={[
 								styles.indicator,
-								{ backgroundColor: index === currentIndex ? '#059669' : theme.inactive }
+								{ backgroundColor: index === currentIndex ? '#059669' : theme.inactive },
 							]}
 						/>
 					))}
@@ -334,12 +347,17 @@ export default function OnboardingFlow() {
 						style={[
 							styles.nextButton,
 							currentIndex === 0 && styles.singleButton,
-							{ backgroundColor: canProceed ? '#059669' : theme.inactive }
+							{ backgroundColor: canProceed ? '#059669' : theme.inactive },
 						]}
 						onPress={handleNext}
 						disabled={!canProceed}
 					>
-						<Text style={[styles.buttonText, { color: canProceed ? theme.textInverse : theme.textSecondary }]}>
+						<Text
+							style={[
+								styles.buttonText,
+								{ color: canProceed ? theme.textInverse : theme.textSecondary },
+							]}
+						>
 							{isLastSlide ? 'Start Using BioVault' : 'Next →'}
 						</Text>
 					</TouchableOpacity>

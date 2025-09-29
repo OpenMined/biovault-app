@@ -1,8 +1,17 @@
 import { useRef, useState } from 'react'
-import { View, Text, TouchableOpacity, ScrollView, FlatList, Dimensions, Image, Linking } from 'react-native'
+import {
+	View,
+	Text,
+	TouchableOpacity,
+	ScrollView,
+	FlatList,
+	Dimensions,
+	Image,
+	Linking,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { useTheme } from '@/contexts/ThemeContext'
+import { lightTheme } from '@/styles/colors'
 import { sharedStyles } from '@/styles/shared'
 import { useAnalytics } from '@/hooks/useAnalytics'
 
@@ -13,7 +22,8 @@ const wizardSteps = [
 		key: 'welcome',
 		title: 'Get Your 23andMe Data',
 		logo: require('@/assets/formats/23andme_logo.png'),
-		description: 'This guide will walk you through downloading your genetic data from 23andMe for use in BioVault.',
+		description:
+			'This guide will walk you through downloading your genetic data from 23andMe for use in BioVault.',
 		backgroundColor: '#f0f9f6',
 	},
 	{
@@ -65,7 +75,8 @@ const wizardSteps = [
 		key: 'submit',
 		title: 'Step 6: Submit Request',
 		icon: '✅',
-		description: 'Scroll down, check "I understand" and click "Submit request" to initiate the download process.',
+		description:
+			'Scroll down, check "I understand" and click "Submit request" to initiate the download process.',
 		image: require('@/assets/guides/23andme/6.png'),
 		backgroundColor: '#f8fffe',
 	},
@@ -73,7 +84,8 @@ const wizardSteps = [
 		key: 'email',
 		title: 'Step 7: Check Your Email',
 		icon: '📧',
-		description: 'Wait for the download email from 23andMe. It will contain a link to download your file (e.g., genome_YourName_v4_Full_date.zip).',
+		description:
+			'Wait for the download email from 23andMe. It will contain a link to download your file (e.g., genome_YourName_v4_Full_date.zip).',
 		image: require('@/assets/guides/23andme/7.png'),
 		backgroundColor: '#e8f5f0',
 	},
@@ -103,7 +115,8 @@ const wizardSteps = [
 		key: 'upload',
 		title: 'Step 9: Upload to BioVault',
 		icon: '🚀',
-		description: 'Once the file is on your phone, tap the "Load" button in BioVault and select your genome file from your phone\'s file system.',
+		description:
+			'Once the file is on your phone, tap the "Load" button in BioVault and select your genome file from your phone\'s file system.',
 		image: require('@/assets/guides/23andme/9.jpg'),
 		backgroundColor: '#e0f2e7',
 		isLast: true,
@@ -111,11 +124,11 @@ const wizardSteps = [
 ]
 
 interface WizardStepProps {
-	step: typeof wizardSteps[0]
+	step: (typeof wizardSteps)[0]
 }
 
 function WizardStep({ step }: WizardStepProps) {
-	const { theme } = useTheme()
+	const theme = lightTheme
 
 	const handleLinkPress = (url: string) => {
 		Linking.openURL(url)
@@ -130,64 +143,68 @@ function WizardStep({ step }: WizardStepProps) {
 			}}
 			showsVerticalScrollIndicator={false}
 		>
-			<View style={{
-				backgroundColor: theme.surface,
-				borderRadius: 20,
-				padding: 20,
-				shadowColor: '#000',
-				shadowOffset: { width: 0, height: 4 },
-				shadowOpacity: 0.1,
-				shadowRadius: 12,
-				elevation: 6,
-			}}>
+			<View
+				style={{
+					backgroundColor: theme.surface,
+					borderRadius: 20,
+					padding: 20,
+					shadowColor: '#000',
+					shadowOffset: { width: 0, height: 4 },
+					shadowOpacity: 0.1,
+					shadowRadius: 12,
+					elevation: 6,
+				}}
+			>
 				{/* Icon or Logo */}
-				<View style={{
-					width: 80,
-					height: 80,
-					borderRadius: 40,
-					backgroundColor: theme.primaryLight,
-					justifyContent: 'center',
-					alignItems: 'center',
-					marginBottom: 20,
-					borderWidth: 2,
-					borderColor: theme.primary,
-					alignSelf: 'center',
-				}}>
+				<View
+					style={{
+						width: 80,
+						height: 80,
+						borderRadius: 40,
+						backgroundColor: theme.primaryLight,
+						justifyContent: 'center',
+						alignItems: 'center',
+						marginBottom: 20,
+						borderWidth: 2,
+						borderColor: theme.primary,
+						alignSelf: 'center',
+					}}
+				>
 					{step.logo ? (
-						<Image
-							source={step.logo}
-							style={{ width: 50, height: 50 }}
-							resizeMode="contain"
-						/>
+						<Image source={step.logo} style={{ width: 50, height: 50 }} resizeMode="contain" />
 					) : (
 						<Text style={{ fontSize: 40 }}>{step.icon}</Text>
 					)}
 				</View>
 
 				{/* Title */}
-				<Text style={[
-					sharedStyles.title,
-					{
-						color: theme.textPrimary,
-						textAlign: 'center',
-						marginBottom: 12,
-						fontSize: 24,
-					}
-				]}>
+				<Text
+					style={[
+						sharedStyles.title,
+						{
+							color: theme.textPrimary,
+							textAlign: 'center',
+							marginBottom: 12,
+							fontSize: 24,
+						},
+					]}
+				>
 					{step.title}
 				</Text>
 
 				{/* Description */}
-				<Text style={[
-					sharedStyles.subtitle,
-					{
-						color: theme.textSecondary,
-						textAlign: 'center',
-						lineHeight: 22,
-						marginBottom: 20,
-						fontSize: 16,
-					}
-				]}>
+				<Text
+					style={[
+						sharedStyles.subtitle,
+						{
+							color: theme.textSecondary,
+							textAlign: 'center',
+							lineHeight: 22,
+							marginBottom: 20,
+							fontSize: 16,
+						},
+					]}
+				>
 					{step.description}
 				</Text>
 
@@ -204,11 +221,13 @@ function WizardStep({ step }: WizardStepProps) {
 						}}
 						onPress={() => handleLinkPress(step.link!)}
 					>
-						<Text style={{
-							color: theme.textInverse,
-							fontSize: 16,
-							fontWeight: '600',
-						}}>
+						<Text
+							style={{
+								color: theme.textInverse,
+								fontSize: 16,
+								fontWeight: '600',
+							}}
+						>
 							{step.linkText}
 						</Text>
 					</TouchableOpacity>
@@ -216,20 +235,22 @@ function WizardStep({ step }: WizardStepProps) {
 
 				{/* Main Image */}
 				{step.image && (
-					<View style={{
-						marginTop: 10,
-						marginBottom: 20,
-						borderRadius: 12,
-						overflow: 'hidden',
-						borderWidth: 1,
-						borderColor: theme.border,
-					}}>
+					<View
+						style={{
+							marginTop: 10,
+							marginBottom: 20,
+							borderRadius: 12,
+							overflow: 'hidden',
+							borderWidth: 1,
+							borderColor: theme.border,
+						}}
+					>
 						<Image
 							source={step.image}
 							style={{
 								width: '100%',
 								height: step.isLast ? 400 : undefined,
-								aspectRatio: step.isLast ? undefined : 16/9,
+								aspectRatio: step.isLast ? undefined : 16 / 9,
 							}}
 							resizeMode="contain"
 						/>
@@ -251,33 +272,39 @@ function WizardStep({ step }: WizardStepProps) {
 									borderColor: theme.border,
 								}}
 							>
-								<Text style={{
-									fontSize: 16,
-									fontWeight: '600',
-									color: theme.textPrimary,
-									marginBottom: 8,
-								}}>
+								<Text
+									style={{
+										fontSize: 16,
+										fontWeight: '600',
+										color: theme.textPrimary,
+										marginBottom: 8,
+									}}
+								>
 									{subsection.title}
 								</Text>
-								<Text style={{
-									fontSize: 14,
-									color: theme.textSecondary,
-									lineHeight: 20,
-								}}>
+								<Text
+									style={{
+										fontSize: 14,
+										color: theme.textSecondary,
+										lineHeight: 20,
+									}}
+								>
 									{subsection.description}
 								</Text>
 								{subsection.image && (
-									<View style={{
-										marginTop: 12,
-										borderRadius: 8,
-										overflow: 'hidden',
-									}}>
+									<View
+										style={{
+											marginTop: 12,
+											borderRadius: 8,
+											overflow: 'hidden',
+										}}
+									>
 										<Image
 											source={subsection.image}
 											style={{
 												width: '100%',
 												height: undefined,
-												aspectRatio: 16/9,
+												aspectRatio: 16 / 9,
 											}}
 											resizeMode="contain"
 										/>
@@ -295,7 +322,7 @@ function WizardStep({ step }: WizardStepProps) {
 // ts-prune-ignore-next
 export default function DNA23andMeWizard() {
 	const [currentIndex, setCurrentIndex] = useState(0)
-	const { theme } = useTheme()
+	const theme = lightTheme
 	const ref = useRef<FlatList>(null)
 
 	// Track page view for 23andMe guide
@@ -304,7 +331,7 @@ export default function DNA23andMeWizard() {
 		screenProperties: {
 			screen: '23andMe_Guide',
 			provider: '23andMe',
-			type: 'dna_file_guide'
+			type: 'dna_file_guide',
 		},
 	})
 
@@ -328,33 +355,35 @@ export default function DNA23andMeWizard() {
 		}
 	}
 
-
 	return (
 		<SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
 			{/* Header with Back Button */}
-			<View style={{
-				flexDirection: 'row',
-				justifyContent: 'space-between',
-				alignItems: 'center',
-				paddingHorizontal: 20,
-				paddingVertical: 10,
-			}}>
-				<TouchableOpacity
-					onPress={() => router.back()}
-					style={{ padding: 8 }}
-				>
-					<Text style={{
-						fontSize: 16,
-						color: theme.primary,
-					}}>
+			<View
+				style={{
+					flexDirection: 'row',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+					paddingHorizontal: 20,
+					paddingVertical: 10,
+				}}
+			>
+				<TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
+					<Text
+						style={{
+							fontSize: 16,
+							color: theme.primary,
+						}}
+					>
 						← Back
 					</Text>
 				</TouchableOpacity>
-				<Text style={{
-					fontSize: 18,
-					fontWeight: '600',
-					color: theme.textPrimary,
-				}}>
+				<Text
+					style={{
+						fontSize: 18,
+						fontWeight: '600',
+						color: theme.textPrimary,
+					}}
+				>
 					23andMe Guide
 				</Text>
 				<View style={{ width: 60 }} />
@@ -376,49 +405,59 @@ export default function DNA23andMeWizard() {
 				keyExtractor={(item) => item.key}
 			/>
 
-			<View style={{
-				backgroundColor: theme.background,
-				paddingHorizontal: 20,
-				paddingBottom: 20,
-				paddingTop: 10,
-			}}>
+			<View
+				style={{
+					backgroundColor: theme.background,
+					paddingHorizontal: 20,
+					paddingBottom: 20,
+					paddingTop: 10,
+				}}
+			>
 				{/* Progress Indicators */}
-				<View style={{
-					flexDirection: 'row',
-					justifyContent: 'center',
-					marginBottom: 20,
-				}}>
+				<View
+					style={{
+						flexDirection: 'row',
+						justifyContent: 'center',
+						marginBottom: 20,
+					}}
+				>
 					{wizardSteps.map((_, index) => (
 						<View
 							key={index}
-							style={[{
-								width: index === currentIndex ? 24 : 8,
-								height: 8,
-								borderRadius: 4,
-								marginHorizontal: 4,
-								backgroundColor: index === currentIndex ? theme.primary : theme.inactive,
-							}]}
+							style={[
+								{
+									width: index === currentIndex ? 24 : 8,
+									height: 8,
+									borderRadius: 4,
+									marginHorizontal: 4,
+									backgroundColor: index === currentIndex ? theme.primary : theme.inactive,
+								},
+							]}
 						/>
 					))}
 				</View>
 
 				{/* Step counter */}
-				<Text style={{
-					textAlign: 'center',
-					fontSize: 14,
-					color: theme.textSecondary,
-					marginBottom: 20,
-				}}>
+				<Text
+					style={{
+						textAlign: 'center',
+						fontSize: 14,
+						color: theme.textSecondary,
+						marginBottom: 20,
+					}}
+				>
 					Step {currentIndex + 1} of {wizardSteps.length}
 				</Text>
 
 				{/* Navigation buttons */}
-				<View style={{
-					flexDirection: 'row',
-					justifyContent: 'space-between',
-					alignItems: 'center',
-					gap: 12,
-				}}>
+				<View
+					style={{
+						flexDirection: 'row',
+						justifyContent: 'space-between',
+						alignItems: 'center',
+						gap: 12,
+					}}
+				>
 					<TouchableOpacity
 						style={{
 							borderWidth: 2,

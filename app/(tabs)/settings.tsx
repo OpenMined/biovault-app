@@ -3,36 +3,19 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Storage } from 'expo-sqlite/kv-store'
 import { layout, typography, buttons, cards } from '@/styles'
-import { useTheme } from '@/contexts/ThemeContext'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import Constants from 'expo-constants'
+import { lightTheme } from '@/styles/colors'
 
 // ts-prune-ignore-next
 export default function SettingsScreen() {
-	const { theme, themeMode, setThemeMode } = useTheme()
+	const theme = lightTheme
 
 	useAnalytics({
 		trackScreenView: true,
 		screenProperties: { screen: 'Settings' },
 	})
 
-	const handleThemeToggle = () => {
-		const modes: ('system' | 'light' | 'dark')[] = ['system', 'light', 'dark']
-		const currentIndex = modes.indexOf(themeMode)
-		const nextIndex = (currentIndex + 1) % modes.length
-		const nextMode = modes[nextIndex]
-		if (nextMode) {
-			setThemeMode(nextMode)
-		}
-	}
-
-	const getThemeDisplayName = () => {
-		switch (themeMode) {
-			case 'light': return '☀️ Light'
-			case 'dark': return '🌙 Dark'
-			case 'system': return '📱 System'
-		}
-	}
 
 	const handleResetOnboarding = () => {
 		Alert.alert(
@@ -81,16 +64,7 @@ export default function SettingsScreen() {
 			<ScrollView style={layout.contentContainer}>
 				<Text style={[typography.largeTitle, { color: theme.primaryAlt }]}>Settings</Text>
 
-				<View style={{ marginBottom: 24 }}>
-					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>Appearance</Text>
-					<TouchableOpacity style={[buttons.secondary, { backgroundColor: theme.surface, marginTop: 12 }]} onPress={handleThemeToggle}>
-						<Text style={[typography.buttonTextSmall, { color: theme.textPrimary }]}>
-							{getThemeDisplayName()}
-						</Text>
-					</TouchableOpacity>
-				</View>
-
-				<View style={{ marginBottom: 24 }}>
+			<View style={{ marginBottom: 24 }}>
 					<Text style={[typography.sectionTitle, { color: theme.textPrimary }]}>App Information</Text>
 					<View style={[cards.compact, { backgroundColor: theme.surface, marginTop: 12 }]}>
 						<View style={layout.spacedRow}>

@@ -1,14 +1,14 @@
 import React, { useState } from 'react'
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useTheme } from '@/contexts/ThemeContext'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useFocusEffect } from '@react-navigation/native'
+import { lightTheme } from '@/styles/colors'
 
 // ts-prune-ignore-next
 export default function FeedScreen() {
-	const { theme } = useTheme()
+	const theme = lightTheme
 	const [favoriteGenes, setFavoriteGenes] = useState<string[]>([])
 
 	useAnalytics({
@@ -29,7 +29,7 @@ export default function FeedScreen() {
 
 	const removeFavorite = async (gene: string) => {
 		try {
-			const newFavorites = favoriteGenes.filter(g => g !== gene)
+			const newFavorites = favoriteGenes.filter((g) => g !== gene)
 			setFavoriteGenes(newFavorites)
 			await AsyncStorage.setItem('favoriteGenes', JSON.stringify(newFavorites))
 		} catch (error) {
@@ -56,9 +56,7 @@ export default function FeedScreen() {
 						{favoriteGenes.map((gene, index) => (
 							<View key={index} style={[styles.geneCard, { backgroundColor: theme.surface }]}>
 								<View style={styles.geneHeader}>
-									<Text style={[styles.geneName, { color: theme.textPrimary }]}>
-										{gene}
-									</Text>
+									<Text style={[styles.geneName, { color: theme.textPrimary }]}>{gene}</Text>
 									<TouchableOpacity
 										style={styles.removeButton}
 										onPress={() => {
@@ -67,7 +65,11 @@ export default function FeedScreen() {
 												`Are you sure you want to unfavorite ${gene}?`,
 												[
 													{ text: 'Cancel', style: 'cancel' },
-													{ text: 'Remove', onPress: () => removeFavorite(gene), style: 'destructive' }
+													{
+														text: 'Remove',
+														onPress: () => removeFavorite(gene),
+														style: 'destructive',
+													},
 												]
 											)
 										}}
@@ -77,11 +79,11 @@ export default function FeedScreen() {
 								</View>
 								<TouchableOpacity
 									style={[styles.learnButton, { borderColor: theme.primary }]}
-									onPress={() => Linking.openURL(`https://biovault.net/genes/${gene.toLowerCase()}`)}
+									onPress={() =>
+										Linking.openURL(`https://biovault.net/genes/${gene.toLowerCase()}`)
+									}
 								>
-									<Text style={[styles.learnButtonText, { color: theme.primary }]}>
-										Learn More
-									</Text>
+									<Text style={[styles.learnButtonText, { color: theme.primary }]}>Learn More</Text>
 								</TouchableOpacity>
 							</View>
 						))}
@@ -93,7 +95,8 @@ export default function FeedScreen() {
 							No Favorite Genes Yet
 						</Text>
 						<Text style={[styles.comingSoonText, { color: theme.textSecondary }]}>
-							Star genes in the Insights tab to see them here. Stay tuned for updates and research breakthroughs related to your genes of interest.
+							Star genes in the Insights tab to see them here. Stay tuned for updates and research
+							breakthroughs related to your genes of interest.
 						</Text>
 					</View>
 				)}
