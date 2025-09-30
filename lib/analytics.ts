@@ -1,7 +1,7 @@
-import Storage from 'expo-sqlite/kv-store'
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import { Dimensions, Platform } from 'react-native'
+import { Storage } from './storage'
 
 interface AnalyticsEvent {
 	type: 'pageview' | 'custom_event' | 'performance'

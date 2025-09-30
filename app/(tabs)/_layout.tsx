@@ -9,14 +9,14 @@ export default function TabLayout() {
 			iconColor={Platform.OS === 'ios' ? undefined : '#059669'}
 		>
 			<NativeTabs.Trigger name="index">
-				<Label>My DNA</Label>
+				<Label>Vault</Label>
 				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'testtube.2', selected: 'testtube.2' }} />
+					<Icon sf={{ default: 'lock.app.dashed', selected: 'lock.app.dashed' }} />
 				) : (
 					<Icon selectedColor={'white'} drawable="ic_menu_compass" />
 				)}
 			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="insights">
+			<NativeTabs.Trigger hidden name="insights">
 				<Label>Insights</Label>
 				{Platform.OS === 'ios' ? (
 					<Icon
@@ -29,7 +29,7 @@ export default function TabLayout() {
 					<Icon selectedColor={'white'} drawable="ic_menu_search" />
 				)}
 			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="feed">
+			<NativeTabs.Trigger hidden name="feed">
 				<Label>Feed</Label>
 				{Platform.OS === 'ios' ? (
 					<Icon sf={{ default: 'newspaper', selected: 'newspaper.fill' }} />
@@ -37,7 +37,7 @@ export default function TabLayout() {
 					<Icon selectedColor={'white'} drawable="ic_menu_agenda" />
 				)}
 			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="research">
+			<NativeTabs.Trigger hidden name="research">
 				<Label>Research</Label>
 				{Platform.OS === 'ios' ? (
 					<Icon

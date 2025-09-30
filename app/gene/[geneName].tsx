@@ -6,9 +6,17 @@ import { useAnalytics } from '@/hooks/useAnalytics'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import React, { useState, useEffect } from 'react'
-import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import {
+	ActivityIndicator,
+	Linking,
+	ScrollView,
+	StyleSheet,
+	Text,
+	TouchableOpacity,
+	View,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useTheme } from '@/contexts/ThemeContext'
+import { lightTheme } from '@/styles/colors'
 
 // Types and UI helpers moved from deleted files
 interface ClinVarVariant {
@@ -92,7 +100,7 @@ export default function GeneDetailScreen() {
 	const [newsContent, setNewsContent] = useState<string>('')
 	const [loadingNews, setLoadingNews] = useState(false)
 	const db = useSQLiteContext()
-	const { theme } = useTheme()
+	const theme = lightTheme
 
 	// Track gene page view with the actual gene name
 	const { trackScreen, trackEvent } = useAnalytics({
@@ -122,12 +130,14 @@ export default function GeneDetailScreen() {
 					const passedVariants = JSON.parse(variantsParam) as ClinVarVariant[]
 					setVariants(passedVariants)
 					// These ARE the user matches since they came from the analysis
-					setUserMatches(passedVariants.map(v => ({
-						...v,
-						chromosome: v.chrom,
-						position: v.pos.toString(),
-						genotype: v.user_genotype || 'N/A'
-					})))
+					setUserMatches(
+						passedVariants.map((v) => ({
+							...v,
+							chromosome: v.chrom,
+							position: v.pos.toString(),
+							genotype: v.user_genotype || 'N/A',
+						}))
+					)
 					setLoading(false)
 					return
 				} catch (e) {
@@ -246,7 +256,9 @@ export default function GeneDetailScreen() {
 					variant.condition !== 'not_provided' &&
 					variant.condition !== 'not_specified' && (
 						<View style={styles.conditionsContainer}>
-							<Text style={[styles.conditionsTitle, { color: theme.textPrimary }]}>Associated Conditions:</Text>
+							<Text style={[styles.conditionsTitle, { color: theme.textPrimary }]}>
+								Associated Conditions:
+							</Text>
 							{variant.condition.split('|').map((condition, idx) => (
 								<Text key={idx} style={[styles.conditionText, { color: theme.textSecondary }]}>
 									• {condition.trim().replace(/_/g, ' ')}
@@ -256,7 +268,10 @@ export default function GeneDetailScreen() {
 					)}
 
 				<TouchableOpacity
-					style={[styles.geneInfoLink, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}
+					style={[
+						styles.geneInfoLink,
+						{ backgroundColor: theme.primaryLight, borderColor: theme.primary },
+					]}
 					onPress={() => Linking.openURL(`https://genopedia.com/gene/${geneName}`)}
 				>
 					<View style={styles.linkContent}>
@@ -264,8 +279,12 @@ export default function GeneDetailScreen() {
 							<Text style={styles.linkIcon}>🔗</Text>
 						</View>
 						<View style={styles.linkTextContainer}>
-							<Text style={[styles.linkTitle, { color: theme.primary }]}>Learn about {geneName}</Text>
-							<Text style={[styles.linkSubtitle, { color: theme.textSecondary }]}>View detailed gene information on Genopedia</Text>
+							<Text style={[styles.linkTitle, { color: theme.primary }]}>
+								Learn about {geneName}
+							</Text>
+							<Text style={[styles.linkSubtitle, { color: theme.textSecondary }]}>
+								View detailed gene information on Genopedia
+							</Text>
 						</View>
 						<View style={[styles.externalIcon, { backgroundColor: theme.primary }]}>
 							<Text style={styles.externalIconText}>↗</Text>
@@ -280,9 +299,12 @@ export default function GeneDetailScreen() {
 		if (userMatches.length === 0) {
 			return (
 				<View style={[styles.noMatchesCard, { backgroundColor: theme.warning }]}>
-					<Text style={[styles.noMatchesTitle, { color: theme.textPrimary }]}>No Variant Matches Found</Text>
+					<Text style={[styles.noMatchesTitle, { color: theme.textPrimary }]}>
+						No Variant Matches Found
+					</Text>
 					<Text style={[styles.noMatchesText, { color: theme.textSecondary }]}>
-						Many sequencing kits like 23andMe only check for several hundred thousand variants, so your file might be missing these variants.
+						Many sequencing kits like 23andMe only check for several hundred thousand variants, so
+						your file might be missing these variants.
 					</Text>
 				</View>
 			)
@@ -290,13 +312,25 @@ export default function GeneDetailScreen() {
 
 		return (
 			<View style={[styles.matchesTableCard, { backgroundColor: theme.surface }]}>
-				<Text style={[styles.matchesTitle, { color: theme.textPrimary }]}>Your Variant Matches</Text>
+				<Text style={[styles.matchesTitle, { color: theme.textPrimary }]}>
+					Your Variant Matches
+				</Text>
 				<View style={styles.tableHeader}>
-					<Text style={[styles.tableHeaderText, { flex: 1.2, color: theme.textPrimary }]}>rsID</Text>
-					<Text style={[styles.tableHeaderText, { flex: 0.8, color: theme.textPrimary }]}>Your DNA</Text>
-					<Text style={[styles.tableHeaderText, { flex: 1, color: theme.textPrimary }]}>Risk Variant</Text>
-					<Text style={[styles.tableHeaderText, { flex: 1.2, color: theme.textPrimary }]}>You Have?</Text>
-					<Text style={[styles.tableHeaderText, { flex: 1.4, color: theme.textPrimary }]}>Impact</Text>
+					<Text style={[styles.tableHeaderText, { flex: 1.2, color: theme.textPrimary }]}>
+						rsID
+					</Text>
+					<Text style={[styles.tableHeaderText, { flex: 0.8, color: theme.textPrimary }]}>
+						Your DNA
+					</Text>
+					<Text style={[styles.tableHeaderText, { flex: 1, color: theme.textPrimary }]}>
+						Risk Variant
+					</Text>
+					<Text style={[styles.tableHeaderText, { flex: 1.2, color: theme.textPrimary }]}>
+						You Have?
+					</Text>
+					<Text style={[styles.tableHeaderText, { flex: 1.4, color: theme.textPrimary }]}>
+						Impact
+					</Text>
 				</View>
 				{userMatches.map((match, index) => {
 					const significanceKey =
@@ -312,31 +346,45 @@ export default function GeneDetailScreen() {
 							: ('Benign' as const)
 
 					const hasRisk = hasRiskAllele(match.genotype || '', match.alt || '')
-					const isPathogenic = significanceKey === 'Pathogenic' || significanceKey === 'Likely_pathogenic'
+					const isPathogenic =
+						significanceKey === 'Pathogenic' || significanceKey === 'Likely_pathogenic'
 
 					return (
 						<View key={index} style={[styles.tableRow, { borderBottomColor: theme.border }]}>
-							<Text style={[styles.tableCell, { flex: 1.2, color: theme.textPrimary, fontSize: 12 }]}>{match.rsid}</Text>
-							<Text style={[styles.tableCell, { flex: 0.8, color: theme.textPrimary, fontWeight: '600' }]}>{match.genotype}</Text>
-							<Text style={[styles.tableCell, { flex: 1, color: theme.textSecondary, fontSize: 13 }]}>
+							<Text
+								style={[styles.tableCell, { flex: 1.2, color: theme.textPrimary, fontSize: 12 }]}
+							>
+								{match.rsid}
+							</Text>
+							<Text
+								style={[
+									styles.tableCell,
+									{ flex: 0.8, color: theme.textPrimary, fontWeight: '600' },
+								]}
+							>
+								{match.genotype}
+							</Text>
+							<Text
+								style={[styles.tableCell, { flex: 1, color: theme.textSecondary, fontSize: 13 }]}
+							>
 								{match.ref}→{match.alt}
 							</Text>
 							<View style={{ flex: 1.2, alignItems: 'center' }}>
-								<View style={{
-									backgroundColor: hasRisk
-										? (isPathogenic ? '#ffebee' : '#fff3e0')
-										: '#e8f5e9',
-									paddingHorizontal: 8,
-									paddingVertical: 4,
-									borderRadius: 6,
-								}}>
-									<Text style={{
-										fontSize: 12,
-										fontWeight: '600',
-										color: hasRisk
-											? (isPathogenic ? '#d32f2f' : '#f57c00')
-											: '#2e7d32'
-									}}>
+								<View
+									style={{
+										backgroundColor: hasRisk ? (isPathogenic ? '#ffebee' : '#fff3e0') : '#e8f5e9',
+										paddingHorizontal: 8,
+										paddingVertical: 4,
+										borderRadius: 6,
+									}}
+								>
+									<Text
+										style={{
+											fontSize: 12,
+											fontWeight: '600',
+											color: hasRisk ? (isPathogenic ? '#d32f2f' : '#f57c00') : '#2e7d32',
+										}}
+									>
 										{hasRisk ? '⚠️ YES' : '✅ NO'}
 									</Text>
 								</View>
@@ -384,8 +432,8 @@ export default function GeneDetailScreen() {
 
 		// YOUR actual risk counts
 		const yourPathogenic = userMatches.filter((v) => {
-			const isPath = v.clnsig.toLowerCase().includes('pathogenic') &&
-				!v.clnsig.toLowerCase().includes('likely')
+			const isPath =
+				v.clnsig.toLowerCase().includes('pathogenic') && !v.clnsig.toLowerCase().includes('likely')
 			return isPath && hasRiskAllele(v.genotype || '', v.alt || '')
 		}).length
 
@@ -418,7 +466,9 @@ export default function GeneDetailScreen() {
 			<SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
 				<View style={styles.loadingContainer}>
 					<ActivityIndicator size="large" color={theme.primary} />
-					<Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading gene details...</Text>
+					<Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+						Loading gene details...
+					</Text>
 				</View>
 			</SafeAreaView>
 		)
@@ -428,7 +478,9 @@ export default function GeneDetailScreen() {
 
 	return (
 		<SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-			<View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+			<View
+				style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}
+			>
 				<TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
 					<Text style={[styles.backButtonText, { color: theme.primary }]}>← Back</Text>
 				</TouchableOpacity>
@@ -450,19 +502,26 @@ export default function GeneDetailScreen() {
 			</View>
 
 			{/* Tabs */}
-			<View style={[styles.tabContainer, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+			<View
+				style={[
+					styles.tabContainer,
+					{ backgroundColor: theme.surface, borderBottomColor: theme.border },
+				]}
+			>
 				<TouchableOpacity
 					style={[
 						styles.tabButton,
 						activeTab === 'matches' && styles.tabButtonActive,
-						activeTab === 'matches' && { borderBottomColor: theme.primary }
+						activeTab === 'matches' && { borderBottomColor: theme.primary },
 					]}
 					onPress={() => setActiveTab('matches')}
 				>
-					<Text style={[
-						styles.tabText,
-						{ color: activeTab === 'matches' ? theme.primary : theme.textSecondary }
-					]}>
+					<Text
+						style={[
+							styles.tabText,
+							{ color: activeTab === 'matches' ? theme.primary : theme.textSecondary },
+						]}
+					>
 						Matches
 					</Text>
 				</TouchableOpacity>
@@ -470,17 +529,19 @@ export default function GeneDetailScreen() {
 					style={[
 						styles.tabButton,
 						activeTab === 'news' && styles.tabButtonActive,
-						activeTab === 'news' && { borderBottomColor: theme.primary }
+						activeTab === 'news' && { borderBottomColor: theme.primary },
 					]}
 					onPress={() => {
 						setActiveTab('news')
 						trackEvent('gene_news_viewed', { geneName })
 					}}
 				>
-					<Text style={[
-						styles.tabText,
-						{ color: activeTab === 'news' ? theme.primary : theme.textSecondary }
-					]}>
+					<Text
+						style={[
+							styles.tabText,
+							{ color: activeTab === 'news' ? theme.primary : theme.textSecondary },
+						]}
+					>
 						News
 					</Text>
 				</TouchableOpacity>
@@ -491,16 +552,16 @@ export default function GeneDetailScreen() {
 				{activeTab === 'matches' ? (
 					<>
 						{/* Matches Table at the top */}
-						<View style={styles.matchesSection}>
-							{renderMatchesTable()}
-						</View>
+						<View style={styles.matchesSection}>{renderMatchesTable()}</View>
 
 						<View style={[styles.statsCard, { backgroundColor: theme.surface }]}>
 							<Text style={[styles.statsTitle, { color: theme.textPrimary }]}>Summary</Text>
 							<View style={styles.statsGrid}>
 								{stats.pathogenic > 0 && (
 									<View style={[styles.statItem, { backgroundColor: '#ffebee' }]}>
-										<Text style={[styles.statNumber, { color: '#f44336' }]}>{stats.pathogenic}</Text>
+										<Text style={[styles.statNumber, { color: '#f44336' }]}>
+											{stats.pathogenic}
+										</Text>
 										<Text style={styles.statLabel}>Pathogenic</Text>
 									</View>
 								)}
@@ -514,7 +575,9 @@ export default function GeneDetailScreen() {
 								)}
 								{stats.conflicting > 0 && (
 									<View style={[styles.statItem, { backgroundColor: '#fce4ec' }]}>
-										<Text style={[styles.statNumber, { color: '#e91e63' }]}>{stats.conflicting}</Text>
+										<Text style={[styles.statNumber, { color: '#e91e63' }]}>
+											{stats.conflicting}
+										</Text>
 										<Text style={styles.statLabel}>Conflicting</Text>
 									</View>
 								)}
@@ -537,7 +600,9 @@ export default function GeneDetailScreen() {
 						{loadingNews ? (
 							<View style={styles.newsLoadingContainer}>
 								<ActivityIndicator size="large" color={theme.primary} />
-								<Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading news...</Text>
+								<Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+									Loading news...
+								</Text>
 							</View>
 						) : (
 							<View style={[styles.newsCard, { backgroundColor: theme.surface }]}>
@@ -546,22 +611,27 @@ export default function GeneDetailScreen() {
 										Latest Research & News for {geneName}
 									</Text>
 									<TouchableOpacity
-										onPress={() => Linking.openURL(`https://biovault.net/genes/${geneName.toLowerCase()}`)}
+										onPress={() =>
+											Linking.openURL(`https://biovault.net/genes/${geneName.toLowerCase()}`)
+										}
 										style={[styles.viewOnWebButton, { borderColor: theme.primary }]}
 									>
-										<Text style={[styles.viewOnWebText, { color: theme.primary }]}>View on Web ↗</Text>
+										<Text style={[styles.viewOnWebText, { color: theme.primary }]}>
+											View on Web ↗
+										</Text>
 									</TouchableOpacity>
 								</View>
 								<View style={styles.newsContent}>
 									<Text style={[styles.newsContentText, { color: theme.textSecondary }]}>
-										{newsContent ?
-											newsContent.replace(/<[^>]*>/g, '').substring(0, 500) + '...' :
-											'Loading news content...'
-										}
+										{newsContent
+											? newsContent.replace(/<[^>]*>/g, '').substring(0, 500) + '...'
+											: 'Loading news content...'}
 									</Text>
 									<TouchableOpacity
 										style={[styles.readMoreButton, { backgroundColor: theme.primary }]}
-										onPress={() => Linking.openURL(`https://biovault.net/genes/${geneName.toLowerCase()}`)}
+										onPress={() =>
+											Linking.openURL(`https://biovault.net/genes/${geneName.toLowerCase()}`)
+										}
 									>
 										<Text style={styles.readMoreText}>Read Full Article</Text>
 									</TouchableOpacity>
