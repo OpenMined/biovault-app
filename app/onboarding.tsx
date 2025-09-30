@@ -128,7 +128,7 @@ export default function OnboardingFlow() {
 			setHasAgreed(false)
 		} else if (canProceed) {
 			Storage.setItemSync('hasCompletedOnboarding', 'true')
-			router.replace('/(tabs)')
+			router.replace('/(tabs)' as any)
 		}
 	}
 
@@ -170,7 +170,7 @@ export default function OnboardingFlow() {
 					{/* Image */}
 					<Animated.View
 						key={`image-${currentIndex}`}
-						entering={FadeIn.duration(600).delay(200)}
+						entering={FadeIn.duration(250).delay(50)}
 						style={[styles.imageContainer, imageScaleStyle]}
 					>
 						<Image source={currentSlide.image} style={styles.image} resizeMode="contain" />
@@ -179,7 +179,7 @@ export default function OnboardingFlow() {
 					{/* Title */}
 					<Animated.Text
 						key={`title-${currentIndex}`}
-						entering={FadeInDown.duration(500).delay(300)}
+						entering={FadeInDown.duration(250).delay(100)}
 						style={[styles.title, { color: theme.primary }]}
 					>
 						{currentSlide.title}
@@ -189,7 +189,7 @@ export default function OnboardingFlow() {
 					{currentSlide.description && (
 						<Animated.Text
 							key={`desc-${currentIndex}`}
-							entering={FadeInDown.duration(500).delay(400)}
+							entering={FadeInDown.duration(250).delay(150)}
 							style={[styles.description, { color: theme.textSecondary }]}
 						>
 							{currentSlide.description}
@@ -202,7 +202,7 @@ export default function OnboardingFlow() {
 							{currentSlide.bullets.map((bullet, index) => (
 								<Animated.View
 									key={bullet}
-									entering={FadeInDown.duration(400).delay(500 + index * 80)}
+									entering={FadeInDown.duration(200).delay(200 + index * 30)}
 									style={styles.bulletRow}
 								>
 									<View style={[styles.bulletDot, { backgroundColor: theme.primary }]} />
@@ -215,7 +215,7 @@ export default function OnboardingFlow() {
 					{/* Footer Text */}
 					{currentSlide.footer && (
 						<Animated.Text
-							entering={FadeInUp.duration(500).delay(600)}
+							entering={FadeInUp.duration(250).delay(200)}
 							style={[styles.footer, { color: theme.textSecondary }]}
 						>
 							{currentSlide.footer}
@@ -225,7 +225,7 @@ export default function OnboardingFlow() {
 					{/* Links */}
 					{currentSlide.links && (
 						<Animated.View
-							entering={FadeInUp.duration(500).delay(600)}
+							entering={FadeInUp.duration(250).delay(200)}
 							style={styles.linksContainer}
 						>
 							<Text style={[styles.linksLabel, { color: theme.textSecondary }]}>Learn more: </Text>
@@ -248,7 +248,7 @@ export default function OnboardingFlow() {
 					{/* Agreement Checkbox */}
 					{currentSlide.requiresAgreement && (
 						<Animated.View
-							entering={FadeInUp.duration(500).delay(500)}
+							entering={FadeInUp.duration(250).delay(150)}
 							style={styles.agreementWrapper}
 						>
 							<TouchableOpacity
@@ -278,8 +278,8 @@ export default function OnboardingFlow() {
 					<View style={styles.buttonRow}>
 						{currentIndex > 0 && (
 							<Animated.View
-								entering={SlideInLeft.duration(300)}
-								exiting={SlideOutLeft.duration(300)}
+								entering={SlideInLeft.duration(200)}
+								exiting={SlideOutLeft.duration(200)}
 							>
 								<TouchableOpacity
 									style={[styles.backButton, { borderColor: theme.primary }]}

@@ -18,6 +18,8 @@ import React, { useEffect, useState } from 'react'
 import {
 	ActivityIndicator,
 	Alert,
+	Image,
+	Linking,
 	Modal,
 	ScrollView,
 	StyleSheet,
@@ -27,7 +29,14 @@ import {
 	View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
+import Animated, {
+	FadeIn,
+	FadeInDown,
+	FadeInUp,
+	useAnimatedStyle,
+	useSharedValue,
+	withSpring,
+} from 'react-native-reanimated'
 
 interface MyDNAState {
 	isProcessing: boolean
@@ -37,6 +46,7 @@ interface MyDNAState {
 	showNamingDialog: boolean
 	selectedFile: { uri: string; name: string } | null
 	customFileName: string
+	email: string
 }
 
 // ts-prune-ignore-next
@@ -54,7 +64,15 @@ export default function MyDNAScreen() {
 		showNamingDialog: false,
 		selectedFile: null,
 		customFileName: '',
+		email: '',
 	})
+
+	// Animation values
+	const uploadScale = useSharedValue(1)
+
+	const uploadAnimatedStyle = useAnimatedStyle(() => ({
+		transform: [{ scale: uploadScale.value }],
+	}))
 
 	const loadStoredDatabases = async () => {
 		try {
@@ -143,6 +161,11 @@ export default function MyDNAScreen() {
 
 	const handleFilePicker = async () => {
 		try {
+			// Animate button press
+			uploadScale.value = withSpring(0.95, { damping: 15 }, () => {
+				uploadScale.value = withSpring(1)
+			})
+
 			trackEvent('file_picker_opened', { source: 'MyDNA' })
 			const result = await DocumentPicker.getDocumentAsync({
 				type: ['application/zip', 'text/plain'],
@@ -198,6 +221,17 @@ export default function MyDNAScreen() {
 			selectedFile: null,
 			customFileName: '',
 		}))
+	}
+
+	const handleEmailSubmit = () => {
+		if (!state.email.trim() || !state.email.includes('@')) {
+			Alert.alert('Invalid Email', 'Please enter a valid email address')
+			return
+		}
+
+		trackEvent('email_captured', { source: 'vault_page' })
+		Alert.alert('Thanks!', "We'll keep you updated on new features and community updates.")
+		setState((prev) => ({ ...prev, email: '' }))
 	}
 
 	const handleDeleteDatabase = (database: UserGenomeDatabase) => {
@@ -267,36 +301,19 @@ export default function MyDNAScreen() {
 					contentContainerStyle={styles.scrollContent}
 					showsVerticalScrollIndicator={false}
 				>
-					<Animated.View entering={FadeInDown.duration(600)} style={styles.header}>
-						<Text style={styles.title}>🧬 Vault</Text>
+					<Animated.View entering={FadeInDown.duration(300)} style={styles.header}>
+						<Image
+							source={require('@/assets/images/logo.png')}
+							style={styles.logo}
+							resizeMode="contain"
+						/>
+						<Text style={styles.title}>Vault</Text>
 						<Text style={styles.subtitle}>Securely manage your genetic data</Text>
 					</Animated.View>
 
-					{/* Show empty state only when no data exists */}
-					{state.storedDatabases.length === 0 && (
-						<Animated.View
-							entering={FadeInUp.duration(700).delay(200)}
-							style={[styles.emptyState, { marginBottom: 40 }]}
-						>
-							<View style={styles.emptyIllustration}>
-								<Text style={styles.emptyIllustrationText}>🧬</Text>
-							</View>
-							<Text style={styles.emptyTitle}>No Genetic Data Yet</Text>
-							<Text style={styles.emptyText}>
-								Start your genetic journey by importing data from genetic testing services for local
-								analysis
-							</Text>
-							<View style={styles.emptyBenefits}>
-								<Text style={styles.benefitPoint}>🔒 Data stays on your device</Text>
-								<Text style={styles.benefitPoint}>⚡ Instant analysis results</Text>
-								<Text style={styles.benefitPoint}>🧬 Discover genetic insights</Text>
-							</View>
-						</Animated.View>
-					)}
-
 					{/* Show genetic data if available */}
 					{state.storedDatabases.length > 0 && (
-						<Animated.View entering={FadeIn.duration(600)} style={styles.filesSection}>
+						<Animated.View entering={FadeIn.duration(300)} style={styles.filesSection}>
 							<View style={styles.filesSectionHeader}>
 								<Text style={styles.filesTitle}>Your Genetic Data</Text>
 								<Text style={styles.filesCount}>
@@ -307,7 +324,7 @@ export default function MyDNAScreen() {
 							{state.storedDatabases.map((database, index) => (
 								<Animated.View
 									key={index}
-									entering={FadeInUp.duration(500).delay(index * 100)}
+									entering={FadeInUp.duration(250).delay(index * 50)}
 									style={styles.premiumFileCard}
 								>
 									<View style={styles.fileCardHeader}>
@@ -355,9 +372,7 @@ export default function MyDNAScreen() {
 												variantCount: database.totalVariants,
 											})
 											// Navigate to insights tab and pass the database name
-											router.push(
-												`/(tabs)/insights?selectedDb=${encodeURIComponent(database.dbName)}`
-											)
+											router.push(`/analyze` as any)
 										}}
 									>
 										<Text style={styles.premiumAnalyzeButtonText}>Analyze This Data</Text>
@@ -367,80 +382,130 @@ export default function MyDNAScreen() {
 						</Animated.View>
 					)}
 
-					{/* Upload Section - Always visible, shows after data if exists */}
-					<Animated.View entering={FadeInUp.duration(600).delay(300)} style={styles.uploadSection}>
-						<View style={styles.uploadCard}>
-							<View style={styles.uploadHeader}>
-								<View style={styles.uploadIconContainer}>
-									<Text style={styles.uploadIcon}>🧬</Text>
-								</View>
-								<View style={styles.uploadContent}>
-									<Text style={styles.uploadTitle}>
-										{state.storedDatabases.length > 0 ? 'Add More Data' : 'Load Genetic Data'}
-									</Text>
-									<Text style={styles.uploadDescription}>
-										Import {state.storedDatabases.length > 0 ? 'additional' : 'your'} genetic
-										testing files for local analysis on your device
-									</Text>
-								</View>
-							</View>
-
-							<View style={styles.supportedFormats}>
-								<Text style={styles.formatsLabel}>Supported formats:</Text>
-								<View style={styles.formatsList}>
-									{['23andMe', 'AncestryDNA', 'MyHeritage', 'ZIP files', 'TXT files'].map(
-										(format) => (
-											<View key={format} style={styles.formatChip}>
-												<Text style={styles.formatText}>{format}</Text>
-											</View>
-										)
-									)}
-								</View>
-							</View>
-
+					{/* Upload Zone - Clean, focused area */}
+					<Animated.View entering={FadeInUp.duration(300).delay(100)} style={styles.uploadZone}>
+						{/* Privacy badge - always visible */}
+						<Animated.View
+							entering={FadeIn.duration(250).delay(150)}
+							style={styles.privacyBadgeTop}
+						>
 							<TouchableOpacity
-								style={[
-									styles.premiumUploadButton,
-									state.isProcessing && styles.uploadButtonDisabled,
-								]}
+								style={styles.privacyBadgeButton}
+								onPress={() => router.push('/privacy-info' as any)}
+								activeOpacity={0.7}
+							>
+								<Text style={styles.privacyBadgeIcon}>🔒</Text>
+								<Text style={styles.privacyBadgeText}>All data stays on your device</Text>
+								<View style={styles.infoIconContainer}>
+									<Text style={styles.infoIcon}>ⓘ</Text>
+								</View>
+							</TouchableOpacity>
+						</Animated.View>
+
+						{/* Main upload area */}
+						<Animated.View style={uploadAnimatedStyle}>
+							<TouchableOpacity
+								style={[styles.uploadButton, state.isProcessing && styles.uploadButtonDisabled]}
 								onPress={handleFilePicker}
 								disabled={state.isProcessing}
+								activeOpacity={0.9}
 							>
-								<Text style={styles.premiumUploadButtonText}>
-									{state.isProcessing ? 'Processing...' : 'Choose File to Load'}
-								</Text>
+								<View style={styles.uploadButtonContent}>
+									<View style={styles.uploadIconContainer}>
+										<Image
+											source={require('@/assets/images/logo.png')}
+											style={styles.uploadIconImage}
+											resizeMode="contain"
+										/>
+									</View>
+									<Text style={styles.uploadButtonTitle}>
+										{state.isProcessing
+											? 'Processing...'
+											: state.storedDatabases.length > 0
+											? 'Add More Data'
+											: 'Choose File to Load'}
+									</Text>
+									<Text style={styles.uploadButtonSubtitle}>
+										{state.storedDatabases.length > 0
+											? 'Import additional files'
+											: 'ZIP or TXT from genetic testing services'}
+									</Text>
+								</View>
 							</TouchableOpacity>
+						</Animated.View>
 
-							{/* Guide link */}
-							<TouchableOpacity
-								style={styles.guideButton}
-								onPress={() => router.push('/how-to-get-file' as any)}
-							>
-								<Text style={styles.guideButtonText}>How do I get my DNA file?</Text>
-							</TouchableOpacity>
-						</View>
+						{/* Supported formats - minimal */}
+						<Animated.View entering={FadeIn.duration(250).delay(200)} style={styles.formatsRow}>
+							{['23andMe', 'Ancestry', 'MyHeritage', 'Others'].map((format, index) => (
+								<Animated.View
+									key={format}
+									entering={FadeInUp.duration(200).delay(225 + index * 25)}
+									style={styles.formatBadge}
+								>
+									<Text style={styles.formatBadgeText}>{format}</Text>
+								</Animated.View>
+							))}
+						</Animated.View>
+
+						{/* Guide link - minimal */}
+						<TouchableOpacity
+							style={styles.guideLink}
+							onPress={() => router.push('/how-to-get-file' as any)}
+						>
+							<Text style={styles.guideLinkText}>How to get your DNA file →</Text>
+						</TouchableOpacity>
+
 						{renderProcessingCard()}
 					</Animated.View>
 
-					<Animated.View entering={FadeInUp.duration(600).delay(400)} style={styles.privacyCard}>
-						<View style={styles.privacyHeader}>
-							<View style={styles.privacyIconContainer}>
-								<Text style={styles.privacyIcon}>🔒</Text>
-							</View>
-							<Text style={styles.privacyTitle}>Your Privacy Matters</Text>
+					{/* Community Links */}
+					<Animated.View
+						entering={FadeInUp.duration(300).delay(350)}
+						style={styles.communitySection}
+					>
+						<View style={styles.communityLinks}>
+							<TouchableOpacity
+								style={styles.communityLink}
+								onPress={() => Linking.openURL('https://biovault.net')}
+							>
+								<Text style={styles.communityLinkIcon}>🌐</Text>
+								<Text style={styles.communityLinkText}>Website</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.communityLink}
+								onPress={() => Linking.openURL('https://github.com/OpenMined/biovault-app')}
+							>
+								<Text style={styles.communityLinkIcon}>💻</Text>
+								<Text style={styles.communityLinkText}>GitHub</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.communityLink}
+								onPress={() => Linking.openURL('https://slack.openmined.org')}
+							>
+								<Text style={styles.communityLinkIcon}>💬</Text>
+								<Text style={styles.communityLinkText}>Slack</Text>
+							</TouchableOpacity>
 						</View>
-						<View style={styles.privacyPoints}>
-							<View style={styles.privacyPoint}>
-								<Text style={styles.privacyPointIcon}>📱</Text>
-								<Text style={styles.privacyPointText}>Files stored locally on your device</Text>
-							</View>
-							<View style={styles.privacyPoint}>
-								<Text style={styles.privacyPointIcon}>🚫</Text>
-								<Text style={styles.privacyPointText}>Data never leaves your device</Text>
-							</View>
-							<View style={styles.privacyPoint}>
-								<Text style={styles.privacyPointIcon}>🗑️</Text>
-								<Text style={styles.privacyPointText}>Delete files anytime to free space</Text>
+					</Animated.View>
+
+					{/* Email Capture */}
+					<Animated.View entering={FadeInUp.duration(300).delay(400)} style={styles.emailSection}>
+						<View style={styles.emailCard}>
+							<Text style={styles.emailTitle}>Stay Updated</Text>
+							<Text style={styles.emailSubtitle}>Get notified about new features and updates</Text>
+							<View style={styles.emailInputContainer}>
+								<TextInput
+									style={styles.emailInput}
+									placeholder="your@email.com"
+									value={state.email}
+									onChangeText={(text) => setState((prev) => ({ ...prev, email: text }))}
+									keyboardType="email-address"
+									autoCapitalize="none"
+									autoCorrect={false}
+								/>
+								<TouchableOpacity style={styles.emailButton} onPress={handleEmailSubmit}>
+									<Text style={styles.emailButtonText}>→</Text>
+								</TouchableOpacity>
 							</View>
 						</View>
 					</Animated.View>
@@ -515,12 +580,17 @@ const styles = StyleSheet.create({
 	},
 	header: {
 		paddingHorizontal: 28,
-		paddingTop: 20,
-		paddingBottom: 28,
+		paddingTop: 12,
+		paddingBottom: 20,
 		alignItems: 'center',
 	},
+	logo: {
+		width: 80,
+		height: 80,
+		marginBottom: 16,
+	},
 	title: {
-		fontSize: 38,
+		fontSize: 32,
 		fontWeight: '900',
 		color: '#059669',
 		marginBottom: 8,
@@ -535,25 +605,61 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 		opacity: 0.8,
 	},
-	uploadSection: {
+	uploadZone: {
 		paddingHorizontal: 28,
+		marginBottom: 16,
+		marginTop: 4,
+	},
+	privacyBadgeTop: {
 		marginBottom: 20,
-		marginTop: 8,
 	},
-	uploadCard: {
-		backgroundColor: 'rgba(255,255,255,0.95)',
-		padding: 28,
-		borderRadius: 28,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 6 },
-		shadowOpacity: 0.1,
-		shadowRadius: 16,
-		elevation: 6,
-		borderWidth: 0,
-	},
-	uploadHeader: {
+	privacyBadgeButton: {
+		flexDirection: 'row',
 		alignItems: 'center',
-		marginBottom: 24,
+		justifyContent: 'center',
+		paddingVertical: 12,
+		paddingHorizontal: 20,
+		backgroundColor: 'rgba(209, 250, 229, 0.7)',
+		borderRadius: 20,
+		gap: 8,
+		shadowColor: '#059669',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.08,
+		shadowRadius: 6,
+		elevation: 2,
+	},
+	privacyBadgeIcon: {
+		fontSize: 16,
+	},
+	privacyBadgeText: {
+		fontSize: 13,
+		color: '#059669',
+		fontWeight: '700',
+		letterSpacing: 0.3,
+	},
+	infoIconContainer: {
+		marginLeft: 4,
+	},
+	infoIcon: {
+		fontSize: 16,
+		color: '#059669',
+		opacity: 0.7,
+	},
+	uploadButton: {
+		backgroundColor: 'rgba(255,255,255,0.98)',
+		borderRadius: 24,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 8 },
+		shadowOpacity: 0.12,
+		shadowRadius: 20,
+		elevation: 8,
+		marginBottom: 20,
+		borderWidth: 2,
+		borderColor: 'rgba(5, 150, 105, 0.1)',
+	},
+	uploadButtonContent: {
+		padding: 32,
+		alignItems: 'center',
 	},
 	uploadIconContainer: {
 		width: 80,
@@ -562,116 +668,67 @@ const styles = StyleSheet.create({
 		backgroundColor: '#d1fae5',
 		justifyContent: 'center',
 		alignItems: 'center',
-		marginBottom: 16,
+		marginBottom: 20,
 		shadowColor: '#059669',
 		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.2,
-		shadowRadius: 8,
+		shadowOpacity: 0.15,
+		shadowRadius: 12,
 		elevation: 4,
 	},
 	uploadIcon: {
-		fontSize: 40,
+		fontSize: 32,
 	},
-	uploadContent: {
-		alignItems: 'center',
+	uploadIconImage: {
+		width: 56,
+		height: 56,
 	},
-	uploadTitle: {
-		fontSize: 24,
+	uploadButtonTitle: {
+		fontSize: 22,
 		fontWeight: '900',
 		color: '#0f172a',
 		marginBottom: 8,
 		letterSpacing: -0.5,
 		textAlign: 'center',
 	},
-	uploadDescription: {
-		fontSize: 16,
-		color: '#475569',
-		lineHeight: 24,
-		fontWeight: '500',
-		textAlign: 'center',
-	},
-	supportedFormats: {
-		marginBottom: 24,
-		backgroundColor: 'rgba(241, 254, 248, 0.6)',
-		padding: 18,
-		borderRadius: 20,
-		borderWidth: 0,
-	},
-	formatsLabel: {
-		fontSize: 13,
-		color: '#475569',
-		marginBottom: 14,
-		fontWeight: '700',
-		textTransform: 'uppercase',
-		letterSpacing: 0.8,
-		textAlign: 'center',
-	},
-	formatsList: {
-		flexDirection: 'row',
-		flexWrap: 'wrap',
-		gap: 10,
-		justifyContent: 'center',
-	},
-	formatChip: {
-		backgroundColor: 'white',
-		paddingHorizontal: 14,
-		paddingVertical: 8,
-		borderRadius: 20,
-		borderWidth: 0,
-		shadowColor: '#059669',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.08,
-		shadowRadius: 6,
-		elevation: 2,
-	},
-	formatText: {
-		fontSize: 12,
-		color: '#059669',
-		fontWeight: '700',
-		letterSpacing: 0.3,
-	},
-	premiumUploadButton: {
-		backgroundColor: '#059669',
-		paddingVertical: 19,
-		borderRadius: 20,
-		alignItems: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 6 },
-		shadowOpacity: 0.25,
-		shadowRadius: 14,
-		elevation: 8,
-	},
-	premiumUploadButtonText: {
-		color: 'white',
-		fontSize: 17,
-		fontWeight: '900',
-		letterSpacing: 0.5,
-	},
-	uploadButton: {
-		backgroundColor: 'white',
-		paddingVertical: 16,
-		paddingHorizontal: 20,
-		borderRadius: 12,
-		alignItems: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	uploadButtonText: {
-		fontSize: 18,
-		fontWeight: '600',
-		color: '#059669',
-		marginBottom: 4,
-	},
-	uploadHint: {
+	uploadButtonSubtitle: {
 		fontSize: 14,
-		color: '#666',
+		color: '#64748b',
+		fontWeight: '600',
+		textAlign: 'center',
+		lineHeight: 20,
+	},
+	formatsRow: {
+		flexDirection: 'row',
+		justifyContent: 'center',
+		gap: 8,
+		marginBottom: 16,
+		flexWrap: 'wrap',
+	},
+	formatBadge: {
+		backgroundColor: 'rgba(209, 250, 229, 0.6)',
+		paddingHorizontal: 12,
+		paddingVertical: 6,
+		borderRadius: 14,
+	},
+	formatBadgeText: {
+		fontSize: 11,
+		color: '#059669',
+		fontWeight: '700',
+		letterSpacing: 0.4,
+	},
+	guideLink: {
+		alignItems: 'center',
+		paddingVertical: 12,
+		marginBottom: 8,
+	},
+	guideLinkText: {
+		fontSize: 14,
+		color: '#059669',
+		fontWeight: '700',
+		letterSpacing: 0.2,
 	},
 	uploadButtonDisabled: {
 		opacity: 0.5,
-		backgroundColor: '#cbd5e1',
 	},
 	processingCard: {
 		backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -795,27 +852,15 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		fontWeight: '600',
 	},
-	guideButton: {
-		marginTop: 20,
-		alignItems: 'center',
-		paddingVertical: 12,
-	},
-	guideButtonText: {
-		color: '#059669',
-		fontSize: 15,
-		fontWeight: '700',
-		letterSpacing: 0.3,
-		textDecorationLine: 'underline',
-	},
 	filesSection: {
 		paddingHorizontal: 28,
-		marginBottom: 20,
+		marginBottom: 16,
 	},
 	filesSectionHeader: {
 		flexDirection: 'row',
 		justifyContent: 'space-between',
 		alignItems: 'center',
-		marginBottom: 20,
+		marginBottom: 14,
 	},
 	filesTitle: {
 		fontSize: 26,
@@ -836,9 +881,9 @@ const styles = StyleSheet.create({
 	},
 	premiumFileCard: {
 		backgroundColor: 'rgba(255,255,255,0.95)',
-		padding: 24,
-		borderRadius: 28,
-		marginBottom: 16,
+		padding: 20,
+		borderRadius: 24,
+		marginBottom: 12,
 		shadowColor: '#000',
 		shadowOffset: { width: 0, height: 4 },
 		shadowOpacity: 0.08,
@@ -982,72 +1027,6 @@ const styles = StyleSheet.create({
 		color: '#1976d2',
 		fontWeight: '600',
 	},
-	privacyCard: {
-		backgroundColor: 'rgba(255,255,255,0.95)',
-		marginHorizontal: 28,
-		marginVertical: 20,
-		padding: 28,
-		borderRadius: 28,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.08,
-		shadowRadius: 12,
-		elevation: 6,
-		borderWidth: 0,
-	},
-	privacyHeader: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		marginBottom: 24,
-		justifyContent: 'center',
-	},
-	privacyIconContainer: {
-		width: 52,
-		height: 52,
-		borderRadius: 26,
-		backgroundColor: '#d1fae5',
-		justifyContent: 'center',
-		alignItems: 'center',
-		marginRight: 14,
-		shadowColor: '#059669',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.12,
-		shadowRadius: 6,
-		elevation: 2,
-	},
-	privacyIcon: {
-		fontSize: 26,
-	},
-	privacyTitle: {
-		fontSize: 22,
-		fontWeight: '900',
-		color: '#0f172a',
-		letterSpacing: -0.5,
-	},
-	privacyPoints: {
-		gap: 12,
-	},
-	privacyPoint: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		backgroundColor: 'rgba(241, 254, 248, 0.5)',
-		padding: 14,
-		borderRadius: 16,
-		borderWidth: 0,
-	},
-	privacyPointIcon: {
-		fontSize: 20,
-		marginRight: 14,
-		width: 24,
-		textAlign: 'center',
-	},
-	privacyPointText: {
-		fontSize: 15,
-		color: '#475569',
-		flex: 1,
-		lineHeight: 22,
-		fontWeight: '600',
-	},
 	storageInfo: {
 		backgroundColor: '#e8f5e8',
 		marginHorizontal: 20,
@@ -1160,5 +1139,103 @@ const styles = StyleSheet.create({
 		fontWeight: '900',
 		color: 'white',
 		letterSpacing: 0.5,
+	},
+	// Community Links
+	communitySection: {
+		paddingHorizontal: 28,
+		marginBottom: 20,
+	},
+	communityLinks: {
+		flexDirection: 'row',
+		gap: 12,
+		justifyContent: 'center',
+	},
+	communityLink: {
+		flex: 1,
+		backgroundColor: 'rgba(255,255,255,0.95)',
+		paddingVertical: 18,
+		paddingHorizontal: 12,
+		borderRadius: 20,
+		alignItems: 'center',
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.08,
+		shadowRadius: 12,
+		elevation: 6,
+		gap: 6,
+	},
+	communityLinkIcon: {
+		fontSize: 28,
+	},
+	communityLinkText: {
+		fontSize: 11,
+		fontWeight: '800',
+		color: '#059669',
+		letterSpacing: 0.4,
+		textTransform: 'uppercase',
+	},
+	// Email Capture
+	emailSection: {
+		paddingHorizontal: 28,
+		marginBottom: 24,
+	},
+	emailCard: {
+		backgroundColor: 'rgba(255,255,255,0.95)',
+		padding: 24,
+		borderRadius: 24,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.08,
+		shadowRadius: 12,
+		elevation: 6,
+	},
+	emailTitle: {
+		fontSize: 20,
+		fontWeight: '900',
+		color: '#0f172a',
+		marginBottom: 6,
+		letterSpacing: -0.5,
+		textAlign: 'center',
+	},
+	emailSubtitle: {
+		fontSize: 14,
+		color: '#64748b',
+		fontWeight: '600',
+		textAlign: 'center',
+		marginBottom: 20,
+	},
+	emailInputContainer: {
+		flexDirection: 'row',
+		gap: 10,
+	},
+	emailInput: {
+		flex: 1,
+		backgroundColor: '#f8fafb',
+		paddingVertical: 14,
+		paddingHorizontal: 18,
+		borderRadius: 16,
+		fontSize: 15,
+		fontWeight: '600',
+		color: '#0f172a',
+		borderWidth: 2,
+		borderColor: '#e2e8f0',
+	},
+	emailButton: {
+		width: 52,
+		height: 52,
+		borderRadius: 16,
+		backgroundColor: '#059669',
+		justifyContent: 'center',
+		alignItems: 'center',
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.2,
+		shadowRadius: 10,
+		elevation: 6,
+	},
+	emailButtonText: {
+		fontSize: 24,
+		color: 'white',
+		fontWeight: '700',
 	},
 })

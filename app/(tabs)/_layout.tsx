@@ -16,7 +16,7 @@ export default function TabLayout() {
 					<Icon selectedColor={'white'} drawable="ic_menu_compass" />
 				)}
 			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="insights">
+			<NativeTabs.Trigger hidden name="insights">
 				<Label>Insights</Label>
 				{Platform.OS === 'ios' ? (
 					<Icon
