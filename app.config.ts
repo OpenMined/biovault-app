@@ -90,12 +90,6 @@ const config: ExpoConfig = {
 				resizeMode: 'contain',
 			},
 		],
-		[
-			'expo-asset',
-			{
-				assets: ['./assets/clinvar_23andme.sqlite'],
-			},
-		],
 		['expo-secure-store'],
 	],
 	experiments: {

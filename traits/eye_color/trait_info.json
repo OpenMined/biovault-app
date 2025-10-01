@@ -1,0 +1,22 @@
+{
+	"trait_id": "eye_color",
+	"trait_name": "Eye Color",
+	"category": "Physical Traits",
+	"description": "The genetics of eye color are complex and involve several genes that can modify the eventual outcome. In a population sense, all populations except Caucasians basically have brown eyes, while amongst Caucasians one categorization that researchers track is blue vs non-blue.",
+	"primary_genes": ["OCA2", "HERC2"],
+	"references": [
+		{
+			"pmid": "17236130",
+			"description": "OCA2 variants linked to blue/green eye color"
+		},
+		{
+			"pmid": "18172690",
+			"description": "Functional OCA2 SNP in 97% of blue-eyed individuals"
+		},
+		{
+			"doi": "10.1371/journal.pgen.1000934",
+			"description": "Comprehensive eye color genetics study"
+		}
+	],
+	"sources": ["https://www.snpedia.com/index.php/Eye_color"]
+}

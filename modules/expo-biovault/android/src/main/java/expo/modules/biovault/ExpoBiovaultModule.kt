@@ -12,22 +12,38 @@ class ExpoBiovaultModule : Module() {
   }
 
   external fun processGenomeFile(inputPath: String, customName: String, outputDir: String): String
-  external fun analyzeClinVar(userDbPath: String, clinvarDbPath: String): String
-  external fun rustAdd(a: Int, b: Int): Int
 
   override fun definition() = ModuleDefinition {
     Name("ExpoBiovault")
 
     AsyncFunction("processGenomeFile") { inputPath: String, customName: String, outputDir: String ->
-      processGenomeFile(inputPath, customName, outputDir)
-    }
-
-    AsyncFunction("analyzeClinVarMatches") { userDbPath: String, clinvarDbPath: String ->
-      analyzeClinVar(userDbPath, clinvarDbPath)
-    }
-
-    Function("rust_add") { a: Int, b: Int ->
-      rustAdd(a, b)
+      // Validate input file exists
+      val inputFile = java.io.File(inputPath)
+      if (!inputFile.exists()) {
+        throw Exception("Input file not found: $inputPath")
+      }
+      
+      try {
+        processGenomeFile(inputPath, customName, outputDir)
+      } catch (e: Exception) {
+        // Provide helpful error message
+        val errorMessage = """
+          Failed to process genome file.
+          
+          Common causes:
+          • Unsupported file format (supported: 23andMe, AncestryDNA, VCF, TSV, CSV)
+          • File is corrupted or incomplete
+          • ZIP file contains no genomic data or multiple files
+          • File permissions issue
+          
+          File: $inputPath
+          Error: ${e.message}
+          
+          Check logcat for detailed Rust error messages.
+        """.trimIndent()
+        
+        throw Exception(errorMessage)
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { listUserGenomeDatabases, type UserGenomeDatabase } from '@/lib/genome-storage'
+import { analyzeTrait } from '@/lib/trait-analysis'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
@@ -22,12 +23,13 @@ interface AnalysisState {
 	selectedDatabase: UserGenomeDatabase | null
 	showCustomLinkModal: boolean
 	customLink: string
+	analyzingTrait: string | null
 }
 
 // Precanned wellness analyses
 const PRECANNED_ANALYSES = [
 	{
-		id: 'eye-color',
+		id: 'eye_color',
 		title: '👁️ Eye Color',
 		description: 'Discover your genetic eye color traits',
 		category: 'Physical Traits',
@@ -43,7 +45,7 @@ const PRECANNED_ANALYSES = [
 		fileTypes: ['23andme', 'ancestry'],
 	},
 	{
-		id: 'alcohol-tolerance',
+		id: 'alcohol_tolerance',
 		title: '🍷 Alcohol Tolerance',
 		description: 'Your genetic alcohol metabolism traits',
 		category: 'Wellness',
@@ -55,7 +57,7 @@ const PRECANNED_ANALYSES = [
 		title: '☕ Caffeine Sensitivity',
 		description: 'How your genes affect caffeine metabolism',
 		category: 'Wellness',
-		status: 'coming-soon',
+		status: 'available',
 		fileTypes: ['23andme', 'ancestry'],
 	},
 	{
@@ -63,7 +65,7 @@ const PRECANNED_ANALYSES = [
 		title: '🥛 Lactose Tolerance',
 		description: 'Your genetic lactose digestion ability',
 		category: 'Wellness',
-		status: 'coming-soon',
+		status: 'available',
 		fileTypes: ['23andme', 'ancestry'],
 	},
 	{
@@ -88,6 +90,7 @@ export default function AnalyzeScreen() {
 		selectedDatabase: null,
 		showCustomLinkModal: false,
 		customLink: '',
+		analyzingTrait: null,
 	})
 
 	useEffect(() => {
@@ -109,7 +112,7 @@ export default function AnalyzeScreen() {
 		}
 	}
 
-	const handleRunAnalysis = (analysisId: string) => {
+	const handleRunAnalysis = async (analysisId: string) => {
 		if (!state.selectedDatabase) {
 			Alert.alert('No Data File', 'Please load a genetic data file first from the Vault tab.')
 			return
@@ -126,8 +129,36 @@ export default function AnalyzeScreen() {
 			databaseName: state.selectedDatabase.dbName,
 		})
 
-		// TODO: Navigate to analysis results or run analysis
-		Alert.alert('Analysis Started', `Running ${analysis?.title} analysis...`)
+		// Set analyzing state
+		setState((prev) => ({ ...prev, analyzingTrait: analysisId }))
+
+		try {
+			// Run the trait analysis
+			const result = await analyzeTrait(analysisId, state.selectedDatabase.dbName)
+
+			if (result) {
+				trackEvent('analysis_completed', {
+					analysisId,
+					confidence: result.confidence,
+					snpsFound: result.snps_found,
+				})
+
+				// Navigate to results screen at root level
+				console.log('Navigating to trait-results screen...')
+				router.push({
+					pathname: '/trait-results',
+					params: { result: JSON.stringify(result) },
+				})
+				console.log('Navigation called')
+			} else {
+				Alert.alert('Analysis Error', 'Could not complete analysis. Please try again.')
+			}
+		} catch (error) {
+			console.error('Analysis error:', error)
+			Alert.alert('Analysis Error', `Failed to analyze: ${error}`)
+		} finally {
+			setState((prev) => ({ ...prev, analyzingTrait: null }))
+		}
 	}
 
 	const handleCustomLink = () => {
@@ -247,9 +278,10 @@ export default function AnalyzeScreen() {
 										style={[
 											styles.analysisCard,
 											analysis.status === 'coming-soon' && styles.analysisCardDisabled,
+											state.analyzingTrait === analysis.id && styles.analysisCardAnalyzing,
 										]}
 										onPress={() => handleRunAnalysis(analysis.id)}
-										disabled={analysis.status === 'coming-soon'}
+										disabled={analysis.status === 'coming-soon' || state.analyzingTrait !== null}
 									>
 										<View style={styles.analysisHeader}>
 											<Text style={styles.analysisTitle}>{analysis.title}</Text>
@@ -258,13 +290,20 @@ export default function AnalyzeScreen() {
 													<Text style={styles.comingSoonText}>Soon</Text>
 												</View>
 											)}
+											{state.analyzingTrait === analysis.id && (
+												<ActivityIndicator size="small" color="#059669" />
+											)}
 										</View>
 										<Text style={styles.analysisDescription}>{analysis.description}</Text>
 										<View style={styles.analysisFooter}>
 											<View style={styles.categoryBadge}>
 												<Text style={styles.categoryText}>{analysis.category}</Text>
 											</View>
-											<Text style={styles.analysisArrow}>→</Text>
+											{state.analyzingTrait === analysis.id ? (
+												<Text style={styles.analyzingText}>Analyzing...</Text>
+											) : (
+												<Text style={styles.analysisArrow}>→</Text>
+											)}
 										</View>
 									</TouchableOpacity>
 								</Animated.View>
@@ -606,6 +645,11 @@ const styles = StyleSheet.create({
 	analysisCardDisabled: {
 		opacity: 0.6,
 	},
+	analysisCardAnalyzing: {
+		borderColor: '#059669',
+		borderWidth: 2,
+		backgroundColor: '#f0fdf4',
+	},
 	analysisHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
@@ -657,6 +701,11 @@ const styles = StyleSheet.create({
 	},
 	analysisArrow: {
 		fontSize: 20,
+		color: '#059669',
+		fontWeight: '700',
+	},
+	analyzingText: {
+		fontSize: 14,
 		color: '#059669',
 		fontWeight: '700',
 	},

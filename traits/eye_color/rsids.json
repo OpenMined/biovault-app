@@ -1,0 +1,374 @@
+{
+	"snps": [
+		{
+			"rsid": "rs12913832",
+			"gene": "HERC2",
+			"chromosome": "15",
+			"importance": "primary",
+			"description": "Found in 97% of individuals with blue eye color. Part of 13 SNP haplotype covering 166kB.",
+			"alleles": {
+				"C": "Blue eyes (associated with BEH2 haplotype)",
+				"T": "Brown eyes"
+			},
+			"references": ["PMID:18172690"]
+		},
+		{
+			"rsid": "rs1129038",
+			"gene": "HERC2",
+			"chromosome": "15",
+			"importance": "primary",
+			"description": "Penetrance modifier for blue eye color",
+			"alleles": {
+				"A": "Blue eyes",
+				"T": "Penetrance modifier"
+			},
+			"effect": "TT = Penetrance modifier. Blue."
+		},
+		{
+			"rsid": "rs4778138",
+			"gene": "OCA2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Part of BEH1 haplotype",
+			"alleles": {
+				"A": "Weak Amber Gradient"
+			}
+		},
+		{
+			"rsid": "rs4778241",
+			"gene": "OCA2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Low melanin production",
+			"alleles": {
+				"C": "Low Melanin - basis for Gray, Blue, Green, or Yellow Eyes if no other pigmentation is present"
+			},
+			"effect": "CC = Low Melanin. Basis for Gray, Blue, Green, or Yellow Eyes."
+		},
+		{
+			"rsid": "rs7495174",
+			"gene": "OCA2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Green eye color association, part of BEH1 and OCA2 intron 1 haplotypes",
+			"alleles": {
+				"A": "Green eye color"
+			},
+			"references": ["PMID:17236130"]
+		},
+		{
+			"rsid": "rs6497268",
+			"gene": "OCA2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Part of OCA2 first intron haplotype",
+			"effect": "Blue/green eye color association",
+			"references": ["PMID:17236130"]
+		},
+		{
+			"rsid": "rs11855019",
+			"gene": "OCA2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Part of OCA2 first intron haplotype",
+			"effect": "Blue/green eye color association",
+			"references": ["PMID:17236130"]
+		},
+		{
+			"rsid": "rs916977",
+			"gene": "HERC2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Part of BEH3 haplotype",
+			"alleles": {
+				"G": "Blue eye color association"
+			}
+		},
+		{
+			"rsid": "rs1667394",
+			"gene": "HERC2",
+			"chromosome": "15",
+			"importance": "secondary",
+			"description": "Part of BEH3 haplotype, affects iris pattern",
+			"alleles": {
+				"A": "Blue eye color association"
+			},
+			"effect": "TT = Starburst (Collarette)"
+		},
+		{
+			"rsid": "rs1126809",
+			"gene": "TYR",
+			"importance": "tertiary",
+			"description": "Tyrosinase gene variant linked to eye color"
+		},
+		{
+			"rsid": "rs1408799",
+			"importance": "tertiary",
+			"alleles": {
+				"C": "Reference",
+				"T": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs2733832",
+			"importance": "tertiary",
+			"alleles": {
+				"C": "Reference",
+				"T": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs1800401",
+			"gene": "OCA2",
+			"importance": "tertiary",
+			"alleles": {
+				"C": "Reference",
+				"T": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs1800407",
+			"gene": "OCA2",
+			"importance": "tertiary",
+			"description": "OCA2 variant associated with eye color",
+			"alleles": {
+				"G": "Reference",
+				"A": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs1800414",
+			"gene": "SLC45A2",
+			"importance": "tertiary",
+			"alleles": {
+				"A": "Reference",
+				"G": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs4911442",
+			"importance": "tertiary",
+			"alleles": {
+				"A": "Reference",
+				"G": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs6058017",
+			"importance": "tertiary",
+			"alleles": {
+				"A": "Reference",
+				"G": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs105362",
+			"importance": "tertiary",
+			"alleles": {
+				"A": "Reference",
+				"G": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs4911414",
+			"importance": "tertiary",
+			"alleles": {
+				"G": "Reference",
+				"T": "Eye color variant"
+			}
+		},
+		{
+			"rsid": "rs12896399",
+			"importance": "tertiary",
+			"description": "Equivalent to rs4900109",
+			"alleles": {
+				"G": "Pigmented rings",
+				"T": "Reference"
+			}
+		},
+		{
+			"rsid": "rs12593929",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs7183877",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs3935591",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs7170852",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs2238289",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs3940272",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs8028689",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs2240203",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs11631797",
+			"importance": "tertiary",
+			"description": "Eye color association"
+		},
+		{
+			"rsid": "rs3768056",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs728405",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs2835621",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs892839",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs9782955",
+			"importance": "tertiary",
+			"description": "Blocks some melanin, often gives light colored eyes",
+			"effect": "CC = Blocks some melanin. Often gives light colored eyes."
+		},
+		{
+			"rsid": "rs12452184",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs10209564",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs1325127",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs7277820",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs1105879",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs7219915",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs2070959",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs2835630",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs16891982",
+			"gene": "SLC45A2",
+			"importance": "tertiary",
+			"description": "Affects iris pattern and pigmentation",
+			"effect": "GG = Starburst (Collarette)"
+		},
+		{
+			"rsid": "rs9894429",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs12203592",
+			"gene": "IRF4",
+			"importance": "tertiary",
+			"description": "Affects pigmented collarette",
+			"effect": "CC = No pigmented Collarette"
+		},
+		{
+			"rsid": "rs1393350",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs2252893",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs1003719",
+			"importance": "tertiary",
+			"description": "Eye color association from PLoS Genetics study"
+		},
+		{
+			"rsid": "rs1533995",
+			"importance": "tertiary",
+			"description": "Equivalent to rs10235789",
+			"alleles": {
+				"A": "More crypts in iris"
+			}
+		},
+		{
+			"rsid": "rs3739070",
+			"importance": "tertiary",
+			"alleles": {
+				"A": "More pronounced furrows in iris"
+			}
+		},
+		{
+			"rsid": "rs989869",
+			"importance": "tertiary",
+			"description": "Affects iris pattern",
+			"effect": "CT = Contrasting sphincter around pupil"
+		},
+		{
+			"rsid": "rs3794604",
+			"importance": "tertiary",
+			"description": "Melanin blocking variant",
+			"effect": "CC = Blocks some melanin. Often gives light colored eyes."
+		},
+		{
+			"rsid": "rs7174027",
+			"importance": "tertiary",
+			"description": "Melanin blocking variant",
+			"effect": "GG = Blocks some melanin. Often gives light colored eyes."
+		},
+		{
+			"rsid": "rs12906280",
+			"importance": "tertiary",
+			"description": "Affects iris pattern",
+			"effect": "GG = Gray ring around outer edge"
+		}
+	]
+}

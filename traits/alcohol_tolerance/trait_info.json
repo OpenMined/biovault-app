@@ -1,0 +1,18 @@
+{
+	"trait_id": "alcohol_tolerance",
+	"trait_name": "Alcohol Metabolism & Tolerance",
+	"category": "Wellness",
+	"description": "Your genetic makeup influences how quickly you metabolize alcohol and your risk for alcohol dependence. Key genes affect alcohol breakdown and sensitivity.",
+	"primary_genes": ["ADH1B", "ALDH2"],
+	"references": [
+		{
+			"pmid": "16252231",
+			"description": "ADH1B and ALDH2 variants in alcohol metabolism"
+		},
+		{
+			"pmid": "19732772",
+			"description": "Genetic factors in alcohol dependence"
+		}
+	],
+	"sources": ["https://www.snpedia.com/index.php/Alcohol_flush_reaction"]
+}

@@ -1,0 +1,18 @@
+{
+	"trait_id": "caffeine",
+	"trait_name": "Caffeine Metabolism & Sensitivity",
+	"category": "Wellness",
+	"description": "Your genes determine how quickly you metabolize caffeine and how sensitive you are to its effects. Some people can drink coffee before bed, others get jittery from one cup.",
+	"primary_genes": ["CYP1A2", "ADORA2A"],
+	"references": [
+		{
+			"pmid": "16522833",
+			"description": "CYP1A2 and caffeine metabolism"
+		},
+		{
+			"pmid": "17229951",
+			"description": "ADORA2A and caffeine sensitivity"
+		}
+	],
+	"sources": ["https://www.snpedia.com/index.php/Caffeine"]
+}

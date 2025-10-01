@@ -62,6 +62,7 @@ DerivedData/
 # IDE/editor
 .idea/
 .vscode/
+.cursor/
 *.iml
 
 # Package manager lockfiles

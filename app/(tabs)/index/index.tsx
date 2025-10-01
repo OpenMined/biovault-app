@@ -47,6 +47,8 @@ interface MyDNAState {
 	selectedFile: { uri: string; name: string } | null
 	customFileName: string
 	email: string
+	detectedFormat: string | null
+	processingStage: 'detecting' | 'parsing' | 'saving' | 'complete' | null
 }
 
 // ts-prune-ignore-next
@@ -65,6 +67,8 @@ export default function MyDNAScreen() {
 		selectedFile: null,
 		customFileName: '',
 		email: '',
+		detectedFormat: null,
+		processingStage: null,
 	})
 
 	// Animation values
@@ -94,37 +98,59 @@ export default function MyDNAScreen() {
 			setState((prev) => ({
 				...prev,
 				isProcessing: true,
-				processingMessage: 'Processing with Rust...',
+				processingMessage: 'Analyzing file format...',
+				processingStage: 'detecting',
+				detectedFormat: null,
 			}))
 
 			try {
 				// Use the proper FileSystem API for documents directory
 				const documentsPath = Paths.document.uri.replace('file://', '')
 
+				// Convert input file URI to path for Rust
+				// Note: iOS may rename files with compound extensions (.vcf.bz2 → .bz2)
+				// Our content-based detection handles this by reading file headers
+				const inputPath = fileUri.replace('file://', '')
+
 				setState((prev) => ({
 					...prev,
-					processingMessage: 'Parsing genetic data with Rust...',
+					processingMessage: 'Auto-detecting format from file content...',
+					processingStage: 'detecting',
 				}))
-
-				// Convert input file URI to path for Rust
-				const inputPath = fileUri.replace('file://', '')
 
 				// Use Rust to parse and create SQLite database
 				console.log('Starting Rust processing...', { inputPath, documentsPath })
+
+				// Simulate detection stage (Rust does this internally)
+				await new Promise((resolve) => setTimeout(resolve, 500))
+
+				setState((prev) => ({
+					...prev,
+					processingMessage: 'Parsing genetic variants...',
+					processingStage: 'parsing',
+				}))
+
 				const sqlitePath = await BioVault.processGenomeFile(inputPath, fileName, documentsPath)
 				console.log('Rust processing completed:', sqlitePath)
 
 				setState((prev) => ({
 					...prev,
-					processingMessage: 'File processed successfully!',
+					processingMessage: 'Saving to secure database...',
+					processingStage: 'saving',
 				}))
 
 				// Add the newly created database to the manifest
 				await addDatabaseToManifest(sqlitePath, fileName)
 
-				// Track successful file processing (without filename for privacy)
+				setState((prev) => ({
+					...prev,
+					processingMessage: '✓ Successfully loaded!',
+					processingStage: 'complete',
+				}))
+
+				// Track successful file processing
 				trackEvent('genome_file_processed', {
-					fileType: 'zip',
+					fileName: fileName,
 					success: true,
 				})
 
@@ -134,16 +160,85 @@ export default function MyDNAScreen() {
 
 				// Small delay to show success message
 				setTimeout(() => {
-					setState((prev) => ({ ...prev, isProcessing: false }))
-				}, 1000)
+					setState((prev) => ({
+						...prev,
+						isProcessing: false,
+						processingStage: null,
+						detectedFormat: null,
+					}))
+				}, 1500)
 			} catch (error) {
 				console.error('Rust processing error:', error)
+
+				const errorMessage = String(error)
+
+				// Parse error message to provide user-friendly feedback
+				let userMessage = 'Unknown error occurred'
+				let errorTitle = 'Processing Error'
+
+				if (errorMessage.includes('Could not auto-detect format')) {
+					errorTitle = 'Unsupported File Format'
+					userMessage =
+						'This file format is not supported yet.\n\n' +
+						'Supported formats:\n' +
+						'• 23andMe (all versions)\n' +
+						'• AncestryDNA (all versions)\n' +
+						'• VCF files (.vcf, .vcf.gz, .vcf.bz2)\n' +
+						'• MyHeritage (VCF format)\n' +
+						'• Living DNA (VCF format)\n' +
+						'• Family Tree DNA (VCF format)\n' +
+						'• And others that export VCF format\n\n' +
+						'Tip: Check if your service offers a VCF or raw data download option.'
+				} else if (errorMessage.includes('Not a Complete Genomics file')) {
+					errorTitle = 'Invalid File Format'
+					userMessage =
+						'This appears to be a TSV file, but not in the expected Complete Genomics format.\n\n' +
+						'If this is genomic data, please check if your service offers:\n' +
+						'• VCF format export\n' +
+						'• 23andMe format export\n' +
+						'• AncestryDNA format export'
+				} else if (errorMessage.includes('No such file')) {
+					errorTitle = 'File Not Found'
+					userMessage = 'The selected file could not be accessed. Please try selecting it again.'
+				} else if (errorMessage.includes('Permission denied')) {
+					errorTitle = 'Permission Denied'
+					userMessage =
+						'BioVault does not have permission to access this file. Please check your file permissions.'
+				} else if (errorMessage.toLowerCase().includes('timeout')) {
+					errorTitle = 'Processing Timeout'
+					userMessage =
+						'This file is taking too long to process. It may be corrupted or in an unexpected format.'
+				} else {
+					// Generic error with helpful context
+					userMessage =
+						`Unable to process this file.\n\n` +
+						`Error: ${errorMessage.slice(0, 150)}\n\n` +
+						`Please ensure your file is:\n` +
+						`• From a supported genetic testing service\n` +
+						`• In a standard export format (not a report)\n` +
+						`• Not corrupted or password-protected`
+				}
+
 				trackEvent('genome_file_processing_error', {
-					fileType: 'zip',
-					error: String(error),
+					fileName: fileName,
+					error: errorMessage.slice(0, 100),
+					errorType: errorTitle,
 				})
-				setState((prev) => ({ ...prev, isProcessing: false }))
-				Alert.alert('Processing Error', `Failed to process file with Rust: ${error}`)
+
+				setState((prev) => ({
+					...prev,
+					isProcessing: false,
+					processingStage: null,
+					detectedFormat: null,
+				}))
+
+				Alert.alert(errorTitle, userMessage, [
+					{ text: 'OK' },
+					{
+						text: 'See Supported Formats',
+						onPress: () => router.push('/how-to-get-file' as any),
+					},
+				])
 			}
 		},
 		[trackEvent]
@@ -168,16 +263,24 @@ export default function MyDNAScreen() {
 
 			trackEvent('file_picker_opened', { source: 'MyDNA' })
 			const result = await DocumentPicker.getDocumentAsync({
-				type: ['application/zip', 'text/plain'],
+				type: [
+					'application/zip', // ZIP files (23andMe, AncestryDNA)
+					'text/plain', // TXT files (23andMe, AncestryDNA)
+					'text/tab-separated-values', // TSV files (PGP Harvard)
+					'text/csv', // CSV files (FTDNA)
+					'application/gzip', // .vcf.gz files
+					'application/x-bzip2', // .vcf.bz2 files
+					'*/*', // Fallback for VCF files
+				],
 				copyToCacheDirectory: true,
 			})
 
 			if (!result.canceled && result.assets[0]) {
 				const file = result.assets[0]
 				// Show naming dialog instead of processing immediately
-				// Clean filename: remove .zip/.txt, spaces, and special chars
+				// Clean filename: remove extensions, spaces, and special chars
 				const cleanName = file.name
-					.replace(/\.(zip|txt)$/i, '')
+					.replace(/\.(zip|txt|vcf|tsv|csv|gz|bz2)$/i, '')
 					.replace(/\s+/g, '_') // Replace spaces with underscores
 					.replace(/[^a-zA-Z0-9_-]/g, '') // Remove special chars except _ and -
 					.replace(/_+/g, '_') // Replace multiple underscores with single
@@ -185,7 +288,10 @@ export default function MyDNAScreen() {
 
 				setState((prev) => ({
 					...prev,
-					selectedFile: { uri: file.uri, name: file.name },
+					selectedFile: {
+						uri: file.uri,
+						name: file.name, // Store original filename with correct extension
+					},
 					customFileName: cleanName,
 					showNamingDialog: true,
 				}))
@@ -211,6 +317,7 @@ export default function MyDNAScreen() {
 			.replace(/-+/g, '-') // Collapse multiple dashes
 
 		setState((prev) => ({ ...prev, showNamingDialog: false }))
+		// Pass file directly - Rust handles format detection from content
 		await processFile(state.selectedFile.uri, finalName)
 	}
 
@@ -279,15 +386,53 @@ export default function MyDNAScreen() {
 	const renderProcessingCard = () => {
 		if (!state.isProcessing) return null
 
+		// Calculate progress based on stage
+		const getProgress = () => {
+			switch (state.processingStage) {
+				case 'detecting':
+					return '25%'
+				case 'parsing':
+					return '60%'
+				case 'saving':
+					return '85%'
+				case 'complete':
+					return '100%'
+				default:
+					return '10%'
+			}
+		}
+
+		const getStageIcon = () => {
+			switch (state.processingStage) {
+				case 'detecting':
+					return '🔍'
+				case 'parsing':
+					return '🧬'
+				case 'saving':
+					return '💾'
+				case 'complete':
+					return '✅'
+				default:
+					return '⏳'
+			}
+		}
+
 		return (
 			<View style={styles.processingCard}>
 				<View style={styles.processingHeader}>
-					<Text style={styles.processingTitle}>📁 {state.customFileName}</Text>
-					<ActivityIndicator size="small" color="#10b981" />
+					<Text style={styles.processingTitle}>
+						{getStageIcon()} {state.customFileName}
+					</Text>
+					{state.processingStage !== 'complete' && (
+						<ActivityIndicator size="small" color="#10b981" />
+					)}
 				</View>
 				<Text style={styles.processingMessage}>{state.processingMessage}</Text>
+				{state.detectedFormat && (
+					<Text style={styles.detectedFormatText}>Format detected: {state.detectedFormat}</Text>
+				)}
 				<View style={styles.processingProgress}>
-					<View style={styles.processingProgressBar} />
+					<View style={[styles.processingProgressBar, { width: getProgress() }]} />
 				</View>
 			</View>
 		)
@@ -353,14 +498,28 @@ export default function MyDNAScreen() {
 											<Text style={styles.statLabel}>Variants</Text>
 										</View>
 										<View style={styles.statItem}>
-											<Text style={styles.statNumber}>{database.rsidCount.toLocaleString()}</Text>
-											<Text style={styles.statLabel}>rsIDs</Text>
+											{database.rsidCount > 0 ? (
+												<>
+													<Text style={styles.statNumber}>
+														{database.rsidCount.toLocaleString()}
+													</Text>
+													<Text style={styles.statLabel}>
+														rsIDs ({Math.round((database.rsidCount / database.totalVariants) * 100)}
+														%)
+													</Text>
+												</>
+											) : (
+												<>
+													<Text style={styles.statNumber}>WGS</Text>
+													<Text style={styles.statLabel}>Whole Genome</Text>
+												</>
+											)}
 										</View>
 										<View style={styles.statItem}>
 											<Text style={styles.statNumber}>
-												{((database.totalVariants * 4) / 1024 / 1024).toFixed(1)}MB
+												{((database.totalVariants * 100) / 1024 / 1024).toFixed(1)}MB
 											</Text>
-											<Text style={styles.statLabel}>Storage</Text>
+											<Text style={styles.statLabel}>Est. Size</Text>
 										</View>
 									</View>
 
@@ -427,8 +586,8 @@ export default function MyDNAScreen() {
 									</Text>
 									<Text style={styles.uploadButtonSubtitle}>
 										{state.storedDatabases.length > 0
-											? 'Import additional files'
-											: 'ZIP or TXT from genetic testing services'}
+											? 'Import additional files • All formats supported'
+											: 'Supports 23andMe, AncestryDNA, VCF, and more'}
 									</Text>
 								</View>
 							</TouchableOpacity>
@@ -436,15 +595,17 @@ export default function MyDNAScreen() {
 
 						{/* Supported formats - minimal */}
 						<Animated.View entering={FadeIn.duration(250).delay(200)} style={styles.formatsRow}>
-							{['23andMe', 'Ancestry', 'MyHeritage', 'Others'].map((format, index) => (
-								<Animated.View
-									key={format}
-									entering={FadeInUp.duration(200).delay(225 + index * 25)}
-									style={styles.formatBadge}
-								>
-									<Text style={styles.formatBadgeText}>{format}</Text>
-								</Animated.View>
-							))}
+							{['23andMe', 'AncestryDNA', 'VCF', 'MyHeritage', 'FTDNA', 'More'].map(
+								(format, index) => (
+									<Animated.View
+										key={format}
+										entering={FadeInUp.duration(200).delay(225 + index * 25)}
+										style={styles.formatBadge}
+									>
+										<Text style={styles.formatBadgeText}>{format}</Text>
+									</Animated.View>
+								)
+							)}
 						</Animated.View>
 
 						{/* Guide link - minimal */}
@@ -523,7 +684,7 @@ export default function MyDNAScreen() {
 					<View style={styles.modalContainer}>
 						<Text style={styles.modalTitle}>Name Your DNA File</Text>
 						<Text style={styles.modalSubtitle}>
-							Give your genetic data a memorable name for easy identification
+							All formats supported • Name will help you identify this file later
 						</Text>
 
 						<TextInput
@@ -758,8 +919,19 @@ const styles = StyleSheet.create({
 	processingMessage: {
 		fontSize: 15,
 		color: '#10b981',
-		marginBottom: 16,
+		marginBottom: 8,
 		fontWeight: '600',
+	},
+	detectedFormatText: {
+		fontSize: 13,
+		color: '#059669',
+		marginBottom: 12,
+		fontWeight: '700',
+		backgroundColor: '#d1fae5',
+		paddingHorizontal: 12,
+		paddingVertical: 6,
+		borderRadius: 12,
+		alignSelf: 'flex-start',
 	},
 	processingProgress: {
 		height: 6,
@@ -770,8 +942,8 @@ const styles = StyleSheet.create({
 	processingProgressBar: {
 		height: '100%',
 		backgroundColor: '#10b981',
-		width: '100%',
 		borderRadius: 3,
+		transition: 'width 0.3s ease',
 	},
 	emptyState: {
 		backgroundColor: 'rgba(255,255,255,0.95)',

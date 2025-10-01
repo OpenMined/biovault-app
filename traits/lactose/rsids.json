@@ -1,0 +1,56 @@
+{
+	"snps": [
+		{
+			"rsid": "rs4988235",
+			"gene": "MCM6",
+			"chromosome": "2",
+			"importance": "primary",
+			"description": "The -13910*T variant. Most important SNP for lactose tolerance in Europeans. Located in MCM6 gene but regulates LCT (lactase) expression.",
+			"alleles": {
+				"A": "Lactase non-persistence (intolerant)",
+				"G": "Lactase persistence (tolerant) - common in Europeans"
+			},
+			"effect": "GG = Lactose tolerant (European variant). AA = Lactose intolerant. Most predictive SNP for European ancestry."
+		},
+		{
+			"rsid": "rs182549",
+			"gene": "MCM6",
+			"chromosome": "2",
+			"importance": "secondary",
+			"description": "Another lactase persistence variant, found in some European populations",
+			"alleles": {
+				"C": "Lactase persistence in some populations",
+				"T": "Lactase non-persistence"
+			}
+		},
+		{
+			"rsid": "rs145946881",
+			"gene": "MCM6",
+			"chromosome": "2",
+			"importance": "secondary",
+			"description": "African lactase persistence variant -14010*C",
+			"effect": "Common in East African populations"
+		},
+		{
+			"rsid": "rs41525747",
+			"gene": "MCM6",
+			"chromosome": "2",
+			"importance": "secondary",
+			"description": "African lactase persistence variant -13915*G"
+		},
+		{
+			"rsid": "rs41380347",
+			"gene": "MCM6",
+			"chromosome": "2",
+			"importance": "secondary",
+			"description": "African lactase persistence variant -13907*G"
+		},
+		{
+			"rsid": "rs869051967",
+			"gene": "MCM6",
+			"chromosome": "2",
+			"importance": "tertiary",
+			"description": "Rare lactase persistence variant in some Middle Eastern populations"
+		}
+	]
+}

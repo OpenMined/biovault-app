@@ -69,6 +69,7 @@ examples/
 Thumbs.db
 .vscode/
 .idea/
+.cursor/
 *.iml
 *.log
 npm-debug.log*

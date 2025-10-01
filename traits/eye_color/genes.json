@@ -1,0 +1,43 @@
+{
+	"genes": [
+		{
+			"gene_symbol": "OCA2",
+			"gene_name": "Oculocutaneous Albinism Type 2",
+			"chromosome": "15",
+			"description": "One gene with a significant role in determining blue eye color. Variants first linked to albinism and perhaps melanoma risk.",
+			"role": "Major determinant of eye color, particularly blue/green vs brown",
+			"omim": "203200.0013"
+		},
+		{
+			"gene_symbol": "HERC2",
+			"gene_name": "HECT and RLD Domain Containing E3 Ubiquitin Protein Ligase 2",
+			"chromosome": "15",
+			"description": "Contains regulatory elements that control OCA2 expression, particularly associated with blue eye color haplotypes.",
+			"role": "Regulatory control of OCA2 expression affecting eye color"
+		},
+		{
+			"gene_symbol": "TYR",
+			"gene_name": "Tyrosinase",
+			"description": "Involved in melanin production, affects eye color pigmentation",
+			"role": "Melanin synthesis pathway"
+		},
+		{
+			"gene_symbol": "SLC24A4",
+			"gene_name": "Solute Carrier Family 24 Member 4",
+			"description": "Associated with eye color variation",
+			"role": "Minor contributor to eye color variation"
+		},
+		{
+			"gene_symbol": "SLC45A2",
+			"gene_name": "Solute Carrier Family 45 Member 2",
+			"description": "Associated with pigmentation including eye color",
+			"role": "Pigmentation pathway"
+		},
+		{
+			"gene_symbol": "IRF4",
+			"gene_name": "Interferon Regulatory Factor 4",
+			"description": "Associated with hair and eye color variation",
+			"role": "Pigmentation regulation"
+		}
+	]
+}

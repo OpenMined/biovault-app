@@ -13,5 +13,3 @@ char *process_23andme_file(const char *input_path, const char *custom_name, cons
  * Free memory allocated by process_23andme_file
  */
 void free_string(char *ptr);
-
-int32_t rust_add(int32_t a, int32_t b);

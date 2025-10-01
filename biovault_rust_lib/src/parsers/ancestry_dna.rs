@@ -2,12 +2,11 @@ use super::{GenomeMetadata, ParseResult, Variant};
 use std::error::Error;
 use std::path::Path;
 
-pub fn parse_23andme_file(file_path: &Path) -> Result<ParseResult, Box<dyn Error>> {
+pub fn parse_ancestrydna_file(file_path: &Path) -> Result<ParseResult, Box<dyn Error>> {
     // Note: ZIP extraction is handled by parse_genome_file() before calling this
     let content = std::fs::read_to_string(file_path)?;
 
     let mut variants = Vec::new();
-    // Skipping collection of parse errors for now.
     let mut rsid_count = 0;
 
     for line in content.lines() {
@@ -24,7 +23,7 @@ pub fn parse_23andme_file(file_path: &Path) -> Result<ParseResult, Box<dyn Error
         }
 
         let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 4 {
+        if parts.len() < 5 {
             // Invalid format; skip this line.
             continue;
         }
@@ -32,26 +31,27 @@ pub fn parse_23andme_file(file_path: &Path) -> Result<ParseResult, Box<dyn Error
         let rsid = parts[0].trim();
         let chromosome = parts[1].trim();
         let position_str = parts[2].trim();
-        let genotype = parts[3].trim();
+        let allele1 = parts[3].trim();
+        let allele2 = parts[4].trim();
 
-        // Skip invalid data
-        if rsid.is_empty() || chromosome.is_empty() || genotype == "--" {
+        // Skip invalid data (0 represents no-call in AncestryDNA)
+        if rsid.is_empty() || chromosome.is_empty() || allele1 == "0" || allele2 == "0" {
             continue;
         }
 
         // Parse position
         let position = match position_str.parse::<u64>() {
             Ok(p) => p,
-            Err(_) => {
-                // Invalid position; skip this line.
-                continue;
-            }
+            Err(_) => continue,
         };
 
         // Count rsIDs
         if rsid.starts_with("rs") {
             rsid_count += 1;
         }
+
+        // Combine alleles into genotype format (like 23andMe)
+        let genotype = format!("{}{}", allele1, allele2);
 
         // Create variant
         let variant = Variant {
@@ -62,19 +62,19 @@ pub fn parse_23andme_file(file_path: &Path) -> Result<ParseResult, Box<dyn Error
             },
             chromosome: chromosome.to_string(),
             position,
-            genotype: genotype.to_string(),
-            source_format: "23andMe".to_string(),
+            genotype,
+            source_format: "AncestryDNA".to_string(),
         };
 
         variants.push(variant);
     }
 
-    // parse_errors is collected above but not currently surfaced; consider persisting later.
     let metadata = GenomeMetadata {
-        source_format: "23andMe".to_string(),
+        source_format: "AncestryDNA".to_string(),
         total_variants: variants.len(),
         rsid_count,
     };
 
     Ok(ParseResult { metadata, variants })
 }
+

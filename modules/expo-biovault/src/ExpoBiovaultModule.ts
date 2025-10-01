@@ -1,13 +1,6 @@
 import { NativeModule, requireNativeModule } from 'expo'
 import { Platform } from 'react-native'
 
-export interface AnalysisResult {
-	matches: ClinVarVariant[]
-	gene_groups: GeneGroup[]
-	rsids_searched: number
-	matches_found: number
-}
-
 export interface ClinVarVariant {
 	rsid: string
 	chrom: string
@@ -37,8 +30,6 @@ export interface GeneGroup {
 
 declare class ExpoBiovaultModule extends NativeModule {
 	processGenomeFile(inputPath: string, customName: string, outputDir: string): Promise<string>
-	analyzeClinVarMatches(userDbPath: string, clinvarDbPath: string): Promise<string>
-	rust_add(a: number, b: number): number
 }
 
 // Platform-specific module loading
@@ -56,18 +47,6 @@ const createModule = (): ExpoBiovaultModule => {
 				throw new Error(
 					'Genome processing is not available on web. Please use the iOS or Android app.'
 				)
-			},
-			analyzeClinVarMatches: async (
-				_userDbPath: string,
-				_clinvarDbPath: string
-			): Promise<string> => {
-				throw new Error(
-					'ClinVar analysis is not available on web. Please use the iOS or Android app.'
-				)
-			},
-			rust_add: (a: number, b: number): number => {
-				// Simple fallback for testing
-				return a + b
 			},
 		} as ExpoBiovaultModule
 	}

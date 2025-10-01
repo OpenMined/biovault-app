@@ -1,0 +1,71 @@
+{
+	"snps": [
+		{
+			"rsid": "rs671",
+			"gene": "ALDH2",
+			"chromosome": "12",
+			"importance": "primary",
+			"description": "Most important variant for alcohol metabolism. The A allele causes alcohol flush reaction and reduces alcohol dependence risk.",
+			"alleles": {
+				"G": "Normal ALDH2 function, efficient acetaldehyde metabolism",
+				"A": "Inactive ALDH2, causes alcohol flush reaction, acetaldehyde accumulation"
+			},
+			"effect": "A carriers = Alcohol flush reaction, facial redness, rapid heartbeat. Protective against alcoholism. Common in East Asians."
+		},
+		{
+			"rsid": "rs1229984",
+			"gene": "ADH1B",
+			"chromosome": "4",
+			"importance": "primary",
+			"description": "Alcohol dehydrogenase variant. A allele = faster alcohol metabolism, protective against alcohol dependence.",
+			"alleles": {
+				"T": "Slow alcohol metabolism",
+				"A": "Fast alcohol metabolism (protective)"
+			},
+			"effect": "AA genotype = Very fast alcohol → acetaldehyde conversion. Protective against alcoholism."
+		},
+		{
+			"rsid": "rs698",
+			"gene": "ADH1C",
+			"chromosome": "4",
+			"importance": "secondary",
+			"description": "Another alcohol dehydrogenase variant affecting metabolism rate",
+			"alleles": {
+				"A": "Slower ADH1C enzyme",
+				"G": "Faster ADH1C enzyme"
+			}
+		},
+		{
+			"rsid": "rs1693482",
+			"gene": "ADH1B",
+			"chromosome": "4",
+			"importance": "secondary",
+			"description": "ADH1B variant linked to alcohol consumption patterns"
+		},
+		{
+			"rsid": "rs1614972",
+			"gene": "CYP2E1",
+			"chromosome": "10",
+			"importance": "tertiary",
+			"description": "Cytochrome P450 enzyme involved in alcohol metabolism"
+		},
+		{
+			"rsid": "rs279858",
+			"gene": "GABRA2",
+			"chromosome": "4",
+			"importance": "tertiary",
+			"description": "GABA receptor variant associated with alcohol dependence risk"
+		},
+		{
+			"rsid": "rs1799971",
+			"gene": "OPRM1",
+			"chromosome": "6",
+			"importance": "tertiary",
+			"description": "Opioid receptor variant. G allele associated with stronger response to alcohol reward.",
+			"alleles": {
+				"A": "Normal opioid receptor",
+				"G": "Altered receptor, stronger alcohol reward response"
+			}
+		}
+	]
+}

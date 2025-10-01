@@ -1,14 +1,14 @@
-mod analysis;
 mod database;
-mod parsers;
+pub mod parsers;
 
 use database::create_genome_database;
-use parsers::twenty_three_and_me;
+use parsers::parse_genome_file;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::Path;
 
-/// Process a 23andMe file and create an SQLite database.
+/// Process a genome file and create an SQLite database.
+/// Auto-detects format: 23andMe, AncestryDNA, VCF, PGP Harvard, etc.
 ///
 /// Returns a newly-allocated C string containing the full path to the
 /// created database file on success, or a null pointer on error.
@@ -20,7 +20,7 @@ use std::path::Path;
 /// - Passing null or invalid pointers, or freeing the returned pointer by any
 ///   other means is undefined behavior.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn process_23andme_file(
+pub unsafe extern "C" fn process_genome_file(
     input_path: *const c_char,
     custom_name: *const c_char,
     output_dir: *const c_char,
@@ -61,6 +61,17 @@ pub unsafe extern "C" fn process_23andme_file(
     }
 }
 
+/// Legacy alias for backwards compatibility with older native modules
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn process_23andme_file(
+    input_path: *const c_char,
+    custom_name: *const c_char,
+    output_dir: *const c_char,
+) -> *mut c_char {
+    // Just call the new function
+    unsafe { process_genome_file(input_path, custom_name, output_dir) }
+}
+
 fn process_file_internal(
     input_path: &str,
     custom_name: &str,
@@ -68,12 +79,14 @@ fn process_file_internal(
 ) -> Result<String, Box<dyn std::error::Error>> {
     eprintln!("Rust: Starting to process file: {}", input_path);
 
-    // Parse the 23andMe file
-    let parse_result = twenty_three_and_me::parse_23andme_file(Path::new(input_path))?;
+    // Auto-detect format and parse the genome file
+    let parse_result = parse_genome_file(Path::new(input_path))?;
 
     eprintln!(
-        "Rust: Parsed {} variants, {} with rsIDs",
-        parse_result.metadata.total_variants, parse_result.metadata.rsid_count
+        "Rust: Parsed {} variants ({} with rsIDs) from {} format",
+        parse_result.metadata.total_variants,
+        parse_result.metadata.rsid_count,
+        parse_result.metadata.source_format
     );
 
     // Create output SQLite file path in SQLite subdirectory
@@ -116,16 +129,9 @@ pub unsafe extern "C" fn free_string(ptr: *mut c_char) {
     }
 }
 
-// Keep the existing add function for testing
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
 /// cbindgen:ignore
 #[cfg(target_os = "android")]
 pub mod android {
-    use crate::analysis;
     use crate::process_file_internal;
     use jni::JNIEnv;
     use jni::objects::JClass;
@@ -156,98 +162,15 @@ pub mod android {
         }
     }
 
-    /// JNI entrypoint for the rust_add function.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_rustAdd(
-        _env: JNIEnv,
-        _class: JClass,
-        a: sys::jint,
-        b: sys::jint,
-    ) -> sys::jint {
-        crate::rust_add(a, b)
-    }
-
-    /// JNI entrypoint for ClinVar analysis
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn Java_expo_modules_biovault_ExpoBiovaultModule_analyzeClinVar<
-        'local,
-    >(
-        mut env: JNIEnv<'local>,
-        _class: JClass<'local>,
-        user_db_path: jni::objects::JString<'local>,
-        clinvar_db_path: jni::objects::JString<'local>,
-    ) -> jni::objects::JString<'local> {
-        let user_db_str: String = env.get_string(&user_db_path).unwrap().into();
-        let clinvar_db_str: String = env.get_string(&clinvar_db_path).unwrap().into();
-
-        match analysis::analyze_clinvar_matches(&user_db_str, &clinvar_db_str) {
-            Ok(result) => {
-                match serde_json::to_string(&result) {
-                    Ok(json) => env.new_string(json).unwrap(),
-                    Err(_) => env.new_string("ERROR_SERIALIZATION").unwrap(),
-                }
-            }
-            Err(_) => env.new_string("ERROR_ANALYSIS").unwrap(),
-        }
-    }
-}
-/// Analyze user genome against ClinVar database
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn analyze_clinvar(
-    user_db_path: *const c_char,
-    clinvar_db_path: *const c_char,
-) -> *mut c_char {
-    let user_db_path = unsafe {
-        match CStr::from_ptr(user_db_path).to_str() {
-            Ok(s) => s,
-            Err(_) => return std::ptr::null_mut(),
-        }
-    };
-
-    let clinvar_db_path = unsafe {
-        match CStr::from_ptr(clinvar_db_path).to_str() {
-            Ok(s) => s,
-            Err(_) => return std::ptr::null_mut(),
-        }
-    };
-
-    match analysis::analyze_clinvar_matches(user_db_path, clinvar_db_path) {
-        Ok(result) => {
-            match serde_json::to_string(&result) {
-                Ok(json) => match CString::new(json) {
-                    Ok(c_string) => c_string.into_raw(),
-                    Err(e) => {
-                        eprintln!("Failed to create CString: {}", e);
-                        std::ptr::null_mut()
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Failed to serialize result: {}", e);
-                    std::ptr::null_mut()
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Rust analysis failed: {}", e);
-            std::ptr::null_mut()
-        }
-    }
 }
 
-/// Public, safe Rust API to process a 23andMe file and create an SQLite DB.
+/// Public, safe Rust API to process any supported genome file and create an SQLite DB.
+/// Auto-detects format: 23andMe, AncestryDNA, VCF (.vcf/.vcf.gz/.vcf.bz2), PGP Harvard.
 /// Returns the full path to the created database file.
-pub fn process_23andme(
+pub fn process_genome(
     input_path: &str,
     custom_name: &str,
     output_dir: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     process_file_internal(input_path, custom_name, output_dir)
-}
-
-/// Public, safe Rust API for ClinVar analysis
-pub fn analyze_clinvar_safe(
-    user_db_path: &str,
-    clinvar_db_path: &str,
-) -> Result<analysis::AnalysisResult, Box<dyn std::error::Error>> {
-    analysis::analyze_clinvar_matches(user_db_path, clinvar_db_path)
 }

@@ -77,18 +77,22 @@ fn cmd_parse(mut args: impl Iterator<Item = String>) -> i32 {
             .to_string()
     });
 
-    match biovault_rust_lib::process_23andme(&input_path, &derived_name, &output_dir) {
+    // Process the file with universal parser
+    match biovault_rust_lib::process_genome(&input_path, &derived_name, &output_dir) {
         Ok(db_path) => {
             if json {
-                // Minimal JSON to avoid adding dependencies
-                println!("{{\"db_path\":\"{}\"}}", db_path.replace('"', "\\\""));
+                println!("{{\"success\":true,\"database_path\":\"{}\"}}", db_path);
             } else {
-                println!("{}", db_path);
+                println!("Success! Database created at: {}", db_path);
             }
             0
         }
-        Err(err) => {
-            eprintln!("Error: {}", err);
+        Err(e) => {
+            if json {
+                println!("{{\"success\":false,\"error\":\"{}\"}}", e);
+            } else {
+                eprintln!("Error: {}", e);
+            }
             1
         }
     }
@@ -130,10 +134,14 @@ fn main() {
                 std::process::exit(1);
             }
 
-            match biovault_rust_lib::process_23andme(&input_path, &custom_name, &output_dir) {
-                Ok(db_path) => println!("{}", db_path),
-                Err(err) => {
-                    eprintln!("Error: {}", err);
+            // Process with universal parser
+            match biovault_rust_lib::process_genome(&input_path, &custom_name, &output_dir) {
+                Ok(db_path) => {
+                    println!("Success! Database created at: {}", db_path);
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
             }
