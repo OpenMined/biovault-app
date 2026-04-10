@@ -7,7 +7,7 @@ import java.net.URL
 class ExpoBiovaultModule : Module() {
   companion object {
     init {
-      System.loadLibrary("biovault_rust_lib")
+      System.loadLibrary("expo_biovault_ffi")
     }
   }
 

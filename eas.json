@@ -10,7 +10,7 @@
 			"env": {
 				"APP_VARIANT": "development"
 			},
-			"resourceClass": "large"
+			"resourceClass": "medium"
 		},
 		"preview": {
 			"distribution": "internal",
@@ -18,11 +18,11 @@
 				"APP_VARIANT": "preview"
 			},
 			"autoIncrement": true,
-			"resourceClass": "large"
+			"resourceClass": "medium"
 		},
 		"production": {
 			"autoIncrement": true,
-			"resourceClass": "large"
+			"resourceClass": "medium"
 		}
 	},
 	"submit": {

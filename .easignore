@@ -21,20 +21,29 @@ build/
 .tmp/
 .temp/
 coverage/
+expo-env.d.ts
+*.tsbuildinfo
+*.map
 
 # Native project directories (managed workflow - root level only)
 /ios/
 /android/
 .gradle/
+.kotlin/
 Pods/
 DerivedData/
+*.xcworkspace
+*.xcodeproj
+*.xcuserdata/
+*.xcuserstate
+*.orig.*
+.metro-health-check*
 
 # Rust build artifacts
 biovault_rust_lib/target/
 **/target/
 
-# Lockfiles (per user request)
-package-lock.json
+# Lockfiles
 yarn.lock
 pnpm-lock.yaml
 bun.lockb
@@ -72,9 +81,15 @@ Thumbs.db
 .cursor/
 *.iml
 *.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.trace
+*.stackdump
+*.swp
+*.swo
+*.pem
 
 # Large binary artifacts and archives
 *.iso
@@ -85,5 +100,16 @@ yarn-error.log*
 *.apk
 *.aab
 *.ipa
+*.a
 
-
+# Repo-specific files not needed for remote builds
+app-example
+notebooks/.ipynb_checkpoints/
+notebooks/downloads/
+notebooks/work/
+output/
+.claude/*
+data/*
+modules/expo-monty/android/src/main/jniLibs/
+modules/expo-monty/android/build/
+modules/expo-biovault/android/build/
