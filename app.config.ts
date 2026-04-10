@@ -78,6 +78,7 @@ const config: ExpoConfig = {
 		},
 	},
 	plugins: [
+		'expo-asset',
 		'expo-font',
 		'expo-sqlite',
 		'expo-web-browser',
