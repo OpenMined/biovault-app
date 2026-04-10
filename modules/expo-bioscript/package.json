@@ -1,7 +1,7 @@
 {
   "name": "expo-bioscript",
   "version": "0.1.0",
-  "description": "Expo native module for integrating the BioScript runtime.",
+  "description": "Expo native module wrapper for running the BioScript runtime inside biovault-app.",
   "main": "src/index.ts",
   "react-native": "src/index.ts",
   "types": "src/index.ts",
