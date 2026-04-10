@@ -1,0 +1,43 @@
+{
+  "name": "expo-monty",
+  "version": "0.1.0",
+  "description": "Expo native module for integrating the Monty runtime.",
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "sideEffects": false,
+  "files": [
+    "src",
+    "android",
+    "ios",
+    "rust",
+    "scripts",
+    "vendor",
+    "expo-module.config.json",
+    "README.md"
+  ],
+  "keywords": [
+    "expo",
+    "react-native",
+    "monty",
+    "rust"
+  ],
+  "author": "kj",
+  "license": "MIT",
+  "homepage": "https://github.com/pydantic/monty",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pydantic/monty"
+  },
+  "scripts": {
+    "build:ios:rust": "./scripts/build-rust-ios.sh",
+    "test:rust": "cargo test --manifest-path rust/Cargo.toml"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react-native": "*"
+  }
+}

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Coverage runner for the Rust library crate using cargo-llvm-cov.
-# - Mirrors test.sh by operating inside ./biovault_rust_lib
+# - Mirrors test.sh by operating inside ./modules/expo-biovault/rust
 # - Generates HTML report and LCOV file
 # - Prints a summary to stdout
 
@@ -28,7 +28,7 @@ for arg in "$@"; do
 done
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cd "$ROOT_DIR/biovault_rust_lib"
+cd "$ROOT_DIR/modules/expo-biovault/rust"
 
 echo "==> Formatting and linting (like test.sh)"
 cargo fmt
@@ -105,9 +105,9 @@ cargo llvm-cov report --summary-only
 # Best-effort path to HTML report (cargo-llvm-cov default)
 HTML_DIR="target/llvm-cov/html"
 if [[ -d "$HTML_DIR" ]]; then
-  echo "HTML report: biovault_rust_lib/$HTML_DIR/index.html"
+  echo "HTML report: modules/expo-biovault/rust/$HTML_DIR/index.html"
 else
   echo "HTML report directory not found. cargo-llvm-cov typically writes to target/llvm-cov/html" >&2
 fi
 
-echo "LCOV file: biovault_rust_lib/$LCOV_OUT"
+echo "LCOV file: modules/expo-biovault/rust/$LCOV_OUT"

@@ -187,7 +187,7 @@ modules/expo-biovault/
 
 ### Adding New Rust Functions
 
-1. **Add to Rust** (`biovault_rust_lib/src/lib.rs`):
+1. **Add to Rust** (`modules/expo-biovault/rust/src/lib.rs`):
 
    ```rust
    #[unsafe(no_mangle)]

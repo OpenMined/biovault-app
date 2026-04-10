@@ -1,0 +1,14 @@
+[package]
+name = "expo_monty_ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "expo_monty_ffi"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+jni = "0.21"
+monty = { path = "../vendor/monty/crates/monty" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

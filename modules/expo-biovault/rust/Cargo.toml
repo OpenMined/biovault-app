@@ -1,0 +1,22 @@
+[package]
+name = "expo_biovault_ffi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+zip = "2.2"
+chrono = { version = "0.4", features = ["serde"] }
+jni = "0.21.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+flate2 = "1.0"  # For .gz decompression
+bzip2 = "0.4"   # For .bz2 decompression
+
+[lib]
+name = "expo_biovault_ffi"
+crate-type = [
+    "rlib",
+    "staticlib",
+    "cdylib"
+]

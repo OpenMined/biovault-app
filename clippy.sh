@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd biovault_rust_lib
+cd modules/expo-biovault/rust
 
 # Enforce formatting
 cargo fmt --all

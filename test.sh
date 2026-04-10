@@ -10,7 +10,7 @@ set -euo pipefail
 
 MODE=${1:---fast}
 
-cd biovault_rust_lib
+cd modules/expo-biovault/rust
 
 echo "==> cargo fmt"
 cargo fmt
