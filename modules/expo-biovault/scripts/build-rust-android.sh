@@ -79,6 +79,11 @@ for ABI in "$@"; do
 done
 
 mkdir -p "$CARGO_HOME_DIR" "$JNI_LIBS_DIR"
+rm -f \
+  "$JNI_LIBS_DIR/arm64-v8a/libbiovault_rust_lib.so" \
+  "$JNI_LIBS_DIR/armeabi-v7a/libbiovault_rust_lib.so" \
+  "$JNI_LIBS_DIR/x86/libbiovault_rust_lib.so" \
+  "$JNI_LIBS_DIR/x86_64/libbiovault_rust_lib.so"
 
 cd "$RUST_DIR"
 # shellcheck disable=SC2086
