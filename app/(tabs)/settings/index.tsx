@@ -165,6 +165,12 @@ export default function SettingsScreen() {
 					{/* Developer */}
 					<Animated.View entering={FadeInUp.duration(300).delay(250)} style={styles.section}>
 						<Text style={styles.sectionLabel}>DEVELOPER OPTIONS</Text>
+						<TouchableOpacity
+							style={styles.devCard}
+							onPress={() => router.push('/settings/test' as const)}
+						>
+							<Text style={styles.devCardText}>Run Test Screen</Text>
+						</TouchableOpacity>
 						<TouchableOpacity style={styles.devCard} onPress={handleResetOnboarding}>
 							<Text style={styles.devCardText}>Reset Onboarding</Text>
 						</TouchableOpacity>

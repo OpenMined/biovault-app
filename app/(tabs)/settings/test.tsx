@@ -41,7 +41,6 @@ const PICKER_MIME_TYPES = [
 	'application/gzip',
 	'application/x-gzip',
 	'application/x-bzip2',
-	'application/octet-stream',
 ]
 const APOL1_SCRIPT = `G1_SITE_1 = bioscript.variant(
     rsid="rs73885319",

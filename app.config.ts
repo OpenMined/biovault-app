@@ -1,6 +1,7 @@
 import { ExpoConfig } from 'expo/config'
 
-const IS_DEV = process.env.APP_VARIANT === 'development'
+const APP_VARIANT = process.env.APP_VARIANT ?? 'development'
+const IS_DEV = APP_VARIANT === 'development'
 const IS_PREVIEW = process.env.APP_VARIANT === 'preview'
 
 interface EnvironmentValues {
@@ -47,7 +48,6 @@ const config: ExpoConfig = {
 	orientation: 'portrait',
 	scheme: 'biovaultapp',
 	userInterfaceStyle: 'light',
-	newArchEnabled: true,
 	icon: './assets/images/adaptive-icon.png',
 	ios: {
 		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
@@ -64,8 +64,7 @@ const config: ExpoConfig = {
 		package: getEnvironmentValues().package,
 		adaptiveIcon: {
 			foregroundImage: './assets/images/adaptive-icon.png',
-		},
-		edgeToEdgeEnabled: true,
+		}
 	},
 	web: {
 		bundler: 'metro',

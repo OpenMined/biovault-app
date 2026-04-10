@@ -1,4 +1,5 @@
 import { initAnalytics } from '@/lib/analytics'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { Stack } from 'expo-router'
 import { SQLiteProvider } from 'expo-sqlite'
 import { StatusBar } from 'expo-status-bar'
@@ -11,6 +12,8 @@ const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.bio
 
 // ts-prune-ignore-next
 export default function RootLayout() {
+	usePushNotifications()
+
 	useEffect(() => {
 		analytics.startSession().catch(console.error)
 		return () => {

@@ -1,4 +1,4 @@
-import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs'
+import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { Platform } from 'react-native'
 
 export default function TabLayout() {
@@ -9,63 +9,50 @@ export default function TabLayout() {
 			iconColor={Platform.OS === 'ios' ? undefined : '#059669'}
 		>
 			<NativeTabs.Trigger name="index">
-				<Label>Vault</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'lock.app.dashed', selected: 'lock.app.dashed' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_compass" />
-				)}
+				<NativeTabs.Trigger.Label>Vault</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{ default: 'lock.app.dashed', selected: 'lock.app.dashed' }}
+					drawable="ic_menu_compass"
+				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger hidden name="insights">
-				<Label>Insights</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon
-						sf={{
-							default: 'brain.head.profile',
-							selected: 'brain.filled.head.profile',
-						}}
-					/>
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_search" />
-				)}
+				<NativeTabs.Trigger.Label>Insights</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{
+						default: 'brain.head.profile',
+						selected: 'brain.filled.head.profile',
+					}}
+					drawable="ic_menu_search"
+				/>
 			</NativeTabs.Trigger>
-			<NativeTabs.Trigger hidden name="feed">
-				<Label>Feed</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'newspaper', selected: 'newspaper.fill' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_agenda" />
-				)}
+			<NativeTabs.Trigger name="feed">
+				<NativeTabs.Trigger.Label>Notifications</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{ default: 'bell', selected: 'bell.fill' }}
+					drawable="ic_menu_agenda"
+				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger hidden name="research">
-				<Label>Research</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon
-						sf={{
-							default: 'person.line.dotted.person',
-							selected: 'person.line.dotted.person.fill',
-						}}
-						drawable="ic_menu_share"
-					/>
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_share" />
-				)}
+				<NativeTabs.Trigger.Label>Research</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{
+						default: 'person.line.dotted.person',
+						selected: 'person.line.dotted.person.fill',
+					}}
+					drawable="ic_menu_share"
+				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="settings">
-				<Label>Settings</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_preferences" />
-				)}
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger name="test">
-				<Label>Test</Label>
-				{Platform.OS === 'ios' ? (
-					<Icon sf={{ default: 'doc.badge.plus', selected: 'doc.badge.plus' }} />
-				) : (
-					<Icon selectedColor={'white'} drawable="ic_menu_add" />
-				)}
+				<NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
+					drawable="ic_menu_preferences"
+				/>
 			</NativeTabs.Trigger>
 		</NativeTabs>
 	)
