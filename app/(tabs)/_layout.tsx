@@ -59,6 +59,14 @@ export default function TabLayout() {
 					<Icon selectedColor={'white'} drawable="ic_menu_preferences" />
 				)}
 			</NativeTabs.Trigger>
+			<NativeTabs.Trigger name="test">
+				<Label>Test</Label>
+				{Platform.OS === 'ios' ? (
+					<Icon sf={{ default: 'doc.badge.plus', selected: 'doc.badge.plus' }} />
+				) : (
+					<Icon selectedColor={'white'} drawable="ic_menu_add" />
+				)}
+			</NativeTabs.Trigger>
 		</NativeTabs>
 	)
 }

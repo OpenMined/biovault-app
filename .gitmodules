@@ -1,3 +1,7 @@
 [submodule "biovault-data"]
 	path = biovault-data
 	url = https://github.com/OpenMined/biovault-data.git
+[submodule "bioscript"]
+	path = bioscript
+	url = https://github.com/OpenMined/bioscript.git
+	branch = keelan/expo-bioscript

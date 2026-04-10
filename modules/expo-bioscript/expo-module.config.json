@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["ExpoBioscriptModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.bioscript.ExpoBioscriptModule"]
+  }
+}
