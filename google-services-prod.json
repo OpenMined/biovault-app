@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "130479672731",
+    "project_id": "biovault-63ca4",
+    "storage_bucket": "biovault-63ca4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:130479672731:android:4e7e1c4777086182b8253e",
+        "android_client_info": {
+          "package_name": "org.openmined.biovault"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3vfMKSKkHKC7YIxRmGaRJwUjo4SvrjnI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

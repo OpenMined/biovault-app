@@ -3,6 +3,9 @@ import { ExpoConfig } from 'expo/config'
 const APP_VARIANT = process.env.APP_VARIANT ?? 'development'
 const IS_DEV = APP_VARIANT === 'development'
 const IS_PREVIEW = process.env.APP_VARIANT === 'preview'
+const ANDROID_GOOGLE_SERVICES_FILE = IS_DEV
+	? './google-services-dev.json'
+	: './google-services-prod.json'
 
 interface EnvironmentValues {
 	name: string
@@ -62,6 +65,7 @@ const config: ExpoConfig = {
 	},
 	android: {
 		package: getEnvironmentValues().package,
+		googleServicesFile: ANDROID_GOOGLE_SERVICES_FILE,
 		adaptiveIcon: {
 			foregroundImage: './assets/images/adaptive-icon.png',
 		}
