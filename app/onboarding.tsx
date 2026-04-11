@@ -6,14 +6,54 @@ import { omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import Checkbox from 'expo-checkbox'
 import { router } from 'expo-router'
 import { MeshGradientView } from 'expo-mesh-gradient'
-import { useState } from 'react'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function OnboardingScreen() {
 	const [hasAgreed, setHasAgreed] = useState(
 		Storage.getItemSync('hasAcceptedResearchDisclaimer') === 'true'
 	)
+	const titleAnim = useRef(new Animated.Value(0)).current
+	const privacyAnim = useRef(new Animated.Value(0)).current
+	const researchAnim = useRef(new Animated.Value(0)).current
+	const consentAnim = useRef(new Animated.Value(0)).current
+	const buttonAnim = useRef(new Animated.Value(0)).current
+
+	useEffect(() => {
+		Animated.stagger(90, [
+			Animated.timing(titleAnim, {
+				toValue: 1,
+				duration: 320,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+			Animated.timing(privacyAnim, {
+				toValue: 1,
+				duration: 320,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+			Animated.timing(researchAnim, {
+				toValue: 1,
+				duration: 320,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+			Animated.timing(consentAnim, {
+				toValue: 1,
+				duration: 320,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+			Animated.timing(buttonAnim, {
+				toValue: 1,
+				duration: 320,
+				easing: Easing.out(Easing.cubic),
+				useNativeDriver: true,
+			}),
+		]).start()
+	}, [buttonAnim, consentAnim, privacyAnim, researchAnim, titleAnim])
 
 	const handleContinue = () => {
 		if (!hasAgreed) {
@@ -58,96 +98,83 @@ export default function OnboardingScreen() {
 			<View style={styles.screenOverlay} />
 
 			<SafeAreaView style={styles.safeArea}>
-				<View style={styles.content}>
-					<View style={styles.mainSection}>
-						<View style={styles.heroSection}>
-							<OMText variant="h3" style={styles.title}>
-								Private genomic analysis on your device.
-							</OMText>
-						</View>
+					<View style={styles.content}>
+						<View style={styles.mainSection}>
+							<Animated.View style={[styles.heroSection, getFadeUpStyle(titleAnim, 18)]}>
+								<OMText variant="h3" style={styles.title}>
+									Private genomic analysis on your device.
+								</OMText>
+							</Animated.View>
 
-						<View style={styles.disclaimerCard}>
-							<View style={styles.privacySection}>
-								<View style={styles.cardHeader}>
-									<OMIcon
-										name="shield-checkmark-outline"
-										tone="accent"
-										containerTone="soft"
-										containerStyle={styles.cardIcon}
-									/>
-									<View style={styles.cardHeaderText}>
-										<OMText variant="headline" style={styles.cardTitle}>
-											Private by default
-										</OMText>
-										<OMText variant="body" style={styles.cardLead}>
-											Your genomic files stay on your phone and are never uploaded.
-										</OMText>
-									</View>
-								</View>
-								<View style={styles.signalList}>
-									<View style={styles.signalRow}>
-										<View style={styles.signalDot} />
+							<View style={styles.infoSections}>
+								<Animated.View style={[styles.infoSection, getFadeUpStyle(privacyAnim, 16)]}>
+									<View style={styles.signalList}>
 										<OMText variant="body" style={styles.signalText}>
-											Analysis runs locally on your device.
+											Your files stay on your phone.
 										</OMText>
-									</View>
-									<View style={styles.signalRow}>
-										<View style={styles.signalDot} />
+										<OMText variant="body" style={styles.signalText}>
+											Analysis runs locally.
+										</OMText>
 										<OMText variant="body" style={styles.signalText}>
 											Results are visible only to you.
 										</OMText>
 									</View>
-								</View>
-							</View>
+								</Animated.View>
 
-							<View style={styles.cardDivider} />
+								<View style={styles.sectionDivider} />
 
-							<View style={styles.cardHeader}>
-								<OMIcon
-									name="flask-outline"
-									tone="default"
-									containerTone="soft"
-									containerStyle={styles.disclaimerIcon}
-								/>
-								<View style={styles.cardHeaderText}>
-									<OMText variant="headline" style={styles.cardTitle}>
-										Research use only
-									</OMText>
-									<OMText variant="body" style={styles.disclaimerBody}>
-										BioVault is a research tool, not a medical product. It does not provide
-										medical advice and must not be used for diagnosis or treatment.
-									</OMText>
-								</View>
+								<Animated.View style={[styles.infoSection, getFadeUpStyle(researchAnim, 16)]}>
+									<View style={styles.cardHeader}>
+										<OMIcon
+											name="flask-outline"
+											tone="default"
+											containerTone="soft"
+											containerStyle={styles.disclaimerIcon}
+										/>
+										<View style={styles.cardHeaderText}>
+											<OMText variant="headline" style={styles.cardTitle}>
+												Research use only
+											</OMText>
+											<OMText variant="body" style={styles.disclaimerBody}>
+												BioVault is a research tool, not a medical product. Do not use it for
+												diagnosis or treatment.
+											</OMText>
+										</View>
+									</View>
+								</Animated.View>
 							</View>
 						</View>
-					</View>
 
-					<View style={styles.footer}>
-						<Pressable
-							onPress={() => setHasAgreed((value) => !value)}
-							style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
-						>
-							<Checkbox
-								value={hasAgreed}
-								onValueChange={setHasAgreed}
-								color={hasAgreed ? omTheme.link : undefined}
-								style={styles.checkbox}
-							/>
-							<OMText variant="body" style={styles.checkboxText}>
-								I understand that BioVault is for research use only.
-							</OMText>
-						</Pressable>
+						<View style={styles.footer}>
+							<Animated.View style={getFadeUpStyle(consentAnim, 14)}>
+								<Pressable
+									onPress={() => setHasAgreed((value) => !value)}
+									style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
+								>
+									<Checkbox
+										value={hasAgreed}
+										onValueChange={setHasAgreed}
+										color={hasAgreed ? omTheme.link : undefined}
+										style={styles.checkbox}
+									/>
+									<OMText variant="body" style={styles.checkboxText}>
+										I understand that BioVault is for research use only.
+									</OMText>
+								</Pressable>
+							</Animated.View>
 
-						<OMButton
-							label="Continue"
-							iconName="arrow-forward-outline"
-							onPress={handleContinue}
-							disabled={!hasAgreed}
-							style={[styles.continueButton, hasAgreed && styles.continueButtonEnabled]}
-						/>
+							<Animated.View style={getFadeUpStyle(buttonAnim, 12)}>
+								<OMButton
+									label="Continue"
+									iconName="arrow-forward-outline"
+									onPress={handleContinue}
+									disabled={!hasAgreed}
+									style={[styles.continueButton, hasAgreed && styles.continueButtonEnabled]}
+								/>
+							</Animated.View>
+						</View>
 					</View>
-				</View>
-			</SafeAreaView>
+				</SafeAreaView>
 		</View>
 	)
 }
@@ -180,15 +207,15 @@ const styles = StyleSheet.create({
 		maxWidth: 420,
 		width: '100%',
 		alignSelf: 'center',
-	},
-	mainSection: {
-		flex: 1,
 		justifyContent: 'center',
 		gap: omSpacing.m,
 	},
+	mainSection: {
+		gap: omSpacing.s,
+	},
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
-		paddingTop: omSpacing.xs,
+		paddingTop: 0,
 		paddingBottom: omSpacing.xs,
 	},
 	title: {
@@ -198,49 +225,33 @@ const styles = StyleSheet.create({
 		lineHeight: 43,
 		maxWidth: 320,
 	},
-	disclaimerCard: {
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.m,
-		borderRadius: 20,
-		backgroundColor: 'rgba(252,252,253,0.94)',
-		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
-		shadowColor: '#17161d',
-		shadowOffset: { width: 0, height: 10 },
-		shadowOpacity: 0.05,
-		shadowRadius: 20,
-		elevation: 2,
+	infoSections: {
+		gap: omSpacing.m,
+		paddingHorizontal: omSpacing.xs,
+	},
+	infoSection: {
+		paddingVertical: omSpacing.s,
 	},
 	cardHeader: {
 		flexDirection: 'row',
 		alignItems: 'flex-start',
-		gap: omSpacing.m,
-	},
-	privacySection: {
 		gap: omSpacing.s,
 	},
-	cardDivider: {
+	sectionDivider: {
 		height: 1,
 		backgroundColor: 'rgba(39,37,50,0.08)',
-		marginVertical: omSpacing.m,
-	},
-	cardIcon: {
-		backgroundColor: 'rgba(82,168,197,0.12)',
+		marginHorizontal: omSpacing.xs,
 	},
 	disclaimerIcon: {
-		backgroundColor: 'rgba(244,243,246,0.92)',
+		backgroundColor: 'transparent',
+		width: 24,
+		height: 24,
 	},
 	cardHeaderText: {
 		flex: 1,
 	},
 	cardTitle: {
 		color: omTheme.textHeadline,
-	},
-	cardLead: {
-		marginTop: omSpacing.xs,
-		color: omTheme.textBody,
-		fontSize: 16,
-		lineHeight: 22,
 	},
 	disclaimerBody: {
 		marginTop: omSpacing.xs,
@@ -250,29 +261,16 @@ const styles = StyleSheet.create({
 	},
 	signalList: {
 		marginTop: omSpacing.m,
-		gap: omSpacing.s,
-	},
-	signalRow: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		gap: 10,
-	},
-	signalDot: {
-		width: 8,
-		height: 8,
-		borderRadius: omRadius.full,
-		backgroundColor: omTheme.link,
-		marginTop: 7,
+		gap: omSpacing.m,
 	},
 	signalText: {
-		flex: 1,
 		color: omTheme.textHeadline,
 		fontSize: 15,
 		lineHeight: 21,
 	},
 	footer: {
-		gap: omSpacing.m,
-		paddingTop: omSpacing.m,
+		gap: omSpacing.s,
+		paddingTop: 0,
 	},
 	checkboxRow: {
 		flexDirection: 'row',
@@ -301,9 +299,9 @@ const styles = StyleSheet.create({
 	continueButton: {
 		minHeight: 52,
 		borderRadius: 16,
-		backgroundColor: 'rgba(39,37,50,0.18)',
+		backgroundColor: 'rgba(39,37,50,0.28)',
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
+		borderColor: 'rgba(39,37,50,0.12)',
 	},
 	continueButtonEnabled: {
 		backgroundColor: omTheme.primary,
@@ -315,3 +313,17 @@ const styles = StyleSheet.create({
 		elevation: 4,
 	},
 })
+
+function getFadeUpStyle(progress: Animated.Value, distance: number) {
+	return {
+		opacity: progress,
+		transform: [
+			{
+				translateY: progress.interpolate({
+					inputRange: [0, 1],
+					outputRange: [distance, 0],
+				}),
+			},
+		],
+	}
+}
