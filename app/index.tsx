@@ -4,8 +4,9 @@ import { Storage } from '@/lib/storage'
 // ts-prune-ignore-next
 export default function Index() {
 	const completedOnboarding = Storage.getItemSync('hasCompletedOnboarding')
-	if (completedOnboarding) {
-		return <Redirect href="/(tabs)" />
+	const acceptedDisclaimer = Storage.getItemSync('hasAcceptedResearchDisclaimer')
+	if (completedOnboarding && acceptedDisclaimer) {
+		return <Redirect href={'/(tabs)' as any} />
 	}
 	return <Redirect href="/onboarding" />
 }

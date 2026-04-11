@@ -28,6 +28,7 @@ export default function SettingsScreen() {
 					style: 'destructive',
 					onPress: () => {
 						Storage.removeItemSync('hasCompletedOnboarding')
+						Storage.removeItemSync('hasAcceptedResearchDisclaimer')
 						Alert.alert('Success', 'Onboarding has been reset.', [
 							{
 								text: 'Go to Onboarding',
