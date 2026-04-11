@@ -1,13 +1,14 @@
 import { OMCard } from '@/components/ui/OMCard'
 import { OMText } from '@/components/ui/OMText'
 import { omGradients, omRadius, omSpacing, omSurfaces, omTheme } from '@/styles/brand'
-import { MeshGradientView } from 'expo-mesh-gradient'
+// import { MeshGradientView } from 'expo-mesh-gradient'
 import { StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TestGradientScreen() {
 	return (
 		<View style={styles.screen}>
+			{/*
 			<MeshGradientView
 				style={styles.screenMesh}
 				ignoresSafeArea
@@ -36,6 +37,7 @@ export default function TestGradientScreen() {
 					[1, 1],
 				]}
 			/>
+			*/}
 			<View style={styles.screenOverlay} />
 
 			<SafeAreaView style={styles.safeArea}>

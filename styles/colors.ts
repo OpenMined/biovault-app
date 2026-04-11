@@ -67,9 +67,9 @@ export const lightTheme: ColorTheme = {
 	primaryDark: '#2d5a4f',
 
 	// Backgrounds
-	background: '#f8fffe',
+	background: '#fcfcfd',
 	surface: '#ffffff',
-	surfaceAlt: '#f8fffe',
+	surfaceAlt: '#fcfcfd',
 
 	// Text colors
 	textPrimary: '#2d5a4f',
@@ -115,7 +115,7 @@ export const lightTheme: ColorTheme = {
 	bgAnalysis: '#f0f9f6',
 	bgInsights: '#e8f5f0',
 	bgResearch: '#e0f2e7',
-	bgControl: '#f8fffe',
+	bgControl: '#fcfcfd',
 }
 
 // ts-prune-ignore-next

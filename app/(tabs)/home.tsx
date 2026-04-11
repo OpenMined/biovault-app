@@ -1,6 +1,6 @@
 import { OMText } from '@/components/ui/OMText'
 import { bioVaultGradientAnchors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { MeshGradientView } from 'expo-mesh-gradient'
+// import { MeshGradientView } from 'expo-mesh-gradient'
 import { StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function HomeScreen() {
 	return (
 		<View style={styles.screen}>
+			{/*
 			<MeshGradientView
 				style={styles.screenMesh}
 				ignoresSafeArea
@@ -36,6 +37,7 @@ export default function HomeScreen() {
 					[1, 1],
 				]}
 			/>
+			*/}
 			<View style={styles.overlay} />
 
 			<SafeAreaView style={styles.safeArea}>
