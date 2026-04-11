@@ -7,7 +7,7 @@ import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
 import { MeshGradientView } from 'expo-mesh-gradient'
 import { useState } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function OnboardingScreen() {
@@ -60,7 +60,6 @@ export default function OnboardingScreen() {
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.content}>
 					<View style={styles.heroSection}>
-						<View style={styles.heroGlow} />
 						<OMText variant="h3" style={styles.title}>
 							Welcome to BioVault
 						</OMText>
@@ -99,7 +98,10 @@ export default function OnboardingScreen() {
 							BioVault is a research tool, not a medical product, and it does not provide medical
 							advice. Do not use it to diagnose or treat any condition.
 						</OMText>
-						<View style={styles.checkboxRow}>
+						<Pressable
+							onPress={() => setHasAgreed((value) => !value)}
+							style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
+						>
 							<Checkbox
 								value={hasAgreed}
 								onValueChange={setHasAgreed}
@@ -109,7 +111,7 @@ export default function OnboardingScreen() {
 							<OMText variant="body" style={styles.checkboxText}>
 								I understand and want to continue.
 							</OMText>
-						</View>
+						</Pressable>
 					</View>
 
 					<OMButton
@@ -157,7 +159,6 @@ const styles = StyleSheet.create({
 	},
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
-		position: 'relative',
 		paddingTop: omSpacing.l,
 		paddingBottom: omSpacing.s,
 	},
@@ -186,21 +187,22 @@ const styles = StyleSheet.create({
 	linkText: {
 		textDecorationLine: 'underline',
 	},
-	heroGlow: {
-		position: 'absolute',
-		top: -4,
-		left: -8,
-		width: 140,
-		height: 140,
-		borderRadius: 999,
-		backgroundColor: 'rgba(82,168,197,0.16)',
-	},
 	checkboxRow: {
 		flexDirection: 'row',
 		alignItems: 'flex-start',
 		gap: omSpacing.m,
 		marginTop: omSpacing.l,
 		paddingTop: omSpacing.s,
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.m,
+		borderRadius: 14,
+		backgroundColor: 'rgba(255,255,255,0.42)',
+		borderWidth: 1,
+		borderColor: 'rgba(39,37,50,0.08)',
+	},
+	checkboxRowChecked: {
+		backgroundColor: 'rgba(82,168,197,0.14)',
+		borderColor: 'rgba(82,168,197,0.24)',
 	},
 	checkbox: {
 		marginTop: 2,
