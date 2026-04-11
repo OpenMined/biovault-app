@@ -10,16 +10,28 @@ interface PushNotificationState {
 	notification?: Notifications.Notification
 }
 
-Notifications.setNotificationHandler({
-	handleNotification: async () => ({
-		shouldPlaySound: false,
-		shouldSetBadge: true,
-		shouldShowBanner: true,
-		shouldShowList: true,
-	}),
-})
+const notificationsAreSupported =
+	Platform.OS !== 'web' &&
+	typeof Notifications.getLastNotificationResponse === 'function' &&
+	typeof Notifications.addNotificationReceivedListener === 'function' &&
+	typeof Notifications.addNotificationResponseReceivedListener === 'function'
+
+if (notificationsAreSupported) {
+	Notifications.setNotificationHandler({
+		handleNotification: async () => ({
+			shouldPlaySound: false,
+			shouldSetBadge: true,
+			shouldShowBanner: true,
+			shouldShowList: true,
+		}),
+	})
+}
 
 async function registerForPushNotificationsAsync(): Promise<string | undefined> {
+	if (!notificationsAreSupported) {
+		return undefined
+	}
+
 	if (Platform.OS === 'android') {
 		await Notifications.setNotificationChannelAsync('default', {
 			name: 'default',
@@ -103,6 +115,10 @@ export function usePushNotifications(): PushNotificationState {
 	const router = useRouter()
 
 	useEffect(() => {
+		if (!notificationsAreSupported) {
+			return
+		}
+
 		let isMounted = true
 
 		registerForPushNotificationsAsync().then((token) => {

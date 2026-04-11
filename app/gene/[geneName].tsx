@@ -4,7 +4,6 @@
 
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import React, { useState, useEffect } from 'react'
 import {
 	ActivityIndicator,
@@ -99,7 +98,6 @@ export default function GeneDetailScreen() {
 	const [activeTab, setActiveTab] = useState<'matches' | 'news'>('matches')
 	const [newsContent, setNewsContent] = useState<string>('')
 	const [loadingNews, setLoadingNews] = useState(false)
-	const db = useSQLiteContext()
 	const theme = lightTheme
 
 	// Track gene page view with the actual gene name
@@ -145,25 +143,8 @@ export default function GeneDetailScreen() {
 				}
 			}
 
-			// Fallback: Query all variants for this gene from ClinVar
-			const geneVariants = await db.getAllAsync<ClinVarVariant>(
-				`SELECT rsid, chrom, pos, ref, alt, gene, clnsig, clnrevstat, condition
-				 FROM variants
-				 WHERE gene = ?
-				 ORDER BY
-				   CASE
-				     WHEN clnsig LIKE '%Pathogenic%' AND clnsig NOT LIKE '%Likely_pathogenic%' THEN 1
-				     WHEN clnsig LIKE '%Likely_pathogenic%' THEN 2
-				     WHEN clnsig LIKE '%Conflicting%' THEN 3
-				     WHEN clnsig LIKE '%Uncertain%' THEN 4
-				     ELSE 5
-				   END,
-				   rsid`,
-				[geneName]
-			)
-
-			setVariants(geneVariants)
-			// Without a user database, we can't determine matches
+			// SQLite-backed fallback is temporarily disabled.
+			setVariants([])
 			setUserMatches([])
 		} catch (error) {
 			console.error('Failed to load gene variants:', error)
@@ -172,7 +153,7 @@ export default function GeneDetailScreen() {
 		} finally {
 			setLoading(false)
 		}
-	}, [geneName, db, variantsParam])
+	}, [geneName, variantsParam])
 
 	const loadNewsContent = React.useCallback(async () => {
 		if (!geneName || newsContent) return // Don't reload if we already have content

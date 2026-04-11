@@ -4,15 +4,12 @@
 
 import { useAnalytics } from '@/hooks/useAnalytics'
 import {
-	addDatabaseToManifest,
 	deleteUserGenomeDatabase,
 	listUserGenomeDatabases,
 	type UserGenomeDatabase,
 } from '@/lib/genome-storage'
-import * as BioVault from '@/modules/expo-biovault'
 import { useFocusEffect } from '@react-navigation/native'
 import * as DocumentPicker from 'expo-document-picker'
-import { Paths } from 'expo-file-system'
 import { router } from 'expo-router'
 import React, { useEffect, useState } from 'react'
 import {
@@ -21,6 +18,7 @@ import {
 	Image,
 	Linking,
 	Modal,
+	Platform,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -93,153 +91,16 @@ export default function MyDNAScreen() {
 
 	const processFile = React.useCallback(
 		async (fileUri: string, fileName: string) => {
-			console.log('Processing file with Rust:', { fileUri, fileName })
-
-			setState((prev) => ({
-				...prev,
-				isProcessing: true,
-				processingMessage: 'Analyzing file format...',
-				processingStage: 'detecting',
-				detectedFormat: null,
-			}))
-
-			try {
-				// Use the proper FileSystem API for documents directory
-				const documentsPath = Paths.document.uri.replace('file://', '')
-
-				// Convert input file URI to path for Rust
-				// Note: iOS may rename files with compound extensions (.vcf.bz2 → .bz2)
-				// Our content-based detection handles this by reading file headers
-				const inputPath = fileUri.replace('file://', '')
-
-				setState((prev) => ({
-					...prev,
-					processingMessage: 'Auto-detecting format from file content...',
-					processingStage: 'detecting',
-				}))
-
-				// Use Rust to parse and create SQLite database
-				console.log('Starting Rust processing...', { inputPath, documentsPath })
-
-				// Simulate detection stage (Rust does this internally)
-				await new Promise((resolve) => setTimeout(resolve, 500))
-
-				setState((prev) => ({
-					...prev,
-					processingMessage: 'Parsing genetic variants...',
-					processingStage: 'parsing',
-				}))
-
-				const sqlitePath = await BioVault.processGenomeFile(inputPath, fileName, documentsPath)
-				console.log('Rust processing completed:', sqlitePath)
-
-				setState((prev) => ({
-					...prev,
-					processingMessage: 'Saving to secure database...',
-					processingStage: 'saving',
-				}))
-
-				// Add the newly created database to the manifest
-				await addDatabaseToManifest(sqlitePath, fileName)
-
-				setState((prev) => ({
-					...prev,
-					processingMessage: '✓ Successfully loaded!',
-					processingStage: 'complete',
-				}))
-
-				// Track successful file processing
-				trackEvent('genome_file_processed', {
-					fileName: fileName,
-					success: true,
-				})
-
-				// Refresh stored databases list
-				console.log('Refreshing stored databases list...')
-				await loadStoredDatabases()
-
-				// Small delay to show success message
-				setTimeout(() => {
-					setState((prev) => ({
-						...prev,
-						isProcessing: false,
-						processingStage: null,
-						detectedFormat: null,
-					}))
-				}, 1500)
-			} catch (error) {
-				console.error('Rust processing error:', error)
-
-				const errorMessage = String(error)
-
-				// Parse error message to provide user-friendly feedback
-				let userMessage = 'Unknown error occurred'
-				let errorTitle = 'Processing Error'
-
-				if (errorMessage.includes('Could not auto-detect format')) {
-					errorTitle = 'Unsupported File Format'
-					userMessage =
-						'This file format is not supported yet.\n\n' +
-						'Supported formats:\n' +
-						'• 23andMe (all versions)\n' +
-						'• AncestryDNA (all versions)\n' +
-						'• VCF files (.vcf, .vcf.gz, .vcf.bz2)\n' +
-						'• MyHeritage (VCF format)\n' +
-						'• Living DNA (VCF format)\n' +
-						'• Family Tree DNA (VCF format)\n' +
-						'• And others that export VCF format\n\n' +
-						'Tip: Check if your service offers a VCF or raw data download option.'
-				} else if (errorMessage.includes('Not a Complete Genomics file')) {
-					errorTitle = 'Invalid File Format'
-					userMessage =
-						'This appears to be a TSV file, but not in the expected Complete Genomics format.\n\n' +
-						'If this is genomic data, please check if your service offers:\n' +
-						'• VCF format export\n' +
-						'• 23andMe format export\n' +
-						'• AncestryDNA format export'
-				} else if (errorMessage.includes('No such file')) {
-					errorTitle = 'File Not Found'
-					userMessage = 'The selected file could not be accessed. Please try selecting it again.'
-				} else if (errorMessage.includes('Permission denied')) {
-					errorTitle = 'Permission Denied'
-					userMessage =
-						'BioVault does not have permission to access this file. Please check your file permissions.'
-				} else if (errorMessage.toLowerCase().includes('timeout')) {
-					errorTitle = 'Processing Timeout'
-					userMessage =
-						'This file is taking too long to process. It may be corrupted or in an unexpected format.'
-				} else {
-					// Generic error with helpful context
-					userMessage =
-						`Unable to process this file.\n\n` +
-						`Error: ${errorMessage.slice(0, 150)}\n\n` +
-						`Please ensure your file is:\n` +
-						`• From a supported genetic testing service\n` +
-						`• In a standard export format (not a report)\n` +
-						`• Not corrupted or password-protected`
-				}
-
-				trackEvent('genome_file_processing_error', {
-					fileName: fileName,
-					error: errorMessage.slice(0, 100),
-					errorType: errorTitle,
-				})
-
-				setState((prev) => ({
-					...prev,
-					isProcessing: false,
-					processingStage: null,
-					detectedFormat: null,
-				}))
-
-				Alert.alert(errorTitle, userMessage, [
-					{ text: 'OK' },
-					{
-						text: 'See Supported Formats',
-						onPress: () => router.push('/how-to-get-file' as any),
-					},
-				])
-			}
+			console.warn('Genome file processing is temporarily disabled while SQLite-backed storage is disabled.', {
+				fileUri,
+				fileName,
+			})
+			trackEvent('genome_file_processing_disabled', { fileName })
+			Alert.alert(
+				'Genome Import Unavailable',
+				'Genome import is temporarily disabled while SQLite-backed storage is turned off.',
+				[{ text: 'OK' }]
+			)
 		},
 		[trackEvent]
 	)
@@ -263,15 +124,17 @@ export default function MyDNAScreen() {
 
 			trackEvent('file_picker_opened', { source: 'MyDNA' })
 			const result = await DocumentPicker.getDocumentAsync({
-				type: [
-					'application/zip', // ZIP files (23andMe, AncestryDNA)
-					'text/plain', // TXT files (23andMe, AncestryDNA)
-					'text/tab-separated-values', // TSV files (PGP Harvard)
-					'text/csv', // CSV files (FTDNA)
-					'application/gzip', // .vcf.gz files
-					'application/x-bzip2', // .vcf.bz2 files
-					'*/*', // Fallback for VCF files
-				],
+				type:
+					Platform.OS === 'web'
+						? ['.txt', '.vcf', '.tsv', '.csv', '.zip', '.gz', '.bz2']
+						: [
+								'application/zip',
+								'text/plain',
+								'text/tab-separated-values',
+								'text/csv',
+								'application/gzip',
+								'application/x-bzip2',
+							],
 				copyToCacheDirectory: true,
 			})
 

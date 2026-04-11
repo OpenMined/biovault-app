@@ -1,4 +1,13 @@
-import { TouchableOpacity, Text, Alert, View, ScrollView, Linking, StyleSheet } from 'react-native'
+import {
+	TouchableOpacity,
+	Text,
+	Alert,
+	View,
+	ScrollView,
+	Linking,
+	StyleSheet,
+	Platform,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { useAnalytics } from '@/hooks/useAnalytics'
@@ -15,6 +24,38 @@ export default function SettingsScreen() {
 	})
 
 	const handleResetOnboarding = () => {
+		const resetOnboarding = () => {
+			Storage.removeItemSync('hasCompletedOnboarding')
+			Storage.removeItemSync('hasAcceptedResearchDisclaimer')
+
+			if (Platform.OS === 'web') {
+				window.alert('Onboarding has been reset.')
+				router.replace('/onboarding')
+				return
+			}
+
+			Alert.alert('Success', 'Onboarding has been reset.', [
+				{
+					text: 'Go to Onboarding',
+					onPress: () => router.replace('/onboarding'),
+				},
+				{
+					text: 'OK',
+					style: 'cancel',
+				},
+			])
+		}
+
+		if (Platform.OS === 'web') {
+			const confirmed = window.confirm(
+				'This will reset the onboarding flow and show it again on next app launch. Continue?'
+			)
+			if (confirmed) {
+				resetOnboarding()
+			}
+			return
+		}
+
 		Alert.alert(
 			'Reset Onboarding',
 			'This will reset the onboarding flow and show it again on next app launch. Continue?',
@@ -26,20 +67,7 @@ export default function SettingsScreen() {
 				{
 					text: 'Reset',
 					style: 'destructive',
-					onPress: () => {
-						Storage.removeItemSync('hasCompletedOnboarding')
-						Storage.removeItemSync('hasAcceptedResearchDisclaimer')
-						Alert.alert('Success', 'Onboarding has been reset.', [
-							{
-								text: 'Go to Onboarding',
-								onPress: () => router.replace('/onboarding'),
-							},
-							{
-								text: 'OK',
-								style: 'cancel',
-							},
-						])
-					},
+					onPress: resetOnboarding,
 				},
 			]
 		)

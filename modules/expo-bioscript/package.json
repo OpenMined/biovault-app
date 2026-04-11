@@ -1,7 +1,7 @@
 {
   "name": "expo-bioscript",
   "version": "0.1.0",
-  "description": "Expo native module wrapper for running the BioScript runtime inside biovault-app.",
+  "description": "Expo native module for integrating the BioScript runtime.",
   "main": "src/index.ts",
   "react-native": "src/index.ts",
   "types": "src/index.ts",
@@ -9,11 +9,15 @@
     ".": "./src/index.ts"
   },
   "sideEffects": false,
+  "dependencies": {
+    "@napi-rs/wasm-runtime": "^1.1.1"
+  },
   "files": [
-    "index.ts",
     "src",
+    "web-runtime",
     "android",
     "ios",
+    "vendor",
     "scripts",
     "expo-module.config.json",
     "README.md"
@@ -26,11 +30,6 @@
   ],
   "author": "kj",
   "license": "MIT",
-  "homepage": "https://github.com/keelancj/expo-bioscript",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/keelancj/expo-bioscript"
-  },
   "peerDependencies": {
     "expo": "*",
     "react-native": "*"

@@ -3,8 +3,6 @@
  * Loads trait data and matches against user genetic data
  */
 
-import * as SQLite from 'expo-sqlite'
-
 // Trait data types
 export interface TraitInfo {
 	trait_id: string
@@ -100,94 +98,8 @@ export async function analyzeTrait(
 ): Promise<TraitAnalysisResult | null> {
 	const traitData = getTraitData(traitId)
 	if (!traitData) return null
-
-	try {
-		// Open the user's genetic database
-		const db = await SQLite.openDatabaseAsync(userDbName)
-
-		// Get all RSIDs to query
-		const rsidsToQuery = traitData.snps.map((snp) => snp.rsid)
-
-		console.log(`Analyzing ${traitId}: Querying ${rsidsToQuery.length} SNPs`)
-
-		// Query user's genetic data for these RSIDs using direct SQL
-		// Build placeholders for IN clause
-		const placeholders = rsidsToQuery.map(() => '?').join(',')
-		const query = `
-			SELECT rsid, genotype, chromosome, position 
-			FROM variants 
-			WHERE rsid IN (${placeholders})
-		`
-
-		const matches = await db.getAllAsync<{
-			rsid: string
-			genotype: string
-			chromosome: string
-			position: number
-		}>(query, rsidsToQuery)
-
-		console.log(`Found ${matches.length} matches for ${traitId}`)
-
-		// Enhance SNPs with user genotype data
-		const matchedSnps: TraitSNP[] = []
-		const matchMap = new Map(matches.map((m) => [m.rsid, m]))
-
-		for (const snp of traitData.snps) {
-			const match = matchMap.get(snp.rsid)
-			if (match) {
-				const enhancedSnp = { ...snp }
-				enhancedSnp.user_genotype = match.genotype
-
-				// Check if user has risk/effect allele
-				if (snp.alleles) {
-					const genotype = match.genotype
-					for (const allele of Object.keys(snp.alleles)) {
-						if (genotype.includes(allele)) {
-							enhancedSnp.user_has_risk_allele = true
-							break
-						}
-					}
-				}
-
-				matchedSnps.push(enhancedSnp)
-			}
-		}
-
-		// Calculate confidence based on primary SNPs found
-		const primarySnps = traitData.snps.filter((s) => s.importance === 'primary')
-		const primaryMatched = matchedSnps.filter((s) => s.importance === 'primary')
-		const primaryFoundRatio = primaryMatched.length / primarySnps.length
-
-		let confidence: 'high' | 'medium' | 'low' = 'low'
-		if (primaryFoundRatio >= 0.8) confidence = 'high'
-		else if (primaryFoundRatio >= 0.5) confidence = 'medium'
-
-		// Generate interpretation based on trait type
-		const interpretation = generateTraitInterpretation(traitId, matchedSnps, confidence)
-
-		return {
-			trait_id: traitData.info.trait_id,
-			trait_name: traitData.info.trait_name,
-			category: traitData.info.category,
-			description: traitData.info.description,
-			snps_tested: rsidsToQuery.length,
-			snps_found: matchedSnps.length,
-			primary_snps_found: primaryMatched.length,
-			confidence,
-			result_summary: interpretation.title,
-			result_details: interpretation.details,
-			matched_snps: matchedSnps,
-			interpretation: {
-				title: interpretation.title,
-				emoji: interpretation.emoji,
-				description: interpretation.description,
-				color: interpretation.color,
-			},
-		}
-	} catch (error) {
-		console.error(`Error analyzing trait ${traitId}:`, error)
-		return null
-	}
+	console.warn('SQLite-backed trait analysis is temporarily disabled.', { traitId, userDbName })
+	return null
 }
 
 /**
