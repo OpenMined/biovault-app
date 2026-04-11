@@ -108,10 +108,12 @@ export default function OnboardingScreen() {
 								</OMText>
 							</Animated.View>
 
-							<View style={styles.infoSections}>
+							<View style={styles.infoPanel}>
+								<View style={styles.infoPanelGlow} />
+								<View style={styles.infoSections}>
 								<Animated.View style={[styles.infoSection, getFadeUpStyle(privacyAnim, 16)]}>
-									<OMText variant="caption" style={styles.sectionEyebrow}>
-										PRIVATE
+									<OMText variant="caption" style={styles.sectionLabel}>
+										Everything happens on your phone
 									</OMText>
 									<View style={styles.signalList}>
 										<OMText variant="body" style={styles.signalText}>
@@ -129,8 +131,8 @@ export default function OnboardingScreen() {
 								<View style={styles.sectionDivider} />
 
 								<Animated.View style={[styles.infoSection, getFadeUpStyle(researchAnim, 16)]}>
-									<OMText variant="caption" style={styles.sectionEyebrow}>
-										DISCLAIMER
+									<OMText variant="caption" style={styles.sectionLabel}>
+										For research use only
 									</OMText>
 									<View style={styles.cardHeaderText}>
 										<OMText variant="body" style={styles.disclaimerBody}>
@@ -139,6 +141,7 @@ export default function OnboardingScreen() {
 										</OMText>
 									</View>
 								</Animated.View>
+								</View>
 							</View>
 						</View>
 
@@ -226,22 +229,46 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 		lineHeight: 21,
 	},
+	infoPanel: {
+		position: 'relative',
+		paddingHorizontal: omSpacing.l,
+		paddingVertical: omSpacing.l,
+		borderRadius: 22,
+		backgroundColor: 'rgba(252,252,253,0.18)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.14)',
+		overflow: 'hidden',
+	},
+	infoPanelGlow: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		height: 72,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+	},
 	infoSections: {
 		gap: omSpacing.m,
-		paddingHorizontal: omSpacing.xs,
 	},
 	infoSection: {
 		paddingVertical: omSpacing.s,
 	},
-	sectionEyebrow: {
-		marginBottom: omSpacing.xs,
+	sectionLabel: {
+		alignSelf: 'flex-start',
+		marginBottom: omSpacing.s,
+		paddingHorizontal: omSpacing.xs,
+		paddingVertical: 4,
+		borderRadius: omRadius.full,
 		color: omTheme.textMuted,
 		letterSpacing: 1,
+		backgroundColor: 'rgba(252,252,253,0.3)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.12)',
 	},
 	sectionDivider: {
 		height: 1,
-		backgroundColor: 'rgba(39,37,50,0.06)',
-		marginHorizontal: omSpacing.s,
+		backgroundColor: 'rgba(39,37,50,0.08)',
+		marginHorizontal: omSpacing.xs,
 	},
 	cardHeaderText: {
 		width: '100%',
@@ -269,15 +296,20 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: omSpacing.m,
-		paddingHorizontal: omSpacing.m,
-		paddingVertical: 14,
-		borderRadius: 16,
-		backgroundColor: 'rgba(252,252,253,0.62)',
+		paddingHorizontal: omSpacing.l,
+		paddingVertical: omSpacing.m,
+		borderRadius: 18,
+		backgroundColor: 'rgba(252,252,253,0.52)',
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.22)',
+		borderColor: 'rgba(255,255,255,0.18)',
+		shadowColor: '#17161d',
+		shadowOffset: { width: 0, height: 6 },
+		shadowOpacity: 0.03,
+		shadowRadius: 12,
+		elevation: 1,
 	},
 	checkboxRowChecked: {
-		backgroundColor: 'rgba(236,245,249,0.74)',
+		backgroundColor: 'rgba(236,245,249,0.66)',
 		borderColor: 'rgba(56,140,168,0.22)',
 	},
 	checkboxBox: {
