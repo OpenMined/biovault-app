@@ -1,4 +1,5 @@
 import { initAnalytics } from '@/lib/analytics'
+import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { Stack } from 'expo-router'
 import { SQLiteProvider } from 'expo-sqlite'
@@ -9,6 +10,7 @@ import 'react-native-reanimated'
 import { Platform } from 'react-native'
 
 const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.biovault.net')
+applyGlobalBrandTypography()
 
 // ts-prune-ignore-next
 export default function RootLayout() {

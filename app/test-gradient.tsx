@@ -18,7 +18,7 @@ export default function TestGradientScreen() {
 					omGradients.redViolet[0],
 					omGradients.violetBlue[0],
 					omGradients.goldOrange[0],
-					omGradients.tealGreen[1],
+					'#f4f3f6',
 					omGradients.tealGreen[0],
 					omGradients.goldOrange[1],
 					omGradients.greenLime[0],

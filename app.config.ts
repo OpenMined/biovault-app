@@ -82,7 +82,77 @@ const config: ExpoConfig = {
 	},
 	plugins: [
 		'expo-asset',
-		'expo-font',
+		[
+			'expo-font',
+			{
+				fonts: [
+					'node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf',
+					'node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf',
+					'node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf',
+					'node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf',
+					'node_modules/@expo-google-fonts/inter/900Black/Inter_900Black.ttf',
+					'node_modules/@expo-google-fonts/rubik/400Regular/Rubik_400Regular.ttf',
+					'node_modules/@expo-google-fonts/rubik/500Medium/Rubik_500Medium.ttf',
+					'node_modules/@expo-google-fonts/rubik/600SemiBold/Rubik_600SemiBold.ttf',
+					'node_modules/@expo-google-fonts/rubik/700Bold/Rubik_700Bold.ttf',
+					'node_modules/@expo-google-fonts/rubik/900Black/Rubik_900Black.ttf',
+				],
+				android: {
+					fonts: [
+						{
+							fontFamily: 'Inter',
+							fontDefinitions: [
+								{
+									path: 'node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf',
+									weight: 400,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf',
+									weight: 500,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf',
+									weight: 600,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf',
+									weight: 700,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/inter/900Black/Inter_900Black.ttf',
+									weight: 900,
+								},
+							],
+						},
+						{
+							fontFamily: 'Rubik',
+							fontDefinitions: [
+								{
+									path: 'node_modules/@expo-google-fonts/rubik/400Regular/Rubik_400Regular.ttf',
+									weight: 400,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/rubik/500Medium/Rubik_500Medium.ttf',
+									weight: 500,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/rubik/600SemiBold/Rubik_600SemiBold.ttf',
+									weight: 600,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/rubik/700Bold/Rubik_700Bold.ttf',
+									weight: 700,
+								},
+								{
+									path: 'node_modules/@expo-google-fonts/rubik/900Black/Rubik_900Black.ttf',
+									weight: 900,
+								},
+							],
+						},
+					],
+				},
+			},
+		],
 		'expo-sqlite',
 		'expo-web-browser',
 		'expo-router',
