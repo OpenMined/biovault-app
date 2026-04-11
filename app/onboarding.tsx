@@ -3,7 +3,6 @@ import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { Storage } from '@/lib/storage'
 import { omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import Checkbox from 'expo-checkbox'
 import { router } from 'expo-router'
 import { MeshGradientView } from 'expo-mesh-gradient'
 import { useEffect, useRef, useState } from 'react'
@@ -104,13 +103,19 @@ export default function OnboardingScreen() {
 								<OMText variant="h3" style={styles.title}>
 									Private genomic analysis on your device.
 								</OMText>
+								<OMText variant="body" style={styles.heroSupport}>
+									Review the privacy and research notes below before continuing.
+								</OMText>
 							</Animated.View>
 
 							<View style={styles.infoSections}>
 								<Animated.View style={[styles.infoSection, getFadeUpStyle(privacyAnim, 16)]}>
+									<OMText variant="caption" style={styles.sectionEyebrow}>
+										PRIVATE
+									</OMText>
 									<View style={styles.signalList}>
 										<OMText variant="body" style={styles.signalText}>
-											Your files stay on your phone.
+											Your files are never uploaded.
 										</OMText>
 										<OMText variant="body" style={styles.signalText}>
 											Analysis runs locally.
@@ -124,22 +129,14 @@ export default function OnboardingScreen() {
 								<View style={styles.sectionDivider} />
 
 								<Animated.View style={[styles.infoSection, getFadeUpStyle(researchAnim, 16)]}>
-									<View style={styles.cardHeader}>
-										<OMIcon
-											name="flask-outline"
-											tone="default"
-											containerTone="soft"
-											containerStyle={styles.disclaimerIcon}
-										/>
-										<View style={styles.cardHeaderText}>
-											<OMText variant="headline" style={styles.cardTitle}>
-												Research use only
-											</OMText>
-											<OMText variant="body" style={styles.disclaimerBody}>
-												BioVault is a research tool, not a medical product. Do not use it for
-												diagnosis or treatment.
-											</OMText>
-										</View>
+									<OMText variant="caption" style={styles.sectionEyebrow}>
+										DISCLAIMER
+									</OMText>
+									<View style={styles.cardHeaderText}>
+										<OMText variant="body" style={styles.disclaimerBody}>
+											BioVault is a research tool, not a medical product. Do not use it for
+											diagnosis or treatment.
+										</OMText>
 									</View>
 								</Animated.View>
 							</View>
@@ -151,14 +148,13 @@ export default function OnboardingScreen() {
 									onPress={() => setHasAgreed((value) => !value)}
 									style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
 								>
-									<Checkbox
-										value={hasAgreed}
-										onValueChange={setHasAgreed}
-										color={hasAgreed ? omTheme.link : undefined}
-										style={styles.checkbox}
-									/>
+									<View style={[styles.checkboxBox, hasAgreed && styles.checkboxBoxChecked]}>
+										{hasAgreed ? (
+											<OMIcon name="checkmark" size={14} tone="accent" />
+										) : null}
+									</View>
 									<OMText variant="body" style={styles.checkboxText}>
-										I understand that BioVault is for research use only.
+										I understand and want to continue.
 									</OMText>
 								</Pressable>
 							</Animated.View>
@@ -202,13 +198,11 @@ const styles = StyleSheet.create({
 	content: {
 		flex: 1,
 		paddingHorizontal: omSpacing.xl,
-		paddingTop: omSpacing.s,
+		paddingTop: omSpacing.xxxl,
 		paddingBottom: omSpacing.l,
 		maxWidth: 420,
 		width: '100%',
 		alignSelf: 'center',
-		justifyContent: 'center',
-		gap: omSpacing.m,
 	},
 	mainSection: {
 		gap: omSpacing.s,
@@ -216,7 +210,7 @@ const styles = StyleSheet.create({
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
 		paddingTop: 0,
-		paddingBottom: omSpacing.xs,
+		paddingBottom: omSpacing.s,
 	},
 	title: {
 		color: omTheme.textHeadline,
@@ -225,6 +219,13 @@ const styles = StyleSheet.create({
 		lineHeight: 43,
 		maxWidth: 320,
 	},
+	heroSupport: {
+		marginTop: omSpacing.m,
+		maxWidth: 320,
+		color: omTheme.textBody,
+		fontSize: 15,
+		lineHeight: 21,
+	},
 	infoSections: {
 		gap: omSpacing.m,
 		paddingHorizontal: omSpacing.xs,
@@ -232,32 +233,23 @@ const styles = StyleSheet.create({
 	infoSection: {
 		paddingVertical: omSpacing.s,
 	},
-	cardHeader: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		gap: omSpacing.s,
+	sectionEyebrow: {
+		marginBottom: omSpacing.xs,
+		color: omTheme.textMuted,
+		letterSpacing: 1,
 	},
 	sectionDivider: {
 		height: 1,
-		backgroundColor: 'rgba(39,37,50,0.08)',
-		marginHorizontal: omSpacing.xs,
-	},
-	disclaimerIcon: {
-		backgroundColor: 'transparent',
-		width: 24,
-		height: 24,
+		backgroundColor: 'rgba(39,37,50,0.06)',
+		marginHorizontal: omSpacing.s,
 	},
 	cardHeaderText: {
-		flex: 1,
-	},
-	cardTitle: {
-		color: omTheme.textHeadline,
+		width: '100%',
 	},
 	disclaimerBody: {
-		marginTop: omSpacing.xs,
 		color: omTheme.textBody,
-		fontSize: 15,
-		lineHeight: 21,
+		fontSize: 16,
+		lineHeight: 22,
 	},
 	signalList: {
 		marginTop: omSpacing.m,
@@ -265,30 +257,43 @@ const styles = StyleSheet.create({
 	},
 	signalText: {
 		color: omTheme.textHeadline,
-		fontSize: 15,
-		lineHeight: 21,
+		fontSize: 16,
+		lineHeight: 22,
 	},
 	footer: {
+		marginTop: omSpacing.l,
 		gap: omSpacing.s,
 		paddingTop: 0,
 	},
 	checkboxRow: {
 		flexDirection: 'row',
-		alignItems: 'flex-start',
+		alignItems: 'center',
 		gap: omSpacing.m,
 		paddingHorizontal: omSpacing.m,
 		paddingVertical: 14,
 		borderRadius: 16,
-		backgroundColor: 'rgba(252,252,253,0.9)',
+		backgroundColor: 'rgba(252,252,253,0.62)',
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
+		borderColor: 'rgba(255,255,255,0.22)',
 	},
 	checkboxRowChecked: {
-		backgroundColor: 'rgba(236,245,249,0.96)',
-		borderColor: 'rgba(56,140,168,0.2)',
+		backgroundColor: 'rgba(236,245,249,0.74)',
+		borderColor: 'rgba(56,140,168,0.22)',
 	},
-	checkbox: {
-		marginTop: 2,
+	checkboxBox: {
+		width: 22,
+		height: 22,
+		borderRadius: omRadius.s,
+		borderWidth: 1.5,
+		borderColor: 'rgba(94,90,114,0.6)',
+		backgroundColor: 'rgba(252,252,253,0.72)',
+		alignItems: 'center',
+		justifyContent: 'center',
+		flexShrink: 0,
+	},
+	checkboxBoxChecked: {
+		borderColor: 'rgba(56,140,168,0.5)',
+		backgroundColor: 'rgba(236,245,249,0.92)',
 	},
 	checkboxText: {
 		flex: 1,
@@ -299,9 +304,9 @@ const styles = StyleSheet.create({
 	continueButton: {
 		minHeight: 52,
 		borderRadius: 16,
-		backgroundColor: 'rgba(39,37,50,0.28)',
+		backgroundColor: 'rgba(39,37,50,0.42)',
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.12)',
+		borderColor: 'rgba(255,255,255,0.14)',
 	},
 	continueButtonEnabled: {
 		backgroundColor: omTheme.primary,
