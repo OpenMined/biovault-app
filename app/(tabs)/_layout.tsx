@@ -16,6 +16,14 @@ export default function TabLayout() {
 					drawable="ic_menu_compass"
 				/>
 			</NativeTabs.Trigger>
+			<NativeTabs.Trigger name="home">
+				<NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{ default: 'house', selected: 'house.fill' }}
+					drawable="ic_menu_view"
+				/>
+			</NativeTabs.Trigger>
 			<NativeTabs.Trigger hidden name="insights">
 				<NativeTabs.Trigger.Label>Insights</NativeTabs.Trigger.Label>
 				<NativeTabs.Trigger.Icon

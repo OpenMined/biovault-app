@@ -204,11 +204,11 @@ const styles = StyleSheet.create({
 		right: -48,
 		bottom: -48,
 		left: -48,
-		opacity: 0.9,
+		opacity: 0.98,
 	},
 	screenOverlay: {
 		...StyleSheet.absoluteFillObject,
-		backgroundColor: 'rgba(252,252,253,0.28)',
+		backgroundColor: 'rgba(252,252,253,0.18)',
 	},
 	safeArea: {
 		flex: 1,
