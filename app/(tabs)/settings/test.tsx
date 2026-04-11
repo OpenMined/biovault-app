@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native'
 import * as DocumentPicker from 'expo-document-picker'
 import { Directory, File, Paths } from 'expo-file-system'
 import { copyAsync, deleteAsync, getInfoAsync, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy'
@@ -13,6 +13,7 @@ type StoredDocument = {
 	name: string
 	size: number | null
 	uri: string
+	contents?: string | null
 }
 
 type APol1Result = {
@@ -31,12 +32,14 @@ const SUPPORTED_EXTENSIONS = [
 	'.csv',
 	'.zip',
 	'.gz',
-	'.bz2',
+	'.bz2'
 ]
 const PICKER_MIME_TYPES = [
 	'text/*',
+	'text/plain',
 	'text/tab-separated-values',
 	'text/csv',
+	'application/octet-stream',
 	'application/zip',
 	'application/gzip',
 	'application/x-gzip',
@@ -234,6 +237,10 @@ export default function TestScreen() {
 
 			try {
 				const storedDocument = JSON.parse(storedValue) as StoredDocument
+				if (Platform.OS === 'web') {
+					setPickedFile(storedDocument)
+					return
+				}
 				const info = await getInfoAsync(storedDocument.uri)
 
 				if (!info.exists) {
@@ -254,7 +261,9 @@ export default function TestScreen() {
 	const removeStoredDocument = async () => {
 		if (pickedFile) {
 			try {
-				await deleteAsync(pickedFile.uri, { idempotent: true })
+				if (Platform.OS !== 'web') {
+					await deleteAsync(pickedFile.uri, { idempotent: true })
+				}
 			} catch (error) {
 				console.error('Failed to delete stored document:', error)
 			}
@@ -288,6 +297,28 @@ export default function TestScreen() {
 					'Unsupported file',
 					'Choose a VCF, TXT, TSV, CSV, ZIP, GZ, or BZ2 genomic data file.'
 				)
+				return
+			}
+
+			if (Platform.OS === 'web') {
+				const webFile = asset.file
+				if (!webFile) {
+					throw new Error('Web document picker did not return a File object.')
+				}
+
+				const storedDocument: StoredDocument = {
+					importedAt: new Date().toISOString(),
+					mimeType: asset.mimeType ?? webFile.type ?? null,
+					name: asset.name,
+					size: asset.size ?? webFile.size ?? null,
+					uri: asset.uri,
+					contents: await webFile.text(),
+				}
+
+				Storage.setItemSync(STORED_DOCUMENT_KEY, JSON.stringify(storedDocument))
+				setPickedFile(storedDocument)
+				setRunOutput(null)
+				setRunError(null)
 				return
 			}
 
@@ -334,6 +365,43 @@ export default function TestScreen() {
 
 	const handleRunBioscript = async () => {
 		if (!pickedFile) {
+			return
+		}
+
+		if (Platform.OS === 'web') {
+			if (!pickedFile.contents) {
+				setRunError('No web file contents are available for this document.')
+				return
+			}
+
+			try {
+				setIsRunning(true)
+				setRunError(null)
+				setRunOutput(null)
+
+				const result = await runFile({
+					scriptPath: 'apol1.py',
+					scriptContents: APOL1_SCRIPT,
+					inputFile: pickedFile.name,
+					inputContents: pickedFile.contents,
+					outputFile: 'apol1-output.tsv',
+					participantId: sanitizeFileName(pickedFile.name),
+					inputFormat: 'text',
+					maxDurationMs: 60_000,
+					maxMemoryBytes: 128 * 1024 * 1024,
+					maxAllocations: 1_000_000,
+					maxRecursionDepth: 512,
+				})
+
+				setRunOutput(result.outputText ?? result.outputFiles?.['apol1-output.tsv'] ?? null)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : 'Bioscript run failed.'
+				console.error('Failed to run bioscript:', error)
+				setRunError(message)
+			} finally {
+				setIsRunning(false)
+			}
+
 			return
 		}
 

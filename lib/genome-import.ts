@@ -1,5 +1,3 @@
-import * as BioVault from '@/modules/expo-biovault'
-import { addDatabaseToManifest } from '@/lib/genome-storage'
 import { Directory, File, Paths } from 'expo-file-system'
 import { writeAsStringAsync } from 'expo-file-system/legacy'
 
@@ -144,18 +142,10 @@ export async function processPreparedGenomeImport(
 	customName: string,
 	onStageChange?: (stage: GenomeImportStage, message: string) => void
 ): Promise<void> {
-	const finalName = sanitizeGenomeName(customName)
-	const documentsPath = Paths.document.uri.replace('file://', '')
-	const inputPath = preparedImport.uri.replace('file://', '')
-
-	onStageChange?.('detecting', 'Checking the file and auto-detecting its format...')
-	await new Promise((resolve) => setTimeout(resolve, 150))
-
-	onStageChange?.('parsing', 'Parsing variants locally on this device...')
-	const sqlitePath = await BioVault.processGenomeFile(inputPath, finalName, documentsPath)
-
-	onStageChange?.('saving', 'Saving your imported data to the local vault...')
-	await addDatabaseToManifest(sqlitePath, finalName)
-
-	onStageChange?.('complete', 'Import complete. Your data is ready to analyze.')
+	console.warn('Genome import is temporarily disabled while SQLite-backed storage is disabled.', {
+		preparedImport,
+		customName,
+	})
+	onStageChange?.('detecting', 'Genome import is temporarily unavailable.')
+	throw new Error('Genome import is temporarily disabled while SQLite-backed storage is disabled.')
 }

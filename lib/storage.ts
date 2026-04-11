@@ -1,47 +1,44 @@
-import { Platform } from 'react-native'
-
 /**
- * Platform-specific key-value storage utility
- * - On web: uses localStorage
- * - On native: uses expo-sqlite/kv-store
+ * Temporary storage shim while SQLite-backed persistence is disabled.
+ * This keeps the app bootable on web and native without pulling in expo-sqlite.
  */
-export const Storage = (() => {
-	if (Platform.OS === 'web') {
-		// Web implementation using localStorage
-		return {
-			getItemSync: (key: string): string | null => {
-				try {
-					return localStorage.getItem(key)
-				} catch (e) {
-					console.warn('localStorage.getItem error:', e)
-					return null
-				}
-			},
-			setItemSync: (key: string, value: string): void => {
-				try {
-					localStorage.setItem(key, value)
-				} catch (e) {
-					console.warn('localStorage.setItem error:', e)
-				}
-			},
-			removeItemSync: (key: string): void => {
-				try {
-					localStorage.removeItem(key)
-				} catch (e) {
-					console.warn('localStorage.removeItem error:', e)
-				}
-			},
-		}
-	} else {
-		// Native implementation using expo-sqlite/kv-store
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const KVStore = require('expo-sqlite/kv-store')
-		const store = KVStore.default || KVStore
+const memoryStore = new Map<string, string>()
 
-		return {
-			getItemSync: store.getItemSync.bind(store),
-			setItemSync: store.setItemSync.bind(store),
-			removeItemSync: store.removeItemSync.bind(store),
+export const Storage = {
+	getItemSync(key: string): string | null {
+		try {
+			if (typeof localStorage !== 'undefined') {
+				return localStorage.getItem(key)
+			}
+		} catch (e) {
+			console.warn('localStorage.getItem error:', e)
 		}
-	}
-})()
+
+		return memoryStore.get(key) ?? null
+	},
+
+	setItemSync(key: string, value: string): void {
+		try {
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem(key, value)
+				return
+			}
+		} catch (e) {
+			console.warn('localStorage.setItem error:', e)
+		}
+
+		memoryStore.set(key, value)
+	},
+
+	removeItemSync(key: string): void {
+		try {
+			if (typeof localStorage !== 'undefined') {
+				localStorage.removeItem(key)
+			}
+		} catch (e) {
+			console.warn('localStorage.removeItem error:', e)
+		}
+
+		memoryStore.delete(key)
+	},
+}

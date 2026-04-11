@@ -153,7 +153,6 @@ const config: ExpoConfig = {
 				},
 			},
 		],
-		'expo-sqlite',
 		'expo-web-browser',
 		'expo-router',
 		[
