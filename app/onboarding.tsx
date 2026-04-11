@@ -1,9 +1,9 @@
 import { OMButton } from '@/components/ui/OMButton'
+import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { Storage } from '@/lib/storage'
-import { omGradients, omSpacing, omTheme } from '@/styles/brand'
+import { omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import Checkbox from 'expo-checkbox'
-import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
 import { MeshGradientView } from 'expo-mesh-gradient'
 import { useState } from 'react'
@@ -59,45 +59,70 @@ export default function OnboardingScreen() {
 
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.content}>
-					<View style={styles.heroSection}>
-						<OMText variant="h3" style={styles.title}>
-							Welcome to BioVault
-						</OMText>
-						<OMText variant="body" style={styles.body}>
-							A technology by{' '}
-							<OMText
-								variant="body"
-								tone="accent"
-								style={styles.linkText}
-								onPress={() => Linking.openURL('https://www.openmined.org')}
-							>
-								OpenMined
+					<View style={styles.mainSection}>
+						<View style={styles.heroSection}>
+							<OMText variant="h3" style={styles.title}>
+								Private genomic analysis on your device.
 							</OMText>
-							, our goal is making genomics accessible to everyone.
-						</OMText>
+						</View>
+
+						<View style={styles.disclaimerCard}>
+							<View style={styles.privacySection}>
+								<View style={styles.cardHeader}>
+									<OMIcon
+										name="shield-checkmark-outline"
+										tone="accent"
+										containerTone="soft"
+										containerStyle={styles.cardIcon}
+									/>
+									<View style={styles.cardHeaderText}>
+										<OMText variant="headline" style={styles.cardTitle}>
+											Private by default
+										</OMText>
+										<OMText variant="body" style={styles.cardLead}>
+											Your genomic files stay on your phone and are never uploaded.
+										</OMText>
+									</View>
+								</View>
+								<View style={styles.signalList}>
+									<View style={styles.signalRow}>
+										<View style={styles.signalDot} />
+										<OMText variant="body" style={styles.signalText}>
+											Analysis runs locally on your device.
+										</OMText>
+									</View>
+									<View style={styles.signalRow}>
+										<View style={styles.signalDot} />
+										<OMText variant="body" style={styles.signalText}>
+											Results are visible only to you.
+										</OMText>
+									</View>
+								</View>
+							</View>
+
+							<View style={styles.cardDivider} />
+
+							<View style={styles.cardHeader}>
+								<OMIcon
+									name="flask-outline"
+									tone="default"
+									containerTone="soft"
+									containerStyle={styles.disclaimerIcon}
+								/>
+								<View style={styles.cardHeaderText}>
+									<OMText variant="headline" style={styles.cardTitle}>
+										Research use only
+									</OMText>
+									<OMText variant="body" style={styles.disclaimerBody}>
+										BioVault is a research tool, not a medical product. It does not provide
+										medical advice and must not be used for diagnosis or treatment.
+									</OMText>
+								</View>
+							</View>
+						</View>
 					</View>
 
-					<View style={styles.sectionDivider} />
-
-					<View style={styles.copySection}>
-						<OMText variant="headline">Private by default</OMText>
-						<OMText variant="body" style={styles.body}>
-							Total privacy and full control. Your personal files stay on your phone and are never
-							uploaded anywhere.
-						</OMText>
-						<OMText variant="body" style={styles.body}>
-							All analysis runs locally on your device, and the results are for your eyes only.
-						</OMText>
-					</View>
-
-					<View style={styles.sectionDivider} />
-
-					<View style={styles.copySection}>
-						<OMText variant="headline">Research disclaimer</OMText>
-						<OMText variant="body" style={styles.body}>
-							BioVault is a research tool, not a medical product, and it does not provide medical
-							advice. Do not use it to diagnose or treat any condition.
-						</OMText>
+					<View style={styles.footer}>
 						<Pressable
 							onPress={() => setHasAgreed((value) => !value)}
 							style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
@@ -109,18 +134,18 @@ export default function OnboardingScreen() {
 								style={styles.checkbox}
 							/>
 							<OMText variant="body" style={styles.checkboxText}>
-								I understand and want to continue.
+								I understand that BioVault is for research use only.
 							</OMText>
 						</Pressable>
-					</View>
 
-					<OMButton
-						label="Continue"
-						iconName="arrow-forward-outline"
-						onPress={handleContinue}
-						disabled={!hasAgreed}
-						style={styles.continueButton}
-					/>
+						<OMButton
+							label="Continue"
+							iconName="arrow-forward-outline"
+							onPress={handleContinue}
+							disabled={!hasAgreed}
+							style={[styles.continueButton, hasAgreed && styles.continueButtonEnabled]}
+						/>
+					</View>
 				</View>
 			</SafeAreaView>
 		</View>
@@ -142,67 +167,127 @@ const styles = StyleSheet.create({
 	},
 	screenOverlay: {
 		...StyleSheet.absoluteFillObject,
-		backgroundColor: 'rgba(252,252,253,0.18)',
+		backgroundColor: 'rgba(252,252,253,0.28)',
 	},
 	safeArea: {
 		flex: 1,
 	},
 	content: {
 		flex: 1,
-		padding: omSpacing.xl,
-		gap: omSpacing.xl,
+		paddingHorizontal: omSpacing.xl,
+		paddingTop: omSpacing.s,
+		paddingBottom: omSpacing.l,
 		maxWidth: 420,
 		width: '100%',
 		alignSelf: 'center',
-		paddingTop: omSpacing.xxxl,
-		paddingBottom: omSpacing.xxl,
+	},
+	mainSection: {
+		flex: 1,
+		justifyContent: 'center',
+		gap: omSpacing.m,
 	},
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
-		paddingTop: omSpacing.l,
-		paddingBottom: omSpacing.s,
-	},
-	copySection: {
-		paddingHorizontal: omSpacing.xs,
-	},
-	sectionDivider: {
-		height: 1,
-		backgroundColor: 'rgba(39,37,50,0.08)',
-		marginHorizontal: omSpacing.xs,
+		paddingTop: omSpacing.xs,
+		paddingBottom: omSpacing.xs,
 	},
 	title: {
 		color: omTheme.textHeadline,
-		letterSpacing: -0.8,
-		fontSize: 42,
-		lineHeight: 46,
-		maxWidth: 300,
+		letterSpacing: -1,
+		fontSize: 40,
+		lineHeight: 43,
+		maxWidth: 320,
 	},
-	body: {
-		marginTop: omSpacing.s,
+	disclaimerCard: {
+		paddingHorizontal: omSpacing.l,
+		paddingVertical: omSpacing.m,
+		borderRadius: 20,
+		backgroundColor: 'rgba(252,252,253,0.94)',
+		borderWidth: 1,
+		borderColor: 'rgba(39,37,50,0.06)',
+		shadowColor: '#17161d',
+		shadowOffset: { width: 0, height: 10 },
+		shadowOpacity: 0.05,
+		shadowRadius: 20,
+		elevation: 2,
+	},
+	cardHeader: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		gap: omSpacing.m,
+	},
+	privacySection: {
+		gap: omSpacing.s,
+	},
+	cardDivider: {
+		height: 1,
+		backgroundColor: 'rgba(39,37,50,0.08)',
+		marginVertical: omSpacing.m,
+	},
+	cardIcon: {
+		backgroundColor: 'rgba(82,168,197,0.12)',
+	},
+	disclaimerIcon: {
+		backgroundColor: 'rgba(244,243,246,0.92)',
+	},
+	cardHeaderText: {
+		flex: 1,
+	},
+	cardTitle: {
+		color: omTheme.textHeadline,
+	},
+	cardLead: {
+		marginTop: omSpacing.xs,
 		color: omTheme.textBody,
-		maxWidth: 340,
-		fontSize: 17,
-		lineHeight: 26,
+		fontSize: 16,
+		lineHeight: 22,
 	},
-	linkText: {
-		textDecorationLine: 'underline',
+	disclaimerBody: {
+		marginTop: omSpacing.xs,
+		color: omTheme.textBody,
+		fontSize: 15,
+		lineHeight: 21,
+	},
+	signalList: {
+		marginTop: omSpacing.m,
+		gap: omSpacing.s,
+	},
+	signalRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		gap: 10,
+	},
+	signalDot: {
+		width: 8,
+		height: 8,
+		borderRadius: omRadius.full,
+		backgroundColor: omTheme.link,
+		marginTop: 7,
+	},
+	signalText: {
+		flex: 1,
+		color: omTheme.textHeadline,
+		fontSize: 15,
+		lineHeight: 21,
+	},
+	footer: {
+		gap: omSpacing.m,
+		paddingTop: omSpacing.m,
 	},
 	checkboxRow: {
 		flexDirection: 'row',
 		alignItems: 'flex-start',
 		gap: omSpacing.m,
-		marginTop: omSpacing.l,
-		paddingTop: omSpacing.s,
 		paddingHorizontal: omSpacing.m,
-		paddingVertical: omSpacing.m,
-		borderRadius: 14,
-		backgroundColor: 'rgba(255,255,255,0.42)',
+		paddingVertical: 14,
+		borderRadius: 16,
+		backgroundColor: 'rgba(252,252,253,0.9)',
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.08)',
+		borderColor: 'rgba(39,37,50,0.06)',
 	},
 	checkboxRowChecked: {
-		backgroundColor: 'rgba(82,168,197,0.14)',
-		borderColor: 'rgba(82,168,197,0.24)',
+		backgroundColor: 'rgba(236,245,249,0.96)',
+		borderColor: 'rgba(56,140,168,0.2)',
 	},
 	checkbox: {
 		marginTop: 2,
@@ -210,9 +295,23 @@ const styles = StyleSheet.create({
 	checkboxText: {
 		flex: 1,
 		color: omTheme.textBody,
+		fontSize: 15,
+		lineHeight: 21,
 	},
 	continueButton: {
-		marginTop: 'auto',
 		minHeight: 52,
+		borderRadius: 16,
+		backgroundColor: 'rgba(39,37,50,0.18)',
+		borderWidth: 1,
+		borderColor: 'rgba(39,37,50,0.06)',
+	},
+	continueButtonEnabled: {
+		backgroundColor: omTheme.primary,
+		borderColor: omTheme.primary,
+		shadowColor: '#17161d',
+		shadowOffset: { width: 0, height: 12 },
+		shadowOpacity: 0.18,
+		shadowRadius: 24,
+		elevation: 4,
 	},
 })
