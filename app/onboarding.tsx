@@ -73,9 +73,11 @@ export default function OnboardingScreen() {
 							>
 								OpenMined
 							</OMText>
-							, our goal is to make genomics accessible to everyone.
+							, our goal is making genomics accessible to everyone.
 						</OMText>
 					</View>
+
+					<View style={styles.sectionDivider} />
 
 					<View style={styles.copySection}>
 						<OMText variant="headline">Private by default</OMText>
@@ -87,6 +89,8 @@ export default function OnboardingScreen() {
 							All analysis runs locally on your device, and the results are for your eyes only.
 						</OMText>
 					</View>
+
+					<View style={styles.sectionDivider} />
 
 					<View style={styles.copySection}>
 						<OMText variant="headline">Research disclaimer</OMText>
@@ -144,6 +148,11 @@ const styles = StyleSheet.create({
 		flex: 1,
 		padding: omSpacing.xl,
 		gap: omSpacing.xl,
+		maxWidth: 420,
+		width: '100%',
+		alignSelf: 'center',
+		paddingTop: omSpacing.xxxl,
+		paddingBottom: omSpacing.xxl,
 	},
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
@@ -151,9 +160,14 @@ const styles = StyleSheet.create({
 	copySection: {
 		paddingHorizontal: omSpacing.xs,
 	},
+	sectionDivider: {
+		height: 1,
+		backgroundColor: 'rgba(39,37,50,0.08)',
+		marginHorizontal: omSpacing.xs,
+	},
 	title: {
-		marginTop: omSpacing.s,
 		color: omTheme.textHeadline,
+		letterSpacing: -0.5,
 	},
 	body: {
 		marginTop: omSpacing.s,
@@ -167,7 +181,7 @@ const styles = StyleSheet.create({
 		alignItems: 'flex-start',
 		gap: omSpacing.m,
 		marginTop: omSpacing.l,
-		paddingTop: omSpacing.xs,
+		paddingTop: omSpacing.s,
 	},
 	checkbox: {
 		marginTop: 2,
@@ -178,5 +192,6 @@ const styles = StyleSheet.create({
 	},
 	continueButton: {
 		marginTop: 'auto',
+		minHeight: 52,
 	},
 })
