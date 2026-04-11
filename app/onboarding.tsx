@@ -60,6 +60,7 @@ export default function OnboardingScreen() {
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.content}>
 					<View style={styles.heroSection}>
+						<View style={styles.heroGlow} />
 						<OMText variant="h3" style={styles.title}>
 							Welcome to BioVault
 						</OMText>
@@ -156,6 +157,9 @@ const styles = StyleSheet.create({
 	},
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
+		position: 'relative',
+		paddingTop: omSpacing.l,
+		paddingBottom: omSpacing.s,
 	},
 	copySection: {
 		paddingHorizontal: omSpacing.xs,
@@ -167,14 +171,29 @@ const styles = StyleSheet.create({
 	},
 	title: {
 		color: omTheme.textHeadline,
-		letterSpacing: -0.5,
+		letterSpacing: -0.8,
+		fontSize: 42,
+		lineHeight: 46,
+		maxWidth: 300,
 	},
 	body: {
 		marginTop: omSpacing.s,
 		color: omTheme.textBody,
+		maxWidth: 340,
+		fontSize: 17,
+		lineHeight: 26,
 	},
 	linkText: {
 		textDecorationLine: 'underline',
+	},
+	heroGlow: {
+		position: 'absolute',
+		top: -4,
+		left: -8,
+		width: 140,
+		height: 140,
+		borderRadius: 999,
+		backgroundColor: 'rgba(82,168,197,0.16)',
 	},
 	checkboxRow: {
 		flexDirection: 'row',
