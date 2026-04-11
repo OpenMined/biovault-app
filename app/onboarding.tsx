@@ -1,11 +1,30 @@
-import { OMCard } from '@/components/ui/OMCard'
+import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
-import { omGradients, omRadius, omSpacing, omSurfaces, omTheme } from '@/styles/brand'
+import { Storage } from '@/lib/storage'
+import { omGradients, omSpacing, omTheme } from '@/styles/brand'
+import Checkbox from 'expo-checkbox'
+import * as Linking from 'expo-linking'
+import { router } from 'expo-router'
 import { MeshGradientView } from 'expo-mesh-gradient'
+import { useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-export default function TestGradientScreen() {
+export default function OnboardingScreen() {
+	const [hasAgreed, setHasAgreed] = useState(
+		Storage.getItemSync('hasAcceptedResearchDisclaimer') === 'true'
+	)
+
+	const handleContinue = () => {
+		if (!hasAgreed) {
+			return
+		}
+
+		Storage.setItemSync('hasAcceptedResearchDisclaimer', 'true')
+		Storage.setItemSync('hasCompletedOnboarding', 'true')
+		router.replace('/(tabs)' as any)
+	}
+
 	return (
 		<View style={styles.screen}>
 			<MeshGradientView
@@ -40,25 +59,61 @@ export default function TestGradientScreen() {
 
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.content}>
-					<OMCard style={styles.heroCard}>
-						<OMText variant="subtitle" tone="accent">
-							TEST GRADIENT
-						</OMText>
+					<View style={styles.heroSection}>
 						<OMText variant="h3" style={styles.title}>
-							Previous onboarding background
+							Welcome to BioVault
 						</OMText>
 						<OMText variant="body" style={styles.body}>
-							This preserves the earlier OM gradient-family mesh version before the anchor-color switch.
+							A technology by{' '}
+							<OMText
+								variant="body"
+								tone="accent"
+								style={styles.linkText}
+								onPress={() => Linking.openURL('https://www.openmined.org')}
+							>
+								OpenMined
+							</OMText>
+							, our goal is to make genomics accessible to everyone.
 						</OMText>
-					</OMCard>
+					</View>
 
-					<OMCard style={styles.noteCard}>
-						<OMText variant="headline">Palette</OMText>
+					<View style={styles.copySection}>
+						<OMText variant="headline">Private by default</OMText>
 						<OMText variant="body" style={styles.body}>
-							`orangeRed`, `redViolet`, `violetBlue`, `goldOrange`, `tealGreen`, `greenLime`,
-							`limeYellow`, with a pale OM neutral center.
+							Total privacy and full control. Your personal files stay on your phone and are never
+							uploaded anywhere.
 						</OMText>
-					</OMCard>
+						<OMText variant="body" style={styles.body}>
+							All analysis runs locally on your device, and the results are for your eyes only.
+						</OMText>
+					</View>
+
+					<View style={styles.copySection}>
+						<OMText variant="headline">Research disclaimer</OMText>
+						<OMText variant="body" style={styles.body}>
+							BioVault is a research tool, not a medical product, and it does not provide medical
+							advice. Do not use it to diagnose or treat any condition.
+						</OMText>
+						<View style={styles.checkboxRow}>
+							<Checkbox
+								value={hasAgreed}
+								onValueChange={setHasAgreed}
+								color={hasAgreed ? omTheme.link : undefined}
+								style={styles.checkbox}
+							/>
+							<OMText variant="body" style={styles.checkboxText}>
+								I understand and want to continue.
+							</OMText>
+						</View>
+					</View>
+
+					<OMButton
+						label="Continue"
+						iconName="arrow-forward-outline"
+						onPress={handleContinue}
+						disabled={!hasAgreed}
+						style={styles.continueButton}
+					/>
 				</View>
 			</SafeAreaView>
 		</View>
@@ -87,20 +142,14 @@ const styles = StyleSheet.create({
 	},
 	content: {
 		flex: 1,
-		justifyContent: 'center',
 		padding: omSpacing.xl,
-		gap: omSpacing.l,
+		gap: omSpacing.xl,
 	},
-	heroCard: {
-		padding: omSpacing.xl,
-		borderRadius: omRadius.xl,
-		backgroundColor: omSurfaces.glassStrong,
-		borderColor: omSurfaces.glassBorder,
+	heroSection: {
+		paddingHorizontal: omSpacing.xs,
 	},
-	noteCard: {
-		padding: omSpacing.l,
-		backgroundColor: omSurfaces.glass,
-		borderColor: omSurfaces.glassBorder,
+	copySection: {
+		paddingHorizontal: omSpacing.xs,
 	},
 	title: {
 		marginTop: omSpacing.s,
@@ -109,5 +158,25 @@ const styles = StyleSheet.create({
 	body: {
 		marginTop: omSpacing.s,
 		color: omTheme.textBody,
+	},
+	linkText: {
+		textDecorationLine: 'underline',
+	},
+	checkboxRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		gap: omSpacing.m,
+		marginTop: omSpacing.l,
+		paddingTop: omSpacing.xs,
+	},
+	checkbox: {
+		marginTop: 2,
+	},
+	checkboxText: {
+		flex: 1,
+		color: omTheme.textBody,
+	},
+	continueButton: {
+		marginTop: 'auto',
 	},
 })
