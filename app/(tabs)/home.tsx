@@ -1,8 +1,11 @@
 import { OMButton } from '@/components/ui/OMButton'
+import { HOME_IMPORTED_DOCUMENT_KEY, type HomeImportedDocument } from '@/lib/home-import'
 import { OMText } from '@/components/ui/OMText'
 import { Storage } from '@/lib/storage'
+import { testCatalog } from '@/lib/test-catalog'
 import { omRadius, omSpacing, omTheme } from '@/styles/brand'
 import * as DocumentPicker from 'expo-document-picker'
+import { Link } from 'expo-router'
 import { Directory, File, Paths } from 'expo-file-system'
 import { copyAsync, deleteAsync, getInfoAsync } from 'expo-file-system/legacy'
 import { useEffect, useState } from 'react'
@@ -17,15 +20,6 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-type ImportedDocument = {
-	importedAt: string
-	mimeType: string | null
-	name: string
-	size: number | null
-	uri: string
-}
-
-const HOME_IMPORTED_DOCUMENT_KEY = 'home_imported_document'
 const SUPPORTED_EXTENSIONS = [
 	'.vcf',
 	'.vcf.gz',
@@ -61,9 +55,8 @@ function hasSupportedExtension(name: string): boolean {
 
 // ts-prune-ignore-next
 export default function HomeScreen() {
-	const [pickedFile, setPickedFile] = useState<ImportedDocument | null>(null)
+	const [pickedFile, setPickedFile] = useState<HomeImportedDocument | null>(null)
 	const [isImporting, setIsImporting] = useState(false)
-	const [isPreparingSample, setIsPreparingSample] = useState(false)
 	const [sourceUrl, setSourceUrl] = useState('')
 
 	useEffect(() => {
@@ -74,7 +67,7 @@ export default function HomeScreen() {
 			}
 
 			try {
-				const storedDocument = JSON.parse(storedValue) as ImportedDocument
+				const storedDocument = JSON.parse(storedValue) as HomeImportedDocument
 				if (Platform.OS === 'web') {
 					setPickedFile(storedDocument)
 					return
@@ -136,12 +129,13 @@ export default function HomeScreen() {
 			}
 
 			if (Platform.OS === 'web') {
-				const storedDocument: ImportedDocument = {
+				const storedDocument: HomeImportedDocument = {
 					importedAt: new Date().toISOString(),
 					mimeType: asset.mimeType ?? null,
 					name: asset.name,
 					size: asset.size ?? null,
 					uri: asset.uri,
+					contents: asset.file ? await asset.file.text() : null,
 				}
 
 				Storage.setItemSync(HOME_IMPORTED_DOCUMENT_KEY, JSON.stringify(storedDocument))
@@ -170,7 +164,7 @@ export default function HomeScreen() {
 				}
 			}
 
-			const storedDocument: ImportedDocument = {
+			const storedDocument: HomeImportedDocument = {
 				importedAt: new Date().toISOString(),
 				mimeType: asset.mimeType ?? null,
 				name: asset.name,
@@ -185,18 +179,6 @@ export default function HomeScreen() {
 			Alert.alert('Import error', 'Unable to open the document picker right now.')
 		} finally {
 			setIsImporting(false)
-		}
-	}
-
-	const handleTrySample = async () => {
-		try {
-			setIsPreparingSample(true)
-			Alert.alert(
-				'Test files coming next',
-				'This entry point is in place now. Next step is wiring bundled sample files so people can explore the app before importing their own data.'
-			)
-		} finally {
-			setIsPreparingSample(false)
 		}
 	}
 
@@ -224,39 +206,30 @@ export default function HomeScreen() {
 						HOME
 					</OMText>
 					<OMText variant="h3" style={styles.title}>
-						Bring your genomic data into BioVault.
+						Run the Bioscript tests already in BioVault.
 					</OMText>
 					<OMText variant="body" style={styles.body}>
-						Import your own file, try a sample file, or prepare a direct URL flow. Your data stays
-						on your device and is not uploaded to our servers.
+						Import your own data, use a URL later, or open one of the tests that already exists in
+						the repo. Your file stays on your device and is not uploaded to our servers.
 					</OMText>
 				</View>
 
 				<View style={styles.panel}>
 					<OMText variant="headline" style={styles.panelTitle}>
-						Start here
+						Import your data
 					</OMText>
 					<OMText variant="body" style={styles.panelBody}>
-						Use your own genomic file or try a test path to get a feel for the redesigned app.
+						Choose a genomic file from your device to start with your own data.
 					</OMText>
 
 					<View style={styles.actions}>
 						<OMButton
-							label={isImporting ? 'Importing...' : 'Import your data'}
+							label={isImporting ? 'Importing...' : 'Choose file'}
 							onPress={() => {
 								void handlePickDocument()
 							}}
 							disabled={isImporting}
 							style={styles.primaryButton}
-						/>
-						<OMButton
-							label={isPreparingSample ? 'Preparing...' : 'Try a test file'}
-							variant="secondary"
-							onPress={() => {
-								void handleTrySample()
-							}}
-							disabled={isPreparingSample}
-							style={styles.secondaryButton}
 						/>
 					</View>
 				</View>
@@ -266,7 +239,7 @@ export default function HomeScreen() {
 						Import from a URL
 					</OMText>
 					<OMText variant="body" style={styles.panelBody}>
-						Paste a direct file URL for open test datasets or shared downloads. This flow will stay
+						Paste a direct file URL for open datasets or shared downloads. This flow will stay
 						local-first too.
 					</OMText>
 					<TextInput
@@ -284,6 +257,42 @@ export default function HomeScreen() {
 						onPress={handleUrlImport}
 						style={styles.urlButton}
 					/>
+				</View>
+
+				<View style={styles.panel}>
+					<OMText variant="headline" style={styles.panelTitle}>
+						Available tests
+					</OMText>
+					<OMText variant="body" style={styles.panelBody}>
+						These are the tests currently available in the Bioscript repo surface. Some are fully
+						runnable now, and some are still preview-only until their older classifier shape is
+						ported.
+					</OMText>
+
+					<View style={styles.cardStack}>
+						{testCatalog.map((category) => (
+							<Link
+								key={category.slug}
+								href={{ pathname: '/tests/[slug]', params: { slug: category.slug } }}
+								asChild
+							>
+								<Pressable style={styles.categoryCard}>
+									<OMText variant="caption" style={styles.categoryTag}>
+										{category.category.toUpperCase()}
+									</OMText>
+									<OMText variant="headline" style={styles.categoryTitle}>
+										{category.title}
+									</OMText>
+									<OMText variant="body" style={styles.categoryDescription}>
+										{category.subtitle}
+									</OMText>
+									<OMText variant="subtitle" style={styles.categoryLink}>
+										View test details
+									</OMText>
+								</Pressable>
+							</Link>
+						))}
+					</View>
 				</View>
 
 				{pickedFile ? (
@@ -356,7 +365,7 @@ const styles = StyleSheet.create({
 	panel: {
 		padding: omSpacing.xl,
 		borderRadius: omRadius.l,
-		backgroundColor: 'rgba(252,252,253,0.76)',
+		backgroundColor: 'rgba(252,252,253,0.78)',
 		borderWidth: 1,
 		borderColor: 'rgba(39,37,50,0.06)',
 	},
@@ -372,10 +381,6 @@ const styles = StyleSheet.create({
 		gap: omSpacing.m,
 	},
 	primaryButton: {
-		minHeight: 54,
-		borderRadius: omRadius.l,
-	},
-	secondaryButton: {
 		minHeight: 54,
 		borderRadius: omRadius.l,
 	},
@@ -395,6 +400,38 @@ const styles = StyleSheet.create({
 		marginTop: omSpacing.m,
 		minHeight: 50,
 		borderRadius: omRadius.l,
+	},
+	cardStack: {
+		marginTop: omSpacing.l,
+		gap: omSpacing.m,
+	},
+	categoryCard: {
+		padding: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: omTheme.background,
+		borderWidth: 1,
+		borderColor: 'rgba(39,37,50,0.08)',
+	},
+	categoryTag: {
+		alignSelf: 'flex-start',
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: omSpacing.xs,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(60,159,139,0.12)',
+		color: omTheme.accentDeep,
+		letterSpacing: 0.8,
+	},
+	categoryTitle: {
+		marginTop: omSpacing.m,
+		color: omTheme.textHeadline,
+	},
+	categoryDescription: {
+		marginTop: omSpacing.s,
+		color: omTheme.textBody,
+	},
+	categoryLink: {
+		marginTop: omSpacing.l,
+		color: omTheme.accentDeep,
 	},
 	fileName: {
 		marginTop: omSpacing.s,

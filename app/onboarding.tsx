@@ -33,9 +33,11 @@ export default function OnboardingScreen() {
 					<View style={styles.stack}>
 						<View style={styles.mainSection}>
 							<View style={styles.heroSection}>
-								<OMText variant="h3" style={styles.title}>
-									Private genomic analysis on your device.
-								</OMText>
+								<View style={styles.titleRow}>
+									<OMText variant="h3" style={styles.title}>
+										Private genomic analysis on your device.
+									</OMText>
+								</View>
 								<OMText variant="body" style={styles.heroSupport}>
 									Review the privacy and research notes below before continuing.
 								</OMText>
@@ -146,6 +148,9 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.xs,
 		paddingTop: 0,
 		paddingBottom: omSpacing.m,
+	},
+	titleRow: {
+		maxWidth: 320,
 	},
 	title: {
 		color: omTheme.textHeadline,

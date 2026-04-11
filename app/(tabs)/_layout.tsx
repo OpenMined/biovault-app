@@ -24,6 +24,14 @@ export default function TabLayout() {
 					drawable="ic_menu_view"
 				/>
 			</NativeTabs.Trigger>
+			<NativeTabs.Trigger name="results">
+				<NativeTabs.Trigger.Label>Results</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={'white'}
+					sf={{ default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' }}
+					drawable="ic_menu_sort_by_size"
+				/>
+			</NativeTabs.Trigger>
 			<NativeTabs.Trigger hidden name="insights">
 				<NativeTabs.Trigger.Label>Insights</NativeTabs.Trigger.Label>
 				<NativeTabs.Trigger.Icon

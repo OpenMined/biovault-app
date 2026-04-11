@@ -41,6 +41,7 @@ export default function RootLayout() {
 				/>
 				<Stack.Screen name="+not-found" />
 				<Stack.Screen name="gene/[geneName]" />
+				<Stack.Screen name="tests/[slug]" options={{ presentation: 'card' }} />
 				<Stack.Screen name="trait-results" options={{ presentation: 'card' }} />
 			</Stack>
 			<StatusBar style="auto" />
