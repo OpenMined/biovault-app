@@ -3,10 +3,11 @@ import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { Storage } from '@/lib/storage'
 import { omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
 import { MeshGradientView } from 'expo-mesh-gradient'
 import { useEffect, useRef, useState } from 'react'
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native'
+import { Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function OnboardingScreen() {
@@ -97,7 +98,8 @@ export default function OnboardingScreen() {
 			<View style={styles.screenOverlay} />
 
 			<SafeAreaView style={styles.safeArea}>
-					<View style={styles.content}>
+				<View style={styles.content}>
+					<View style={styles.stack}>
 						<View style={styles.mainSection}>
 							<Animated.View style={[styles.heroSection, getFadeUpStyle(titleAnim, 18)]}>
 								<OMText variant="h3" style={styles.title}>
@@ -109,7 +111,6 @@ export default function OnboardingScreen() {
 							</Animated.View>
 
 							<View style={styles.infoPanel}>
-								<View style={styles.infoPanelGlow} />
 								<View style={styles.infoSections}>
 								<Animated.View style={[styles.infoSection, getFadeUpStyle(privacyAnim, 16)]}>
 									<OMText variant="caption" style={styles.sectionLabel}>
@@ -146,7 +147,9 @@ export default function OnboardingScreen() {
 						</View>
 
 						<View style={styles.footer}>
-							<Animated.View style={getFadeUpStyle(consentAnim, 14)}>
+							<Animated.View
+								style={Platform.OS === 'android' ? undefined : getFadeUpStyle(consentAnim, 14)}
+							>
 								<Pressable
 									onPress={() => setHasAgreed((value) => !value)}
 									style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
@@ -165,15 +168,27 @@ export default function OnboardingScreen() {
 							<Animated.View style={getFadeUpStyle(buttonAnim, 12)}>
 								<OMButton
 									label="Continue"
-									iconName="arrow-forward-outline"
 									onPress={handleContinue}
 									disabled={!hasAgreed}
 									style={[styles.continueButton, hasAgreed && styles.continueButtonEnabled]}
 								/>
 							</Animated.View>
+
+							<OMText variant="caption" style={styles.footerCredit}>
+								Built by{' '}
+								<OMText
+									variant="caption"
+									tone="accent"
+									style={styles.footerCreditLink}
+									onPress={() => Linking.openURL('https://www.openmined.org')}
+								>
+									OpenMined
+								</OMText>
+							</OMText>
 						</View>
 					</View>
-				</SafeAreaView>
+				</View>
+			</SafeAreaView>
 		</View>
 	)
 }
@@ -201,64 +216,59 @@ const styles = StyleSheet.create({
 	content: {
 		flex: 1,
 		paddingHorizontal: omSpacing.xl,
-		paddingTop: omSpacing.xxxl,
-		paddingBottom: omSpacing.l,
+		paddingVertical: omSpacing.xl,
 		maxWidth: 420,
 		width: '100%',
 		alignSelf: 'center',
+		justifyContent: 'center',
+	},
+	stack: {
+		gap: omSpacing.xl,
 	},
 	mainSection: {
-		gap: omSpacing.s,
+		gap: omSpacing.m,
 	},
 	heroSection: {
 		paddingHorizontal: omSpacing.xs,
 		paddingTop: 0,
-		paddingBottom: omSpacing.s,
+		paddingBottom: omSpacing.m,
 	},
 	title: {
 		color: omTheme.textHeadline,
 		letterSpacing: -1,
-		fontSize: 40,
-		lineHeight: 43,
+		fontSize: 42,
+		lineHeight: 45,
 		maxWidth: 320,
 	},
 	heroSupport: {
 		marginTop: omSpacing.m,
 		maxWidth: 320,
 		color: omTheme.textBody,
-		fontSize: 15,
-		lineHeight: 21,
+		fontSize: 16,
+		lineHeight: 22,
 	},
 	infoPanel: {
 		position: 'relative',
 		paddingHorizontal: omSpacing.l,
 		paddingVertical: omSpacing.l,
-		borderRadius: 22,
+		borderRadius: omRadius.l,
 		backgroundColor: 'rgba(252,252,253,0.18)',
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.14)',
 		overflow: 'hidden',
 	},
-	infoPanelGlow: {
-		position: 'absolute',
-		top: 0,
-		left: 0,
-		right: 0,
-		height: 72,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-	},
 	infoSections: {
 		gap: omSpacing.m,
 	},
 	infoSection: {
-		paddingVertical: omSpacing.s,
+		paddingVertical: omSpacing.m,
 	},
 	sectionLabel: {
 		alignSelf: 'flex-start',
 		marginBottom: omSpacing.s,
-		paddingHorizontal: omSpacing.xs,
-		paddingVertical: 4,
-		borderRadius: omRadius.full,
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: omSpacing.xs,
+		borderRadius: omRadius.m,
 		color: omTheme.textMuted,
 		letterSpacing: 1,
 		backgroundColor: 'rgba(252,252,253,0.3)',
@@ -275,22 +285,21 @@ const styles = StyleSheet.create({
 	},
 	disclaimerBody: {
 		color: omTheme.textBody,
-		fontSize: 16,
-		lineHeight: 22,
+		fontSize: 17,
+		lineHeight: 24,
 	},
 	signalList: {
 		marginTop: omSpacing.m,
-		gap: omSpacing.m,
+		gap: omSpacing.l,
 	},
 	signalText: {
 		color: omTheme.textHeadline,
-		fontSize: 16,
-		lineHeight: 22,
+		fontSize: 17,
+		lineHeight: 24,
 	},
 	footer: {
-		marginTop: omSpacing.l,
-		gap: omSpacing.s,
-		paddingTop: 0,
+		gap: omSpacing.m,
+		alignItems: 'stretch',
 	},
 	checkboxRow: {
 		flexDirection: 'row',
@@ -298,19 +307,18 @@ const styles = StyleSheet.create({
 		gap: omSpacing.m,
 		paddingHorizontal: omSpacing.l,
 		paddingVertical: omSpacing.m,
-		borderRadius: 18,
-		backgroundColor: 'rgba(252,252,253,0.52)',
+		borderRadius: omRadius.l,
+		backgroundColor: 'rgba(244,243,246,0.9)',
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.18)',
+		borderColor: 'rgba(39,37,50,0.06)',
 		shadowColor: '#17161d',
 		shadowOffset: { width: 0, height: 6 },
-		shadowOpacity: 0.03,
+		shadowOpacity: 0,
 		shadowRadius: 12,
-		elevation: 1,
+		elevation: 0,
 	},
 	checkboxRowChecked: {
-		backgroundColor: 'rgba(236,245,249,0.66)',
-		borderColor: 'rgba(56,140,168,0.22)',
+		borderColor: 'rgba(39,37,50,0.08)',
 	},
 	checkboxBox: {
 		width: 22,
@@ -330,12 +338,13 @@ const styles = StyleSheet.create({
 	checkboxText: {
 		flex: 1,
 		color: omTheme.textBody,
-		fontSize: 15,
-		lineHeight: 21,
+		fontSize: 16,
+		lineHeight: 22,
+		includeFontPadding: false,
 	},
 	continueButton: {
-		minHeight: 52,
-		borderRadius: 16,
+		minHeight: 54,
+		borderRadius: omRadius.l,
 		backgroundColor: 'rgba(39,37,50,0.42)',
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.14)',
@@ -348,6 +357,18 @@ const styles = StyleSheet.create({
 		shadowOpacity: 0.18,
 		shadowRadius: 24,
 		elevation: 4,
+	},
+	footerCredit: {
+		marginTop: omSpacing.xs,
+		color: omTheme.textMuted,
+		textAlign: 'center',
+		fontSize: 14,
+		lineHeight: 20,
+	},
+	footerCreditLink: {
+		fontSize: 14,
+		lineHeight: 20,
+		textDecorationLine: 'underline',
 	},
 })
 

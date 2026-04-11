@@ -48,6 +48,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.xl,
 		paddingVertical: omSpacing.l,
 		borderRadius: omRadius.m,
+		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
