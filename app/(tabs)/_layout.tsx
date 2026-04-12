@@ -14,12 +14,16 @@ export default function TabLayout() {
 			iconColor={Platform.OS === 'ios' ? undefined : omColors.grayscale500}
 		>
 			<NativeTabs.Trigger name="home">
-				<NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
-				<NativeTabs.Trigger.Icon
+				<NativeTabs.Trigger.Label>Files</NativeTabs.Trigger.Label>
+				{/* <NativeTabs.Trigger.Icon
 					selectedColor={selectedIconColor}
 					sf={{ default: 'house', selected: 'house.fill' }}
 					drawable="ic_menu_home"
-					// src={require("../../assets/images/house.svg")}
+				/> */}
+					<NativeTabs.Trigger.Icon
+					selectedColor={selectedIconColor}
+					sf={{ default: 'folder', selected: 'folder.fill' }}
+					md="folder"
 				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="explore">
@@ -27,8 +31,7 @@ export default function TabLayout() {
 				<NativeTabs.Trigger.Icon
 					selectedColor={selectedIconColor}
 					sf={{ default: 'safari', selected: 'safari.fill' }}
-					// src={require("../../assets/images/house.svg")}
-					drawable="ic_menu_compass"
+					md="explore"
 				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="results">
@@ -36,26 +39,15 @@ export default function TabLayout() {
 				<NativeTabs.Trigger.Icon
 					selectedColor={selectedIconColor}
 					sf={{ default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' }}
-					drawable="ic_menu_sort_by_size"
-				/>
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger hidden name="insights">
-				<NativeTabs.Trigger.Label>Insights</NativeTabs.Trigger.Label>
-				<NativeTabs.Trigger.Icon
-					selectedColor={selectedIconColor}
-					sf={{
-						default: 'brain.head.profile',
-						selected: 'brain.filled.head.profile',
-					}}
-					drawable="ic_menu_search"
+					md="assignment"
 				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="feed">
-				<NativeTabs.Trigger.Label>Notifications</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Label>Feed</NativeTabs.Trigger.Label>
 				<NativeTabs.Trigger.Icon
 					selectedColor={selectedIconColor}
 					sf={{ default: 'bell', selected: 'bell.fill' }}
-					drawable="ic_menu_agenda"
+					md="notifications"
 				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="settings">
@@ -63,7 +55,7 @@ export default function TabLayout() {
 				<NativeTabs.Trigger.Icon
 					selectedColor={selectedIconColor}
 					sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
-					drawable="ic_menu_preferences"
+					drawable="settings"
 				/>
 			</NativeTabs.Trigger>
 		</NativeTabs>
