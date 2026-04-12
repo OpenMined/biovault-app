@@ -117,6 +117,9 @@ export default function SettingsScreen() {
 					<OMText variant="h3" style={styles.title}>
 						Settings
 					</OMText>
+					<OMText variant="body" style={styles.body}>
+						Manage privacy, support, local data, and app preferences for this device.
+					</OMText>
 				</View>
 
 				<View style={styles.section}>

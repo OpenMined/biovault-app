@@ -1,26 +1,16 @@
-import { OMButton } from '@/components/ui/OMButton'
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
-import {
-	clearStoredNotifications,
-	listStoredNotifications,
-	type StoredNotification,
-} from '@/lib/notification-store'
+import { listStoredNotifications, type StoredNotification } from '@/lib/notification-store'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
-import {
-	Alert,
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	View,
-} from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAnalytics } from '@/hooks/useAnalytics'
+import { OMButton } from '@/components/ui/OMButton'
 
-const NOTIFICATIONS_PAGE_SIZE = 5
+const NOTIFICATIONS_PAGE_SIZE = 10
 
 function formatTimestamp(timestamp: string, now: number) {
 	const date = new Date(timestamp)
@@ -85,37 +75,37 @@ function NotificationRow({ item, now }: { item: StoredNotification; now: number 
 				}
 			}}
 			style={({ pressed }) => [
-				styles.row,
-				canOpen ? styles.rowInteractive : null,
-				pressed ? styles.rowPressed : null,
+				styles.card,
+				canOpen ? styles.cardInteractive : null,
+				pressed ? styles.cardPressed : null,
 			]}
 		>
-			<View style={styles.rowIcon}>
-				<OMIcon name="notifications" size={18} tone="inverse" containerTone="dark" />
-			</View>
-			<View style={styles.rowContent}>
-				<View style={styles.rowHeader}>
-					<OMText variant="headline" style={styles.rowTitle}>
+			<View style={styles.cardTopRow}>
+				<View style={styles.cardTitleWrap}>
+					<View style={styles.cardIconRow}>
+						<OMIcon name="notifications" size={16} tone="inverse" containerTone="dark" />
+						{item.subtitle ? (
+							<OMText variant="caption" style={styles.cardSubtitle}>
+								{item.subtitle}
+							</OMText>
+						) : null}
+					</View>
+					<OMText variant="headline" style={styles.cardTitle}>
 						{item.title}
 					</OMText>
-					<OMText variant="caption" style={styles.rowMeta}>
-						{formatTimestamp(item.receivedAt, now)}
-					</OMText>
 				</View>
-				{item.subtitle ? (
-					<OMText variant="caption" style={styles.rowSubtitle}>
-						{item.subtitle}
-					</OMText>
-				) : null}
-				<OMText variant="body" style={styles.rowBody}>
-					{item.body}
+			</View>
+			<OMText variant="body" style={styles.cardBody}>
+				{item.body}
+			</OMText>
+			<View style={styles.cardFooter}>
+				<OMText variant="caption" style={styles.metaText}>
+					{formatTimestamp(item.receivedAt, now)}
 				</OMText>
 				{item.url ? (
-					<View style={styles.rowFooter}>
-						<OMText variant="subtitle" style={styles.rowAction}>
-							Open
-						</OMText>
-					</View>
+					<OMText variant="subtitle" style={styles.cardAction}>
+						Open
+					</OMText>
 				) : null}
 			</View>
 		</Pressable>
@@ -126,6 +116,7 @@ export default function FeedScreen() {
 	const [notifications, setNotifications] = useState<StoredNotification[]>([])
 	const [now, setNow] = useState(() => Date.now())
 	const [visibleCount, setVisibleCount] = useState(NOTIFICATIONS_PAGE_SIZE)
+	const insets = useSafeAreaInsets()
 
 	useAnalytics({
 		trackScreenView: true,
@@ -161,10 +152,13 @@ export default function FeedScreen() {
 	const hasMoreNotifications = notifications.length > visibleCount
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
+		<SafeAreaView style={styles.safeArea} edges={['top']}>
 			<ScrollView
 				style={styles.screen}
-				contentContainerStyle={styles.content}
+				contentContainerStyle={[
+					styles.content,
+					{ paddingBottom: omSpacing.xxxl + insets.bottom + 72 },
+				]}
 				showsVerticalScrollIndicator={false}
 			>
 				<View style={styles.hero}>
@@ -181,30 +175,6 @@ export default function FeedScreen() {
 
 				{notifications.length > 0 ? (
 					<>
-						<View style={styles.actions}>
-							<OMButton
-								label="Clear All"
-								variant="secondary"
-								iconName="trash-outline"
-								onPress={() => {
-									Alert.alert('Clear notifications?', 'This removes the local notification history on this device.', [
-										{ text: 'Cancel', style: 'cancel' },
-										{
-											text: 'Clear',
-											style: 'destructive',
-											onPress: () => {
-												void clearStoredNotifications().then(() => {
-													setNotifications([])
-													setVisibleCount(NOTIFICATIONS_PAGE_SIZE)
-												})
-											},
-										},
-									])
-								}}
-								style={styles.clearButton}
-							/>
-						</View>
-
 						<View style={styles.stack}>
 							{visibleNotifications.map((item) => (
 								<NotificationRow key={item.id} item={item} now={now} />
@@ -266,7 +236,6 @@ const styles = StyleSheet.create({
 	},
 	content: {
 		padding: omSpacing.xl,
-		paddingBottom: omSpacing.xxxl,
 		gap: omSpacing.xl,
 	},
 	hero: {
@@ -292,14 +261,6 @@ const styles = StyleSheet.create({
 		fontSize: 17,
 		lineHeight: 24,
 	},
-	actions: {
-		alignItems: 'flex-end',
-	},
-	clearButton: {
-		minHeight: 40,
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.s,
-	},
 	stack: {
 		gap: omSpacing.m,
 	},
@@ -309,72 +270,75 @@ const styles = StyleSheet.create({
 	paginationButton: {
 		minWidth: 160,
 	},
-	row: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		gap: omSpacing.m,
+	card: {
 		padding: omSpacing.xl,
 		borderRadius: omRadius.l,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.1)',
+		gap: omSpacing.m,
 	},
-	rowInteractive: {
-		backgroundColor: omColors.grayscale700,
+	cardInteractive: {
+		backgroundColor: 'rgba(255,255,255,0.04)',
 	},
-	rowPressed: {
-		opacity: 0.88,
+	cardPressed: {
+		backgroundColor: 'rgba(255,255,255,0.06)',
 	},
-	rowIcon: {
-		paddingTop: 2,
-	},
-	rowContent: {
-		flex: 1,
-		gap: omSpacing.xs,
-	},
-	rowHeader: {
+	cardTopRow: {
 		flexDirection: 'row',
 		alignItems: 'flex-start',
 		justifyContent: 'space-between',
 		gap: omSpacing.m,
 	},
-	rowTitle: {
+	cardTitleWrap: {
 		flex: 1,
-		color: omTheme.primaryText,
+		gap: omSpacing.xs,
 	},
-	rowMeta: {
-		color: omColors.grayscale500,
+	cardIconRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		gap: omSpacing.s,
 	},
-	rowSubtitle: {
+	cardSubtitle: {
 		color: omTheme.accent,
 		letterSpacing: 0.3,
 	},
-	rowBody: {
+	cardTitle: {
+		color: omTheme.primaryText,
+	},
+	cardBody: {
 		color: omColors.grayscale400,
+		lineHeight: 24,
 	},
-	rowFooter: {
-		marginTop: omSpacing.s,
+	cardFooter: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
+		marginTop: omSpacing.xs,
 	},
-	rowAction: {
+	cardAction: {
 		color: omTheme.accent,
 	},
+	metaText: {
+		color: omColors.grayscale500,
+	},
 	emptyCard: {
-		padding: omSpacing.xxl,
-		borderRadius: omRadius.xl,
+		padding: omSpacing.xl,
+		borderRadius: omRadius.l,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.1)',
-		alignItems: 'center',
 		gap: omSpacing.s,
 	},
 	emptyIcon: {
-		marginBottom: omSpacing.s,
+		marginBottom: omSpacing.xs,
+		alignSelf: 'flex-start',
 	},
 	emptyTitle: {
 		color: omTheme.primaryText,
 	},
 	emptyBody: {
 		color: omColors.grayscale400,
-		textAlign: 'center',
 	},
 })

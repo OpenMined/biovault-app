@@ -30,43 +30,15 @@ function ResultsCard({ run }: { run: RecentTestRunSummary }) {
 						<OMText variant="headline" style={styles.cardTitle}>
 							{run.testTitle}
 						</OMText>
-						<OMText variant="body" style={styles.cardBody} numberOfLines={1}>
+						<OMText variant="body" style={styles.cardBody}>
 							{run.inputLabel}
 						</OMText>
 					</View>
-					{run.isPreview ? (
-						<View style={styles.previewPill}>
-							<OMText variant="caption" style={styles.previewText}>
-								Preview
-							</OMText>
-						</View>
-					) : (
-						<View style={styles.livePill}>
-							<OMText variant="caption" style={styles.liveText}>
-								Live
-							</OMText>
-						</View>
-					)}
 				</View>
 
-				<View style={styles.cardBottomRow}>
-					<View style={styles.metaRow}>
-						<View style={styles.metaPill}>
-							<OMText variant="caption" style={styles.metaPillText}>
-								{run.rowCount} result row{run.rowCount === 1 ? '' : 's'}
-							</OMText>
-						</View>
-						<View style={styles.metaPill}>
-							<OMText variant="caption" style={styles.metaPillText}>
-								{run.inputDocumentId ? 'Imported file' : 'Sample input'}
-							</OMText>
-						</View>
-					</View>
-
-					<OMText variant="caption" style={styles.metaText}>
-						{formatRunTimestamp(run.ranAt)}
-					</OMText>
-				</View>
+				<OMText variant="caption" style={styles.metaText}>
+					{formatRunTimestamp(run.ranAt)}
+				</OMText>
 			</Pressable>
 		</Link>
 	)
@@ -92,15 +64,16 @@ export default function ResultsScreen() {
 				contentContainerStyle={styles.content}
 				showsVerticalScrollIndicator={false}
 			>
-				<View style={styles.headerRow}>
-					<OMText variant="h4" style={styles.title}>
-						Results
+				<View style={styles.hero}>
+					<OMText variant="caption" style={styles.eyebrow}>
+						RESULTS
 					</OMText>
-					{runs.length ? (
-						<OMText variant="caption" style={styles.countText}>
-							{runs.length} saved
-						</OMText>
-					) : null}
+					<OMText variant="h3" style={styles.title}>
+						Assay Results
+					</OMText>
+					<OMText variant="body" style={styles.body}>
+						Open any saved run to review the latest matched, normal, and missing rows for that assay.
+					</OMText>
 				</View>
 
 				{runs.length ? (
@@ -136,32 +109,41 @@ const styles = StyleSheet.create({
 	content: {
 		padding: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
-		gap: omSpacing.l,
+		gap: omSpacing.xl,
 	},
-	headerRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
+	hero: {
 		gap: omSpacing.m,
-		paddingTop: omSpacing.s,
+		paddingTop: omSpacing.m,
+	},
+	eyebrow: {
+		alignSelf: 'flex-start',
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: omSpacing.xs,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		color: omColors.grayscale400,
+		letterSpacing: 1,
 	},
 	title: {
 		color: omTheme.primaryText,
+		maxWidth: 340,
 	},
-	countText: {
-		color: omColors.grayscale500,
+	body: {
+		color: omColors.grayscale400,
+		maxWidth: 360,
+		fontSize: 17,
+		lineHeight: 24,
 	},
 	stack: {
-		gap: omSpacing.s,
+		gap: omSpacing.m,
 	},
 	card: {
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.m,
-		borderRadius: omRadius.m,
+		padding: omSpacing.xl,
+		borderRadius: omRadius.l,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
-		gap: omSpacing.s,
+		borderColor: 'rgba(255,255,255,0.1)',
+		gap: omSpacing.m,
 	},
 	cardPressed: {
 		backgroundColor: 'rgba(255,255,255,0.04)',
@@ -174,66 +156,16 @@ const styles = StyleSheet.create({
 	},
 	cardTitleWrap: {
 		flex: 1,
-		gap: 2,
+		gap: omSpacing.xs,
 	},
 	cardTitle: {
 		color: omTheme.primaryText,
-		fontSize: 18,
-		lineHeight: 22,
 	},
 	cardBody: {
 		color: omColors.grayscale400,
-		fontSize: 14,
-		lineHeight: 18,
-	},
-	previewPill: {
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: 4,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(224,163,176,0.12)',
-		borderWidth: 1,
-		borderColor: 'rgba(224,163,176,0.24)',
-	},
-	previewText: {
-		color: omColors.red300,
-	},
-	livePill: {
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: 4,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(83,190,169,0.14)',
-		borderWidth: 1,
-		borderColor: 'rgba(83,190,169,0.28)',
-	},
-	liveText: {
-		color: omTheme.accent,
-	},
-	cardBottomRow: {
-		flexDirection: 'row',
-		alignItems: 'flex-end',
-		justifyContent: 'space-between',
-		gap: omSpacing.m,
-	},
-	metaRow: {
-		flexDirection: 'row',
-		flexWrap: 'wrap',
-		gap: omSpacing.s,
-	},
-	metaPill: {
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
-	},
-	metaPillText: {
-		color: omColors.grayscale300,
 	},
 	metaText: {
 		color: omColors.grayscale500,
-		textAlign: 'right',
-		flexShrink: 0,
 	},
 	emptyCard: {
 		padding: omSpacing.xl,
