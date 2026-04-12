@@ -1,15 +1,33 @@
 import { ExploreAssayCard } from '@/components/explore/ExploreAssayCard'
 import { useExploreLayoutContext } from '@/components/explore/ExploreLayoutContext'
+import { OMText } from '@/components/ui/OMText'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import { listAvailableAssayManifestsSync } from '@/lib/assay-registry'
 import { getExploreCategory } from '@/lib/explore-categories'
 import { listRecentTestRunsForInputDocument, type RecentTestRunSummary } from '@/lib/test-results'
-import { omColors, omSpacing } from '@/styles/brand'
+import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
 
 function getCategoryLabel(category: string) {
 	return getExploreCategory(category)?.title ?? category
+}
+
+function getBadgeLabel(status: string | undefined, hasActiveDocument: boolean) {
+	if (!hasActiveDocument) {
+		return 'Select file'
+	}
+	if (status === 'likely-supported') {
+		return 'Compatible'
+	}
+	if (status === 'unlikely') {
+		return 'Use another'
+	}
+	return 'Review'
+}
+
+function formatRecentRunLabel(value: string) {
+	return `Ran ${new Date(value).toLocaleDateString()}`
 }
 
 export default function ExploreScreen() {
@@ -54,18 +72,24 @@ export default function ExploreScreen() {
 
 	return (
 		<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+			<View style={styles.hero}>
+				<OMText variant="caption" style={styles.eyebrow}>
+					EXPLORE
+				</OMText>
+				<OMText variant="h3" style={styles.title}>
+					Explore Assays
+				</OMText>
+				<OMText variant="body" style={styles.body}>
+					Browse local genomic assays and see what works with your current file.
+				</OMText>
+			</View>
+
 			<View style={styles.list}>
 				{orderedAssays.map((assay) => {
 					const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
 					const recentRun = recentRunsBySlug[assay.id]
 					const hasRun = !!recentRun
-					const badgeLabel = compatibility
-						? compatibility.status === 'likely-supported'
-							? 'Works with your file'
-							: compatibility.status === 'unlikely'
-								? 'Better with another file'
-								: 'Needs review'
-						: 'Pick a file to check'
+					const badgeLabel = getBadgeLabel(compatibility?.status, Boolean(activeDocument))
 					const badgeTone = compatibility
 						? compatibility.status === 'likely-supported'
 							? 'good'
@@ -88,9 +112,7 @@ export default function ExploreScreen() {
 							badgeLabel={badgeLabel}
 							badgeTone={badgeTone}
 							isPreviouslyRun={hasRun}
-							recentRunLabel={
-								recentRun ? `Latest result on this file: ${new Date(recentRun.ranAt).toLocaleDateString()}` : null
-							}
+							recentRunLabel={recentRun ? formatRecentRunLabel(recentRun.ranAt) : null}
 							href={{
 								pathname: '/tests/[slug]',
 								params: {
@@ -114,8 +136,32 @@ const styles = StyleSheet.create({
 	},
 	content: {
 		paddingHorizontal: omSpacing.xl,
-		paddingTop: omSpacing.xs,
+		paddingTop: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
+		gap: omSpacing.xl,
+	},
+	hero: {
+		gap: omSpacing.m,
+		paddingTop: omSpacing.m,
+	},
+	eyebrow: {
+		alignSelf: 'flex-start',
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: omSpacing.xs,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		color: omColors.grayscale400,
+		letterSpacing: 1,
+	},
+	title: {
+		color: omTheme.primaryText,
+		maxWidth: 340,
+	},
+	body: {
+		color: omColors.grayscale400,
+		maxWidth: 360,
+		fontSize: 17,
+		lineHeight: 24,
 	},
 	list: {
 		gap: omSpacing.s,

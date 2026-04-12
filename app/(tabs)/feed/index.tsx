@@ -1,4 +1,3 @@
-import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { listStoredNotifications, type StoredNotification } from '@/lib/notification-store'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
@@ -65,6 +64,7 @@ function formatTimestamp(timestamp: string, now: number) {
 
 function NotificationRow({ item, now }: { item: StoredNotification; now: number }) {
 	const canOpen = Boolean(item.url)
+	const title = item.subtitle?.trim() ? `${item.title} - ${item.subtitle}` : item.title
 
 	return (
 		<Pressable
@@ -74,37 +74,23 @@ function NotificationRow({ item, now }: { item: StoredNotification; now: number 
 					router.push(item.url as any)
 				}
 			}}
-			style={({ pressed }) => [
-				styles.card,
-				canOpen ? styles.cardInteractive : null,
-				pressed ? styles.cardPressed : null,
-			]}
+			style={({ pressed }) => [styles.card, canOpen ? styles.cardInteractive : null, pressed ? styles.cardPressed : null]}
 		>
 			<View style={styles.cardTopRow}>
-				<View style={styles.cardTitleWrap}>
-					<View style={styles.cardIconRow}>
-						<OMIcon name="notifications" size={16} tone="inverse" containerTone="dark" />
-						{item.subtitle ? (
-							<OMText variant="caption" style={styles.cardSubtitle}>
-								{item.subtitle}
-							</OMText>
-						) : null}
-					</View>
-					<OMText variant="headline" style={styles.cardTitle}>
-						{item.title}
-					</OMText>
-				</View>
-			</View>
-			<OMText variant="body" style={styles.cardBody}>
-				{item.body}
-			</OMText>
-			<View style={styles.cardFooter}>
-				<OMText variant="caption" style={styles.metaText}>
+				<OMText numberOfLines={1} variant="headline" style={styles.cardTitle}>
+					{title}
+				</OMText>
+				<OMText numberOfLines={1} variant="caption" style={styles.metaText}>
 					{formatTimestamp(item.receivedAt, now)}
+				</OMText>
+			</View>
+			<View style={styles.cardFooter}>
+				<OMText numberOfLines={1} variant="caption" style={styles.cardBody}>
+					{item.body}
 				</OMText>
 				{item.url ? (
 					<OMText variant="subtitle" style={styles.cardAction}>
-						Open
+						Tap to View
 					</OMText>
 				) : null}
 			</View>
@@ -209,9 +195,6 @@ export default function FeedScreen() {
 					</>
 				) : (
 					<View style={styles.emptyCard}>
-						<View style={styles.emptyIcon}>
-							<OMIcon name="notifications-off-outline" size={24} tone="accent" containerTone="soft" />
-						</View>
 						<OMText variant="headline" style={styles.emptyTitle}>
 							No notifications yet
 						</OMText>
@@ -262,7 +245,7 @@ const styles = StyleSheet.create({
 		lineHeight: 24,
 	},
 	stack: {
-		gap: omSpacing.m,
+		gap: omSpacing.xs,
 	},
 	paginationActions: {
 		alignItems: 'center',
@@ -271,57 +254,46 @@ const styles = StyleSheet.create({
 		minWidth: 160,
 	},
 	card: {
-		padding: omSpacing.xl,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
+		paddingHorizontal: omSpacing.l,
+		paddingVertical: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.04)',
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-		gap: omSpacing.m,
+		borderColor: 'rgba(255,255,255,0.08)',
+		gap: omSpacing.s,
 	},
 	cardInteractive: {
-		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderColor: 'rgba(255,255,255,0.08)',
 	},
 	cardPressed: {
 		backgroundColor: 'rgba(255,255,255,0.06)',
+		borderColor: 'rgba(255,255,255,0.14)',
 	},
 	cardTopRow: {
 		flexDirection: 'row',
-		alignItems: 'flex-start',
+		alignItems: 'center',
 		justifyContent: 'space-between',
 		gap: omSpacing.m,
 	},
-	cardTitleWrap: {
-		flex: 1,
-		gap: omSpacing.xs,
-	},
-	cardIconRow: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		gap: omSpacing.s,
-	},
-	cardSubtitle: {
-		color: omTheme.accent,
-		letterSpacing: 0.3,
-	},
 	cardTitle: {
+		flex: 1,
 		color: omTheme.primaryText,
 	},
 	cardBody: {
-		color: omColors.grayscale400,
-		lineHeight: 24,
+		color: omColors.grayscale500,
 	},
 	cardFooter: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		gap: omSpacing.m,
-		marginTop: omSpacing.xs,
 	},
 	cardAction: {
 		color: omTheme.accent,
 	},
 	metaText: {
 		color: omColors.grayscale500,
+		flexShrink: 0,
 	},
 	emptyCard: {
 		padding: omSpacing.xl,
@@ -330,10 +302,6 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.1)',
 		gap: omSpacing.s,
-	},
-	emptyIcon: {
-		marginBottom: omSpacing.xs,
-		alignSelf: 'flex-start',
 	},
 	emptyTitle: {
 		color: omTheme.primaryText,

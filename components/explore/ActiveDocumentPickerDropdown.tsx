@@ -7,6 +7,7 @@ type Props = {
 	activeDocumentId: string | null
 	documents: HomeImportedDocument[]
 	emptyBody: string
+	onAddFile: () => void
 	onSelectDocument: (document: HomeImportedDocument) => void
 }
 
@@ -14,6 +15,7 @@ export function ActiveDocumentPickerDropdown({
 	activeDocumentId,
 	documents,
 	emptyBody,
+	onAddFile,
 	onSelectDocument,
 }: Props) {
 	const orderedDocuments = [
@@ -52,8 +54,20 @@ export function ActiveDocumentPickerDropdown({
 							<OMText variant="body" style={styles.emptyBody}>
 								{emptyBody}
 							</OMText>
+							<Pressable onPress={onAddFile} style={({ pressed }) => [styles.addButton, pressed ? styles.addButtonPressed : null]}>
+								<OMText variant="subtitle" style={styles.addButtonText}>
+									Add File
+								</OMText>
+							</Pressable>
 						</View>
 					)}
+					{orderedDocuments.length ? (
+						<Pressable onPress={onAddFile} style={({ pressed }) => [styles.addButton, pressed ? styles.addButtonPressed : null]}>
+							<OMText variant="subtitle" style={styles.addButtonText}>
+								Add File
+							</OMText>
+						</Pressable>
+					) : null}
 				</View>
 			</View>
 		</View>
@@ -108,8 +122,25 @@ const styles = StyleSheet.create({
 		backgroundColor: omColors.grayscale850,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
+		gap: omSpacing.m,
 	},
 	emptyBody: {
 		color: omColors.grayscale400,
+	},
+	addButton: {
+		alignItems: 'center',
+		justifyContent: 'center',
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(83,190,169,0.14)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.28)',
+	},
+	addButtonPressed: {
+		backgroundColor: 'rgba(83,190,169,0.2)',
+	},
+	addButtonText: {
+		color: omTheme.accent,
 	},
 })

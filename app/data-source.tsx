@@ -250,7 +250,7 @@ export default function DataSourceScreen() {
 					style={styles.helpLinkButton}
 				>
 					<OMText variant="subtitle" style={styles.helpLink}>
-						How do I get my genomic data?
+						Where can I get my genomic data?
 					</OMText>
 				</Pressable>
 			</View>

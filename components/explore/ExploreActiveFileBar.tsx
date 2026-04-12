@@ -8,11 +8,18 @@ type Props = {
 	fileName: string
 	isHighlighted?: boolean
 	onPress: () => void
+	chevronDirection?: 'down' | 'up'
 }
 
 const chevronDownUri = Asset.fromModule(require('../../assets/images/chevron-down.svg')).uri
+const chevronUpUri = Asset.fromModule(require('../../assets/images/chevron-up.svg')).uri
 
-export function ExploreActiveFileBar({ fileName, isHighlighted = false, onPress }: Props) {
+export function ExploreActiveFileBar({
+	fileName,
+	isHighlighted = false,
+	onPress,
+	chevronDirection = 'down',
+}: Props) {
 	return (
 		<Pressable
 			onPress={onPress}
@@ -24,14 +31,19 @@ export function ExploreActiveFileBar({ fileName, isHighlighted = false, onPress 
 		>
 			<View style={styles.textRow}>
 				<OMText variant="subtitle" style={styles.label}>
-					Browsing with:
+					Selected:
 				</OMText>
 				<OMText variant="headline" style={styles.value} numberOfLines={1} ellipsizeMode="tail">
 					{fileName}
 				</OMText>
 			</View>
 			<View style={styles.chevronWrap}>
-				<SvgUri uri={chevronDownUri} width={16} height={16} color={omColors.grayscale400} />
+				<SvgUri
+					uri={chevronDirection === 'up' ? chevronUpUri : chevronDownUri}
+					width={16}
+					height={16}
+					color={omColors.grayscale400}
+				/>
 			</View>
 		</Pressable>
 	)
@@ -46,12 +58,12 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.m,
 		paddingVertical: 10,
 		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.04)',
+		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.06)',
+		borderColor: 'rgba(255,255,255,0.08)',
 	},
 	containerPressed: {
-		backgroundColor: 'rgba(255,255,255,0.07)',
+		backgroundColor: omColors.grayscale700,
 		borderColor: 'rgba(255,255,255,0.12)',
 	},
 	containerHighlighted: {

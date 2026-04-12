@@ -9,7 +9,7 @@ import {
 } from '@/lib/home-import'
 import { isExploreDemoModeEnabledSync, setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
 import { omColors, omSpacing } from '@/styles/brand'
-import { Stack } from 'expo-router'
+import { router, Stack } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Animated, Easing, Pressable, StyleSheet, View } from 'react-native'
@@ -103,6 +103,11 @@ export default function ExploreLayout() {
 		])
 	}, [finishDemo])
 
+	const openAddFile = useCallback(() => {
+		setIsPickerOpen(false)
+		router.push('/data-source')
+	}, [])
+
 	return (
 		<ExploreLayoutContextProvider
 			value={{
@@ -125,6 +130,7 @@ export default function ExploreLayout() {
 							<ExploreActiveFileBar
 								fileName={activeDocument ? activeDocument.name : 'No active file selected'}
 								isHighlighted={isDemoActive}
+								chevronDirection="up"
 								onPress={() => {
 									if (!isDemoActive) {
 										setIsPickerOpen((current) => !current)
@@ -138,6 +144,7 @@ export default function ExploreLayout() {
 									documents={importedDocuments}
 									activeDocumentId={activeDocument?.id ?? null}
 									emptyBody="Import a file first to get file-aware assay recommendations."
+									onAddFile={openAddFile}
 									onSelectDocument={(document) => {
 										void setActiveImportedDocumentId(document.id)
 											.then(async () => {
@@ -169,11 +176,14 @@ export default function ExploreLayout() {
 					{isDemoActive ? (
 						<Animated.View style={[styles.demoOverlay, { opacity: demoOpacity }]}>
 							<View style={styles.demoStickyBar} pointerEvents="none">
-								<ExploreActiveFileBar
-									fileName={activeDocument ? activeDocument.name : 'No active file selected'}
-									isHighlighted
-									onPress={() => {}}
-								/>
+								<View style={styles.demoStickyBarInner}>
+									<ExploreActiveFileBar
+										fileName={activeDocument ? activeDocument.name : 'No active file selected'}
+										isHighlighted
+										chevronDirection="up"
+										onPress={() => {}}
+									/>
+								</View>
 							</View>
 							<Animated.View
 								style={[
@@ -184,11 +194,11 @@ export default function ExploreLayout() {
 								]}
 							>
 								<OMText variant="headline" style={styles.demoTitle}>
-									Select your genomic file
+									Review the selected file
 								</OMText>
 								<OMText variant="body" style={styles.demoBody}>
-									This is where you select the genomic file BioVault uses when showing file-aware
-									tests and recommendations.
+									Use the `Selected:` field here to switch which genomic file BioVault uses for
+									file-aware assays and recommendations.
 								</OMText>
 								<OMButton label="Next" onPress={dismissDemo} style={styles.demoNextButton} />
 							</Animated.View>
@@ -214,19 +224,24 @@ const styles = StyleSheet.create({
 		zIndex: 1,
 	},
 	stickyChrome: {
-		position: 'relative',
+		position: 'absolute',
+		left: 0,
+		right: 0,
+		bottom: omSpacing.xl,
+		alignItems: 'center',
 		zIndex: 2,
 	},
 	stickyBar: {
+		width: '100%',
+		maxWidth: 420,
 		paddingHorizontal: omSpacing.xl,
-		paddingTop: omSpacing.m,
-		paddingBottom: omSpacing.s,
 	},
 	dropdownLayer: {
 		position: 'absolute',
 		left: omSpacing.xl,
 		right: omSpacing.xl,
-		top: '100%',
+		bottom: '100%',
+		marginBottom: omSpacing.s,
 	},
 	content: {
 		flex: 1,
@@ -239,13 +254,21 @@ const styles = StyleSheet.create({
 	},
 	demoStickyBar: {
 		paddingHorizontal: omSpacing.xl,
-		paddingTop: omSpacing.m,
-		paddingBottom: omSpacing.s,
+		position: 'absolute',
+		left: 0,
+		right: 0,
+		bottom: omSpacing.xl,
+		alignItems: 'center',
+	},
+	demoStickyBarInner: {
+		width: '100%',
+		maxWidth: 420,
 	},
 	demoCoachmark: {
 		alignSelf: 'stretch',
 		marginHorizontal: omSpacing.xl,
-		marginTop: omSpacing.s,
+		marginTop: 'auto',
+		marginBottom: 104,
 		padding: omSpacing.l,
 		borderRadius: 20,
 		backgroundColor: 'rgba(9,15,28,0.96)',

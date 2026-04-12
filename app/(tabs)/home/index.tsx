@@ -91,57 +91,35 @@ export default function HomeScreen() {
 
 	return (
 		<SafeAreaView style={styles.safeArea} edges={['top']}>
-			{!hasImportedDocuments ? (
-				<View style={styles.emptyState}>
-					<View style={styles.emptyStatePanel}>
-						<OMText variant="h4" style={styles.emptyStateTitle}>
-							No genomic files yet
-						</OMText>
-						<OMText variant="body" style={styles.emptyStateBody}>
-							Import files from your device to start running BioVault tests locally.
-						</OMText>
-						<OMText variant="caption" style={styles.emptyStateNote}>
-							Your files stay on your device and are never uploaded to our servers.
-						</OMText>
-						<Pressable
-							onPress={() => router.push('/data-source')}
-							style={({ pressed }) => [styles.emptyStateCta, pressed ? styles.emptyStateCtaPressed : null]}
-						>
-							<OMText variant="subtitle" style={styles.emptyStateCtaText}>
-								Add Files
-							</OMText>
-						</Pressable>
-					</View>
+			<ScrollView
+				style={styles.screen}
+				contentContainerStyle={styles.content}
+				showsVerticalScrollIndicator={false}
+			>
+				<View style={styles.hero}>
+					<OMText variant="caption" style={styles.eyebrow}>
+						FILES
+					</OMText>
+					<OMText variant="h3" style={styles.pageTitle}>
+						Your genomic files
+					</OMText>
+					<OMText variant="body" style={styles.pageBody}>
+						Open any file to rename it, review its assays, or remove it from this device.
+					</OMText>
 				</View>
-			) : (
-				<ScrollView
-					style={styles.screen}
-					contentContainerStyle={styles.content}
-					showsVerticalScrollIndicator={false}
-				>
-					<View style={styles.hero}>
-						<OMText variant="caption" style={styles.eyebrow}>
-							DATA
-						</OMText>
-						<OMText variant="h3" style={styles.pageTitle}>
-							Your genomic files.
-						</OMText>
-						<OMText variant="body" style={styles.pageBody}>
-							Open any file to rename it, review its tests, or remove it from this device.
-						</OMText>
-					</View>
 
-					<View style={styles.headerRow}>
-						<OMText variant="headline" style={styles.sectionTitle}>
-							Saved files
+				<View style={styles.headerRow}>
+					<OMText variant="headline" style={styles.sectionTitle}>
+						Saved files
+					</OMText>
+					<Pressable onPress={() => router.push('/data-source')} style={styles.addButton}>
+						<OMText variant="subtitle" style={styles.addButtonText}>
+							Add Files
 						</OMText>
-						<Pressable onPress={() => router.push('/data-source')} style={styles.addButton}>
-							<OMText variant="subtitle" style={styles.addButtonText}>
-								Add Files
-							</OMText>
-						</Pressable>
-					</View>
+					</Pressable>
+				</View>
 
+				{hasImportedDocuments ? (
 					<View style={styles.listSurface}>
 						{importedDocuments.map((document, index) => (
 							<View key={document.id} style={index > 0 ? styles.rowDivider : undefined}>
@@ -149,8 +127,17 @@ export default function HomeScreen() {
 							</View>
 						))}
 					</View>
-				</ScrollView>
-			)}
+				) : (
+					<View style={styles.emptyListCard}>
+						<OMText variant="headline" style={styles.emptyListTitle}>
+							No files yet
+						</OMText>
+						<OMText variant="body" style={styles.emptyListBody}>
+							Add a genomic file and run assays locally.
+						</OMText>
+					</View>
+				)}
+			</ScrollView>
 		</SafeAreaView>
 	)
 }
@@ -215,6 +202,20 @@ const styles = StyleSheet.create({
 	listSurface: {
 		gap: omSpacing.m,
 	},
+	emptyListCard: {
+		padding: omSpacing.xl,
+		borderRadius: omRadius.l,
+		backgroundColor: omColors.grayscale750,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.1)',
+		gap: omSpacing.s,
+	},
+	emptyListTitle: {
+		color: omTheme.primaryText,
+	},
+	emptyListBody: {
+		color: omColors.grayscale400,
+	},
 	rowDivider: {
 		marginTop: 0,
 	},
@@ -249,51 +250,5 @@ const styles = StyleSheet.create({
 	},
 	fileRowAction: {
 		color: omTheme.accent,
-	},
-	emptyState: {
-		flex: 1,
-		justifyContent: 'center',
-		paddingHorizontal: omSpacing.xl,
-	},
-	emptyStatePanel: {
-		paddingVertical: omSpacing.xxxl,
-		paddingHorizontal: omSpacing.xxl,
-		borderRadius: omRadius.xl,
-		backgroundColor: omColors.grayscale750,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-		alignItems: 'center',
-	},
-	emptyStateTitle: {
-		color: omTheme.primaryText,
-		textAlign: 'center',
-	},
-	emptyStateBody: {
-		marginTop: omSpacing.m,
-		color: omColors.grayscale400,
-		fontSize: 16,
-		lineHeight: 24,
-		textAlign: 'center',
-	},
-	emptyStateNote: {
-		marginTop: omSpacing.l,
-		color: omColors.grayscale500,
-		textAlign: 'center',
-	},
-	emptyStateCta: {
-		marginTop: omSpacing.xl,
-		minHeight: 52,
-		width: '100%',
-		borderRadius: omRadius.l,
-		backgroundColor: omTheme.accent,
-		alignItems: 'center',
-		justifyContent: 'center',
-		paddingHorizontal: omSpacing.xl,
-	},
-	emptyStateCtaPressed: {
-		backgroundColor: omTheme.accentDeep,
-	},
-	emptyStateCtaText: {
-		color: omTheme.primaryText,
 	},
 })

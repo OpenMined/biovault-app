@@ -13,6 +13,23 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
+function getBadgeLabel(status: string | undefined, hasActiveDocument: boolean) {
+	if (!hasActiveDocument) {
+		return 'Select file'
+	}
+	if (status === 'likely-supported') {
+		return 'Compatible'
+	}
+	if (status === 'unlikely') {
+		return 'Use another'
+	}
+	return 'Review'
+}
+
+function formatRecentRunLabel(value: string) {
+	return `Ran ${new Date(value).toLocaleDateString()}`
+}
+
 export default function ExploreCategoryScreen() {
 	const params = useLocalSearchParams<{ category?: string }>()
 	const category = params.category ? getExploreCategory(params.category) : null
@@ -95,13 +112,7 @@ export default function ExploreCategoryScreen() {
 						const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
 						const recentRun = recentRunsBySlug[assay.id]
 						const hasRun = !!recentRun
-						const badgeLabel = compatibility
-							? compatibility.status === 'likely-supported'
-								? 'Works with your file'
-								: compatibility.status === 'unlikely'
-									? 'Better with another file'
-									: 'Needs review'
-							: 'Pick a file to check'
+						const badgeLabel = getBadgeLabel(compatibility?.status, Boolean(activeDocument))
 						const badgeTone = compatibility
 							? compatibility.status === 'likely-supported'
 								? 'good'
@@ -124,9 +135,7 @@ export default function ExploreCategoryScreen() {
 								badgeLabel={badgeLabel}
 								badgeTone={badgeTone}
 								isPreviouslyRun={hasRun}
-								recentRunLabel={
-									recentRun ? `Latest result on this file: ${new Date(recentRun.ranAt).toLocaleDateString()}` : null
-								}
+								recentRunLabel={recentRun ? formatRecentRunLabel(recentRun.ranAt) : null}
 								href={{
 									pathname: '/tests/[slug]',
 									params: {

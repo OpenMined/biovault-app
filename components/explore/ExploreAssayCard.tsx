@@ -31,45 +31,40 @@ export function ExploreAssayCard({
 			<Pressable style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}>
 				<View style={styles.cardHeader}>
 					<View style={styles.cardTitleBlock}>
-						<OMText variant="h4" style={styles.cardTitle}>
+						<OMText numberOfLines={1} variant="headline" style={styles.cardTitle}>
 							{title}
 						</OMText>
-						<OMText variant="body" style={styles.cardBody}>
+						<OMText numberOfLines={1} variant="caption" style={styles.cardBody}>
 							{body}
 						</OMText>
 					</View>
-					<View style={styles.cardBadgeColumn}>
-						<View
-							style={[
-								styles.compatibilityBadge,
-								badgeTone === 'good'
-									? styles.compatibilityBadgeGood
-									: badgeTone === 'weak'
-										? styles.compatibilityBadgeWeak
-										: styles.compatibilityBadgeNeutral,
-							]}
-						>
-							<OMText variant="caption" style={styles.compatibilityBadgeText}>
-								{badgeLabel}
-							</OMText>
-						</View>
-						{isPreviouslyRun ? (
-							<View style={styles.ranBadge}>
-								<OMText variant="caption" style={styles.ranBadgeText}>
-									Already run
-								</OMText>
-							</View>
-						) : null}
+					<View
+						style={[
+							styles.compatibilityBadge,
+							badgeTone === 'good'
+								? styles.compatibilityBadgeGood
+								: badgeTone === 'weak'
+									? styles.compatibilityBadgeWeak
+									: styles.compatibilityBadgeNeutral,
+						]}
+					>
+						<OMText variant="caption" style={styles.compatibilityBadgeText}>
+							{badgeLabel}
+						</OMText>
 					</View>
 				</View>
-				<OMText variant="caption" style={styles.cardMeta}>
-					{summary}
-				</OMText>
-				{recentRunLabel ? (
-					<OMText variant="caption" style={styles.cardResultMeta}>
-						{recentRunLabel}
+				<View style={styles.cardFooter}>
+					<OMText numberOfLines={1} variant="caption" style={styles.cardMeta}>
+						{summary}
 					</OMText>
-				) : null}
+					{isPreviouslyRun && recentRunLabel ? (
+						<View style={styles.ranBadge}>
+							<OMText numberOfLines={1} variant="caption" style={styles.ranBadgeText}>
+								{recentRunLabel}
+							</OMText>
+						</View>
+					) : null}
+				</View>
 			</Pressable>
 		</Link>
 	)
@@ -78,49 +73,50 @@ export function ExploreAssayCard({
 const styles = StyleSheet.create({
 	card: {
 		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.l,
+		paddingVertical: omSpacing.m,
 		borderRadius: omRadius.m,
-		backgroundColor: omColors.grayscale750,
+		backgroundColor: 'rgba(255,255,255,0.04)',
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
 		gap: omSpacing.s,
 	},
 	cardPressed: {
-		backgroundColor: 'rgba(255,255,255,0.04)',
+		backgroundColor: 'rgba(255,255,255,0.06)',
+		borderColor: 'rgba(255,255,255,0.14)',
 	},
 	cardHeader: {
 		flexDirection: 'row',
-		alignItems: 'flex-start',
+		alignItems: 'center',
 		justifyContent: 'space-between',
 		gap: omSpacing.m,
 	},
 	cardTitleBlock: {
 		flex: 1,
 		gap: 4,
-	},
-	cardBadgeColumn: {
-		alignItems: 'flex-end',
-		gap: 4,
+		minWidth: 0,
 	},
 	cardTitle: {
 		color: omTheme.primaryText,
 	},
 	cardBody: {
-		color: omColors.grayscale400,
-		lineHeight: 20,
+		color: omColors.grayscale500,
+	},
+	cardFooter: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
 	},
 	cardMeta: {
+		flex: 1,
 		color: omColors.grayscale500,
-		lineHeight: 16,
-	},
-	cardResultMeta: {
-		color: omColors.green500,
 	},
 	compatibilityBadge: {
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: 4,
-		borderRadius: omRadius.s,
+		borderRadius: omRadius.full,
 		borderWidth: 1,
+		flexShrink: 0,
 	},
 	compatibilityBadgeGood: {
 		backgroundColor: 'rgba(83,190,169,0.12)',
@@ -140,10 +136,11 @@ const styles = StyleSheet.create({
 	ranBadge: {
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: 4,
-		borderRadius: omRadius.s,
+		borderRadius: omRadius.full,
 		backgroundColor: 'rgba(83,190,169,0.12)',
 		borderWidth: 1,
 		borderColor: 'rgba(83,190,169,0.2)',
+		flexShrink: 0,
 	},
 	ranBadgeText: {
 		color: omColors.green500,
