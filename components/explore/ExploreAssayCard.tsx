@@ -30,9 +30,14 @@ export function ExploreAssayCard({
 		<Link href={href} asChild>
 			<Pressable style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}>
 				<View style={styles.cardHeader}>
-					<OMText variant="headline" style={styles.cardTitle}>
-						{title}
-					</OMText>
+					<View style={styles.cardTitleBlock}>
+						<OMText variant="h4" style={styles.cardTitle}>
+							{title}
+						</OMText>
+						<OMText variant="body" style={styles.cardBody}>
+							{body}
+						</OMText>
+					</View>
 					<View style={styles.cardBadgeColumn}>
 						<View
 							style={[
@@ -57,9 +62,6 @@ export function ExploreAssayCard({
 						) : null}
 					</View>
 				</View>
-				<OMText variant="body" style={styles.cardBody}>
-					{body}
-				</OMText>
 				<OMText variant="caption" style={styles.cardMeta}>
 					{summary}
 				</OMText>
@@ -80,7 +82,7 @@ const styles = StyleSheet.create({
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.1)',
-		gap: omSpacing.s,
+		gap: omSpacing.m,
 	},
 	cardPressed: {
 		backgroundColor: 'rgba(255,255,255,0.04)',
@@ -91,16 +93,20 @@ const styles = StyleSheet.create({
 		justifyContent: 'space-between',
 		gap: omSpacing.m,
 	},
+	cardTitleBlock: {
+		flex: 1,
+		gap: omSpacing.xs,
+	},
 	cardBadgeColumn: {
 		alignItems: 'flex-end',
 		gap: omSpacing.xs,
 	},
 	cardTitle: {
 		color: omTheme.primaryText,
-		flex: 1,
 	},
 	cardBody: {
 		color: omColors.grayscale400,
+		lineHeight: 22,
 	},
 	cardMeta: {
 		color: omColors.grayscale500,

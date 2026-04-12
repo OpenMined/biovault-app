@@ -75,20 +75,19 @@ export default function ExploreCategoryScreen() {
 
 			<View style={styles.hero}>
 				<OMText variant="caption" style={styles.eyebrow}>
-					{category.title.toUpperCase()}
+					{category.subtitle.toUpperCase()}
 				</OMText>
 				<OMText variant="h3" style={styles.title}>
 					{category.title}
 				</OMText>
-				<View style={styles.heroCopy}>
-					<OMText variant="body" style={styles.body}>
-						{category.description}
-					</OMText>
-					<OMText variant="body" style={styles.example}>
-						{category.example}
-					</OMText>
-				</View>
+				<OMText variant="body" style={styles.body}>
+					{category.description}
+				</OMText>
 			</View>
+
+			<OMText variant="caption" style={styles.sectionLabel}>
+				AVAILABLE ASSAYS
+			</OMText>
 
 			{sortedAssays.length ? (
 				<View style={styles.stack}>
@@ -162,7 +161,7 @@ const styles = StyleSheet.create({
 	content: {
 		paddingHorizontal: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
-		gap: omSpacing.xl,
+		gap: omSpacing.l,
 	},
 	topBar: {
 		alignItems: 'flex-start',
@@ -179,19 +178,12 @@ const styles = StyleSheet.create({
 		color: omColors.grayscale300,
 	},
 	hero: {
-		gap: omSpacing.m,
-	},
-	heroCopy: {
 		gap: omSpacing.s,
 	},
 	eyebrow: {
 		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		color: omColors.grayscale400,
-		letterSpacing: 1,
+		color: omColors.teal500,
+		letterSpacing: 0.8,
 	},
 	title: {
 		color: omTheme.primaryText,
@@ -199,14 +191,12 @@ const styles = StyleSheet.create({
 	body: {
 		color: omColors.grayscale400,
 		maxWidth: 360,
-		fontSize: 17,
-		lineHeight: 24,
+		lineHeight: 22,
 	},
-	example: {
-		color: omTheme.primaryText,
-		maxWidth: 360,
-		fontSize: 17,
-		lineHeight: 24,
+	sectionLabel: {
+		color: omColors.grayscale500,
+		textTransform: 'uppercase',
+		letterSpacing: 0.8,
 	},
 	stack: {
 		gap: omSpacing.m,

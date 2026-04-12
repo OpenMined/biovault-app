@@ -7,15 +7,6 @@ import { ScrollView, StyleSheet, View } from 'react-native'
 export default function ExploreScreen() {
 	return (
 		<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-			<View style={styles.hero}>
-				<OMText variant="h4" style={styles.pageTitle}>
-					Explore
-				</OMText>
-				<OMText variant="body" style={styles.pageBody}>
-					Browse analysis categories and open a category to view its description, example, and available assays.
-				</OMText>
-			</View>
-
 			<View style={styles.stack}>
 				{exploreCategories.map((category) => (
 					<ExploreCategoryCard
@@ -37,19 +28,9 @@ const styles = StyleSheet.create({
 	content: {
 		paddingHorizontal: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
-		gap: omSpacing.xl,
-	},
-	hero: {
-		gap: omSpacing.s,
-	},
-	pageTitle: {
-		color: omTheme.primaryText,
-	},
-	pageBody: {
-		color: omColors.grayscale400,
-		lineHeight: 22,
+		gap: omSpacing.m,
 	},
 	stack: {
-		gap: omSpacing.s,
+		gap: omSpacing.m,
 	},
 })

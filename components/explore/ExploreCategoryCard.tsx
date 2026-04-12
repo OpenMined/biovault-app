@@ -23,22 +23,27 @@ export function ExploreCategoryCard({ assayCount, category }: Props) {
 				<View style={styles.rowMain}>
 					<ExploreIllustration icon={category.icon} />
 					<View style={styles.rowTextBlock}>
+						<OMText variant="caption" style={styles.rowSubtitle}>
+							{category.subtitle}
+						</OMText>
 						<View style={styles.rowTitleLine}>
-							<OMText variant="headline" style={styles.rowTitle}>
+							<OMText variant="h4" style={styles.rowTitle}>
 								{category.title}
 							</OMText>
+						</View>
+						<OMText variant="body" style={styles.rowDescription}>
+							{category.description}
+						</OMText>
+						<View style={styles.rowFooter}>
 							<View style={styles.countBadge}>
 								<OMText variant="caption" style={styles.countBadgeText}>
 									{assayLabel}
 								</OMText>
 							</View>
+							<OMText variant="caption" style={styles.rowExample}>
+								{category.example}
+							</OMText>
 						</View>
-						<OMText variant="body" style={styles.rowDescription}>
-							{category.description}
-						</OMText>
-						<OMText variant="caption" style={styles.rowExample}>
-							{category.example}
-						</OMText>
 					</View>
 				</View>
 				<View style={styles.chevronWrap}>
@@ -52,11 +57,11 @@ export function ExploreCategoryCard({ assayCount, category }: Props) {
 const styles = StyleSheet.create({
 	row: {
 		flexDirection: 'row',
-		alignItems: 'center',
+		alignItems: 'flex-start',
 		gap: omSpacing.m,
 		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.l,
-		borderRadius: omRadius.m,
+		paddingVertical: omSpacing.xl,
+		borderRadius: omRadius.l,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
@@ -73,13 +78,16 @@ const styles = StyleSheet.create({
 	},
 	rowTextBlock: {
 		flex: 1,
-		gap: omSpacing.xs,
-	},
-	rowTitleLine: {
-		flexDirection: 'row',
-		alignItems: 'center',
 		gap: omSpacing.s,
 		paddingTop: 2,
+	},
+	rowSubtitle: {
+		color: omColors.teal500,
+		textTransform: 'uppercase',
+		letterSpacing: 0.8,
+	},
+	rowTitleLine: {
+		gap: omSpacing.xs,
 	},
 	rowTitle: {
 		color: omTheme.primaryText,
@@ -87,7 +95,13 @@ const styles = StyleSheet.create({
 	},
 	rowDescription: {
 		color: omColors.grayscale400,
-		lineHeight: 20,
+		lineHeight: 22,
+	},
+	rowFooter: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		flexWrap: 'wrap',
+		gap: omSpacing.s,
 	},
 	rowExample: {
 		color: omColors.grayscale500,
@@ -106,6 +120,7 @@ const styles = StyleSheet.create({
 	chevronWrap: {
 		alignItems: 'center',
 		justifyContent: 'center',
+		paddingTop: omSpacing.s,
 		opacity: 0.7,
 	},
 })
