@@ -1,7 +1,7 @@
 import { OMText } from '@/components/ui/OMText'
 import {
 	exploreCategories,
-	getTestsForExploreCategory,
+	getAssaysForExploreCategory,
 	type ExploreCategoryDefinition,
 } from '@/lib/explore-categories'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
@@ -69,8 +69,8 @@ function ExploreIllustration({ icon }: { icon: ExploreCategoryDefinition['icon']
 }
 
 function CategoryCard({ category }: { category: ExploreCategoryDefinition }) {
-	const testCount = getTestsForExploreCategory(category.slug).length
-	const testLabel = `${testCount} ${testCount === 1 ? 'test' : 'tests'}`
+	const assayCount = getAssaysForExploreCategory(category.slug).length
+	const assayLabel = `${assayCount} ${assayCount === 1 ? 'assay' : 'assays'}`
 
 	return (
 		<Link href={{ pathname: '/explore/[category]', params: { category: category.slug } }} asChild>
@@ -85,7 +85,7 @@ function CategoryCard({ category }: { category: ExploreCategoryDefinition }) {
 							</OMText>
 							<View style={styles.countBadge}>
 								<OMText variant="caption" style={styles.countBadgeText}>
-									{testLabel}
+									{assayLabel}
 								</OMText>
 							</View>
 						</View>
@@ -114,7 +114,7 @@ export default function ExploreScreen() {
 						Explore
 					</OMText>
 					<OMText variant="body" style={styles.pageBody}>
-						Browse analysis categories and open a category to view its description, example, and available tests.
+						Browse analysis categories and open a category to view its description, example, and available assays.
 					</OMText>
 				</View>
 

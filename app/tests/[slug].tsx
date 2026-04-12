@@ -1,11 +1,12 @@
 import { OMButton } from '@/components/ui/OMButton'
+import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import {
 	loadHomeImportState,
 	type HomeImportedDocument,
 } from '@/lib/home-import'
+import { getInstalledAssayByIdSync } from '@/lib/assay-store'
 import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { OMText } from '@/components/ui/OMText'
-import { getTestBySlug } from '@/lib/test-catalog'
 import { loadLatestTestRun, saveLatestTestRun, type TestResultStatus } from '@/lib/test-results'
 import { runTest } from '@/lib/test-runner'
 import { omRadius, omSpacing, omTheme } from '@/styles/brand'
@@ -16,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TestDetailScreen() {
 	const params = useLocalSearchParams<{ documentId?: string; sample?: string; slug?: string }>()
-	const test = params.slug ? getTestBySlug(params.slug) : null
+	const assay = params.slug ? getInstalledAssayByIdSync(params.slug)?.manifest ?? null : null
 	const [storedImport, setStoredImport] = useState<HomeImportedDocument | null>(null)
 	const [latestRun, setLatestRun] = useState<Awaited<ReturnType<typeof loadLatestTestRun>>>(null)
 	const [isRunning, setIsRunning] = useState(false)
@@ -61,7 +62,15 @@ export default function TestDetailScreen() {
 		}))
 	}, [latestRun])
 
-	if (!test) {
+	const compatibility = useMemo(() => {
+		if (!assay) {
+			return null
+		}
+
+		return assessAssayCompatibility(assay, storedImport)
+	}, [assay, storedImport])
+
+	if (!assay) {
 		return (
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.emptyState}>
@@ -92,13 +101,13 @@ export default function TestDetailScreen() {
 			>
 				<View style={styles.hero}>
 					<OMText variant="caption" style={styles.eyebrow}>
-						{test.category.toUpperCase()}
+						{assay.category.toUpperCase()}
 					</OMText>
 					<OMText variant="h3" style={styles.title}>
-						{test.title}
+						{assay.title}
 					</OMText>
 					<OMText variant="body" style={styles.subtitle}>
-						{test.subtitle}
+						{assay.subtitle}
 					</OMText>
 				</View>
 
@@ -107,7 +116,7 @@ export default function TestDetailScreen() {
 						What this test does
 					</OMText>
 					<OMText variant="body" style={styles.panelBody}>
-						{test.description}
+						{assay.description}
 					</OMText>
 				</View>
 
@@ -127,9 +136,55 @@ export default function TestDetailScreen() {
 						</OMText>
 					) : null}
 					<OMText variant="caption" style={styles.runMeta}>
-						Execution mode: {test.runMode === 'bioscript' ? 'Live Bioscript run' : 'Preview only'}
+						Execution mode: {assay.runMode === 'bioscript' ? 'Live Bioscript run' : 'Preview only'}
 					</OMText>
 				</View>
+
+				{compatibility ? (
+					<View style={styles.panel}>
+						<OMText variant="headline" style={styles.panelTitle}>
+							Compatibility
+						</OMText>
+						<OMText variant="body" style={styles.panelBody}>
+							{compatibility.summary}
+						</OMText>
+						<OMText variant="caption" style={styles.runMeta}>
+							Input: {compatibility.profile.displayLabel}
+							{compatibility.profile.extension ? ` • ${compatibility.profile.extension}` : ''}
+							{compatibility.profile.source !== 'unknown'
+								? ` • ${compatibility.profile.source}`
+								: ''}
+						</OMText>
+						<OMText variant="caption" style={styles.runMeta}>
+							Status:{' '}
+							{compatibility.status === 'likely-supported'
+								? 'Likely supported'
+								: compatibility.status === 'unlikely'
+									? 'Likely unsupported'
+									: 'Needs review'}
+						</OMText>
+
+						<View style={styles.labelGroup}>
+							<OMText variant="subtitle" style={styles.labelTitle}>
+								Supported file types
+							</OMText>
+							<OMText variant="body" style={styles.labelItem}>
+								{assay.compatibility.supportedExtensions.join(', ')}
+							</OMText>
+						</View>
+
+						<View style={styles.labelGroup}>
+							<OMText variant="subtitle" style={styles.labelTitle}>
+								Notes
+							</OMText>
+							{assay.compatibility.notes.map((item) => (
+								<OMText key={item} variant="body" style={styles.labelItem}>
+									{item}
+								</OMText>
+							))}
+						</View>
+					</View>
+				) : null}
 
 				<View style={styles.panel}>
 					<OMText variant="headline" style={styles.panelTitle}>
@@ -140,7 +195,7 @@ export default function TestDetailScreen() {
 						<OMText variant="subtitle" style={styles.labelTitle}>
 							Runs
 						</OMText>
-						{test.privacy.runs.map((item) => (
+						{assay.privacy.runs.map((item) => (
 							<OMText key={item} variant="body" style={styles.labelItem}>
 								{item}
 							</OMText>
@@ -151,7 +206,7 @@ export default function TestDetailScreen() {
 						<OMText variant="subtitle" style={styles.labelTitle}>
 							Reads
 						</OMText>
-						{test.privacy.reads.map((item) => (
+						{assay.privacy.reads.map((item) => (
 							<OMText key={item} variant="body" style={styles.labelItem}>
 								{item}
 							</OMText>
@@ -162,7 +217,7 @@ export default function TestDetailScreen() {
 						<OMText variant="subtitle" style={styles.labelTitle}>
 							Bundled files
 						</OMText>
-						{test.privacy.usesBundledFiles.map((item) => (
+						{assay.privacy.usesBundledFiles.map((item) => (
 							<OMText key={item} variant="body" style={styles.labelItem}>
 								{item}
 							</OMText>
@@ -173,8 +228,8 @@ export default function TestDetailScreen() {
 						<OMText variant="subtitle" style={styles.labelTitle}>
 							External URLs
 						</OMText>
-						{test.privacy.externalUrls.length ? (
-							test.privacy.externalUrls.map((item) => (
+						{assay.privacy.externalUrls.length ? (
+							assay.privacy.externalUrls.map((item) => (
 								<OMText key={item} variant="body" style={styles.labelItem}>
 									{item}
 								</OMText>
@@ -191,7 +246,7 @@ export default function TestDetailScreen() {
 							Stores results
 						</OMText>
 						<OMText variant="body" style={styles.labelItem}>
-							{test.privacy.storesResults}
+							{assay.privacy.storesResults}
 						</OMText>
 					</View>
 				</View>
@@ -205,7 +260,7 @@ export default function TestDetailScreen() {
 						<OMText variant="subtitle" style={styles.labelTitle}>
 							Files used
 						</OMText>
-						{test.files.map((item) => (
+						{assay.files.map((item) => (
 							<OMText key={item} variant="body" style={styles.labelItem}>
 								{item}
 							</OMText>
@@ -216,7 +271,7 @@ export default function TestDetailScreen() {
 						<OMText variant="subtitle" style={styles.labelTitle}>
 							Sources
 						</OMText>
-						{test.sources.map((item) => (
+						{assay.sources.map((item) => (
 							<OMText key={item} variant="body" style={styles.labelItem}>
 								{item}
 							</OMText>
@@ -275,7 +330,7 @@ export default function TestDetailScreen() {
 					</OMText>
 
 					<View style={styles.bucketRow}>
-						{test.resultBuckets.map((bucket) => (
+						{assay.resultBuckets.map((bucket) => (
 							<View key={bucket} style={styles.bucketPill}>
 								<OMText variant="caption" style={styles.bucketText}>
 									{bucket}
@@ -284,7 +339,7 @@ export default function TestDetailScreen() {
 						))}
 					</View>
 
-					{test.variantExamples.map((group) => (
+					{assay.variantExamples.map((group) => (
 						<View key={group.gene} style={styles.geneGroup}>
 							<OMText variant="subtitle" style={styles.geneTitle}>
 								{group.gene}
@@ -320,11 +375,11 @@ export default function TestDetailScreen() {
 						void (async () => {
 							try {
 								setIsRunning(true)
-								const run = await runTest(test.slug, storedImport)
+								const run = await runTest(assay.id, storedImport)
 								await saveLatestTestRun(run)
-								const savedRun = await loadLatestTestRun(test.slug)
+								const savedRun = await loadLatestTestRun(assay.id)
 								setLatestRun(savedRun)
-								await scheduleTestFinishedNotification(test.title, test.slug)
+								await scheduleTestFinishedNotification(assay.title, assay.id)
 								if (run.isPreview) {
 									Alert.alert(
 										'Preview run saved',

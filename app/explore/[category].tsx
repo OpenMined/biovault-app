@@ -1,7 +1,7 @@
 import { OMText } from '@/components/ui/OMText'
 import {
+	getAssaysForExploreCategory,
 	getExploreCategory,
-	getTestsForExploreCategory,
 	type ExploreCategorySlug,
 } from '@/lib/explore-categories'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function ExploreCategoryScreen() {
 	const params = useLocalSearchParams<{ category?: string }>()
 	const category = params.category ? getExploreCategory(params.category) : null
-	const tests = category ? getTestsForExploreCategory(category.slug as ExploreCategorySlug) : []
+	const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
 
 	if (!category) {
 		return (
@@ -59,19 +59,19 @@ export default function ExploreCategoryScreen() {
 					</View>
 				</View>
 
-				{tests.length ? (
+				{assays.length ? (
 					<View style={styles.stack}>
-						{tests.map((test) => (
-							<Link key={test.slug} href={{ pathname: '/tests/[slug]', params: { slug: test.slug } }} asChild>
+						{assays.map((assay) => (
+							<Link key={assay.id} href={{ pathname: '/tests/[slug]', params: { slug: assay.id } }} asChild>
 								<Pressable style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}>
 									<OMText variant="headline" style={styles.cardTitle}>
-										{test.title}
+										{assay.title}
 									</OMText>
 									<OMText variant="body" style={styles.cardBody}>
-										{test.subtitle}
+										{assay.subtitle}
 									</OMText>
 									<OMText variant="caption" style={styles.cardMeta}>
-										{test.runMode === 'bioscript' ? 'Local Bioscript run' : 'Preview rows'}
+										{assay.runMode === 'bioscript' ? 'Local Bioscript run' : 'Preview rows'}
 									</OMText>
 								</Pressable>
 							</Link>

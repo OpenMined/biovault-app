@@ -1,7 +1,7 @@
 import { OMText } from '@/components/ui/OMText'
 import {
+	getAssaysForExploreCategory,
 	getExploreCategory,
-	getTestsForExploreCategory,
 	type ExploreCategorySlug,
 } from '@/lib/explore-categories'
 import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
@@ -16,7 +16,7 @@ export default function FileCategoryAnalysisScreen() {
 	const [document, setDocument] = useState<HomeImportedDocument | null>(null)
 
 	const category = params.category ? getExploreCategory(params.category) : null
-	const tests = category ? getTestsForExploreCategory(category.slug as ExploreCategorySlug) : []
+	const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
 
 	useEffect(() => {
 		if (!params.documentId) {
@@ -67,28 +67,28 @@ export default function FileCategoryAnalysisScreen() {
 						{category.title.toUpperCase()}
 					</OMText>
 					<OMText variant="h3" style={styles.title}>
-						{category.title} tests for {document.name}
+						{category.title} assays for {document.name}
 					</OMText>
 					<OMText variant="body" style={styles.body}>
 						{category.description}
 					</OMText>
 				</View>
 
-				{tests.length ? (
+				{assays.length ? (
 					<View style={styles.listSurface}>
-						{tests.map((test, index) => (
-							<View key={test.slug} style={index > 0 ? styles.rowDivider : undefined}>
+						{assays.map((assay, index) => (
+							<View key={assay.id} style={index > 0 ? styles.rowDivider : undefined}>
 								<Link
-									href={{ pathname: '/tests/[slug]', params: { slug: test.slug, documentId: document.id } }}
+									href={{ pathname: '/tests/[slug]', params: { slug: assay.id, documentId: document.id } }}
 									asChild
 								>
 									<Pressable style={({ pressed }) => [styles.testRow, pressed ? styles.testRowPressed : null]}>
 										<View style={styles.testRowText}>
 											<OMText variant="headline" style={styles.testTitle}>
-												{test.title}
+												{assay.title}
 											</OMText>
 											<OMText variant="body" style={styles.testSubtitle}>
-												{test.subtitle}
+												{assay.subtitle}
 											</OMText>
 										</View>
 										<OMText variant="subtitle" style={styles.openText}>

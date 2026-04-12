@@ -1,6 +1,7 @@
-import { testCatalog, type TestCatalogEntry } from '@/lib/test-catalog'
+import { type AssayDiscoverCategory, type AssayManifest } from '@/lib/assay-manifests'
+import { listInstalledAssaysSync } from '@/lib/assay-store'
 
-export type ExploreCategorySlug = 'ancestry' | 'health-risk' | 'pgx' | 'traits'
+export type ExploreCategorySlug = AssayDiscoverCategory
 
 export type ExploreCategoryDefinition = {
 	description: string
@@ -57,7 +58,13 @@ export function getExploreCategory(slug: string) {
 	return exploreCategories.find((category) => category.slug === slug) ?? null
 }
 
-export function getTestsForExploreCategory(slug: ExploreCategorySlug): TestCatalogEntry[] {
-	const testSlugs = testSlugByCategory[slug]
-	return testCatalog.filter((test) => testSlugs.includes(test.slug))
+export function getAssaysForExploreCategory(slug: ExploreCategorySlug): AssayManifest[] {
+	const assayIds = testSlugByCategory[slug]
+	return listInstalledAssaysSync()
+		.map((record) => record.manifest)
+		.filter((manifest) => assayIds.includes(manifest.id))
+}
+
+export function getTestsForExploreCategory(slug: ExploreCategorySlug): AssayManifest[] {
+	return getAssaysForExploreCategory(slug)
 }

@@ -3,8 +3,8 @@ const { getDefaultConfig } = require('expo/metro-config')
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname)
 
-// Add .sqlite to the list of asset extensions
-config.resolver.assetExts.push('sqlite', 'db')
+// Add bundled non-code assay/package assets
+config.resolver.assetExts.push('sqlite', 'db', 'py')
 
 // Add wasm asset support
 config.resolver.assetExts.push('wasm')
