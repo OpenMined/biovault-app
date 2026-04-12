@@ -4,6 +4,7 @@ import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
 import Constants from 'expo-constants'
 import { useRouter } from 'expo-router'
+import { storeNotification } from '@/lib/notification-store'
 
 interface PushNotificationState {
 	expoPushToken?: string
@@ -156,16 +157,19 @@ export function usePushNotifications(): PushNotificationState {
 
 		const lastResponse = Notifications.getLastNotificationResponse()
 		if (lastResponse?.notification) {
+			void storeNotification(lastResponse.notification)
 			redirect(lastResponse.notification)
 		}
 
 		const notificationListener = Notifications.addNotificationReceivedListener(
 			(receivedNotification) => {
 				setNotification(receivedNotification)
+				void storeNotification(receivedNotification)
 			}
 		)
 
 		const responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
+			void storeNotification(response.notification)
 			redirect(response.notification)
 		})
 

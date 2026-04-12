@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { useAnalytics } from '@/hooks/useAnalytics'
-import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated'
 
 // ts-prune-ignore-next
 export default function PrivacyInfoScreen() {

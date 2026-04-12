@@ -50,8 +50,8 @@ const config: ExpoConfig = {
 	version: '0.3.0',
 	orientation: 'portrait',
 	scheme: 'biovaultapp',
-	userInterfaceStyle: 'light',
 	icon: './assets/images/adaptive-icon.png',
+	userInterfaceStyle: 'dark',
 	ios: {
 		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
 		appleTeamId: getEnvironmentValues().appleTeamId, // seems to require name not id
@@ -61,13 +61,21 @@ const config: ExpoConfig = {
 			UIFileSharingEnabled: true,
 			LSSupportsOpeningDocumentsInPlace: true,
 		},
-		icon: './assets/images/icon.png',
+		icon: {
+			light: './assets/icons/ios-dark.png', // making dark default for now
+			dark: './assets/icons/ios-dark.png',
+			tinted: './assets/icons/ios-tinted.png'
+		},
 	},
 	android: {
 		package: getEnvironmentValues().package,
 		googleServicesFile: ANDROID_GOOGLE_SERVICES_FILE,
 		adaptiveIcon: {
-			foregroundImage: './assets/images/adaptive-icon.png',
+			foregroundImage: './assets/icons/adaptive-icon.png',
+			monochromeImage: './assets/icons/adaptive-icon.png',
+			// backgroundColor: '#fcfcfd'
+			backgroundColor: '#27253C', // dark default
+
 		}
 	},
 	web: {
@@ -154,13 +162,28 @@ const config: ExpoConfig = {
 			},
 		],
 		'expo-web-browser',
-		'expo-router',
+		[
+			'expo-router',
+			{
+				headers: {
+					'Cross-Origin-Embedder-Policy': 'credentialless',
+					'Cross-Origin-Opener-Policy': 'same-origin',
+				},
+			},
+		],
+		'expo-sqlite',
 		[
 			'expo-splash-screen',
 			{
-				image: './assets/images/splash-icon.png',
 				imageWidth: 200,
 				resizeMode: 'contain',
+				image: './assets/icons/splash-icon-dark.png',
+				// backgroundColor: '#fcfcfd',
+				backgroundColor: '#27253C', // dark default
+				dark: {
+					image: './assets/icons/splash-icon-light.png',
+					backgroundColor: '#27253C',
+				}
 			},
 		],
 		['expo-secure-store'],

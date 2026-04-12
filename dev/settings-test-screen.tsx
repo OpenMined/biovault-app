@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import { Directory, File, Paths } from 'expo-file-system'
 import { copyAsync, deleteAsync, getInfoAsync, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy'
 import { useAnalytics } from '@/hooks/useAnalytics'
-import { Storage } from '@/lib/storage'
+import { Storage } from 'expo-sqlite/kv-store'
 import { runFile } from '@/modules/expo-bioscript'
 
 type StoredDocument = {

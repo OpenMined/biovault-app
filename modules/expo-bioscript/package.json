@@ -29,6 +29,7 @@
     "rust"
   ],
   "author": "kj",
+  "homepage": "https://github.com/OpenMined/biovault-app",
   "license": "MIT",
   "peerDependencies": {
     "expo": "*",

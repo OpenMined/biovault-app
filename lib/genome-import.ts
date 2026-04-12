@@ -10,7 +10,7 @@ export interface PreparedGenomeImport {
 	source: 'device' | 'url' | 'sample'
 }
 
-const SAMPLE_GENOME_FILE = `# BioVault sample genome data
+export const SAMPLE_GENOME_FILE = `# BioVault sample genome data
 # This is a small 23andMe-style demo file for onboarding only.
 rsid	chromosome	position	genotype
 rs12913832	15	28365618	CC
@@ -128,6 +128,22 @@ export async function prepareSampleGenomeImport(): Promise<PreparedGenomeImport>
 	const targetFile = new File(importsDirectory, `sample-23andme-${Date.now()}.txt`)
 
 	await writeAsStringAsync(targetFile.uri, SAMPLE_GENOME_FILE)
+
+	return {
+		uri: targetFile.uri,
+		originalName: 'biovault_sample_23andme.txt',
+		suggestedName: 'biovault_sample_23andme',
+		source: 'sample',
+	}
+}
+
+export async function ensureBuiltInSampleGenomeImport(): Promise<PreparedGenomeImport> {
+	const importsDirectory = ensureImportDirectory()
+	const targetFile = new File(importsDirectory, 'biovault-demo-genome.txt')
+
+	if (!targetFile.exists) {
+		await writeAsStringAsync(targetFile.uri, SAMPLE_GENOME_FILE)
+	}
 
 	return {
 		uri: targetFile.uri,

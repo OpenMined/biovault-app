@@ -8,7 +8,7 @@ import type { TraitAnalysisResult, TraitSNP } from '@/lib/trait-analysis'
 import { router, useLocalSearchParams } from 'expo-router'
 import React from 'react'
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TraitResultsScreen() {
