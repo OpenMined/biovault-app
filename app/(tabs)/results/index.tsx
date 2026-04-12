@@ -1,17 +1,10 @@
-import { ActiveDocumentPickerDropdown } from '@/components/explore/ActiveDocumentPickerDropdown'
-import { ExploreActiveFileBar } from '@/components/explore/ExploreActiveFileBar'
+import { useActiveDocument } from '@/components/explore/ActiveDocumentContext'
 import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
-import {
-	getActiveImportedDocument,
-	loadHomeImportState,
-	setActiveImportedDocumentId,
-	type HomeImportedDocument,
-} from '@/lib/home-import'
 import { listRecentTestRuns, type RecentTestRunSummary } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { useFocusEffect } from '@react-navigation/native'
-import { Link, router } from 'expo-router'
+import { Link } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -59,22 +52,19 @@ function ResultsCard({ run }: { run: RecentTestRunSummary }) {
 
 export default function ResultsScreen() {
 	const [runs, setRuns] = useState<RecentTestRunSummary[]>([])
-	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
-	const [activeDocument, setActiveDocument] = useState<HomeImportedDocument | null>(null)
-	const [isPickerOpen, setIsPickerOpen] = useState(false)
 	const [visibleCount, setVisibleCount] = useState(RESULTS_PAGE_SIZE)
 	const insets = useSafeAreaInsets()
+	const { activeDocument, refresh: refreshActiveDocument } = useActiveDocument()
 
 	const refresh = useCallback(() => {
-		return Promise.all([loadHomeImportState(), listRecentTestRuns(30)])
-			.then(([homeState, nextRuns]) => {
-				setImportedDocuments(homeState.importedDocuments)
-				setActiveDocument(getActiveImportedDocument(homeState))
+		return refreshActiveDocument()
+			.then(() => listRecentTestRuns(30))
+			.then((nextRuns) => {
 				setRuns(nextRuns)
 				setVisibleCount(RESULTS_PAGE_SIZE)
 			})
 			.catch(console.error)
-	}, [])
+	}, [refreshActiveDocument])
 
 	useFocusEffect(
 		useCallback(() => {
@@ -88,25 +78,6 @@ export default function ResultsScreen() {
 	const visibleRuns = filteredRuns.slice(0, visibleCount)
 	const hasMoreRuns = filteredRuns.length > visibleCount
 
-	const handleAddFile = useCallback(() => {
-		setIsPickerOpen(false)
-		router.push('/data-source')
-	}, [])
-
-	const handleSelectDocument = useCallback(
-		(document: HomeImportedDocument) => {
-			void setActiveImportedDocumentId(document.id)
-				.then(async () => {
-					await refresh()
-					setIsPickerOpen(false)
-				})
-				.catch((error) => {
-					console.error('Failed to update active file:', error)
-				})
-		},
-		[refresh]
-	)
-
 	return (
 		<SafeAreaView style={styles.safeArea} edges={['top']}>
 			<ScrollView
@@ -118,31 +89,12 @@ export default function ResultsScreen() {
 				showsVerticalScrollIndicator={false}
 			>
 				<View style={styles.hero}>
-					<OMText variant="caption" style={styles.eyebrow}>
-						RESULTS
-					</OMText>
 					<OMText variant="h3" style={styles.title}>
 						Assay Results
 					</OMText>
 					<OMText variant="body" style={styles.body}>
 						Open any saved run and review it.
 					</OMText>
-				</View>
-
-				<View style={styles.pickerSection}>
-					<ExploreActiveFileBar
-						fileName={activeDocument ? activeDocument.name : 'No active file selected'}
-						onPress={() => setIsPickerOpen((current) => !current)}
-					/>
-					{isPickerOpen ? (
-						<ActiveDocumentPickerDropdown
-							documents={importedDocuments}
-							activeDocumentId={activeDocument?.id ?? null}
-							emptyBody="Import a file first to filter assay results by genomic file."
-							onAddFile={handleAddFile}
-							onSelectDocument={handleSelectDocument}
-						/>
-					) : null}
 				</View>
 
 				{filteredRuns.length ? (
@@ -207,21 +159,13 @@ const styles = StyleSheet.create({
 	},
 	content: {
 		padding: omSpacing.xl,
+		paddingTop: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
 		gap: omSpacing.xl,
 	},
 	hero: {
-		gap: omSpacing.m,
+		gap: omSpacing.s,
 		paddingTop: omSpacing.m,
-	},
-	eyebrow: {
-		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		color: omColors.grayscale400,
-		letterSpacing: 1,
 	},
 	title: {
 		color: omTheme.primaryText,
@@ -232,9 +176,6 @@ const styles = StyleSheet.create({
 		maxWidth: 360,
 		fontSize: 17,
 		lineHeight: 24,
-	},
-	pickerSection: {
-		gap: omSpacing.s,
 	},
 	stack: {
 		gap: omSpacing.xs,

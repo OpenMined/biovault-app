@@ -30,9 +30,6 @@ export function ExploreActiveFileBar({
 			]}
 		>
 			<View style={styles.textRow}>
-				<OMText variant="subtitle" style={styles.label}>
-					Selected:
-				</OMText>
 				<OMText variant="headline" style={styles.value} numberOfLines={1} ellipsizeMode="tail">
 					{fileName}
 				</OMText>
@@ -51,12 +48,13 @@ export function ExploreActiveFileBar({
 
 const styles = StyleSheet.create({
 	container: {
+		minHeight: 44,
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		gap: omSpacing.s,
 		paddingHorizontal: omSpacing.m,
-		paddingVertical: 10,
+		paddingVertical: omSpacing.xs,
 		borderRadius: omRadius.m,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
@@ -77,26 +75,17 @@ const styles = StyleSheet.create({
 	},
 	textRow: {
 		flex: 1,
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: omSpacing.xs,
 		minWidth: 0,
-	},
-	label: {
-		color: omColors.grayscale400,
-		flexShrink: 0,
-		fontSize: 16,
-		lineHeight: 20,
+		justifyContent: 'center',
 	},
 	value: {
 		color: omTheme.primaryText,
-		fontSize: 16,
+		fontSize: 17,
 		lineHeight: 20,
-		flex: 1,
 		minWidth: 0,
-		textAlign: 'right',
 	},
 	chevronWrap: {
 		paddingLeft: omSpacing.xs,
+		opacity: 0.8,
 	},
 })

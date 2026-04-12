@@ -1,13 +1,18 @@
+import { ActiveDocumentFloatingPicker } from '@/components/explore/ActiveDocumentFloatingPicker'
+import { useActiveDocument } from '@/components/explore/ActiveDocumentContext'
 import { ExploreAssayCard } from '@/components/explore/ExploreAssayCard'
-import { useExploreLayoutContext } from '@/components/explore/ExploreLayoutContext'
+import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import { listAvailableAssayManifestsSync } from '@/lib/assay-registry'
 import { getExploreCategory } from '@/lib/explore-categories'
+import { isExploreDemoModeEnabledSync, setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
 import { listRecentTestRunsForInputDocument, type RecentTestRunSummary } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { useEffect, useMemo, useState } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { useFocusEffect } from '@react-navigation/native'
+import { router } from 'expo-router'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
 function getCategoryLabel(category: string) {
 	return getExploreCategory(category)?.title ?? category
@@ -31,7 +36,9 @@ function formatRecentRunLabel(value: string) {
 }
 
 export default function ExploreScreen() {
-	const { activeDocument } = useExploreLayoutContext()
+	const { activeDocument, closePicker, importedDocuments, isPickerOpen, selectDocument, togglePicker } =
+		useActiveDocument()
+	const [isDemoActive, setIsDemoActive] = useState(false)
 	const [recentRunsBySlug, setRecentRunsBySlug] = useState<Record<string, RecentTestRunSummary>>({})
 
 	useEffect(() => {
@@ -70,62 +77,113 @@ export default function ExploreScreen() {
 		})
 	}, [activeDocument, assays, recentRunsBySlug])
 
+	useFocusEffect(
+		useCallback(() => {
+			setIsDemoActive(isExploreDemoModeEnabledSync())
+		}, [])
+	)
+
 	return (
-		<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-			<View style={styles.hero}>
-				<OMText variant="caption" style={styles.eyebrow}>
-					EXPLORE
-				</OMText>
-				<OMText variant="h3" style={styles.title}>
-					Explore Assays
-				</OMText>
-				<OMText variant="body" style={styles.body}>
-					Browse local genomic assays and see what works with your current file.
-				</OMText>
-			</View>
-
-			<View style={styles.list}>
-				{orderedAssays.map((assay) => {
-					const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
-					const recentRun = recentRunsBySlug[assay.id]
-					const hasRun = !!recentRun
-					const badgeLabel = getBadgeLabel(compatibility?.status, Boolean(activeDocument))
-					const badgeTone = compatibility
-						? compatibility.status === 'likely-supported'
-							? 'good'
-							: compatibility.status === 'unlikely'
-								? 'weak'
-								: 'neutral'
-						: 'neutral'
-					const summary = compatibility
-						? compatibility.summary
-						: assay.runMode === 'bioscript'
-							? 'Runs locally on device through Bioscript.'
-							: 'Preview assay for now.'
-
-					return (
-						<ExploreAssayCard
-							key={assay.id}
-							title={assay.title}
-							body={assay.subtitle}
-							summary={`${getCategoryLabel(assay.category)} • ${summary}`}
-							badgeLabel={badgeLabel}
-							badgeTone={badgeTone}
-							isPreviouslyRun={hasRun}
-							recentRunLabel={recentRun ? formatRecentRunLabel(recentRun.ranAt) : null}
-							href={{
-								pathname: '/tests/[slug]',
-								params: {
-									slug: assay.id,
-									...(activeDocument ? { documentId: activeDocument.id } : {}),
-									...(hasRun ? { showResults: 'true' } : {}),
-								},
+		<View style={styles.screen}>
+			<ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+				<View style={styles.hero}>
+					<OMText variant="h3" style={styles.title}>
+						Explore Assays
+					</OMText>
+					<OMText variant="body" style={styles.body}>
+						Browse local genomic assays and see what works with your current file.
+					</OMText>
+					<View style={styles.pickerRow}>
+						<ActiveDocumentFloatingPicker
+							documents={importedDocuments}
+							activeDocumentId={activeDocument?.id ?? null}
+							fileName={activeDocument ? activeDocument.name : 'No active file selected'}
+							emptyBody="Import a file first to get file-aware assay recommendations."
+							isHighlighted={isDemoActive}
+							isOpen={isPickerOpen}
+							onAddFile={() => {
+								closePicker()
+								router.push('/data-source')
 							}}
+							onManageDocument={(document) => {
+								closePicker()
+								router.push({ pathname: '/files/[documentId]', params: { documentId: document.id } })
+							}}
+							onSelectDocument={(document) => {
+								void selectDocument(document).catch((error) => {
+									console.error('Failed to update active file:', error)
+								})
+							}}
+							onToggle={togglePicker}
 						/>
-					)
-				})}
-			</View>
-		</ScrollView>
+					</View>
+					{isDemoActive ? (
+						<View style={styles.demoCoachmark}>
+							<OMText variant="headline" style={styles.demoTitle}>
+								Choose the active file
+							</OMText>
+							<OMText variant="body" style={styles.demoBody}>
+								Use this file picker to switch which genome Explore uses for assay compatibility
+								and previous-run context.
+							</OMText>
+							<OMButton
+								label="Next"
+								onPress={() => {
+									setExploreDemoModeEnabledSync(false)
+									setIsDemoActive(false)
+								}}
+								style={styles.demoNextButton}
+							/>
+						</View>
+					) : null}
+				</View>
+
+				<View style={styles.listWrap}>
+					{isPickerOpen ? <Pressable style={styles.listDismissOverlay} onPress={closePicker} /> : null}
+					<View style={styles.list}>
+					{orderedAssays.map((assay) => {
+						const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
+						const recentRun = recentRunsBySlug[assay.id]
+						const hasRun = !!recentRun
+						const badgeLabel = getBadgeLabel(compatibility?.status, Boolean(activeDocument))
+						const badgeTone = compatibility
+							? compatibility.status === 'likely-supported'
+								? 'good'
+								: compatibility.status === 'unlikely'
+									? 'weak'
+									: 'neutral'
+							: 'neutral'
+						const summary = compatibility
+							? compatibility.summary
+							: assay.runMode === 'bioscript'
+								? 'Runs locally on device through Bioscript.'
+								: 'Preview assay for now.'
+
+						return (
+							<ExploreAssayCard
+								key={assay.id}
+								title={assay.title}
+								body={assay.subtitle}
+								summary={`${getCategoryLabel(assay.category)} • ${summary}`}
+								badgeLabel={badgeLabel}
+								badgeTone={badgeTone}
+								isPreviouslyRun={hasRun}
+								recentRunLabel={recentRun ? formatRecentRunLabel(recentRun.ranAt) : null}
+								href={{
+									pathname: '/tests/[slug]',
+									params: {
+										slug: assay.id,
+										...(activeDocument ? { documentId: activeDocument.id } : {}),
+										...(hasRun ? { showResults: 'true' } : {}),
+									},
+								}}
+							/>
+						)
+					})}
+					</View>
+				</View>
+			</ScrollView>
+		</View>
 	)
 }
 
@@ -141,29 +199,49 @@ const styles = StyleSheet.create({
 		gap: omSpacing.xl,
 	},
 	hero: {
-		gap: omSpacing.m,
-		paddingTop: omSpacing.m,
-	},
-	eyebrow: {
-		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		color: omColors.grayscale400,
-		letterSpacing: 1,
+		gap: 0,
 	},
 	title: {
 		color: omTheme.primaryText,
 		maxWidth: 340,
 	},
 	body: {
+		marginTop: omSpacing.s,
 		color: omColors.grayscale400,
 		maxWidth: 360,
 		fontSize: 17,
 		lineHeight: 24,
 	},
+	pickerRow: {
+		marginTop: omSpacing.s,
+	},
+	demoCoachmark: {
+		marginTop: omSpacing.m,
+		padding: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: 'rgba(9,15,28,0.96)',
+		borderWidth: 1,
+		borderColor: 'rgba(82,168,197,0.45)',
+	},
+	demoTitle: {
+		color: omColors.grayscale00,
+		marginBottom: omSpacing.s,
+	},
+	demoBody: {
+		color: omColors.grayscale150,
+		lineHeight: 22,
+	},
+	demoNextButton: {
+		marginTop: omSpacing.l,
+	},
+	listWrap: {
+		position: 'relative',
+	},
 	list: {
 		gap: omSpacing.s,
+	},
+	listDismissOverlay: {
+		...StyleSheet.absoluteFillObject,
+		zIndex: 10,
 	},
 })

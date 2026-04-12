@@ -111,9 +111,6 @@ export default function SettingsScreen() {
 				showsVerticalScrollIndicator={false}
 			>
 				<View style={styles.hero}>
-					<OMText variant="caption" style={styles.eyebrow}>
-						SETTINGS
-					</OMText>
 					<OMText variant="h3" style={styles.title}>
 						Settings
 					</OMText>
@@ -249,15 +246,6 @@ const styles = StyleSheet.create({
 	hero: {
 		gap: omSpacing.m,
 		paddingTop: omSpacing.m,
-	},
-	eyebrow: {
-		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		color: omColors.grayscale400,
-		letterSpacing: 1,
 	},
 	title: {
 		color: omTheme.primaryText,

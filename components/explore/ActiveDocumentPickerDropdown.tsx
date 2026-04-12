@@ -8,6 +8,7 @@ type Props = {
 	documents: HomeImportedDocument[]
 	emptyBody: string
 	onAddFile: () => void
+	onManageDocument: (document: HomeImportedDocument) => void
 	onSelectDocument: (document: HomeImportedDocument) => void
 }
 
@@ -15,7 +16,8 @@ export function ActiveDocumentPickerDropdown({
 	activeDocumentId,
 	documents,
 	emptyBody,
-	onAddFile,
+	onAddFile: _onAddFile,
+	onManageDocument: _onManageDocument,
 	onSelectDocument,
 }: Props) {
 	const orderedDocuments = [
@@ -40,12 +42,22 @@ export function ActiveDocumentPickerDropdown({
 										pressed ? styles.fileOptionPressed : null,
 									]}
 								>
-									<OMText variant="subtitle" style={styles.fileOptionTitle} numberOfLines={1} ellipsizeMode="tail">
-										{document.name}
-									</OMText>
-									<OMText variant="subtitle" style={styles.fileOptionAction}>
-										{isSelected ? 'Active' : 'Use file'}
-									</OMText>
+									<View style={styles.fileOptionRow}>
+										<OMText variant="subtitle" style={styles.fileOptionTitle} numberOfLines={1} ellipsizeMode="tail">
+											{document.name}
+										</OMText>
+										<View style={styles.fileOptionActions}>
+											{/* Restore Manage here if file-level actions return to the picker. */}
+											<View style={[styles.selectButton, isSelected ? styles.selectButtonActive : null]}>
+												<OMText
+													variant="subtitle"
+													style={[styles.fileOptionAction, isSelected ? styles.fileOptionActionActive : null]}
+												>
+													{isSelected ? 'Active' : 'Use file'}
+												</OMText>
+											</View>
+										</View>
+									</View>
 								</Pressable>
 							)
 						})
@@ -54,20 +66,10 @@ export function ActiveDocumentPickerDropdown({
 							<OMText variant="body" style={styles.emptyBody}>
 								{emptyBody}
 							</OMText>
-							<Pressable onPress={onAddFile} style={({ pressed }) => [styles.addButton, pressed ? styles.addButtonPressed : null]}>
-								<OMText variant="subtitle" style={styles.addButtonText}>
-									Add File
-								</OMText>
-							</Pressable>
+							{/* Restore Add File here if the picker should handle imports again. */}
 						</View>
 					)}
-					{orderedDocuments.length ? (
-						<Pressable onPress={onAddFile} style={({ pressed }) => [styles.addButton, pressed ? styles.addButtonPressed : null]}>
-							<OMText variant="subtitle" style={styles.addButtonText}>
-								Add File
-							</OMText>
-						</Pressable>
-					) : null}
+					{/* Restore Add File here if the picker should handle imports again. */}
 				</View>
 			</View>
 		</View>
@@ -76,34 +78,37 @@ export function ActiveDocumentPickerDropdown({
 
 const styles = StyleSheet.create({
 	dropdownCard: {
-		borderRadius: omRadius.l,
+		borderRadius: omRadius.m,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
 		padding: omSpacing.xs,
 		shadowColor: '#000000',
-		shadowOpacity: 0.16,
-		shadowRadius: 16,
-		shadowOffset: { width: 0, height: 8 },
-		elevation: 6,
+		shadowOpacity: 0.18,
+		shadowRadius: 18,
+		shadowOffset: { width: 0, height: 10 },
+		elevation: 8,
 	},
 	stack: {
 		gap: omSpacing.xs,
 	},
 	fileOption: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		gap: omSpacing.m,
-		padding: omSpacing.m,
 		borderRadius: omRadius.m,
 		backgroundColor: omColors.grayscale850,
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
+		borderColor: 'rgba(255,255,255,0.06)',
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+	},
+	fileOptionRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.s,
 	},
 	fileOptionSelected: {
-		backgroundColor: 'rgba(82,168,197,0.1)',
-		borderColor: 'rgba(82,168,197,0.35)',
+		backgroundColor: 'rgba(82,168,197,0.08)',
+		borderColor: 'rgba(82,168,197,0.18)',
 	},
 	fileOptionPressed: {
 		opacity: 0.92,
@@ -113,34 +118,39 @@ const styles = StyleSheet.create({
 		flex: 1,
 		minWidth: 0,
 	},
+	fileOptionActions: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: omSpacing.s,
+		flexShrink: 0,
+	},
+	selectButton: {
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: 4,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(83,190,169,0.1)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.16)',
+	},
+	selectButtonActive: {
+		backgroundColor: 'rgba(82,168,197,0.1)',
+		borderColor: 'rgba(82,168,197,0.18)',
+	},
 	fileOptionAction: {
+		color: omTheme.accent,
+	},
+	fileOptionActionActive: {
 		color: omColors.teal500,
 	},
 	emptyCard: {
-		padding: omSpacing.l,
+		padding: omSpacing.xl,
 		borderRadius: omRadius.m,
 		backgroundColor: omColors.grayscale850,
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
+		borderColor: 'rgba(255,255,255,0.06)',
 		gap: omSpacing.m,
 	},
 	emptyBody: {
 		color: omColors.grayscale400,
-	},
-	addButton: {
-		alignItems: 'center',
-		justifyContent: 'center',
-		paddingHorizontal: omSpacing.m,
-		paddingVertical: omSpacing.m,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(83,190,169,0.14)',
-		borderWidth: 1,
-		borderColor: 'rgba(83,190,169,0.28)',
-	},
-	addButtonPressed: {
-		backgroundColor: 'rgba(83,190,169,0.2)',
-	},
-	addButtonText: {
-		color: omTheme.accent,
 	},
 })

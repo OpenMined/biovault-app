@@ -97,9 +97,6 @@ export default function HomeScreen() {
 				showsVerticalScrollIndicator={false}
 			>
 				<View style={styles.hero}>
-					<OMText variant="caption" style={styles.eyebrow}>
-						FILES
-					</OMText>
 					<OMText variant="h3" style={styles.pageTitle}>
 						Your genomic files
 					</OMText>
@@ -159,15 +156,6 @@ const styles = StyleSheet.create({
 	hero: {
 		gap: omSpacing.m,
 		paddingTop: omSpacing.m,
-	},
-	eyebrow: {
-		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		color: omColors.grayscale400,
-		letterSpacing: 1,
 	},
 	headerRow: {
 		flexDirection: 'row',
