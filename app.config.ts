@@ -61,7 +61,7 @@ const config: ExpoConfig = {
 			LSSupportsOpeningDocumentsInPlace: true,
 		},
 		icon: {
-			light: './assets/icons/ios-light.png',
+			light: './assets/icons/ios-dark.png', // making dark default for now
 			dark: './assets/icons/ios-dark.png',
 			tinted: './assets/icons/ios-tinted.png'
 		},
@@ -72,7 +72,9 @@ const config: ExpoConfig = {
 		adaptiveIcon: {
 			foregroundImage: './assets/icons/adaptive-icon.png',
 			monochromeImage: './assets/icons/adaptive-icon.png',
-			backgroundColor: '#fcfcfd'
+			// backgroundColor: '#fcfcfd'
+			backgroundColor: '#27253C', // dark default
+
 		}
 	},
 	web: {
@@ -175,7 +177,8 @@ const config: ExpoConfig = {
 				imageWidth: 200,
 				resizeMode: 'contain',
 				image: './assets/icons/splash-icon-dark.png',
-				backgroundColor: '#fcfcfd',
+				// backgroundColor: '#fcfcfd',
+				backgroundColor: '#27253C', // dark default
 				dark: {
 					image: './assets/icons/splash-icon-light.png',
 					backgroundColor: '#27253C',
