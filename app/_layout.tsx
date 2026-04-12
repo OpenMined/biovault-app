@@ -11,6 +11,12 @@ import { View } from 'react-native'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import 'react-native-reanimated'
 
+// i dont like the expo dev button appearing so just disabling it here
+import { requireOptionalNativeModule } from 'expo';
+const DevMenuPreferences = requireOptionalNativeModule('DevMenuPreferences');
+DevMenuPreferences?.setPreferencesAsync({ showFloatingActionButton: false });
+
+
 const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.biovault.net')
 applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})

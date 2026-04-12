@@ -3,12 +3,33 @@ import { omColors, omRadius, omTheme } from '@/styles/brand'
 import { StyleSheet, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
 
-export function ExploreIllustration({ icon }: { icon: ExploreCategoryDefinition['icon'] }) {
-	const stroke = omTheme.accent
+export function ExploreIllustration({
+	icon,
+	framed = true,
+	size = 44,
+}: {
+	framed?: boolean
+	icon: ExploreCategoryDefinition['icon']
+	size?: number
+}) {
+	const stroke =
+		icon === 'eye'
+			? omColors.teal500
+			: icon === 'person-standing'
+				? omColors.green500
+				: icon === 'pill'
+					? omColors.teal600
+					: omColors.yellow200
 
 	return (
-		<View style={styles.iconPanel}>
-			<Svg width={36} height={36} viewBox="0 0 24 24" fill="none">
+		<View
+			style={[
+				styles.iconPanel,
+				{ width: size, height: size },
+				framed ? styles.iconPanelFramed : styles.iconPanelBare,
+			]}
+		>
+			<Svg width={Math.round(size * 0.68)} height={Math.round(size * 0.68)} viewBox="0 0 24 24" fill="none">
 				{icon === 'eye' ? (
 					<>
 						<Path
@@ -60,13 +81,17 @@ export function ExploreIllustration({ icon }: { icon: ExploreCategoryDefinition[
 
 const styles = StyleSheet.create({
 	iconPanel: {
-		width: 44,
-		height: 44,
 		borderRadius: omRadius.m,
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	iconPanelFramed: {
 		backgroundColor: omColors.grayscale850,
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	iconPanelBare: {
+		backgroundColor: 'transparent',
+		borderWidth: 0,
 	},
 })

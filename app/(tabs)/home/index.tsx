@@ -1,5 +1,10 @@
 import { OMText } from '@/components/ui/OMText'
-import { loadHomeImportState, type HomeImportState, type HomeImportedDocument } from '@/lib/home-import'
+import {
+	BUILT_IN_SAMPLE_DOCUMENT_ID,
+	loadHomeImportState,
+	type HomeImportState,
+	type HomeImportedDocument,
+} from '@/lib/home-import'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { Link, router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
@@ -64,7 +69,7 @@ export default function HomeScreen() {
 	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
 
 	const applyState = useCallback((state: HomeImportState) => {
-		setImportedDocuments(state.importedDocuments)
+		setImportedDocuments(state.importedDocuments.filter((document) => document.id !== BUILT_IN_SAMPLE_DOCUMENT_ID))
 	}, [])
 
 	const loadStoredData = useCallback(async () => {

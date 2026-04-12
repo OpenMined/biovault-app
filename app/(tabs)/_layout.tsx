@@ -13,15 +13,6 @@ export default function TabLayout() {
 			rippleColor="transparent"
 			iconColor={Platform.OS === 'ios' ? undefined : omColors.grayscale500}
 		>
-			<NativeTabs.Trigger name="explore">
-				<NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
-				<NativeTabs.Trigger.Icon
-					selectedColor={selectedIconColor}
-					sf={{ default: 'safari', selected: 'safari.fill' }}
-					// src={require("../../assets/images/house.svg")}
-					drawable="ic_menu_compass"
-				/>
-			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="home">
 				<NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
 				<NativeTabs.Trigger.Icon
@@ -29,6 +20,15 @@ export default function TabLayout() {
 					sf={{ default: 'house', selected: 'house.fill' }}
 					drawable="ic_menu_home"
 					// src={require("../../assets/images/house.svg")}
+				/>
+			</NativeTabs.Trigger>
+			<NativeTabs.Trigger name="explore">
+				<NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
+				<NativeTabs.Trigger.Icon
+					selectedColor={selectedIconColor}
+					sf={{ default: 'safari', selected: 'safari.fill' }}
+					// src={require("../../assets/images/house.svg")}
+					drawable="ic_menu_compass"
 				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="results">
@@ -56,17 +56,6 @@ export default function TabLayout() {
 					selectedColor={selectedIconColor}
 					sf={{ default: 'bell', selected: 'bell.fill' }}
 					drawable="ic_menu_agenda"
-				/>
-			</NativeTabs.Trigger>
-			<NativeTabs.Trigger hidden name="research">
-				<NativeTabs.Trigger.Label>Research</NativeTabs.Trigger.Label>
-				<NativeTabs.Trigger.Icon
-					selectedColor={selectedIconColor}
-					sf={{
-						default: 'person.line.dotted.person',
-						selected: 'person.line.dotted.person.fill',
-					}}
-					drawable="ic_menu_share"
 				/>
 			</NativeTabs.Trigger>
 			<NativeTabs.Trigger name="settings">

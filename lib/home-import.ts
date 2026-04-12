@@ -17,6 +17,7 @@ export const HOME_IMPORTED_DOCUMENT_KEY = 'home_imported_document'
 export const HOME_IMPORTED_DOCUMENTS_KEY = 'home_imported_documents'
 export const HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY = 'home_active_imported_document_id'
 export const HOME_DATA_SOURCE_KEY = 'home_data_source'
+export const BUILT_IN_SAMPLE_DOCUMENT_ID = 'biovault-sample-data'
 export type HomeDataSource = 'sample' | 'imported'
 
 export type HomeImportState = {
@@ -49,6 +50,17 @@ const DISPLAY_NAME_EXTENSIONS = [
 	'.vcf',
 ] as const
 
+const BUILT_IN_SAMPLE_DOCUMENT: HomeImportedDocument = {
+	id: BUILT_IN_SAMPLE_DOCUMENT_ID,
+	name: 'BioVault demo genome',
+	originalName: 'biovault_sample_23andme.txt',
+	mimeType: 'text/plain',
+	size: null,
+	uri: 'biovault://sample',
+	importedAt: '2026-04-12T00:00:00.000Z',
+	contents: null,
+}
+
 function createImportedDocumentId() {
 	return `home-import-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
@@ -64,6 +76,18 @@ export function getDisplayNameBase(name: string) {
 
 	const baseName = trimmedName.slice(0, -matchedExtension.length).trim()
 	return baseName || trimmedName
+}
+
+export function getBuiltInSampleDocument(): HomeImportedDocument {
+	return { ...BUILT_IN_SAMPLE_DOCUMENT }
+}
+
+function ensureBuiltInSampleDocument(documents: HomeImportedDocument[]) {
+	if (documents.some((document) => document.id === BUILT_IN_SAMPLE_DOCUMENT_ID)) {
+		return documents
+	}
+
+	return [...documents, getBuiltInSampleDocument()]
 }
 
 function normalizeImportedDocument(
@@ -124,11 +148,12 @@ function resolveStoredDataSource(value: string | null): HomeDataSource | null {
 
 export function saveHomeImportState(state: HomeImportState) {
 	const db = getAppDbSync()
+	const documentsToSave = ensureBuiltInSampleDocument(state.importedDocuments).map(normalizeImportedDocument)
 
 	db.withTransactionSync(() => {
 		db.runSync('DELETE FROM imported_documents')
 
-		for (const document of state.importedDocuments.map(normalizeImportedDocument)) {
+		for (const document of documentsToSave) {
 			db.runSync(
 				`INSERT INTO imported_documents
 				 (id, name, original_name, uri, mime_type, size, imported_at, contents)
@@ -146,9 +171,9 @@ export function saveHomeImportState(state: HomeImportState) {
 
 		const activeImportedDocumentId =
 			state.activeImportedDocumentId &&
-			state.importedDocuments.some((document) => document.id === state.activeImportedDocumentId)
+			documentsToSave.some((document) => document.id === state.activeImportedDocumentId)
 				? state.activeImportedDocumentId
-				: state.importedDocuments[0]?.id ?? null
+				: documentsToSave[0]?.id ?? null
 
 		setPreference(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY, activeImportedDocumentId)
 		setPreference(HOME_DATA_SOURCE_KEY, state.dataSource)
@@ -157,13 +182,15 @@ export function saveHomeImportState(state: HomeImportState) {
 
 export function loadHomeImportStateSync(): HomeImportState {
 	const db = getAppDbSync()
-	const importedDocuments = db
+	const importedDocuments = ensureBuiltInSampleDocument(
+		db
 		.getAllSync<ImportedDocumentRow>(
 			`SELECT id, name, original_name, uri, mime_type, size, imported_at, contents
 			 FROM imported_documents
 			 ORDER BY imported_at DESC, id DESC`
 		)
 		.map(rowToImportedDocument)
+	)
 
 	const storedActiveId = getPreference(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY)
 	const activeImportedDocumentId =
@@ -194,6 +221,11 @@ export async function loadHomeImportState(): Promise<HomeImportState> {
 	const importedDocuments: HomeImportedDocument[] = []
 
 	for (const document of state.importedDocuments) {
+		if (document.id === BUILT_IN_SAMPLE_DOCUMENT_ID) {
+			importedDocuments.push(document)
+			continue
+		}
+
 		const info = await getInfoAsync(document.uri)
 		if (info.exists) {
 			importedDocuments.push(document)
@@ -240,6 +272,10 @@ export async function deleteAllImportedDocuments() {
 
 	if (Platform.OS !== 'web') {
 		for (const document of state.importedDocuments) {
+			if (document.id === BUILT_IN_SAMPLE_DOCUMENT_ID) {
+				continue
+			}
+
 			try {
 				await deleteAsync(document.uri, { idempotent: true })
 			} catch (error) {
@@ -249,9 +285,9 @@ export async function deleteAllImportedDocuments() {
 	}
 
 	saveHomeImportState({
-		activeImportedDocumentId: null,
+		activeImportedDocumentId: BUILT_IN_SAMPLE_DOCUMENT_ID,
 		dataSource: null,
-		importedDocuments: [],
+		importedDocuments: [getBuiltInSampleDocument()],
 	})
 }
 

@@ -165,7 +165,7 @@ export default function TestDetailScreen() {
 					<OMText variant="body" style={styles.emptyBody}>
 						This test route does not exist yet.
 					</OMText>
-					<Link href="/(tabs)/home" asChild>
+					<Link href="/(tabs)/index" asChild>
 						<Pressable style={styles.backLink}>
 							<OMText variant="subtitle" style={styles.backLinkText}>
 								Back to Home

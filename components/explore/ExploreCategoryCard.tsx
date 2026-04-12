@@ -1,6 +1,6 @@
 import { OMText } from '@/components/ui/OMText'
 import type { ExploreCategoryDefinition } from '@/lib/explore-categories'
-import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { omColors, omSpacing, omTheme } from '@/styles/brand'
 import { Asset } from 'expo-asset'
 import { Link } from 'expo-router'
 import { Pressable, StyleSheet, View } from 'react-native'
@@ -14,40 +14,43 @@ type Props = {
 	category: ExploreCategoryDefinition
 }
 
+function getCompactDescription(category: ExploreCategoryDefinition) {
+	switch (category.slug) {
+		case 'traits':
+			return 'Visible traits and common inherited features'
+		case 'ancestry':
+			return 'Lineage and population views from your genomic file'
+		case 'pgx':
+			return 'Medication response analyses linked to known variants'
+		case 'health-risk':
+			return 'Inherited risk and prevention-oriented screening'
+	}
+}
+
 export function ExploreCategoryCard({ assayCount, category }: Props) {
 	const assayLabel = `${assayCount} ${assayCount === 1 ? 'assay' : 'assays'}`
 
 	return (
 		<Link href={{ pathname: '/explore/[category]', params: { category: category.slug } }} asChild>
 			<Pressable style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}>
-				<View style={styles.rowMain}>
-					<ExploreIllustration icon={category.icon} />
-					<View style={styles.rowTextBlock}>
-						<OMText variant="caption" style={styles.rowSubtitle}>
-							{category.subtitle}
-						</OMText>
-						<View style={styles.rowTitleLine}>
-							<OMText variant="h4" style={styles.rowTitle}>
-								{category.title}
-							</OMText>
-						</View>
-						<OMText variant="body" style={styles.rowDescription}>
-							{category.description}
-						</OMText>
-						<View style={styles.rowFooter}>
-							<View style={styles.countBadge}>
-								<OMText variant="caption" style={styles.countBadgeText}>
-									{assayLabel}
+				<View style={styles.content}>
+					<View style={styles.titleRow}>
+						<View style={styles.titleMeta}>
+							<View style={styles.titleWithIcon}>
+								<OMText variant="h4" style={styles.title}>
+									{category.title}
 								</OMText>
+								<ExploreIllustration icon={category.icon} size={34} framed={false} />
 							</View>
-							<OMText variant="caption" style={styles.rowExample}>
-								{category.example}
+							<OMText variant="caption" style={styles.count}>
+								{assayLabel}
 							</OMText>
 						</View>
+						<SvgUri uri={chevronRightUri} width={18} height={18} color={omColors.grayscale400} />
 					</View>
-				</View>
-				<View style={styles.chevronWrap}>
-					<SvgUri uri={chevronRightUri} width={20} height={20} />
+					<OMText variant="body" style={styles.description}>
+						{getCompactDescription(category)}
+					</OMText>
 				</View>
 			</Pressable>
 		</Link>
@@ -57,70 +60,45 @@ export function ExploreCategoryCard({ assayCount, category }: Props) {
 const styles = StyleSheet.create({
 	row: {
 		flexDirection: 'row',
-		alignItems: 'flex-start',
+		alignItems: 'center',
 		gap: omSpacing.m,
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.xl,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
+		paddingVertical: omSpacing.xxl,
 	},
 	rowPressed: {
-		backgroundColor: omColors.grayscale700,
-		borderColor: 'rgba(255,255,255,0.12)',
+		opacity: 0.82,
 	},
-	rowMain: {
-		flex: 1,
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		gap: omSpacing.m,
-	},
-	rowTextBlock: {
+	content: {
 		flex: 1,
 		gap: omSpacing.s,
-		paddingTop: 2,
 	},
-	rowSubtitle: {
-		color: omColors.teal500,
-		textTransform: 'uppercase',
-		letterSpacing: 0.8,
+	titleRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
 	},
-	rowTitleLine: {
-		gap: omSpacing.xs,
+	titleMeta: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		flex: 1,
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
 	},
-	rowTitle: {
+	titleWithIcon: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: omSpacing.m,
+		flexShrink: 1,
+	},
+	title: {
 		color: omTheme.primaryText,
 		flexShrink: 1,
 	},
-	rowDescription: {
-		color: omColors.grayscale400,
-		lineHeight: 22,
-	},
-	rowFooter: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		flexWrap: 'wrap',
-		gap: omSpacing.s,
-	},
-	rowExample: {
+	count: {
 		color: omColors.grayscale500,
 	},
-	countBadge: {
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: 4,
-		borderRadius: omRadius.s,
-		backgroundColor: omColors.grayscale850,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
-	},
-	countBadgeText: {
+	description: {
 		color: omColors.grayscale400,
-	},
-	chevronWrap: {
-		alignItems: 'center',
-		justifyContent: 'center',
-		paddingTop: omSpacing.s,
-		opacity: 0.7,
+		lineHeight: 22,
 	},
 })

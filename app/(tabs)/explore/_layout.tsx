@@ -8,7 +8,7 @@ import {
 	type HomeImportedDocument,
 } from '@/lib/home-import'
 import { omColors, omSpacing } from '@/styles/brand'
-import { Slot } from 'expo-router'
+import { Stack } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import { useCallback, useState } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
@@ -79,7 +79,16 @@ export default function ExploreLayout() {
 					</View>
 
 					<View style={styles.content}>
-						<Slot />
+						<Stack
+							screenOptions={{
+								headerShown: false,
+								contentStyle: { backgroundColor: omColors.grayscale850 },
+								animation: 'default',
+							}}
+						>
+							<Stack.Screen name="index" />
+							<Stack.Screen name="[category]" />
+						</Stack>
 					</View>
 				</View>
 			</SafeAreaView>

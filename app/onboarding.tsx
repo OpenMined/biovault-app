@@ -58,7 +58,7 @@ export default function OnboardingScreen() {
 
 		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
 		setAppPreferenceSync('hasCompletedOnboarding', 'true')
-		router.replace('/(tabs)/home' as any)
+		router.replace('/(tabs)/explore' as any)
 	}
 
 	return (
