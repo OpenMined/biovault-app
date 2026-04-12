@@ -1,19 +1,23 @@
 import { initAnalytics } from '@/lib/analytics'
 import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+import { omColors } from '@/styles/brand'
 import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
+import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
+import { View } from 'react-native'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import 'react-native-reanimated'
 
 const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.biovault.net')
 applyGlobalBrandTypography()
+SplashScreen.preventAutoHideAsync().catch(() => {})
 
 // ts-prune-ignore-next
 export default function RootLayout() {
-	const [fontsLoaded] = useFonts({
+	const [fontsLoaded, fontError] = useFonts({
 		Inter: require('@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf'),
 		Rubik: require('@expo-google-fonts/rubik/400Regular/Rubik_400Regular.ttf'),
 	})
@@ -27,24 +31,40 @@ export default function RootLayout() {
 		}
 	}, [])
 
-	if (!fontsLoaded) {
+	useEffect(() => {
+		if (fontsLoaded || fontError) {
+			SplashScreen.hideAsync().catch(() => {})
+		}
+	}, [fontsLoaded, fontError])
+
+	if (!fontsLoaded && !fontError) {
 		return null
 	}
 
 	return (
 		<KeyboardProvider>
-			<Stack screenOptions={{ headerShown: false }}>
-				<Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
+			<View style={{ flex: 1, backgroundColor: omColors.grayscale850 }}>
+				<Stack
+					screenOptions={{
+						headerShown: false,
+						contentStyle: { backgroundColor: omColors.grayscale850 },
+					}}
+				>
+				<Stack.Screen
+					name="(tabs)"
+					options={{ animation: 'fade', animationTypeForReplace: 'push' }}
+				/>
 				<Stack.Screen
 					name="onboarding"
-					options={{ presentation: 'fullScreenModal', animation: 'none' }}
+					options={{ presentation: 'card', animation: 'none' }}
 				/>
 				<Stack.Screen name="+not-found" />
 				<Stack.Screen name="gene/[geneName]" />
 				<Stack.Screen name="tests/[slug]" options={{ presentation: 'card' }} />
 				<Stack.Screen name="trait-results" options={{ presentation: 'card' }} />
-			</Stack>
-			<StatusBar style="auto" />
+				</Stack>
+			</View>
+			<StatusBar style="light" />
 		</KeyboardProvider>
 	)
 }

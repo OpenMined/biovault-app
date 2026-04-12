@@ -2,12 +2,12 @@ import { OMButton } from '@/components/ui/OMButton'
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { Storage } from '@/lib/storage'
-import { omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { omColors, omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
-import { useState } from 'react'
-import { Platform, Pressable, StyleSheet, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native'
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -15,6 +15,41 @@ export default function OnboardingScreen() {
 	const [hasAgreed, setHasAgreed] = useState(
 		Storage.getItemSync('hasAcceptedResearchDisclaimer') === 'true'
 	)
+	const stackOpacity = useRef(new Animated.Value(0)).current
+	const stackTranslateY = useRef(new Animated.Value(10)).current
+	const infoCardOpacity = useRef(new Animated.Value(0)).current
+	const infoCardTranslateY = useRef(new Animated.Value(8)).current
+
+	useEffect(() => {
+		Animated.parallel([
+			Animated.timing(stackOpacity, {
+				toValue: 1,
+				duration: 220,
+				easing: Easing.out(Easing.quad),
+				useNativeDriver: true,
+			}),
+			Animated.timing(stackTranslateY, {
+				toValue: 0,
+				duration: 220,
+				easing: Easing.out(Easing.quad),
+				useNativeDriver: true,
+			}),
+			Animated.timing(infoCardOpacity, {
+				toValue: 1,
+				duration: 260,
+				delay: 50,
+				easing: Easing.out(Easing.quad),
+				useNativeDriver: true,
+			}),
+			Animated.timing(infoCardTranslateY, {
+				toValue: 0,
+				duration: 260,
+				delay: 50,
+				easing: Easing.out(Easing.quad),
+				useNativeDriver: true,
+			}),
+		]).start()
+	}, [infoCardOpacity, infoCardTranslateY, stackOpacity, stackTranslateY])
 
 	const handleContinue = () => {
 		if (!hasAgreed) {
@@ -23,14 +58,22 @@ export default function OnboardingScreen() {
 
 		Storage.setItemSync('hasAcceptedResearchDisclaimer', 'true')
 		Storage.setItemSync('hasCompletedOnboarding', 'true')
-		router.replace('/(tabs)' as any)
+		router.replace('/(tabs)/home' as any)
 	}
 
 	return (
 		<View style={styles.screen}>
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.content}>
-					<View style={styles.stack}>
+					<Animated.View
+						style={[
+							styles.stack,
+							{
+								opacity: stackOpacity,
+								transform: [{ translateY: stackTranslateY }],
+							},
+						]}
+					>
 						<View style={styles.mainSection}>
 							<View style={styles.heroSection}>
 								<View style={styles.titleRow}>
@@ -43,35 +86,39 @@ export default function OnboardingScreen() {
 								</OMText>
 							</View>
 
-							<LinearGradient
-								colors={[
-									omGradients.orangeRed[0],
-									omGradients.redViolet[0],
-									omGradients.violetBlue[0],
-									omGradients.tealGreen[0],
-									omGradients.greenLime[0],
-								]}
-								start={{ x: 0, y: 0 }}
-								end={{ x: 1, y: 1 }}
-								style={styles.infoCardBorder}
+							<Animated.View
+								style={{
+									opacity: infoCardOpacity,
+									transform: [{ translateY: infoCardTranslateY }],
+								}}
 							>
-								<View style={styles.infoCard}>
-									<OMText variant="caption" style={styles.sectionLabel}>
-										Everything happens on your device
-									</OMText>
-									<View style={styles.signalList}>
-										<OMText variant="body" style={styles.signalText}>
-											&rarr; Your files are never uploaded.
-										</OMText>
-										<OMText variant="body" style={styles.signalText}>
-											&rarr; Analysis runs locally.
-										</OMText>
-										<OMText variant="body" style={styles.signalText}>
-											&rarr; Results are visible only to you.
-										</OMText>
+								<LinearGradient
+									colors={[
+										omGradients.orangeRed[0],
+										omGradients.redViolet[0],
+										omGradients.violetBlue[0],
+										omGradients.tealGreen[0],
+										omGradients.greenLime[0],
+									]}
+									start={{ x: 0, y: 0 }}
+									end={{ x: 1, y: 1 }}
+									style={styles.infoCardBorder}
+								>
+									<View style={styles.infoCard}>
+										<View style={styles.signalList}>
+											<OMText variant="body" style={styles.signalText}>
+												&rarr; Your files are never uploaded.
+											</OMText>
+											<OMText variant="body" style={styles.signalText}>
+												&rarr; Analysis runs locally.
+											</OMText>
+											<OMText variant="body" style={styles.signalText}>
+												&rarr; Results are visible only to you.
+											</OMText>
+										</View>
 									</View>
-								</View>
-							</LinearGradient>
+								</LinearGradient>
+							</Animated.View>
 
 							<View style={styles.disclaimerPanel}>
 								<OMText variant="body" style={styles.disclaimerBody}>
@@ -114,7 +161,7 @@ export default function OnboardingScreen() {
 								<OpenMinedLogoMark />
 							</Pressable>
 						</View>
-					</View>
+					</Animated.View>
 				</View>
 			</SafeAreaView>
 		</View>
@@ -124,7 +171,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
 	screen: {
 		flex: 1,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 	},
 	safeArea: {
 		flex: 1,
@@ -153,7 +200,7 @@ const styles = StyleSheet.create({
 		maxWidth: 320,
 	},
 	title: {
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 		letterSpacing: -1,
 		fontSize: 42,
 		lineHeight: 45,
@@ -162,7 +209,7 @@ const styles = StyleSheet.create({
 	heroSupport: {
 		marginTop: omSpacing.m,
 		maxWidth: 320,
-		color: omTheme.textBody,
+		color: omColors.grayscale400,
 		fontSize: 16,
 		lineHeight: 22,
 	},
@@ -172,9 +219,9 @@ const styles = StyleSheet.create({
 	infoCardBorder: {
 		borderRadius: omRadius.l,
 		padding: 1.5,
-		shadowColor: '#17161d',
+		shadowColor: '#000000',
 		shadowOffset: { width: 0, height: 8 },
-		shadowOpacity: 0.06,
+		shadowOpacity: 0.18,
 		shadowRadius: 18,
 		elevation: 2,
 	},
@@ -183,27 +230,15 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.l,
 		paddingVertical: omSpacing.l,
 		borderRadius: omRadius.l,
-		backgroundColor: 'rgba(252,252,253,0.88)',
-	},
-	sectionLabel: {
-		alignSelf: 'flex-start',
-		marginBottom: 2,
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		color: omTheme.textMuted,
-		letterSpacing: 1,
-		backgroundColor: 'rgba(244,243,246,0.96)',
-		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.08)',
+		backgroundColor: omColors.grayscale750,
 	},
 	disclaimerPanel: {
 		paddingHorizontal: omSpacing.l,
 		paddingVertical: omSpacing.l,
 		borderRadius: omRadius.l,
-		backgroundColor: omTheme.textHeadline,
+		backgroundColor: omColors.grayscale950,
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
+		borderColor: 'rgba(255,255,255,0.12)',
 	},
 	disclaimerBody: {
 		color: omTheme.primaryText,
@@ -211,11 +246,10 @@ const styles = StyleSheet.create({
 		lineHeight: 24,
 	},
 	signalList: {
-		marginTop: omSpacing.m,
 		gap: omSpacing.l,
 	},
 	signalText: {
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 		fontSize: 17,
 		lineHeight: 24,
 	},
@@ -237,36 +271,36 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.l,
 		paddingVertical: omSpacing.m,
 		borderRadius: omRadius.l,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
-		shadowColor: '#17161d',
+		borderColor: 'rgba(255,255,255,0.12)',
+		shadowColor: '#000000',
 		shadowOffset: { width: 0, height: 6 },
 		shadowOpacity: 0,
-		shadowRadius: 12,
+		shadowRadius: 0,
 		elevation: 0,
 	},
 	checkboxRowChecked: {
-		borderColor: 'rgba(39,37,50,0.08)',
+		borderColor: 'rgba(82,168,197,0.34)',
 	},
 	checkboxBox: {
 		width: 22,
 		height: 22,
 		borderRadius: omRadius.s,
 		borderWidth: 1.5,
-		borderColor: 'rgba(94,90,114,0.6)',
-		backgroundColor: omTheme.background,
+		borderColor: 'rgba(207,205,214,0.56)',
+		backgroundColor: omColors.grayscale950,
 		alignItems: 'center',
 		justifyContent: 'center',
 		flexShrink: 0,
 	},
 	checkboxBoxChecked: {
-		borderColor: 'rgba(56,140,168,0.5)',
-		backgroundColor: 'rgba(236,245,249,0.92)',
+		borderColor: 'rgba(82,168,197,0.7)',
+		backgroundColor: 'rgba(82,168,197,0.18)',
 	},
 	checkboxText: {
 		flex: 1,
-		color: omTheme.textBody,
+		color: omTheme.primaryText,
 		fontSize: 16,
 		lineHeight: 22,
 		includeFontPadding: false,
@@ -274,21 +308,21 @@ const styles = StyleSheet.create({
 	continueButton: {
 		minHeight: 54,
 		borderRadius: omRadius.l,
-		backgroundColor: 'rgba(60,159,139,0.28)',
+		backgroundColor: 'rgba(83,190,169,0.18)',
 		borderWidth: 1,
-		borderColor: 'rgba(60,159,139,0.24)',
+		borderColor: 'rgba(83,190,169,0.22)',
 	},
 	continueButtonEnabled: {
-		backgroundColor: omTheme.accentDeep,
-		borderColor: omTheme.accentDeep,
-		shadowColor: '#17161d',
+		backgroundColor: omTheme.accent,
+		borderColor: omTheme.accent,
+		shadowColor: '#000000',
 		shadowOffset: { width: 0, height: 12 },
-		shadowOpacity: 0.18,
+		shadowOpacity: 0.28,
 		shadowRadius: 24,
 		elevation: 4,
 	},
 	footerCredit: {
-		color: omTheme.textMuted,
+		color: omColors.grayscale500,
 		textAlign: 'center',
 		fontSize: 14,
 		lineHeight: 20,
