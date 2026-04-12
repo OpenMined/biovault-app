@@ -1,5 +1,4 @@
 import { OMText } from '@/components/ui/OMText'
-import { prepareSampleGenomeImport } from '@/lib/genome-import'
 import {
 	getDisplayNameBase,
 	loadHomeImportStateSync,
@@ -185,26 +184,6 @@ export default function DataSourceScreen() {
 		}
 	}
 
-	const queueSampleImport = async () => {
-		try {
-			const sampleImport = await prepareSampleGenomeImport()
-			const queuedAsset: QueuedImportAsset = {
-				displayName: getDisplayNameBase(sampleImport.originalName),
-				mimeType: 'text/plain',
-				name: sampleImport.originalName,
-				size: null,
-				uri: sampleImport.uri,
-			}
-
-			setReviewedAssets([])
-			setPendingAssets([queuedAsset])
-			setDisplayName(queuedAsset.displayName)
-		} catch (error) {
-			console.error('Failed to prepare sample import:', error)
-			Alert.alert('Import error', 'Unable to prepare the test data right now.')
-		}
-	}
-
 	const commitCurrentAssetName = (value: string) => {
 		if (!currentAsset) {
 			return
@@ -261,15 +240,6 @@ export default function DataSourceScreen() {
 						</OMText>
 						<OMText variant="caption" style={styles.importButtonMeta}>
 							{isImporting ? 'Opening file picker...' : 'VCF, TXT, TSV, CSV, ZIP, GZ, BZ2'}
-						</OMText>
-					</Pressable>
-
-					<Pressable onPress={() => void queueSampleImport()} style={styles.secondaryImportButton}>
-						<OMText variant="headline" style={styles.importButtonTitle}>
-							Import test data
-						</OMText>
-						<OMText variant="caption" style={styles.importButtonMeta}>
-							Add the BioVault sample file as a normal saved file
 						</OMText>
 					</Pressable>
 				</View>
@@ -404,13 +374,6 @@ const styles = StyleSheet.create({
 	importButtonMeta: {
 		marginTop: omSpacing.s,
 		color: omColors.grayscale500,
-	},
-	secondaryImportButton: {
-		padding: omSpacing.xl,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale850,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
 	},
 	modalBackdrop: {
 		flex: 1,
