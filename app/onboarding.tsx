@@ -2,6 +2,7 @@ import { OMButton } from '@/components/ui/OMButton'
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
+import { setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
 import { omColors, omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Linking from 'expo-linking'
@@ -58,6 +59,7 @@ export default function OnboardingScreen() {
 
 		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
 		setAppPreferenceSync('hasCompletedOnboarding', 'true')
+		setExploreDemoModeEnabledSync(true)
 		router.replace('/(tabs)/explore' as any)
 	}
 

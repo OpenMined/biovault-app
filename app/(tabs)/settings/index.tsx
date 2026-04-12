@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { setAppPreferenceSync } from '@/lib/app-preferences'
+import { setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import Constants from 'expo-constants'
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
@@ -26,6 +27,7 @@ export default function SettingsScreen() {
 		const resetOnboarding = () => {
 			setAppPreferenceSync('hasCompletedOnboarding', null)
 			setAppPreferenceSync('hasAcceptedResearchDisclaimer', null)
+			setExploreDemoModeEnabledSync(false)
 
 			if (Platform.OS === 'web') {
 				window.alert('Onboarding has been reset.')

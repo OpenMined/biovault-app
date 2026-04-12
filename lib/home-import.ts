@@ -52,7 +52,7 @@ const DISPLAY_NAME_EXTENSIONS = [
 
 const BUILT_IN_SAMPLE_DOCUMENT: HomeImportedDocument = {
 	id: BUILT_IN_SAMPLE_DOCUMENT_ID,
-	name: 'BioVault demo genome',
+	name: "BioVault's Demo Genome",
 	originalName: 'biovault_sample_23andme.txt',
 	mimeType: 'text/plain',
 	size: null,

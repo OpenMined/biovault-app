@@ -6,14 +6,22 @@ import { SvgUri } from 'react-native-svg'
 
 type Props = {
 	fileName: string
+	isHighlighted?: boolean
 	onPress: () => void
 }
 
 const chevronDownUri = Asset.fromModule(require('../../assets/images/chevron-down.svg')).uri
 
-export function ExploreActiveFileBar({ fileName, onPress }: Props) {
+export function ExploreActiveFileBar({ fileName, isHighlighted = false, onPress }: Props) {
 	return (
-		<Pressable onPress={onPress} style={({ pressed }) => [styles.container, pressed ? styles.containerPressed : null]}>
+		<Pressable
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.container,
+				isHighlighted ? styles.containerHighlighted : null,
+				pressed ? styles.containerPressed : null,
+			]}
+		>
 			<View style={styles.textRow}>
 				<OMText variant="subtitle" style={styles.label}>
 					Browsing with:
@@ -45,6 +53,15 @@ const styles = StyleSheet.create({
 	containerPressed: {
 		backgroundColor: 'rgba(255,255,255,0.07)',
 		borderColor: 'rgba(255,255,255,0.12)',
+	},
+	containerHighlighted: {
+		backgroundColor: 'rgba(82,168,197,0.12)',
+		borderColor: 'rgba(82,168,197,0.75)',
+		shadowColor: omColors.teal500,
+		shadowOpacity: 0.3,
+		shadowRadius: 20,
+		shadowOffset: { width: 0, height: 0 },
+		elevation: 10,
 	},
 	textRow: {
 		flex: 1,
