@@ -11,13 +11,6 @@ export default function SettingsLayout() {
 					headerTintColor: '#059669',
 				}}
 			/>
-			<Stack.Screen
-				name="test"
-				options={{
-					title: 'Test',
-					headerTintColor: '#059669',
-				}}
-			/>
 		</Stack>
 	)
 }

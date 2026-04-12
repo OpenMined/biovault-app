@@ -1,11 +1,23 @@
+import { ActiveDocumentContextCard } from '@/components/explore/ActiveDocumentContextCard'
+import { ActiveDocumentPickerModal } from '@/components/explore/ActiveDocumentPickerModal'
+import { ExploreAssayCard } from '@/components/explore/ExploreAssayCard'
 import { OMText } from '@/components/ui/OMText'
+import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import {
 	getAssaysForExploreCategory,
 	getExploreCategory,
 	type ExploreCategorySlug,
 } from '@/lib/explore-categories'
+import {
+	getActiveImportedDocument,
+	loadHomeImportState,
+	setActiveImportedDocumentId,
+	type HomeImportedDocument,
+} from '@/lib/home-import'
+import { listRecentTestRunsForInputDocument, type RecentTestRunSummary } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { Link, router, useLocalSearchParams } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
+import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -13,6 +25,55 @@ export default function ExploreCategoryScreen() {
 	const params = useLocalSearchParams<{ category?: string }>()
 	const category = params.category ? getExploreCategory(params.category) : null
 	const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
+	const [activeDocument, setActiveDocument] = useState<HomeImportedDocument | null>(null)
+	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
+	const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
+	const [recentRunsBySlug, setRecentRunsBySlug] = useState<Record<string, RecentTestRunSummary>>({})
+
+	useEffect(() => {
+		void loadHomeImportState()
+			.then((state) => {
+				setImportedDocuments(state.importedDocuments)
+				setActiveDocument(getActiveImportedDocument(state))
+			})
+			.catch((error) => {
+				console.error('Failed to load active imported file for Explore:', error)
+				setImportedDocuments([])
+				setActiveDocument(null)
+			})
+	}, [])
+
+	useEffect(() => {
+		if (!activeDocument) {
+			setRecentRunsBySlug({})
+			return
+		}
+
+		void listRecentTestRunsForInputDocument(activeDocument.id)
+			.then((runs) => {
+				setRecentRunsBySlug(Object.fromEntries(runs.map((run) => [run.slug, run] as const)))
+			})
+			.catch((error) => {
+				console.error('Failed to load recent assay runs for active file:', error)
+				setRecentRunsBySlug({})
+			})
+	}, [activeDocument])
+
+	const sortedAssays = useMemo(() => {
+		return [...assays].sort((left, right) => {
+			const leftCompatibility = activeDocument ? assessAssayCompatibility(left, activeDocument).status : 'unknown'
+			const rightCompatibility = activeDocument ? assessAssayCompatibility(right, activeDocument).status : 'unknown'
+			const rank = (status: string) => (status === 'likely-supported' ? 0 : status === 'unknown' ? 1 : 2)
+			const leftRun = recentRunsBySlug[left.id] ? 0 : 1
+			const rightRun = recentRunsBySlug[right.id] ? 0 : 1
+
+			return (
+				rank(leftCompatibility) - rank(rightCompatibility) ||
+				leftRun - rightRun ||
+				left.title.localeCompare(right.title)
+			)
+		})
+	}, [activeDocument, assays, recentRunsBySlug])
 
 	if (!category) {
 		return (
@@ -59,23 +120,67 @@ export default function ExploreCategoryScreen() {
 					</View>
 				</View>
 
-				{assays.length ? (
+				<ActiveDocumentContextCard
+					label="Using file"
+					title={activeDocument ? activeDocument.name : 'No active file selected'}
+					body={
+						activeDocument
+							? 'Assays are ranked and labelled using this file.'
+							: 'Choose a file to get smarter ordering and compatibility guidance.'
+					}
+					buttonLabel={activeDocument ? 'Change' : 'Choose'}
+					onPress={() => setIsFilePickerOpen(true)}
+				/>
+
+				{sortedAssays.length ? (
 					<View style={styles.stack}>
-						{assays.map((assay) => (
-							<Link key={assay.id} href={{ pathname: '/tests/[slug]', params: { slug: assay.id } }} asChild>
-								<Pressable style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}>
-									<OMText variant="headline" style={styles.cardTitle}>
-										{assay.title}
-									</OMText>
-									<OMText variant="body" style={styles.cardBody}>
-										{assay.subtitle}
-									</OMText>
-									<OMText variant="caption" style={styles.cardMeta}>
-										{assay.runMode === 'bioscript' ? 'Local Bioscript run' : 'Preview rows'}
-									</OMText>
-								</Pressable>
-							</Link>
-						))}
+						{sortedAssays.map((assay) => {
+							const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
+							const recentRun = recentRunsBySlug[assay.id]
+							const hasRun = !!recentRun
+							const badgeLabel = compatibility
+								? compatibility.status === 'likely-supported'
+									? 'Works with your file'
+									: compatibility.status === 'unlikely'
+										? 'Better with another file'
+										: 'Needs review'
+								: 'Pick a file to check'
+							const badgeTone = compatibility
+								? compatibility.status === 'likely-supported'
+									? 'good'
+									: compatibility.status === 'unlikely'
+										? 'weak'
+										: 'neutral'
+								: 'neutral'
+							const summary = compatibility
+								? compatibility.summary
+								: assay.runMode === 'bioscript'
+									? 'Runs locally on device through Bioscript.'
+									: 'Preview assay for now.'
+
+							return (
+								<ExploreAssayCard
+									key={assay.id}
+									title={assay.title}
+									body={assay.subtitle}
+									summary={summary}
+									badgeLabel={badgeLabel}
+									badgeTone={badgeTone}
+									isPreviouslyRun={hasRun}
+									recentRunLabel={
+										recentRun ? `Latest result on this file: ${new Date(recentRun.ranAt).toLocaleDateString()}` : null
+									}
+									href={{
+										pathname: '/tests/[slug]',
+										params: {
+											slug: assay.id,
+											...(activeDocument ? { documentId: activeDocument.id } : {}),
+											...(hasRun ? { showResults: 'true' } : {}),
+										},
+									}}
+								/>
+							)
+						})}
 					</View>
 				) : (
 					<View style={styles.emptyCard}>
@@ -88,6 +193,24 @@ export default function ExploreCategoryScreen() {
 					</View>
 				)}
 			</ScrollView>
+
+			<ActiveDocumentPickerModal
+				visible={isFilePickerOpen}
+				onClose={() => setIsFilePickerOpen(false)}
+				documents={importedDocuments}
+				activeDocumentId={activeDocument?.id ?? null}
+				emptyBody="Import a file first to rank assays against your own data."
+				onSelectDocument={(document) => {
+					void setActiveImportedDocumentId(document.id)
+						.then(() => {
+							setActiveDocument(document)
+							setIsFilePickerOpen(false)
+						})
+						.catch((error) => {
+							console.error('Failed to update active file:', error)
+						})
+				}}
+			/>
 		</SafeAreaView>
 	)
 }
@@ -153,27 +276,6 @@ const styles = StyleSheet.create({
 	},
 	stack: {
 		gap: omSpacing.m,
-	},
-	card: {
-		padding: omSpacing.xl,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-	},
-	cardPressed: {
-		backgroundColor: 'rgba(255,255,255,0.04)',
-	},
-	cardTitle: {
-		color: omTheme.primaryText,
-	},
-	cardBody: {
-		marginTop: omSpacing.s,
-		color: omColors.grayscale400,
-	},
-	cardMeta: {
-		marginTop: omSpacing.m,
-		color: omColors.grayscale500,
 	},
 	emptyCard: {
 		padding: omSpacing.xl,

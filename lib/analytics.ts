@@ -1,6 +1,6 @@
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
-import { Storage } from 'expo-sqlite/kv-store'
+import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
 import { Dimensions, Platform } from 'react-native'
 
 interface AnalyticsEvent {
@@ -51,7 +51,7 @@ class Analytics {
 
 	private initVisitor() {
 		// Get or create a persistent visitor ID
-		const storedVisitorId = Storage.getItemSync('analytics_visitor_id')
+		const storedVisitorId = getAppPreferenceSync('analytics_visitor_id')
 		console.log('Analytics: Retrieved stored visitor ID:', storedVisitorId)
 
 		if (storedVisitorId) {
@@ -59,11 +59,11 @@ class Analytics {
 			console.log('Analytics: Using existing visitor ID:', this.visitorId)
 		} else {
 			this.visitorId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-			Storage.setItemSync('analytics_visitor_id', this.visitorId)
+			setAppPreferenceSync('analytics_visitor_id', this.visitorId)
 			console.log('Analytics: Created new visitor ID:', this.visitorId)
 
 			// Verify it was saved
-			const verification = Storage.getItemSync('analytics_visitor_id')
+			const verification = getAppPreferenceSync('analytics_visitor_id')
 			console.log('Analytics: Verification - stored visitor ID:', verification)
 		}
 	}
@@ -71,7 +71,7 @@ class Analytics {
 	private initSession() {
 		// For persistent sessions, use the same session ID as visitor ID
 		// This ensures all events from the same user are in the same session
-		const storedSessionId = Storage.getItemSync('analytics_persistent_session_id')
+		const storedSessionId = getAppPreferenceSync('analytics_persistent_session_id')
 		console.log('Analytics: Retrieved stored persistent session:', storedSessionId)
 
 		if (storedSessionId) {
@@ -80,11 +80,11 @@ class Analytics {
 		} else {
 			// Create a persistent session ID that matches the visitor ID pattern
 			this.sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-			Storage.setItemSync('analytics_persistent_session_id', this.sessionId)
+			setAppPreferenceSync('analytics_persistent_session_id', this.sessionId)
 			console.log('Analytics: Created new persistent session:', this.sessionId)
 
 			// Verify it was saved
-			const verification = Storage.getItemSync('analytics_persistent_session_id')
+			const verification = getAppPreferenceSync('analytics_persistent_session_id')
 			console.log('Analytics: Verification - stored session ID:', verification)
 		}
 
@@ -94,7 +94,7 @@ class Analytics {
 
 	private saveSession() {
 		// Just update the activity timestamp - session ID never changes
-		Storage.setItemSync('analytics_last_activity', this.lastActivityTime.toString())
+		setAppPreferenceSync('analytics_last_activity', this.lastActivityTime.toString())
 	}
 
 	private checkSession() {

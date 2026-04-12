@@ -1,74 +1,159 @@
+import { AssayFilePickerModal } from '@/components/assays/AssayFilePickerModal'
+import { AssayResultPanel } from '@/components/assays/AssayResultPanel'
 import { OMButton } from '@/components/ui/OMButton'
-import { assessAssayCompatibility } from '@/lib/assay-compatibility'
-import {
-	loadHomeImportState,
-	type HomeImportedDocument,
-} from '@/lib/home-import'
-import { getInstalledAssayByIdSync } from '@/lib/assay-store'
-import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { OMText } from '@/components/ui/OMText'
+import { assessAssayCompatibility } from '@/lib/assay-compatibility'
+import { getPreferredDocumentIdForAssaySync, setPreferredDocumentIdForAssaySync } from '@/lib/assay-preferences'
+import { describeLatestRun, groupTestResultRows } from '@/lib/assay-result-presentation'
+import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
+import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
+import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { loadLatestTestRun, saveLatestTestRun, type TestResultStatus } from '@/lib/test-results'
 import { runTest } from '@/lib/test-runner'
-import { omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { Link, useLocalSearchParams } from 'expo-router'
+import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { Link, router, useLocalSearchParams } from 'expo-router'
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useEffect, useMemo, useState } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TestDetailScreen() {
-	const params = useLocalSearchParams<{ documentId?: string; sample?: string; slug?: string }>()
-	const assay = params.slug ? getInstalledAssayByIdSync(params.slug)?.manifest ?? null : null
-	const [storedImport, setStoredImport] = useState<HomeImportedDocument | null>(null)
+	const params = useLocalSearchParams<{ documentId?: string; sample?: string; showResults?: string; slug?: string }>()
+	const assay = params.slug ? getAvailableAssayManifestByIdSync(params.slug) : null
+
+	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
+	const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(params.documentId ?? null)
 	const [latestRun, setLatestRun] = useState<Awaited<ReturnType<typeof loadLatestTestRun>>>(null)
 	const [isRunning, setIsRunning] = useState(false)
+	const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
+	const [showMoreDetails, setShowMoreDetails] = useState(false)
+	const [useSampleInput, setUseSampleInput] = useState(params.sample === 'true')
+	const [expandedGroups, setExpandedGroups] = useState<Record<TestResultStatus, boolean>>({
+		matched: true,
+		normal: false,
+		missing: false,
+	})
+
+	const selectedDocument = useMemo(
+		() => importedDocuments.find((document) => document.id === selectedDocumentId) ?? null,
+		[importedDocuments, selectedDocumentId]
+	)
+
+	useEffect(() => {
+		setUseSampleInput(params.sample === 'true')
+	}, [params.sample])
+
+	useEffect(() => {
+		if (!assay) {
+			setImportedDocuments([])
+			setSelectedDocumentId(null)
+			return
+		}
+
+		void loadHomeImportState()
+			.then((state) => {
+				setImportedDocuments(state.importedDocuments)
+
+				const preferredDocumentId = getPreferredDocumentIdForAssaySync(assay.id)
+				const nextSelectedDocumentId =
+					(params.documentId &&
+						state.importedDocuments.some((document) => document.id === params.documentId) &&
+						params.documentId) ||
+					(preferredDocumentId &&
+						state.importedDocuments.some((document) => document.id === preferredDocumentId) &&
+						preferredDocumentId) ||
+					(state.activeImportedDocumentId &&
+						state.importedDocuments.some((document) => document.id === state.activeImportedDocumentId) &&
+						state.activeImportedDocumentId) ||
+					state.importedDocuments[0]?.id ||
+					null
+
+				setSelectedDocumentId(nextSelectedDocumentId)
+			})
+			.catch((error) => {
+				console.error('Failed to load home import state:', error)
+				setImportedDocuments([])
+				setSelectedDocumentId(null)
+			})
+	}, [assay, params.documentId])
 
 	useEffect(() => {
 		if (!params.slug) {
 			return
 		}
 
-		void loadHomeImportState()
-			.then((state) => {
-				if (params.sample === 'true') {
-					setStoredImport(null)
-					return loadLatestTestRun(params.slug!, null).then(setLatestRun)
-				}
-
-				if (!params.documentId) {
-					setStoredImport(null)
-					return loadLatestTestRun(params.slug!).then(setLatestRun)
-				}
-
-				const document =
-					state.importedDocuments.find((document) => document.id === params.documentId) ?? null
-				setStoredImport(document)
-				return loadLatestTestRun(params.slug!, params.documentId).then(setLatestRun)
-			})
-			.catch((error) => {
-				console.error('Failed to load home import state:', error)
-				setStoredImport(null)
-				void loadLatestTestRun(params.slug!).then(setLatestRun).catch(console.error)
-			})
-	}, [params.documentId, params.sample, params.slug])
-
-	const groupedRows = useMemo(() => {
-		if (!latestRun) {
-			return []
+		if (useSampleInput) {
+			void loadLatestTestRun(params.slug, null)
+				.then(setLatestRun)
+				.catch((error) => {
+					console.error('Failed to load latest sample run:', error)
+					setLatestRun(null)
+				})
+			return
 		}
 
-		return ['matched', 'normal', 'missing'].map((status) => ({
-			status: status as TestResultStatus,
-			rows: latestRun.rows.filter((row) => row.status === status),
-		}))
-	}, [latestRun])
+		if (!selectedDocumentId) {
+			setLatestRun(null)
+			return
+		}
+
+		void loadLatestTestRun(params.slug, selectedDocumentId)
+			.then(setLatestRun)
+			.catch((error) => {
+				console.error('Failed to load latest run for selected file:', error)
+				setLatestRun(null)
+			})
+	}, [params.slug, selectedDocumentId, useSampleInput])
 
 	const compatibility = useMemo(() => {
 		if (!assay) {
 			return null
 		}
 
-		return assessAssayCompatibility(assay, storedImport)
-	}, [assay, storedImport])
+		return assessAssayCompatibility(assay, useSampleInput ? null : selectedDocument)
+	}, [assay, selectedDocument, useSampleInput])
+
+	const groupedRows = useMemo(() => groupTestResultRows(latestRun), [latestRun])
+	const latestRunSummary = useMemo(
+		() => (assay ? describeLatestRun(assay, latestRun) : null),
+		[assay, latestRun]
+	)
+	const canRun = useSampleInput || !!selectedDocument
+	const runButtonLabel = isRunning ? 'Running...' : canRun ? (latestRun ? 'Run again' : 'Run test') : 'Select a file to run'
+	const shouldPrioritizeResults = params.showResults === 'true' && !!latestRun
+
+	const handleRun = () => {
+		if (!assay) {
+			return
+		}
+
+		void (async () => {
+			try {
+				setIsRunning(true)
+				const run = await runTest(assay.id, useSampleInput ? null : selectedDocument)
+
+				if (!useSampleInput && selectedDocument) {
+					setPreferredDocumentIdForAssaySync(assay.id, selectedDocument.id)
+				}
+
+				await saveLatestTestRun(run)
+				const savedRun = await loadLatestTestRun(assay.id, useSampleInput ? null : selectedDocument?.id ?? null)
+				setLatestRun(savedRun)
+				await scheduleTestFinishedNotification(assay.title, assay.id)
+
+				if (run.isPreview) {
+					Alert.alert(
+						'Preview run saved',
+						'This test still uses bundled preview rows. Its legacy classifier needs to be ported into the current expo-bioscript runtime.'
+					)
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : 'Unable to run test.'
+				Alert.alert('Run failed', message)
+			} finally {
+				setIsRunning(false)
+			}
+		})()
+	}
 
 	if (!assay) {
 		return (
@@ -94,11 +179,28 @@ export default function TestDetailScreen() {
 
 	return (
 		<SafeAreaView style={styles.safeArea}>
-			<ScrollView
-				style={styles.screen}
-				contentContainerStyle={styles.content}
-				showsVerticalScrollIndicator={false}
-			>
+			<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+				<View style={styles.topBar}>
+					<Pressable onPress={() => router.back()} style={styles.backButton}>
+						<OMText variant="subtitle" style={styles.backButtonText}>
+							Back
+						</OMText>
+					</Pressable>
+					<Pressable
+						onPress={handleRun}
+						disabled={isRunning || !canRun}
+						style={({ pressed }) => [
+							styles.quickRunButton,
+							isRunning || !canRun ? styles.quickRunButtonDisabled : null,
+							pressed ? styles.quickRunButtonPressed : null,
+						]}
+					>
+						<OMText variant="subtitle" style={styles.quickRunButtonText}>
+							{isRunning ? 'Running...' : canRun ? 'Run now' : 'Pick file'}
+						</OMText>
+					</Pressable>
+				</View>
+
 				<View style={styles.hero}>
 					<OMText variant="caption" style={styles.eyebrow}>
 						{assay.category.toUpperCase()}
@@ -111,9 +213,21 @@ export default function TestDetailScreen() {
 					</OMText>
 				</View>
 
+				{shouldPrioritizeResults && latestRun ? (
+					<AssayResultPanel
+						expandedGroups={expandedGroups}
+						groupedRows={groupedRows}
+						latestRun={latestRun}
+						latestRunSummary={latestRunSummary}
+						onToggleGroup={(status) =>
+							setExpandedGroups((current) => ({ ...current, [status]: !current[status] }))
+						}
+					/>
+				) : null}
+
 				<View style={styles.panel}>
 					<OMText variant="headline" style={styles.panelTitle}>
-						What this test does
+						What you'll learn
 					</OMText>
 					<OMText variant="body" style={styles.panelBody}>
 						{assay.description}
@@ -122,38 +236,132 @@ export default function TestDetailScreen() {
 
 				<View style={styles.panel}>
 					<OMText variant="headline" style={styles.panelTitle}>
-						Run input
+						Choose file
 					</OMText>
-					<OMText variant="body" style={styles.panelBody}>
-						{storedImport
-							? `Using imported file: ${storedImport.name}`
-							: 'Using bundled sample data for this run.'}
-					</OMText>
+
+					{useSampleInput ? (
+						<OMText variant="body" style={styles.panelBody}>
+							Using bundled sample data for this run.
+						</OMText>
+					) : selectedDocument ? (
+						<View style={styles.selectedFileCard}>
+							<View style={styles.selectedFileText}>
+								<OMText variant="subtitle" style={styles.selectedFileTitle}>
+									{selectedDocument.name}
+								</OMText>
+								<OMText variant="caption" style={styles.selectedFileMeta}>
+									{selectedDocument.originalName}
+									{selectedDocument.mimeType ? ` • ${selectedDocument.mimeType}` : ''} • Added{' '}
+									{new Date(selectedDocument.importedAt).toLocaleDateString()}
+								</OMText>
+							</View>
+							<Pressable
+								onPress={() => setIsFilePickerOpen(true)}
+								style={({ pressed }) => [
+									styles.changeFileButton,
+									pressed ? styles.changeFileButtonPressed : null,
+								]}
+							>
+								<OMText variant="subtitle" style={styles.changeFileButtonText}>
+									Change file
+								</OMText>
+							</Pressable>
+						</View>
+					) : importedDocuments.length ? (
+						<View style={styles.fileSelectionStack}>
+							<OMText variant="body" style={styles.panelBody}>
+								Choose which imported file this assay should run on.
+							</OMText>
+							<Pressable
+								onPress={() => setIsFilePickerOpen(true)}
+								style={({ pressed }) => [styles.addFileButton, pressed ? styles.addFileButtonPressed : null]}
+							>
+								<OMText variant="subtitle" style={styles.addFileButtonText}>
+									Choose file
+								</OMText>
+							</Pressable>
+						</View>
+					) : (
+						<View style={styles.fileSelectionStack}>
+							<OMText variant="body" style={styles.panelBody}>
+								Import a genome file before running this assay.
+							</OMText>
+							<Pressable
+								onPress={() => router.push('/data-source')}
+								style={({ pressed }) => [styles.addFileButton, pressed ? styles.addFileButtonPressed : null]}
+							>
+								<OMText variant="subtitle" style={styles.addFileButtonText}>
+									Add file
+								</OMText>
+							</Pressable>
+						</View>
+					)}
+
 					{latestRun ? (
 						<OMText variant="caption" style={styles.runMeta}>
 							Last run: {new Date(latestRun.ranAt).toLocaleString()} • {latestRun.inputLabel}
 							{latestRun.isPreview ? ' • Preview mode' : ''}
 						</OMText>
 					) : null}
+
 					<OMText variant="caption" style={styles.runMeta}>
 						Execution mode: {assay.runMode === 'bioscript' ? 'Live Bioscript run' : 'Preview only'}
 					</OMText>
 				</View>
 
+				<AssayFilePickerModal
+					importedDocuments={importedDocuments}
+					onClose={() => setIsFilePickerOpen(false)}
+					onSelectDocument={(document) => {
+						setSelectedDocumentId(document.id)
+						setUseSampleInput(false)
+						setPreferredDocumentIdForAssaySync(assay.id, document.id)
+						setIsFilePickerOpen(false)
+					}}
+					onUseSample={() => {
+						setUseSampleInput(true)
+						setIsFilePickerOpen(false)
+					}}
+					selectedDocumentId={selectedDocumentId}
+					useSampleInput={useSampleInput}
+					visible={isFilePickerOpen}
+				/>
+
 				{compatibility ? (
 					<View style={styles.panel}>
 						<OMText variant="headline" style={styles.panelTitle}>
-							Compatibility
+							Before you run
 						</OMText>
 						<OMText variant="body" style={styles.panelBody}>
 							{compatibility.summary}
 						</OMText>
+
+						<View style={styles.confidenceRow}>
+							<View style={styles.confidencePill}>
+								<OMText variant="caption" style={styles.confidencePillText}>
+									{compatibility.status === 'likely-supported'
+										? 'Good fit for this file'
+										: compatibility.status === 'unlikely'
+											? 'May need another file'
+											: 'Needs review'}
+								</OMText>
+							</View>
+							<View style={styles.confidencePill}>
+								<OMText variant="caption" style={styles.confidencePillText}>
+									Runs locally
+								</OMText>
+							</View>
+							<View style={styles.confidencePill}>
+								<OMText variant="caption" style={styles.confidencePillText}>
+									No uploads
+								</OMText>
+							</View>
+						</View>
+
 						<OMText variant="caption" style={styles.runMeta}>
 							Input: {compatibility.profile.displayLabel}
 							{compatibility.profile.extension ? ` • ${compatibility.profile.extension}` : ''}
-							{compatibility.profile.source !== 'unknown'
-								? ` • ${compatibility.profile.source}`
-								: ''}
+							{compatibility.profile.source !== 'unknown' ? ` • ${compatibility.profile.source}` : ''}
 						</OMText>
 						<OMText variant="caption" style={styles.runMeta}>
 							Status:{' '}
@@ -186,120 +394,147 @@ export default function TestDetailScreen() {
 					</View>
 				) : null}
 
-				<View style={styles.panel}>
-					<OMText variant="headline" style={styles.panelTitle}>
-						Privacy label
-					</OMText>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							Runs
-						</OMText>
-						{assay.privacy.runs.map((item) => (
-							<OMText key={item} variant="body" style={styles.labelItem}>
-								{item}
-							</OMText>
-						))}
-					</View>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							Reads
-						</OMText>
-						{assay.privacy.reads.map((item) => (
-							<OMText key={item} variant="body" style={styles.labelItem}>
-								{item}
-							</OMText>
-						))}
-					</View>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							Bundled files
-						</OMText>
-						{assay.privacy.usesBundledFiles.map((item) => (
-							<OMText key={item} variant="body" style={styles.labelItem}>
-								{item}
-							</OMText>
-						))}
-					</View>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							External URLs
-						</OMText>
-						{assay.privacy.externalUrls.length ? (
-							assay.privacy.externalUrls.map((item) => (
-								<OMText key={item} variant="body" style={styles.labelItem}>
-									{item}
-								</OMText>
-							))
-						) : (
-							<OMText variant="body" style={styles.labelItem}>
-								None
-							</OMText>
-						)}
-					</View>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							Stores results
-						</OMText>
-						<OMText variant="body" style={styles.labelItem}>
-							{assay.privacy.storesResults}
-						</OMText>
-					</View>
-				</View>
-
-				<View style={styles.panel}>
-					<OMText variant="headline" style={styles.panelTitle}>
-						Files and sources
-					</OMText>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							Files used
-						</OMText>
-						{assay.files.map((item) => (
-							<OMText key={item} variant="body" style={styles.labelItem}>
-								{item}
-							</OMText>
-						))}
-					</View>
-
-					<View style={styles.labelGroup}>
-						<OMText variant="subtitle" style={styles.labelTitle}>
-							Sources
-						</OMText>
-						{assay.sources.map((item) => (
-							<OMText key={item} variant="body" style={styles.labelItem}>
-								{item}
-							</OMText>
-						))}
-					</View>
-				</View>
-
-				{latestRun ? (
-					<View style={styles.panel}>
+				<Pressable
+					onPress={() => setShowMoreDetails((current) => !current)}
+					style={({ pressed }) => [styles.detailsToggle, pressed ? styles.detailsTogglePressed : null]}
+				>
+					<View style={styles.detailsToggleText}>
 						<OMText variant="headline" style={styles.panelTitle}>
-							Latest results
+							More details
 						</OMText>
 						<OMText variant="body" style={styles.panelBody}>
-							Rows are grouped into matched, normal, and missing so it is clear what was found and
-							what was absent from the current file.
+							Privacy label, source files, and result model.
 						</OMText>
+					</View>
+					<OMText variant="subtitle" style={styles.detailsToggleAction}>
+						{showMoreDetails ? 'Hide' : 'Show'}
+					</OMText>
+				</Pressable>
 
-						{groupedRows.map((group) =>
-							group.rows.length ? (
-								<View key={group.status} style={styles.geneGroup}>
-									<OMText variant="subtitle" style={styles.labelTitle}>
-										{group.status}
+				{showMoreDetails ? (
+					<>
+						<View style={styles.panel}>
+							<OMText variant="headline" style={styles.panelTitle}>
+								Privacy label
+							</OMText>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Runs
+								</OMText>
+								{assay.privacy.runs.map((item) => (
+									<OMText key={item} variant="body" style={styles.labelItem}>
+										{item}
 									</OMText>
-									{group.rows.map((item) => (
-										<View key={`${group.status}-${item.gene}-${item.label}`} style={styles.variantRow}>
+								))}
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Reads
+								</OMText>
+								{assay.privacy.reads.map((item) => (
+									<OMText key={item} variant="body" style={styles.labelItem}>
+										{item}
+									</OMText>
+								))}
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Bundled files
+								</OMText>
+								{assay.privacy.usesBundledFiles.map((item) => (
+									<OMText key={item} variant="body" style={styles.labelItem}>
+										{item}
+									</OMText>
+								))}
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									External URLs
+								</OMText>
+								{assay.privacy.externalUrls.length ? (
+									assay.privacy.externalUrls.map((item) => (
+										<OMText key={item} variant="body" style={styles.labelItem}>
+											{item}
+										</OMText>
+									))
+								) : (
+									<OMText variant="body" style={styles.labelItem}>
+										None
+									</OMText>
+								)}
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Stores results
+								</OMText>
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.storesResults}
+								</OMText>
+							</View>
+						</View>
+
+						<View style={styles.panel}>
+							<OMText variant="headline" style={styles.panelTitle}>
+								Files and sources
+							</OMText>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Files used
+								</OMText>
+								{assay.files.map((item) => (
+									<OMText key={item} variant="body" style={styles.labelItem}>
+										{item}
+									</OMText>
+								))}
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Sources
+								</OMText>
+								{assay.sources.map((item) => (
+									<OMText key={item} variant="body" style={styles.labelItem}>
+										{item}
+									</OMText>
+								))}
+							</View>
+						</View>
+
+						<View style={styles.panel}>
+							<OMText variant="headline" style={styles.panelTitle}>
+								Result model
+							</OMText>
+							<OMText variant="body" style={styles.panelBody}>
+								After a run, results can be grouped into these buckets:
+							</OMText>
+
+							<View style={styles.bucketRow}>
+								{assay.resultBuckets.map((bucket) => (
+									<View key={bucket} style={styles.bucketPill}>
+										<OMText variant="caption" style={styles.bucketText}>
+											{bucket}
+										</OMText>
+									</View>
+								))}
+							</View>
+
+							{assay.variantExamples.map((group) => (
+								<View key={group.gene} style={styles.geneGroup}>
+									<OMText variant="subtitle" style={styles.geneTitle}>
+										{group.gene}
+									</OMText>
+
+									{group.items.map((item) => (
+										<View key={item.id} style={styles.variantRow}>
 											<View style={styles.variantHeader}>
 												<OMText variant="body" style={styles.variantName}>
-													{item.label}
+													{item.rsid ?? item.kind}
 												</OMText>
 												<View style={styles.statusPill}>
 													<OMText variant="caption" style={styles.statusText}>
@@ -308,7 +543,7 @@ export default function TestDetailScreen() {
 												</View>
 											</View>
 											<OMText variant="caption" style={styles.variantMeta}>
-												{item.gene} • {item.location} • {item.kind}
+												{item.location} • {item.kind}
 											</OMText>
 											<OMText variant="body" style={styles.variantNote}>
 												{item.note}
@@ -316,87 +551,24 @@ export default function TestDetailScreen() {
 										</View>
 									))}
 								</View>
-							) : null
-						)}
-					</View>
-				) : null}
-
-				<View style={styles.panel}>
-					<OMText variant="headline" style={styles.panelTitle}>
-						Result model
-					</OMText>
-					<OMText variant="body" style={styles.panelBody}>
-						After a run, results can be grouped into these buckets:
-					</OMText>
-
-					<View style={styles.bucketRow}>
-						{assay.resultBuckets.map((bucket) => (
-							<View key={bucket} style={styles.bucketPill}>
-								<OMText variant="caption" style={styles.bucketText}>
-									{bucket}
-								</OMText>
-							</View>
-						))}
-					</View>
-
-					{assay.variantExamples.map((group) => (
-						<View key={group.gene} style={styles.geneGroup}>
-							<OMText variant="subtitle" style={styles.geneTitle}>
-								{group.gene}
-							</OMText>
-
-							{group.items.map((item) => (
-								<View key={item.id} style={styles.variantRow}>
-									<View style={styles.variantHeader}>
-										<OMText variant="body" style={styles.variantName}>
-											{item.rsid ?? item.kind}
-										</OMText>
-										<View style={styles.statusPill}>
-											<OMText variant="caption" style={styles.statusText}>
-												{item.status}
-											</OMText>
-										</View>
-									</View>
-									<OMText variant="caption" style={styles.variantMeta}>
-										{item.location} • {item.kind}
-									</OMText>
-									<OMText variant="body" style={styles.variantNote}>
-										{item.note}
-									</OMText>
-								</View>
 							))}
 						</View>
-					))}
-				</View>
+					</>
+				) : null}
 
-				<OMButton
-					label={isRunning ? 'Running...' : 'Run test'}
-					onPress={() => {
-						void (async () => {
-							try {
-								setIsRunning(true)
-								const run = await runTest(assay.id, storedImport)
-								await saveLatestTestRun(run)
-								const savedRun = await loadLatestTestRun(assay.id)
-								setLatestRun(savedRun)
-								await scheduleTestFinishedNotification(assay.title, assay.id)
-								if (run.isPreview) {
-									Alert.alert(
-										'Preview run saved',
-										'This test still uses bundled preview rows. Its legacy classifier needs to be ported into the current expo-bioscript runtime.'
-									)
-								}
-							} catch (error) {
-								const message = error instanceof Error ? error.message : 'Unable to run test.'
-								Alert.alert('Run failed', message)
-							} finally {
-								setIsRunning(false)
-							}
-						})()
-					}}
-					disabled={isRunning}
-					style={styles.runButton}
-				/>
+				{latestRun && !shouldPrioritizeResults ? (
+					<AssayResultPanel
+						expandedGroups={expandedGroups}
+						groupedRows={groupedRows}
+						latestRun={latestRun}
+						latestRunSummary={latestRunSummary}
+						onToggleGroup={(status) =>
+							setExpandedGroups((current) => ({ ...current, [status]: !current[status] }))
+						}
+					/>
+				) : null}
+
+				<OMButton label={runButtonLabel} onPress={handleRun} disabled={isRunning || !canRun} style={styles.runButton} />
 			</ScrollView>
 		</SafeAreaView>
 	)
@@ -405,67 +577,121 @@ export default function TestDetailScreen() {
 const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 	},
 	screen: {
 		flex: 1,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 	},
 	content: {
 		padding: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
 		gap: omSpacing.l,
 	},
+	topBar: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
+	},
+	backButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.12)',
+	},
+	backButtonText: {
+		color: omColors.grayscale300,
+	},
+	quickRunButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(82,168,197,0.14)',
+		borderWidth: 1,
+		borderColor: 'rgba(82,168,197,0.26)',
+	},
+	quickRunButtonPressed: {
+		opacity: 0.9,
+	},
+	quickRunButtonDisabled: {
+		backgroundColor: 'rgba(255,255,255,0.06)',
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	quickRunButtonText: {
+		color: omColors.teal500,
+	},
 	hero: {
 		gap: omSpacing.m,
 		paddingTop: omSpacing.m,
+		paddingBottom: omSpacing.s,
 	},
 	eyebrow: {
 		alignSelf: 'flex-start',
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: omSpacing.xs,
 		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(60,159,139,0.12)',
-		color: omTheme.accentDeep,
+		backgroundColor: 'rgba(82,168,197,0.14)',
+		borderWidth: 1,
+		borderColor: 'rgba(82,168,197,0.24)',
+		color: omColors.teal500,
 		letterSpacing: 0.8,
 	},
 	title: {
-		color: omTheme.textHeadline,
-		maxWidth: 320,
+		color: omTheme.primaryText,
+		maxWidth: 340,
 	},
 	subtitle: {
-		color: omTheme.textBody,
-		maxWidth: 340,
+		color: omColors.grayscale400,
+		maxWidth: 360,
 		fontSize: 17,
 		lineHeight: 24,
 	},
 	panel: {
 		padding: omSpacing.xl,
 		borderRadius: omRadius.l,
-		backgroundColor: 'rgba(252,252,253,0.82)',
+		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
+		borderColor: 'rgba(255,255,255,0.08)',
 		gap: omSpacing.m,
 	},
 	panelTitle: {
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 	},
 	panelBody: {
-		color: omTheme.textBody,
+		color: omColors.grayscale400,
 	},
 	runMeta: {
-		color: omTheme.textMuted,
+		color: omColors.grayscale500,
+	},
+	confidenceRow: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: omSpacing.s,
+	},
+	confidencePill: {
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: omSpacing.xs,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	confidencePillText: {
+		color: omColors.grayscale300,
 	},
 	labelGroup: {
 		gap: omSpacing.xs,
 	},
 	labelTitle: {
-		color: omTheme.textMuted,
+		color: omColors.grayscale500,
 		letterSpacing: 0.5,
 		textTransform: 'uppercase',
 	},
 	labelItem: {
-		color: omTheme.textBody,
+		color: omColors.grayscale300,
 	},
 	bucketRow: {
 		flexDirection: 'row',
@@ -476,24 +702,26 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: omSpacing.xs,
 		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(60,159,139,0.12)',
+		backgroundColor: 'rgba(82,168,197,0.12)',
+		borderWidth: 1,
+		borderColor: 'rgba(82,168,197,0.18)',
 	},
 	bucketText: {
-		color: omTheme.accentDeep,
+		color: omColors.teal500,
 	},
 	geneGroup: {
 		marginTop: omSpacing.s,
 		gap: omSpacing.s,
 	},
 	geneTitle: {
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 	},
 	variantRow: {
 		padding: omSpacing.m,
 		borderRadius: omRadius.m,
-		backgroundColor: omTheme.surface,
+		backgroundColor: omColors.grayscale850,
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
+		borderColor: 'rgba(255,255,255,0.08)',
 		gap: omSpacing.xs,
 	},
 	variantHeader: {
@@ -504,23 +732,100 @@ const styles = StyleSheet.create({
 	},
 	variantName: {
 		flex: 1,
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 	},
 	statusPill: {
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: omSpacing.xs,
 		borderRadius: omRadius.m,
-		backgroundColor: omTheme.surfaceDim,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
 	},
 	statusText: {
-		color: omTheme.textMuted,
+		color: omColors.grayscale300,
 		textTransform: 'capitalize',
 	},
 	variantMeta: {
-		color: omTheme.textMuted,
+		color: omColors.grayscale500,
 	},
 	variantNote: {
-		color: omTheme.textBody,
+		color: omColors.grayscale400,
+	},
+	fileSelectionStack: {
+		gap: omSpacing.s,
+	},
+	selectedFileCard: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: omColors.grayscale850,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	selectedFileText: {
+		flex: 1,
+		gap: omSpacing.xs,
+	},
+	selectedFileTitle: {
+		color: omTheme.primaryText,
+	},
+	selectedFileMeta: {
+		color: omColors.grayscale500,
+	},
+	changeFileButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(82,168,197,0.12)',
+		borderWidth: 1,
+		borderColor: 'rgba(82,168,197,0.2)',
+	},
+	changeFileButtonPressed: {
+		opacity: 0.9,
+	},
+	changeFileButtonText: {
+		color: omColors.teal500,
+	},
+	addFileButton: {
+		alignSelf: 'flex-start',
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	addFileButtonPressed: {
+		opacity: 0.9,
+	},
+	addFileButtonText: {
+		color: omTheme.primaryText,
+	},
+	detailsToggle: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
+		paddingHorizontal: omSpacing.xl,
+		paddingVertical: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	detailsTogglePressed: {
+		backgroundColor: 'rgba(255,255,255,0.06)',
+	},
+	detailsToggleText: {
+		flex: 1,
+		gap: omSpacing.xs,
+	},
+	detailsToggleAction: {
+		color: omColors.teal500,
 	},
 	runButton: {
 		minHeight: 54,
@@ -532,21 +837,23 @@ const styles = StyleSheet.create({
 		alignItems: 'flex-start',
 		justifyContent: 'center',
 		gap: omSpacing.m,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 	},
 	emptyTitle: {
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 	},
 	emptyBody: {
-		color: omTheme.textBody,
+		color: omColors.grayscale400,
 	},
 	backLink: {
 		paddingHorizontal: omSpacing.m,
 		paddingVertical: omSpacing.s,
 		borderRadius: omRadius.m,
-		backgroundColor: omTheme.surfaceDim,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
 	},
 	backLinkText: {
-		color: omTheme.textHeadline,
+		color: omTheme.primaryText,
 	},
 })

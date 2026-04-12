@@ -26,6 +26,21 @@ export type AssayVariantExampleGroup = {
 	items: AssayVariantExampleItem[]
 }
 
+export type AssayResultSummary = {
+	matchBody: string
+	matchCaveat?: string
+	matchHeadlinePlural?: string
+	matchHeadlineSingular: string
+	missingBody: string
+	missingCaveat?: string
+	missingHeadline: string
+	normalBody: string
+	normalHeadline: string
+	partialBody: string
+	partialCaveat?: string
+	partialHeadline: string
+}
+
 export type AssayManifest = {
 	bundledBioscript?: {
 		assetModuleId: number
@@ -43,6 +58,7 @@ export type AssayManifest = {
 	files: string[]
 	id: string
 	privacy: AssayPrivacyLabel
+	resultSummary: AssayResultSummary
 	resultBuckets: string[]
 	runMode: AssayRunMode
 	sources: string[]
@@ -83,6 +99,20 @@ export const assayManifests: AssayManifest[] = [
 			usesBundledFiles: ['Yes'],
 			externalUrls: [],
 			storesResults: 'Locally in the BioVault database after the run completes',
+		},
+		resultSummary: {
+			matchHeadlineSingular: 'Eye-color signal detected',
+			matchHeadlinePlural: 'Eye-color signals detected',
+			matchBody: 'This run detected the main HERC2 signal associated with lighter eye color.',
+			matchCaveat: 'Eye color is influenced by multiple genes, so this should be treated as one strong clue, not a final prediction.',
+			normalHeadline: 'No flagged eye-color signal found',
+			normalBody: 'The checked HERC2 row was present, but this run did not detect the lighter-eye signal.',
+			missingHeadline: 'Not enough eye-color data',
+			missingBody: 'This file did not include enough of the expected HERC2 data for a confident readout.',
+			missingCaveat: 'A different export may include the missing site.',
+			partialHeadline: 'Partial eye-color result',
+			partialBody: 'This file covered some of the expected eye-color data, but not all of it.',
+			partialCaveat: 'Missing rows can make the result less complete.',
 		},
 		resultBuckets: ['Matched', 'Normal', 'Missing from your data'],
 		variantExamples: [
@@ -132,6 +162,20 @@ export const assayManifests: AssayManifest[] = [
 			usesBundledFiles: ['Yes'],
 			externalUrls: [],
 			storesResults: 'Locally in the BioVault database after the run completes',
+		},
+		resultSummary: {
+			matchHeadlineSingular: 'APOL1 risk signal detected',
+			matchHeadlinePlural: 'APOL1 risk signals detected',
+			matchBody: 'This run detected one or more APOL1 rows used to derive an overall APOL1 status.',
+			matchCaveat: 'APOL1 interpretation depends on the full G1/G2 pattern, so review the supporting rows below.',
+			normalHeadline: 'No flagged APOL1 signal found',
+			normalBody: 'The checked APOL1 rows were present, but this run did not detect a flagged match.',
+			missingHeadline: 'Not enough APOL1 data',
+			missingBody: 'This file did not include enough APOL1 rows for a confident status readout.',
+			missingCaveat: 'Deletion-based APOL1 G2 calls are often absent in chip-style exports.',
+			partialHeadline: 'Partial APOL1 result',
+			partialBody: 'Some APOL1 rows were present, but the file did not cover every expected site.',
+			partialCaveat: 'Review missing rows before treating this as complete.',
 		},
 		resultBuckets: ['Matched', 'Normal', 'Missing from your data'],
 		variantExamples: [
@@ -195,6 +239,20 @@ export const assayManifests: AssayManifest[] = [
 			usesBundledFiles: ['Yes'],
 			externalUrls: [],
 			storesResults: 'Locally in the BioVault database after the run completes',
+		},
+		resultSummary: {
+			matchHeadlineSingular: 'Variant of interest detected',
+			matchHeadlinePlural: 'Variants of interest detected',
+			matchBody: 'This run detected one or more thalassemia-associated example variants in the selected file.',
+			matchCaveat: 'This assay still uses preview rows, so treat the output as a design preview rather than a final clinical interpretation.',
+			normalHeadline: 'No flagged variants found',
+			normalBody: 'The checked rows were present, but this run did not detect any flagged thalassemia examples.',
+			missingHeadline: 'Not enough variant data',
+			missingBody: 'This file did not contain enough of the expected rows for a confident thalassemia preview.',
+			missingCaveat: 'A different file may provide better coverage.',
+			partialHeadline: 'Partial variant preview',
+			partialBody: 'Some example rows were present, but the file did not cover every expected check.',
+			partialCaveat: 'This is best treated as a partial preview.',
 		},
 		resultBuckets: ['Matched variants', 'Normal/reference rows', 'Missing from your data'],
 		variantExamples: [

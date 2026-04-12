@@ -82,9 +82,12 @@ export function assessAssayCompatibility(
 	let status: AssayCompatibilityStatus = 'unknown'
 	let summary = 'This file may work, but the app cannot confidently confirm compatibility yet.'
 
-	if (matchedByExtension || matchedBySource) {
+	if (matchedByExtension && matchedBySource) {
 		status = 'likely-supported'
-		summary = 'This file format is a likely fit for the assay.'
+		summary = 'This file format is a strong match for the assay.'
+	} else if (matchedByExtension || matchedBySource) {
+		status = 'unknown'
+		summary = 'Some compatibility signals match, but the app cannot confirm support yet.'
 	} else if (profile.source === 'unknown' && !profile.extension) {
 		status = 'unknown'
 		summary = 'The file type could not be identified from its name.'

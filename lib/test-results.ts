@@ -1,4 +1,4 @@
-import { deleteDatabaseAsync, openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite'
+import { getAppDb } from '@/lib/app-db'
 import { getTestBySlug } from '@/lib/test-catalog'
 
 export type TestResultStatus = 'matched' | 'normal' | 'missing'
@@ -34,64 +34,37 @@ export type RecentTestRunSummary = {
 	testTitle: string
 }
 
-let dbPromise: Promise<SQLiteDatabase> | null = null
-let schemaReadyPromise: Promise<void> | null = null
-const RESULTS_DB_NAME = 'biovault-results.db'
-
-async function ensureSchema(db: SQLiteDatabase) {
-	await db.execAsync(`
-		PRAGMA journal_mode = WAL;
-		CREATE TABLE IF NOT EXISTS test_runs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			slug TEXT NOT NULL,
-			input_document_id TEXT,
-			input_label TEXT NOT NULL,
-			is_preview INTEGER NOT NULL DEFAULT 0,
-			ran_at TEXT NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS test_result_rows (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			run_id INTEGER NOT NULL,
-			gene TEXT NOT NULL,
-			label TEXT NOT NULL,
-			rsid TEXT,
-			location TEXT NOT NULL,
-			kind TEXT NOT NULL,
-			status TEXT NOT NULL,
-			note TEXT NOT NULL,
-			FOREIGN KEY (run_id) REFERENCES test_runs (id) ON DELETE CASCADE
-		);
-		CREATE INDEX IF NOT EXISTS idx_test_runs_slug_ran_at ON test_runs (slug, ran_at DESC);
-		CREATE INDEX IF NOT EXISTS idx_test_result_rows_run_id ON test_result_rows (run_id);
-	`)
-
-	try {
-		await db.execAsync('ALTER TABLE test_runs ADD COLUMN input_document_id TEXT;')
-	} catch {
-		// Column already exists in migrated databases.
-	}
-
-	await db.execAsync(
-		'CREATE INDEX IF NOT EXISTS idx_test_runs_input_document_id_ran_at ON test_runs (input_document_id, ran_at DESC);'
-	)
+type RunRowRecord = {
+	id: number
+	input_document_id: string | null
+	input_label: string
+	is_preview: number
+	ran_at: string
+	slug: string
 }
 
-async function getDb() {
-	if (!dbPromise) {
-		dbPromise = openDatabaseAsync(RESULTS_DB_NAME)
-	}
+type ResultRowRecord = {
+	gene: string
+	kind: 'SNV' | 'INDEL'
+	label: string
+	location: string
+	note: string
+	rsid: string | null
+	status: TestResultStatus
+}
 
-	const db = await dbPromise
-	if (!schemaReadyPromise) {
-		schemaReadyPromise = ensureSchema(db)
-	}
-
-	await schemaReadyPromise
-	return db
+type RecentRunRow = {
+	id: number
+	input_document_id: string | null
+	slug: string
+	input_label: string
+	is_preview: number
+	ran_at: string
+	row_count: number
 }
 
 export async function saveLatestTestRun(run: StoredTestRun) {
-	const db = await getDb()
+	const db = await getAppDb()
 
 	await db.withExclusiveTransactionAsync(async (txn) => {
 		const inserted = await txn.runAsync(
@@ -122,30 +95,11 @@ export async function saveLatestTestRun(run: StoredTestRun) {
 	})
 }
 
-type RunRowRecord = {
-	id: number
-	input_document_id: string | null
-	input_label: string
-	is_preview: number
-	ran_at: string
-	slug: string
-}
-
-type ResultRowRecord = {
-	gene: string
-	kind: 'SNV' | 'INDEL'
-	label: string
-	location: string
-	note: string
-	rsid: string | null
-	status: TestResultStatus
-}
-
 export async function loadLatestTestRun(
 	slug: string,
 	inputDocumentId?: string | null
 ): Promise<StoredTestRun | null> {
-	const db = await getDb()
+	const db = await getAppDb()
 	const run =
 		inputDocumentId === undefined
 			? await db.getFirstAsync<RunRowRecord>(
@@ -194,21 +148,12 @@ export async function loadLatestTestRun(
 	}
 }
 
-type RecentRunRow = {
-	id: number
-	input_document_id: string | null
-	slug: string
-	input_label: string
-	is_preview: number
-	ran_at: string
-	row_count: number
-}
-
 export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSummary[]> {
-	const db = await getDb()
+	const db = await getAppDb()
 	const rows = await db.getAllAsync<RecentRunRow>(
 		`SELECT
 			r.id,
+			r.input_document_id,
 			r.slug,
 			r.input_label,
 			r.is_preview,
@@ -241,7 +186,7 @@ export async function listRecentTestRunsForInputDocument(
 	inputDocumentId: string,
 	limit = 10
 ): Promise<RecentTestRunSummary[]> {
-	const db = await getDb()
+	const db = await getAppDb()
 	const rows = await db.getAllAsync<RecentRunRow>(
 		`SELECT
 			r.id,
@@ -277,7 +222,10 @@ export async function listRecentTestRunsForInputDocument(
 }
 
 export async function deleteResultsDatabase() {
-	dbPromise = null
-	schemaReadyPromise = null
-	await deleteDatabaseAsync(RESULTS_DB_NAME)
+	const db = await getAppDb()
+
+	await db.withExclusiveTransactionAsync(async (txn) => {
+		await txn.runAsync('DELETE FROM test_result_rows')
+		await txn.runAsync('DELETE FROM test_runs')
+	})
 }

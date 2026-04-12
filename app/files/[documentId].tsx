@@ -121,31 +121,10 @@ export default function ImportedFileScreen() {
 							</Pressable>
 						</View>
 						<OMText variant="body" style={styles.body}>
-							Open analysis to choose a test, or review recent results for this file below.
+							Review recent results for this file here. To run a test, browse assays from Explore and
+							select this file there.
 						</OMText>
 					</View>
-
-					<Pressable
-						onPress={() =>
-							router.push({
-								pathname: '/files/[documentId]/analysis',
-								params: { documentId: document.id },
-							})
-						}
-						style={({ pressed }) => [styles.analysisButton, pressed ? styles.analysisButtonPressed : null]}
-					>
-						<View style={styles.analysisButtonTextBlock}>
-							<OMText variant="headline" style={styles.analysisButtonTitle}>
-								Run Analysis
-							</OMText>
-							<OMText variant="body" style={styles.analysisButtonBody}>
-								Choose a BioVault test for this file.
-							</OMText>
-						</View>
-						<OMText variant="subtitle" style={styles.analysisButtonAction}>
-							Open
-						</OMText>
-					</Pressable>
 
 					<View style={styles.group}>
 						<OMText variant="caption" style={styles.groupLabel}>
@@ -255,33 +234,6 @@ const styles = StyleSheet.create({
 		maxWidth: 360,
 		fontSize: 17,
 		lineHeight: 24,
-	},
-	analysisButton: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		gap: omSpacing.l,
-		padding: omSpacing.xl,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-	},
-	analysisButtonPressed: {
-		backgroundColor: 'rgba(255,255,255,0.04)',
-	},
-	analysisButtonTextBlock: {
-		flex: 1,
-		gap: omSpacing.xs,
-	},
-	analysisButtonTitle: {
-		color: omTheme.primaryText,
-	},
-	analysisButtonBody: {
-		color: omColors.grayscale400,
-	},
-	analysisButtonAction: {
-		color: omTheme.accent,
 	},
 	deleteButton: {
 		paddingHorizontal: omSpacing.m,

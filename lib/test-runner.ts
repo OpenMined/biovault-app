@@ -1,7 +1,7 @@
 import { Asset } from 'expo-asset'
 import type { HomeImportedDocument } from '@/lib/home-import'
 import { prepareSampleGenomeImport } from '@/lib/genome-import'
-import { getInstalledAssayByIdSync } from '@/lib/assay-store'
+import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
 import type { StoredTestResultRow, StoredTestRun, TestResultStatus } from '@/lib/test-results'
 import { runFile } from '@/modules/expo-bioscript'
 import { Directory, File, Paths } from 'expo-file-system'
@@ -80,7 +80,7 @@ async function loadBundledAssetText(assetModuleId: number): Promise<string> {
 }
 
 async function getScriptDefinition(slug: string): Promise<ScriptDefinition | null> {
-	const assay = getInstalledAssayByIdSync(slug)?.manifest ?? null
+	const assay = getAvailableAssayManifestByIdSync(slug)
 	const bundledBioscript = assay?.bundledBioscript
 	if (!bundledBioscript) {
 		return null
@@ -237,7 +237,7 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 }
 
 function buildPreviewRows(slug: string): StoredTestResultRow[] {
-	const assay = getInstalledAssayByIdSync(slug)?.manifest ?? null
+	const assay = getAvailableAssayManifestByIdSync(slug)
 	if (!assay) {
 		return []
 	}
@@ -256,7 +256,7 @@ function buildPreviewRows(slug: string): StoredTestResultRow[] {
 }
 
 export async function runTest(slug: string, importedDocument: HomeImportedDocument | null) {
-	const assay = getInstalledAssayByIdSync(slug)?.manifest ?? null
+	const assay = getAvailableAssayManifestByIdSync(slug)
 	if (!assay) {
 		throw new Error('Test not found.')
 	}

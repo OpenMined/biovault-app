@@ -10,10 +10,10 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
+import { setAppPreferenceSync } from '@/lib/app-preferences'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import Constants from 'expo-constants'
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
-import { Storage } from 'expo-sqlite/kv-store'
 
 // ts-prune-ignore-next
 export default function SettingsScreen() {
@@ -24,8 +24,8 @@ export default function SettingsScreen() {
 
 	const handleResetOnboarding = () => {
 		const resetOnboarding = () => {
-			Storage.removeItemSync('hasCompletedOnboarding')
-			Storage.removeItemSync('hasAcceptedResearchDisclaimer')
+			setAppPreferenceSync('hasCompletedOnboarding', null)
+			setAppPreferenceSync('hasAcceptedResearchDisclaimer', null)
 
 			if (Platform.OS === 'web') {
 				window.alert('Onboarding has been reset.')
@@ -168,12 +168,6 @@ export default function SettingsScreen() {
 					{/* Developer */}
 					<Animated.View entering={FadeInUp.duration(300).delay(250)} style={styles.section}>
 						<Text style={styles.sectionLabel}>DEVELOPER OPTIONS</Text>
-						<TouchableOpacity
-							style={styles.devCard}
-							onPress={() => router.push('/settings/test' as const)}
-						>
-							<Text style={styles.devCardText}>Run Test Screen</Text>
-						</TouchableOpacity>
 						<TouchableOpacity style={styles.devCard} onPress={handleResetOnboarding}>
 							<Text style={styles.devCardText}>Reset Onboarding</Text>
 						</TouchableOpacity>

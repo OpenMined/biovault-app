@@ -1,11 +1,11 @@
 import { OMButton } from '@/components/ui/OMButton'
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
+import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
 import { omColors, omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
-import { Storage } from 'expo-sqlite/kv-store'
 import { useEffect, useRef, useState } from 'react'
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native'
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg'
@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function OnboardingScreen() {
 	const [hasAgreed, setHasAgreed] = useState(
-		Storage.getItemSync('hasAcceptedResearchDisclaimer') === 'true'
+		getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
 	)
 	const stackOpacity = useRef(new Animated.Value(0)).current
 	const stackTranslateY = useRef(new Animated.Value(10)).current
@@ -56,8 +56,8 @@ export default function OnboardingScreen() {
 			return
 		}
 
-		Storage.setItemSync('hasAcceptedResearchDisclaimer', 'true')
-		Storage.setItemSync('hasCompletedOnboarding', 'true')
+		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
+		setAppPreferenceSync('hasCompletedOnboarding', 'true')
 		router.replace('/(tabs)/home' as any)
 	}
 

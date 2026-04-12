@@ -1,6 +1,6 @@
+import { getAppDbSync } from '@/lib/app-db'
 import { deleteAsync, getInfoAsync } from 'expo-file-system/legacy'
 import { Platform } from 'react-native'
-import { Storage } from 'expo-sqlite/kv-store'
 
 export type HomeImportedDocument = {
 	contents?: string | null
@@ -23,6 +23,17 @@ export type HomeImportState = {
 	activeImportedDocumentId: string | null
 	dataSource: HomeDataSource | null
 	importedDocuments: HomeImportedDocument[]
+}
+
+type ImportedDocumentRow = {
+	contents: string | null
+	id: string
+	imported_at: string
+	mime_type: string | null
+	name: string
+	original_name: string
+	size: number | null
+	uri: string
 }
 
 const DISPLAY_NAME_EXTENSIONS = [
@@ -72,102 +83,102 @@ function normalizeImportedDocument(
 	}
 }
 
-function parseImportedDocuments(rawValue: string | null): HomeImportedDocument[] {
-	if (!rawValue) {
-		return []
+function rowToImportedDocument(row: ImportedDocumentRow): HomeImportedDocument {
+	return {
+		contents: row.contents,
+		id: row.id,
+		importedAt: row.imported_at,
+		mimeType: row.mime_type,
+		name: row.name,
+		originalName: row.original_name,
+		size: row.size,
+		uri: row.uri,
+	}
+}
+
+function getPreference(key: string) {
+	const db = getAppDbSync()
+	return db.getFirstSync<{ value: string | null }>('SELECT value FROM app_preferences WHERE key = ?', key)?.value ?? null
+}
+
+function setPreference(key: string, value: string | null) {
+	const db = getAppDbSync()
+
+	if (value === null) {
+		db.runSync('DELETE FROM app_preferences WHERE key = ?', key)
+		return
 	}
 
-	try {
-		const parsed = JSON.parse(rawValue)
-		if (!Array.isArray(parsed)) {
-			return []
-		}
-
-		return parsed
-			.filter(
-				(value): value is Partial<HomeImportedDocument> &
-					Pick<HomeImportedDocument, 'name' | 'uri' | 'importedAt'> =>
-					typeof value === 'object' &&
-					value !== null &&
-					typeof value.name === 'string' &&
-					typeof value.uri === 'string' &&
-					typeof value.importedAt === 'string'
-			)
-			.map(normalizeImportedDocument)
-	} catch (error) {
-		console.error('Failed to parse imported documents:', error)
-		return []
-	}
+	db.runSync(
+		`INSERT INTO app_preferences (key, value)
+		 VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key,
+		value
+	)
 }
 
 function resolveStoredDataSource(value: string | null): HomeDataSource | null {
 	return value === 'sample' || value === 'imported' ? value : null
 }
 
-function migrateLegacyImportedDocument(): HomeImportedDocument[] {
-	const legacyValue = Storage.getItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-	if (!legacyValue) {
-		return []
-	}
-
-	try {
-		const parsed = JSON.parse(legacyValue) as Partial<HomeImportedDocument> &
-			Pick<HomeImportedDocument, 'name' | 'uri' | 'importedAt'>
-		const migrated = normalizeImportedDocument(parsed)
-		Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-		return [migrated]
-	} catch (error) {
-		console.error('Failed to migrate legacy imported document:', error)
-		Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-		return []
-	}
-}
-
 export function saveHomeImportState(state: HomeImportState) {
-	Storage.setItemSync(HOME_IMPORTED_DOCUMENTS_KEY, JSON.stringify(state.importedDocuments))
+	const db = getAppDbSync()
 
-	if (state.activeImportedDocumentId) {
-		Storage.setItemSync(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY, state.activeImportedDocumentId)
-	} else {
-		Storage.removeItemSync(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY)
-	}
+	db.withTransactionSync(() => {
+		db.runSync('DELETE FROM imported_documents')
 
-	if (state.dataSource) {
-		Storage.setItemSync(HOME_DATA_SOURCE_KEY, state.dataSource)
-	} else {
-		Storage.removeItemSync(HOME_DATA_SOURCE_KEY)
-	}
+		for (const document of state.importedDocuments.map(normalizeImportedDocument)) {
+			db.runSync(
+				`INSERT INTO imported_documents
+				 (id, name, original_name, uri, mime_type, size, imported_at, contents)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				document.id,
+				document.name,
+				document.originalName,
+				document.uri,
+				document.mimeType,
+				document.size,
+				document.importedAt,
+				document.contents ?? null
+			)
+		}
 
-	const activeDocument = getActiveImportedDocument(state)
-	if (activeDocument) {
-		Storage.setItemSync(HOME_IMPORTED_DOCUMENT_KEY, JSON.stringify(activeDocument))
-	} else {
-		Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-	}
+		const activeImportedDocumentId =
+			state.activeImportedDocumentId &&
+			state.importedDocuments.some((document) => document.id === state.activeImportedDocumentId)
+				? state.activeImportedDocumentId
+				: state.importedDocuments[0]?.id ?? null
+
+		setPreference(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY, activeImportedDocumentId)
+		setPreference(HOME_DATA_SOURCE_KEY, state.dataSource)
+	})
 }
 
 export function loadHomeImportStateSync(): HomeImportState {
-	const parsedDocuments = parseImportedDocuments(Storage.getItemSync(HOME_IMPORTED_DOCUMENTS_KEY))
-	const resolvedDocuments = parsedDocuments.length ? parsedDocuments : migrateLegacyImportedDocument()
+	const db = getAppDbSync()
+	const importedDocuments = db
+		.getAllSync<ImportedDocumentRow>(
+			`SELECT id, name, original_name, uri, mime_type, size, imported_at, contents
+			 FROM imported_documents
+			 ORDER BY imported_at DESC, id DESC`
+		)
+		.map(rowToImportedDocument)
 
-	const storedActiveId = Storage.getItemSync(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY)
+	const storedActiveId = getPreference(HOME_ACTIVE_IMPORTED_DOCUMENT_ID_KEY)
 	const activeImportedDocumentId =
-		storedActiveId && resolvedDocuments.some((document) => document.id === storedActiveId)
+		storedActiveId && importedDocuments.some((document) => document.id === storedActiveId)
 			? storedActiveId
-			: resolvedDocuments[0]?.id ?? null
+			: importedDocuments[0]?.id ?? null
 
 	const state: HomeImportState = {
 		activeImportedDocumentId,
-		dataSource: resolveStoredDataSource(Storage.getItemSync(HOME_DATA_SOURCE_KEY)),
-		importedDocuments: resolvedDocuments,
+		dataSource: resolveStoredDataSource(getPreference(HOME_DATA_SOURCE_KEY)),
+		importedDocuments,
 	}
 
 	if (state.dataSource === 'imported' && !activeImportedDocumentId) {
 		state.dataSource = null
-	}
-
-	if (!parsedDocuments.length && resolvedDocuments.length) {
-		saveHomeImportState(state)
 	}
 
 	return state
@@ -241,5 +252,17 @@ export async function deleteAllImportedDocuments() {
 		activeImportedDocumentId: null,
 		dataSource: null,
 		importedDocuments: [],
+	})
+}
+
+export async function setActiveImportedDocumentId(documentId: string | null) {
+	const state = await loadHomeImportState()
+	const nextActiveImportedDocumentId =
+		documentId && state.importedDocuments.some((document) => document.id === documentId) ? documentId : null
+
+	saveHomeImportState({
+		...state,
+		activeImportedDocumentId: nextActiveImportedDocumentId,
+		dataSource: nextActiveImportedDocumentId ? 'imported' : state.dataSource,
 	})
 }

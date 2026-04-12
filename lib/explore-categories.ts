@@ -1,5 +1,5 @@
 import { type AssayDiscoverCategory, type AssayManifest } from '@/lib/assay-manifests'
-import { listInstalledAssaysSync } from '@/lib/assay-store'
+import { listAvailableAssayManifestsSync } from '@/lib/assay-registry'
 
 export type ExploreCategorySlug = AssayDiscoverCategory
 
@@ -47,22 +47,13 @@ export const exploreCategories: ExploreCategoryDefinition[] = [
 	},
 ]
 
-const testSlugByCategory: Record<ExploreCategorySlug, string[]> = {
-	traits: ['herc2-eye-color'],
-	ancestry: [],
-	pgx: [],
-	'health-risk': ['apol1-status', 'thalassemia-variants'],
-}
-
 export function getExploreCategory(slug: string) {
 	return exploreCategories.find((category) => category.slug === slug) ?? null
 }
 
 export function getAssaysForExploreCategory(slug: ExploreCategorySlug): AssayManifest[] {
-	const assayIds = testSlugByCategory[slug]
-	return listInstalledAssaysSync()
-		.map((record) => record.manifest)
-		.filter((manifest) => assayIds.includes(manifest.id))
+	return listAvailableAssayManifestsSync()
+		.filter((manifest) => manifest.category === slug)
 }
 
 export function getTestsForExploreCategory(slug: ExploreCategorySlug): AssayManifest[] {
