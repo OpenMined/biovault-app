@@ -1,6 +1,6 @@
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
-import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
+import { getAppPreferenceSync, setAppPreference, setAppPreferenceSync } from '@/lib/app-preferences'
 import { Dimensions, Platform } from 'react-native'
 
 interface AnalyticsEvent {
@@ -94,7 +94,15 @@ class Analytics {
 
 	private saveSession() {
 		// Just update the activity timestamp - session ID never changes
-		setAppPreferenceSync('analytics_last_activity', this.lastActivityTime.toString())
+		void this.persistPreference('analytics_last_activity', this.lastActivityTime.toString())
+	}
+
+	private async persistPreference(key: string, value: string | null) {
+		try {
+			await setAppPreference(key, value)
+		} catch (error) {
+			console.warn(`Analytics: Failed to persist preference "${key}"`, error)
+		}
 	}
 
 	private checkSession() {

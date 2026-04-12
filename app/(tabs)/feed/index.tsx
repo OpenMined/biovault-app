@@ -172,7 +172,7 @@ export default function FeedScreen() {
 						NOTIFICATIONS
 					</OMText>
 					<OMText variant="h3" style={styles.title}>
-						Recent updates and alerts.
+						Notifications
 					</OMText>
 					<OMText variant="body" style={styles.body}>
 						Push notifications received on this device are stored locally and shown here.

@@ -4,11 +4,13 @@ import { getTestBySlug } from '@/lib/test-catalog'
 export type TestResultStatus = 'matched' | 'normal' | 'missing'
 
 export type StoredTestResultRow = {
+	alts?: string[]
 	gene: string
 	kind: 'SNV' | 'INDEL'
 	label: string
 	location: string
 	note: string
+	ref?: string
 	rsid?: string
 	status: TestResultStatus
 }
@@ -44,11 +46,13 @@ type RunRowRecord = {
 }
 
 type ResultRowRecord = {
+	alts_json: string | null
 	gene: string
 	kind: 'SNV' | 'INDEL'
 	label: string
 	location: string
 	note: string
+	ref: string | null
 	rsid: string | null
 	status: TestResultStatus
 }
@@ -80,8 +84,8 @@ export async function saveLatestTestRun(run: StoredTestRun) {
 		for (const row of run.rows) {
 			await txn.runAsync(
 				`INSERT INTO test_result_rows
-					(run_id, gene, label, rsid, location, kind, status, note)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+					(run_id, gene, label, rsid, location, kind, status, note, ref, alts_json)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				runId,
 				row.gene,
 				row.label,
@@ -89,7 +93,9 @@ export async function saveLatestTestRun(run: StoredTestRun) {
 				row.location,
 				row.kind,
 				row.status,
-				row.note
+				row.note,
+				row.ref ?? null,
+				row.alts?.length ? JSON.stringify(row.alts) : null
 			)
 		}
 	})
@@ -122,7 +128,7 @@ export async function loadLatestTestRun(
 	}
 
 	const rows = await db.getAllAsync<ResultRowRecord>(
-		`SELECT gene, label, rsid, location, kind, status, note
+		`SELECT gene, label, rsid, location, kind, status, note, ref, alts_json
 		 FROM test_result_rows
 		 WHERE run_id = ?
 		 ORDER BY id ASC`,
@@ -144,7 +150,18 @@ export async function loadLatestTestRun(
 			kind: row.kind,
 			status: row.status,
 			note: row.note,
+			ref: row.ref ?? undefined,
+			alts: row.alts_json ? safelyParseAltJson(row.alts_json) : undefined,
 		})),
+	}
+}
+
+function safelyParseAltJson(value: string): string[] | undefined {
+	try {
+		const parsed = JSON.parse(value)
+		return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : undefined
+	} catch {
+		return undefined
 	}
 }
 

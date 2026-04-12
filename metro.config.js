@@ -4,7 +4,7 @@ const { getDefaultConfig } = require('expo/metro-config')
 const config = getDefaultConfig(__dirname)
 
 // Add bundled non-code assay/package assets
-config.resolver.assetExts.push('sqlite', 'db', 'py')
+config.resolver.assetExts.push('sqlite', 'db', 'py', 'txt')
 
 // Add wasm asset support
 config.resolver.assetExts.push('wasm')

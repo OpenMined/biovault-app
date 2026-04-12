@@ -71,6 +71,18 @@ function ensureSchema(db: SQLiteDatabase) {
 		CREATE INDEX IF NOT EXISTS idx_test_result_rows_run_id ON test_result_rows (run_id);
 	`)
 
+	const testResultColumns = db
+		.getAllSync<{ name: string }>('PRAGMA table_info(test_result_rows)')
+		.map((column) => column.name)
+
+	if (!testResultColumns.includes('ref')) {
+		db.execSync('ALTER TABLE test_result_rows ADD COLUMN ref TEXT;')
+	}
+
+	if (!testResultColumns.includes('alts_json')) {
+		db.execSync('ALTER TABLE test_result_rows ADD COLUMN alts_json TEXT;')
+	}
+
 	schemaReady = true
 }
 

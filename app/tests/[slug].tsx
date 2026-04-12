@@ -8,7 +8,7 @@ import { describeLatestRun, groupTestResultRows } from '@/lib/assay-result-prese
 import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
 import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
 import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
-import { loadLatestTestRun, saveLatestTestRun, type TestResultStatus } from '@/lib/test-results'
+import { loadLatestTestRun, saveLatestTestRun } from '@/lib/test-results'
 import { runTest } from '@/lib/test-runner'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { Link, router, useLocalSearchParams } from 'expo-router'
@@ -27,11 +27,6 @@ export default function TestDetailScreen() {
 	const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
 	const [showMoreDetails, setShowMoreDetails] = useState(false)
 	const [useSampleInput, setUseSampleInput] = useState(params.sample === 'true')
-	const [expandedGroups, setExpandedGroups] = useState<Record<TestResultStatus, boolean>>({
-		matched: true,
-		normal: false,
-		missing: false,
-	})
 
 	const selectedDocument = useMemo(
 		() => importedDocuments.find((document) => document.id === selectedDocumentId) ?? null,
@@ -215,19 +210,15 @@ export default function TestDetailScreen() {
 
 				{shouldPrioritizeResults && latestRun ? (
 					<AssayResultPanel
-						expandedGroups={expandedGroups}
 						groupedRows={groupedRows}
 						latestRun={latestRun}
 						latestRunSummary={latestRunSummary}
-						onToggleGroup={(status) =>
-							setExpandedGroups((current) => ({ ...current, [status]: !current[status] }))
-						}
 					/>
 				) : null}
 
 				<View style={styles.panel}>
 					<OMText variant="headline" style={styles.panelTitle}>
-						What you'll learn
+						What you&apos;ll learn
 					</OMText>
 					<OMText variant="body" style={styles.panelBody}>
 						{assay.description}
@@ -545,6 +536,20 @@ export default function TestDetailScreen() {
 											<OMText variant="caption" style={styles.variantMeta}>
 												{item.location} • {item.kind}
 											</OMText>
+											{item.kind === 'INDEL' && (item.ref || item.alts?.length) ? (
+												<View style={styles.variantDetailBlock}>
+													{item.ref ? (
+														<OMText variant="caption" style={styles.variantDetailText}>
+															Ref: {item.ref}
+														</OMText>
+													) : null}
+													{item.alts?.length ? (
+														<OMText variant="caption" style={styles.variantDetailText}>
+															Alts: {item.alts.join(', ')}
+														</OMText>
+													) : null}
+												</View>
+											) : null}
 											<OMText variant="body" style={styles.variantNote}>
 												{item.note}
 											</OMText>
@@ -558,13 +563,9 @@ export default function TestDetailScreen() {
 
 				{latestRun && !shouldPrioritizeResults ? (
 					<AssayResultPanel
-						expandedGroups={expandedGroups}
 						groupedRows={groupedRows}
 						latestRun={latestRun}
 						latestRunSummary={latestRunSummary}
-						onToggleGroup={(status) =>
-							setExpandedGroups((current) => ({ ...current, [status]: !current[status] }))
-						}
 					/>
 				) : null}
 
@@ -748,6 +749,17 @@ const styles = StyleSheet.create({
 	},
 	variantMeta: {
 		color: omColors.grayscale500,
+	},
+	variantDetailBlock: {
+		padding: omSpacing.s,
+		borderRadius: omRadius.s,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.06)',
+		gap: 2,
+	},
+	variantDetailText: {
+		color: omColors.grayscale300,
 	},
 	variantNote: {
 		color: omColors.grayscale400,

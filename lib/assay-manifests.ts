@@ -13,10 +13,12 @@ export type AssayPrivacyLabel = {
 }
 
 export type AssayVariantExampleItem = {
+	alts?: string[]
 	id: string
 	kind: 'SNV' | 'INDEL'
 	location: string
 	note: string
+	ref?: string
 	rsid?: string
 	status: 'matched' | 'normal' | 'missing'
 }
@@ -78,7 +80,7 @@ export const assayManifests: AssayManifest[] = [
 		description:
 			'This test looks at the main HERC2 signal used in the existing Bioscript eye-color example and turns it into a simple, local-first result view.',
 		bundledBioscript: {
-			assetModuleId: require('../assets/assays/herc2.py'),
+			assetModuleId: require('../assets/assays/herc2.txt'),
 			scriptName: 'herc2.py',
 			outputFile: 'herc2-output.tsv',
 		},
@@ -141,7 +143,7 @@ export const assayManifests: AssayManifest[] = [
 		description:
 			'This test checks the APOL1 G1 and G2 sites and derives an overall APOL1 status. It is the strongest current candidate for a true end-to-end local Bioscript run in the app.',
 		bundledBioscript: {
-			assetModuleId: require('../assets/assays/apol1.py'),
+			assetModuleId: require('../assets/assays/apol1.txt'),
 			scriptName: 'apol1.py',
 			outputFile: 'apol1-output.tsv',
 		},
@@ -203,6 +205,8 @@ export const assayManifests: AssayManifest[] = [
 						rsid: 'rs71785313',
 						location: 'GRCh37 chr22:36662046-36662051',
 						kind: 'INDEL',
+						ref: 'TTTTTTTTTTTTT',
+						alts: ['TTTTTTTTTTTT', 'TTTTTTTTTTTTTT', 'TTTTTTTTTTTTTTT'],
 						status: 'missing',
 						note: 'Deletion-based APOL1 G2 site.',
 					},

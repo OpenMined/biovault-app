@@ -198,9 +198,6 @@ const styles = StyleSheet.create({
 		textTransform: 'uppercase',
 		letterSpacing: 0.8,
 	},
-	stack: {
-		gap: omSpacing.m,
-	},
 	emptyCard: {
 		padding: omSpacing.xl,
 		borderRadius: omRadius.l,

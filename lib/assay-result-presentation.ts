@@ -7,9 +7,13 @@ export type AssayRunSummary = {
 	headline: string
 }
 
-export type GroupedResultRows = Array<{
-	rows: StoredTestRun['rows']
-	status: TestResultStatus
+export type GeneGroupedResultRows = Array<{
+	gene: string
+	totalCount: number
+	groups: Array<{
+		rows: StoredTestRun['rows']
+		status: TestResultStatus
+	}>
 }>
 
 export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun | null): AssayRunSummary | null {
@@ -61,13 +65,35 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 	}
 }
 
-export function groupTestResultRows(latestRun: StoredTestRun | null): GroupedResultRows {
+export function groupTestResultRows(latestRun: StoredTestRun | null): GeneGroupedResultRows {
 	if (!latestRun) {
 		return []
 	}
 
-	return ['matched', 'normal', 'missing'].map((status) => ({
-		status: status as TestResultStatus,
-		rows: latestRun.rows.filter((row) => row.status === status),
-	}))
+	const rowsByGene = new Map<string, StoredTestRun['rows']>()
+
+	for (const row of latestRun.rows) {
+		const gene = row.gene.trim() || 'Unassigned'
+		const existingRows = rowsByGene.get(gene) ?? []
+		existingRows.push(row)
+		rowsByGene.set(gene, existingRows)
+	}
+
+	return Array.from(rowsByGene.entries())
+		.map(([gene, rows]) => ({
+			gene,
+			totalCount: rows.length,
+			groups: ['matched', 'normal', 'missing'].map((status) => ({
+				status: status as TestResultStatus,
+				rows: rows.filter((row) => row.status === status),
+			})),
+		}))
+		.sort((left, right) => {
+			const rankStatus = (status: TestResultStatus) =>
+				status === 'matched' ? 0 : status === 'normal' ? 1 : 2
+			const leftBestStatus = left.groups.find((group) => group.rows.length)?.status ?? 'missing'
+			const rightBestStatus = right.groups.find((group) => group.rows.length)?.status ?? 'missing'
+
+			return rankStatus(leftBestStatus) - rankStatus(rightBestStatus) || left.gene.localeCompare(right.gene)
+		})
 }

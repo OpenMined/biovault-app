@@ -1,4 +1,5 @@
 import { getAppDbSync } from '@/lib/app-db'
+import { ensureBuiltInSampleGenomeImport } from '@/lib/genome-import'
 import { deleteAsync, getInfoAsync } from 'expo-file-system/legacy'
 import { Platform } from 'react-native'
 
@@ -219,10 +220,20 @@ export async function loadHomeImportState(): Promise<HomeImportState> {
 
 	let didChange = false
 	const importedDocuments: HomeImportedDocument[] = []
+	const builtInSampleImport = await ensureBuiltInSampleGenomeImport()
 
 	for (const document of state.importedDocuments) {
 		if (document.id === BUILT_IN_SAMPLE_DOCUMENT_ID) {
-			importedDocuments.push(document)
+			const builtInDocument = {
+				...document,
+				uri: builtInSampleImport.uri,
+			}
+
+			if (builtInDocument.uri !== document.uri) {
+				didChange = true
+			}
+
+			importedDocuments.push(builtInDocument)
 			continue
 		}
 
@@ -269,6 +280,8 @@ export function getActiveImportedDocument(
 
 export async function deleteAllImportedDocuments() {
 	const state = await loadHomeImportState()
+	const builtInSampleImport =
+		Platform.OS === 'web' ? null : await ensureBuiltInSampleGenomeImport().catch(() => null)
 
 	if (Platform.OS !== 'web') {
 		for (const document of state.importedDocuments) {
@@ -287,7 +300,9 @@ export async function deleteAllImportedDocuments() {
 	saveHomeImportState({
 		activeImportedDocumentId: BUILT_IN_SAMPLE_DOCUMENT_ID,
 		dataSource: null,
-		importedDocuments: [getBuiltInSampleDocument()],
+		importedDocuments: [
+			builtInSampleImport ? { ...getBuiltInSampleDocument(), uri: builtInSampleImport.uri } : getBuiltInSampleDocument(),
+		],
 	})
 }
 

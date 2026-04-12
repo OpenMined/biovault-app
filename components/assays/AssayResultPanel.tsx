@@ -1,24 +1,20 @@
 import { OMText } from '@/components/ui/OMText'
-import type { AssayRunSummary, GroupedResultRows } from '@/lib/assay-result-presentation'
+import type { AssayRunSummary, GeneGroupedResultRows } from '@/lib/assay-result-presentation'
 import type { StoredTestRun, TestResultStatus } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 
 type Props = {
-	expandedGroups: Record<TestResultStatus, boolean>
-	groupedRows: GroupedResultRows
+	groupedRows: GeneGroupedResultRows
 	latestRun: StoredTestRun
 	latestRunSummary: AssayRunSummary | null
-	onToggleGroup: (status: TestResultStatus) => void
 	panelTitle?: string
 }
 
 export function AssayResultPanel({
-	expandedGroups,
 	groupedRows,
 	latestRun,
 	latestRunSummary,
-	onToggleGroup,
 	panelTitle = 'Latest result',
 }: Props) {
 	return (
@@ -66,63 +62,92 @@ export function AssayResultPanel({
 				what the file did not cover.
 			</OMText>
 
-			{groupedRows.map((group) => {
-				if (!group.rows.length) {
-					return null
-				}
-
-				const isExpanded = expandedGroups[group.status]
-				const shouldCollapse = group.status !== 'matched'
-
+			{groupedRows.map((geneGroup) => {
 				return (
-					<View key={group.status} style={styles.geneGroup}>
-						{shouldCollapse ? (
-							<Pressable
-								onPress={() => onToggleGroup(group.status)}
-								style={({ pressed }) => [styles.groupHeader, pressed ? styles.groupHeaderPressed : null]}
-							>
-								<OMText variant="subtitle" style={styles.labelTitle}>
-									{group.status} ({group.rows.length})
-								</OMText>
-								<OMText variant="subtitle" style={styles.groupHeaderAction}>
-									{isExpanded ? 'Hide' : 'Show'}
-								</OMText>
-							</Pressable>
-						) : (
-							<View style={styles.groupHeader}>
-								<OMText variant="subtitle" style={styles.labelTitle}>
-									{group.status} ({group.rows.length})
+					<View key={geneGroup.gene} style={styles.geneGroup}>
+						<View style={styles.geneHeader}>
+							<OMText variant="subtitle" style={styles.geneTitle}>
+								{geneGroup.gene}
+							</OMText>
+							<View style={styles.geneCountPill}>
+								<OMText variant="caption" style={styles.geneCountText}>
+									{geneGroup.totalCount} {geneGroup.totalCount === 1 ? 'row' : 'rows'}
 								</OMText>
 							</View>
-						)}
+						</View>
 
-						{!shouldCollapse || isExpanded
-							? group.rows.map((item) => (
-								<View key={`${group.status}-${item.gene}-${item.label}`} style={styles.variantRow}>
-									<View style={styles.variantHeader}>
-										<OMText variant="body" style={styles.variantName}>
-											{item.label}
-										</OMText>
-										<View style={styles.statusPill}>
-											<OMText variant="caption" style={styles.statusText}>
-												{item.status}
+						{geneGroup.groups.map((statusGroup) => {
+							if (!statusGroup.rows.length) {
+								return null
+							}
+
+							return (
+								<View key={`${geneGroup.gene}-${statusGroup.status}`} style={styles.statusGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										{statusGroup.status} ({statusGroup.rows.length})
+									</OMText>
+
+									{statusGroup.rows.map((item) => (
+										<View
+											key={`${statusGroup.status}-${item.gene}-${item.label}-${item.location}`}
+											style={styles.variantRow}
+										>
+											<View style={styles.variantHeader}>
+												<OMText variant="body" style={styles.variantName}>
+													{item.rsid ?? item.label}
+												</OMText>
+												<View style={[styles.statusPill, getStatusPillStyle(item.status)]}>
+													<OMText variant="caption" style={styles.statusText}>
+														{item.status}
+													</OMText>
+												</View>
+											</View>
+											<OMText variant="caption" style={styles.variantMeta}>
+												{item.location} • {item.kind}
+											</OMText>
+											{item.kind === 'INDEL' && (item.ref || item.alts?.length) ? (
+												<View style={styles.variantDetailBlock}>
+													{item.ref ? (
+														<OMText variant="caption" style={styles.variantDetailText}>
+															Ref: {item.ref}
+														</OMText>
+													) : null}
+													{item.alts?.length ? (
+														<OMText variant="caption" style={styles.variantDetailText}>
+															Alts: {item.alts.join(', ')}
+														</OMText>
+													) : null}
+												</View>
+											) : null}
+											{item.rsid && item.label !== item.rsid ? (
+												<OMText variant="caption" style={styles.variantSubmeta}>
+													{item.label}
+												</OMText>
+											) : null}
+											<OMText variant="body" style={styles.variantNote}>
+												{item.note}
 											</OMText>
 										</View>
-									</View>
-									<OMText variant="caption" style={styles.variantMeta}>
-										{item.gene} • {item.location} • {item.kind}
-									</OMText>
-									<OMText variant="body" style={styles.variantNote}>
-										{item.note}
-									</OMText>
+									))}
 								</View>
-							))
-							: null}
+							)
+						})}
 					</View>
 				)
 			})}
 		</View>
 	)
+}
+
+function getStatusPillStyle(status: TestResultStatus) {
+	switch (status) {
+		case 'matched':
+			return styles.statusPillMatched
+		case 'normal':
+			return styles.statusPillNormal
+		case 'missing':
+			return styles.statusPillMissing
+	}
 }
 
 const styles = StyleSheet.create({
@@ -175,24 +200,42 @@ const styles = StyleSheet.create({
 	},
 	geneGroup: {
 		marginTop: omSpacing.s,
-		gap: omSpacing.s,
+		gap: omSpacing.m,
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.03)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.06)',
 	},
-	groupHeader: {
+	geneHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		gap: omSpacing.m,
 	},
-	groupHeaderPressed: {
-		opacity: 0.9,
+	geneTitle: {
+		color: omTheme.primaryText,
+		textTransform: 'uppercase',
+		letterSpacing: 0.6,
 	},
-	groupHeaderAction: {
-		color: omColors.teal500,
+	geneCountPill: {
+		paddingHorizontal: omSpacing.s,
+		paddingVertical: omSpacing.xs,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	geneCountText: {
+		color: omColors.grayscale300,
 	},
 	labelTitle: {
 		color: omColors.grayscale500,
 		letterSpacing: 0.5,
 		textTransform: 'uppercase',
+	},
+	statusGroup: {
+		gap: omSpacing.s,
 	},
 	variantRow: {
 		padding: omSpacing.m,
@@ -216,9 +259,19 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: omSpacing.xs,
 		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(255,255,255,0.08)',
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	statusPillMatched: {
+		backgroundColor: 'rgba(83,190,169,0.12)',
+		borderColor: 'rgba(83,190,169,0.2)',
+	},
+	statusPillNormal: {
+		backgroundColor: 'rgba(82,168,197,0.12)',
+		borderColor: 'rgba(82,168,197,0.2)',
+	},
+	statusPillMissing: {
+		backgroundColor: 'rgba(247,151,99,0.12)',
+		borderColor: 'rgba(247,151,99,0.2)',
 	},
 	statusText: {
 		color: omColors.grayscale300,
@@ -226,6 +279,20 @@ const styles = StyleSheet.create({
 	},
 	variantMeta: {
 		color: omColors.grayscale500,
+	},
+	variantSubmeta: {
+		color: omColors.teal500,
+	},
+	variantDetailBlock: {
+		padding: omSpacing.s,
+		borderRadius: omRadius.s,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.06)',
+		gap: 2,
+	},
+	variantDetailText: {
+		color: omColors.grayscale300,
 	},
 	variantNote: {
 		color: omColors.grayscale400,

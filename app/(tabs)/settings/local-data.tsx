@@ -2,15 +2,16 @@ import { OMText } from '@/components/ui/OMText'
 import { deleteAllImportedDocuments, loadHomeImportState } from '@/lib/home-import'
 import { deleteResultsDatabase } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function LocalDataScreen() {
 	const [importedCount, setImportedCount] = useState(0)
 
-	useEffect(() => {
+	const loadState = useCallback(() => {
 		void loadHomeImportState()
 			.then((state) => setImportedCount(state.importedDocuments.length))
 			.catch((error) => {
@@ -18,6 +19,12 @@ export default function LocalDataScreen() {
 				setImportedCount(0)
 			})
 	}, [])
+
+	useFocusEffect(
+		useCallback(() => {
+			loadState()
+		}, [loadState])
+	)
 
 	const handleDeleteImportedFiles = () => {
 		Alert.alert(
@@ -69,7 +76,7 @@ export default function LocalDataScreen() {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
+		<SafeAreaView style={styles.safeArea} edges={['top']}>
 			<ScrollView
 				style={styles.screen}
 				contentContainerStyle={styles.content}
@@ -88,11 +95,20 @@ export default function LocalDataScreen() {
 						LOCAL DATA
 					</OMText>
 					<OMText variant="h3" style={styles.title}>
-						Manage local databases and files.
+						Manage files and saved results on this device.
 					</OMText>
 					<OMText variant="body" style={styles.body}>
-						Use these controls to remove imported genomic files or clear saved results from this
-						device.
+						Use these controls to permanently remove imported genomic files or clear saved test
+						results.
+					</OMText>
+				</View>
+
+				<View style={styles.noticeCard}>
+					<OMText variant="subtitle" style={styles.noticeLabel}>
+						PERMANENT ACTIONS
+					</OMText>
+					<OMText variant="body" style={styles.noticeBody}>
+						These actions delete local data immediately and cannot be undone.
 					</OMText>
 				</View>
 
@@ -178,6 +194,21 @@ const styles = StyleSheet.create({
 		maxWidth: 360,
 		fontSize: 17,
 		lineHeight: 24,
+	},
+	noticeCard: {
+		padding: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: 'rgba(138,46,64,0.16)',
+		borderWidth: 1,
+		borderColor: 'rgba(224,163,176,0.24)',
+		gap: omSpacing.xs,
+	},
+	noticeLabel: {
+		color: omColors.red300,
+		letterSpacing: 1,
+	},
+	noticeBody: {
+		color: omColors.grayscale300,
 	},
 	card: {
 		padding: omSpacing.xl,

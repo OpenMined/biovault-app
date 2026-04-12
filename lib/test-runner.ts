@@ -1,4 +1,5 @@
 import { Asset } from 'expo-asset'
+import { BUILT_IN_SAMPLE_DOCUMENT_ID } from '@/lib/home-import'
 import type { HomeImportedDocument } from '@/lib/home-import'
 import { prepareSampleGenomeImport } from '@/lib/genome-import'
 import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
@@ -101,6 +102,16 @@ type ResolvedInput = {
 }
 
 async function getResolvedInput(document: HomeImportedDocument | null): Promise<ResolvedInput> {
+	if (document?.id === BUILT_IN_SAMPLE_DOCUMENT_ID || document?.uri === 'biovault://sample') {
+		const sample = await prepareSampleGenomeImport()
+		return {
+			contents: await readAsStringAsync(sample.uri),
+			inputLabel: document?.name ?? sample.originalName,
+			isSample: true,
+			uri: sample.uri,
+		}
+	}
+
 	if (document?.contents) {
 		return {
 			contents: document.contents,
@@ -157,6 +168,36 @@ function normalizeStatus(status: string | undefined): TestResultStatus {
 	return 'normal'
 }
 
+function parseAltList(value: string | undefined): string[] | undefined {
+	if (!value) {
+		return undefined
+	}
+
+	const trimmed = value.trim()
+	if (!trimmed) {
+		return undefined
+	}
+
+	if (trimmed.startsWith('[')) {
+		try {
+			const parsed = JSON.parse(trimmed)
+			if (Array.isArray(parsed)) {
+				const alts = parsed.map((item) => String(item).trim()).filter(Boolean)
+				return alts.length ? alts : undefined
+			}
+		} catch {
+			// Fall through to delimiter parsing.
+		}
+	}
+
+	const alts = trimmed
+		.split(/[|,]/)
+		.map((item) => item.trim())
+		.filter(Boolean)
+
+	return alts.length ? alts : undefined
+}
+
 function normalizeBioscriptRows(rows: Array<Record<string, string>>): StoredTestResultRow[] {
 	return rows.map((row) => ({
 		gene: row.gene || 'Unknown',
@@ -165,6 +206,8 @@ function normalizeBioscriptRows(rows: Array<Record<string, string>>): StoredTest
 		location: row.location || 'Unknown location',
 		kind: row.kind === 'INDEL' ? 'INDEL' : 'SNV',
 		status: normalizeStatus(row.row_status),
+		ref: row.ref || undefined,
+		alts: parseAltList(row.alts),
 		note: row.observed
 			? `Observed genotype ${row.observed}.${row.summary ? ` Summary: ${row.summary}.` : ''}`
 			: 'This variant was not found in the current genomic file.',
@@ -251,6 +294,8 @@ function buildPreviewRows(slug: string): StoredTestResultRow[] {
 			kind: item.kind,
 			status: item.status,
 			note: item.note,
+			ref: item.ref,
+			alts: item.alts,
 		}))
 	)
 }

@@ -77,12 +77,13 @@ export function ExploreAssayCard({
 
 const styles = StyleSheet.create({
 	card: {
-		padding: omSpacing.xl,
-		borderRadius: omRadius.l,
+		paddingHorizontal: omSpacing.l,
+		paddingVertical: omSpacing.l,
+		borderRadius: omRadius.m,
 		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-		gap: omSpacing.m,
+		borderColor: 'rgba(255,255,255,0.08)',
+		gap: omSpacing.s,
 	},
 	cardPressed: {
 		backgroundColor: 'rgba(255,255,255,0.04)',
@@ -95,22 +96,22 @@ const styles = StyleSheet.create({
 	},
 	cardTitleBlock: {
 		flex: 1,
-		gap: omSpacing.xs,
+		gap: 4,
 	},
 	cardBadgeColumn: {
 		alignItems: 'flex-end',
-		gap: omSpacing.xs,
+		gap: 4,
 	},
 	cardTitle: {
 		color: omTheme.primaryText,
 	},
 	cardBody: {
 		color: omColors.grayscale400,
-		lineHeight: 22,
+		lineHeight: 20,
 	},
 	cardMeta: {
 		color: omColors.grayscale500,
-		lineHeight: 18,
+		lineHeight: 16,
 	},
 	cardResultMeta: {
 		color: omColors.green500,
