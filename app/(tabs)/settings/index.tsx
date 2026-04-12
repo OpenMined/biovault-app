@@ -12,9 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import Constants from 'expo-constants'
-import { Storage } from '@/lib/storage'
-import { deleteUserGenomeDatabase, listUserGenomeDatabases } from '@/lib/genome-storage'
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated'
+import { Storage } from 'expo-sqlite/kv-store'
 
 // ts-prune-ignore-next
 export default function SettingsScreen() {
@@ -68,34 +67,6 @@ export default function SettingsScreen() {
 					text: 'Reset',
 					style: 'destructive',
 					onPress: resetOnboarding,
-				},
-			]
-		)
-	}
-
-	const handleDeleteAllData = async () => {
-		Alert.alert(
-			'Delete All Data',
-			'This will permanently delete all your genetic data files from this device. This action cannot be undone.',
-			[
-				{
-					text: 'Cancel',
-					style: 'cancel',
-				},
-				{
-					text: 'Delete All',
-					style: 'destructive',
-					onPress: async () => {
-						try {
-							const databases = await listUserGenomeDatabases()
-							for (const db of databases) {
-								await deleteUserGenomeDatabase(db.dbName)
-							}
-							Alert.alert('Success', 'All genetic data has been deleted.')
-						} catch {
-							Alert.alert('Error', 'Failed to delete all data. Please try again.')
-						}
-					},
 				},
 			]
 		)
@@ -178,14 +149,17 @@ export default function SettingsScreen() {
 					{/* Data Management */}
 					<Animated.View entering={FadeInUp.duration(300).delay(200)} style={styles.section}>
 						<Text style={styles.sectionLabel}>DATA MANAGEMENT</Text>
-						<TouchableOpacity style={styles.dangerCard} onPress={handleDeleteAllData}>
+						<TouchableOpacity
+							style={styles.dangerCard}
+							onPress={() => router.push('/settings/local-data' as const)}
+						>
 							<View style={styles.dangerIcon}>
-								<Text style={styles.dangerIconText}>🗑️</Text>
+								<Text style={styles.dangerIconText}>🗄️</Text>
 							</View>
 							<View style={styles.dangerInfo}>
-								<Text style={styles.dangerTitle}>Delete All Data</Text>
+								<Text style={styles.dangerTitle}>Manage Local Data</Text>
 								<Text style={styles.dangerDescription}>
-									Permanently delete all genetic data from this device
+									Delete imported files or clear the local results database
 								</Text>
 							</View>
 						</TouchableOpacity>

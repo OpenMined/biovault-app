@@ -52,11 +52,18 @@ export default function RootLayout() {
 				>
 				<Stack.Screen
 					name="(tabs)"
-					options={{ animation: 'fade', animationTypeForReplace: 'push' }}
 				/>
 				<Stack.Screen
 					name="onboarding"
 					options={{ presentation: 'card', animation: 'none' }}
+				/>
+				<Stack.Screen
+					name="data-source"
+					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
+				/>
+				<Stack.Screen
+					name="files/[documentId]/rename"
+					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
 				/>
 				<Stack.Screen name="+not-found" />
 				<Stack.Screen name="gene/[geneName]" />

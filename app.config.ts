@@ -51,6 +51,7 @@ const config: ExpoConfig = {
 	orientation: 'portrait',
 	scheme: 'biovaultapp',
 	icon: './assets/images/adaptive-icon.png',
+	userInterfaceStyle: 'dark',
 	ios: {
 		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
 		appleTeamId: getEnvironmentValues().appleTeamId, // seems to require name not id

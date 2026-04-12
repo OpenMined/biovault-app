@@ -1,10 +1,12 @@
 import { OMButton } from '@/components/ui/OMButton'
-import { HOME_IMPORTED_DOCUMENT_KEY, type HomeImportedDocument } from '@/lib/home-import'
+import {
+	loadHomeImportState,
+	type HomeImportedDocument,
+} from '@/lib/home-import'
 import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { OMText } from '@/components/ui/OMText'
 import { getTestBySlug } from '@/lib/test-catalog'
 import { loadLatestTestRun, saveLatestTestRun, type TestResultStatus } from '@/lib/test-results'
-import { Storage } from '@/lib/storage'
 import { runTest } from '@/lib/test-runner'
 import { omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { Link, useLocalSearchParams } from 'expo-router'
@@ -13,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TestDetailScreen() {
-	const params = useLocalSearchParams<{ slug?: string }>()
+	const params = useLocalSearchParams<{ documentId?: string; sample?: string; slug?: string }>()
 	const test = params.slug ? getTestBySlug(params.slug) : null
 	const [storedImport, setStoredImport] = useState<HomeImportedDocument | null>(null)
 	const [latestRun, setLatestRun] = useState<Awaited<ReturnType<typeof loadLatestTestRun>>>(null)
@@ -24,21 +26,29 @@ export default function TestDetailScreen() {
 			return
 		}
 
-		void loadLatestTestRun(params.slug).then(setLatestRun).catch(console.error)
+		void loadHomeImportState()
+			.then((state) => {
+				if (params.sample === 'true') {
+					setStoredImport(null)
+					return loadLatestTestRun(params.slug!, null).then(setLatestRun)
+				}
 
-		const raw = Storage.getItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-		if (!raw) {
-			setStoredImport(null)
-			return
-		}
+				if (!params.documentId) {
+					setStoredImport(null)
+					return loadLatestTestRun(params.slug!).then(setLatestRun)
+				}
 
-		try {
-			setStoredImport(JSON.parse(raw) as HomeImportedDocument)
-		} catch {
-			Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-			setStoredImport(null)
-		}
-	}, [params.slug])
+				const document =
+					state.importedDocuments.find((document) => document.id === params.documentId) ?? null
+				setStoredImport(document)
+				return loadLatestTestRun(params.slug!, params.documentId).then(setLatestRun)
+			})
+			.catch((error) => {
+				console.error('Failed to load home import state:', error)
+				setStoredImport(null)
+				void loadLatestTestRun(params.slug!).then(setLatestRun).catch(console.error)
+			})
+	}, [params.documentId, params.sample, params.slug])
 
 	const groupedRows = useMemo(() => {
 		if (!latestRun) {
@@ -108,7 +118,7 @@ export default function TestDetailScreen() {
 					<OMText variant="body" style={styles.panelBody}>
 						{storedImport
 							? `Using imported file: ${storedImport.name}`
-							: 'No imported file selected. This run will use a bundled sample file.'}
+							: 'Using bundled sample data for this run.'}
 					</OMText>
 					{latestRun ? (
 						<OMText variant="caption" style={styles.runMeta}>

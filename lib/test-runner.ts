@@ -193,9 +193,14 @@ function commonPathPrefix(paths: string[]): string {
 
 	const splitPaths = paths.map((path) => path.split('/').filter(Boolean))
 	const prefix: string[] = []
+	const firstPath = splitPaths[0]
+
+	if (!firstPath) {
+		throw new Error('No paths provided')
+	}
 
 	for (let index = 0; ; index += 1) {
-		const segment = splitPaths[0][index]
+		const segment = firstPath[index]
 		if (!segment) {
 			break
 		}
@@ -293,7 +298,12 @@ function parseDelimited(text: string) {
 		return []
 	}
 
-	const headers = lines[0].split('\t')
+	const firstLine = lines[0]
+	if (!firstLine) {
+		return []
+	}
+
+	const headers = firstLine.split('\t')
 	return lines.slice(1).map((line) => {
 		const values = line.split('\t')
 		return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']))
@@ -414,6 +424,7 @@ export async function runTest(slug: string, importedDocument: HomeImportedDocume
 	if (test.runMode === 'bioscript') {
 		const result = await runBioscriptTest(slug, importedDocument)
 		const run: StoredTestRun = {
+			inputDocumentId: importedDocument?.id ?? null,
 			slug,
 			ranAt: new Date().toISOString(),
 			inputLabel: result.inputLabel,
@@ -424,6 +435,7 @@ export async function runTest(slug: string, importedDocument: HomeImportedDocume
 	}
 
 	return {
+		inputDocumentId: importedDocument?.id ?? null,
 		slug,
 		ranAt: new Date().toISOString(),
 		inputLabel: importedDocument?.name ?? 'Bundled preview data',

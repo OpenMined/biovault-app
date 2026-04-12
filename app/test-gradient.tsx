@@ -1,6 +1,6 @@
 import { OMCard } from '@/components/ui/OMCard'
 import { OMText } from '@/components/ui/OMText'
-import { omGradients, omRadius, omSpacing, omSurfaces, omTheme } from '@/styles/brand'
+import { omRadius, omSpacing, omSurfaces, omTheme } from '@/styles/brand'
 // import { MeshGradientView } from 'expo-mesh-gradient'
 import { StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'

@@ -1,326 +1,151 @@
-import { OMButton } from '@/components/ui/OMButton'
-import { HOME_IMPORTED_DOCUMENT_KEY, type HomeImportedDocument } from '@/lib/home-import'
 import { OMText } from '@/components/ui/OMText'
-import { Storage } from '@/lib/storage'
-import { testCatalog } from '@/lib/test-catalog'
-import { omRadius, omSpacing, omTheme } from '@/styles/brand'
-import * as DocumentPicker from 'expo-document-picker'
-import { Link } from 'expo-router'
-import { Directory, File, Paths } from 'expo-file-system'
-import { copyAsync, deleteAsync, getInfoAsync } from 'expo-file-system/legacy'
-import { useEffect, useState } from 'react'
-import {
-	Alert,
-	Platform,
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	TextInput,
-	View,
-} from 'react-native'
+import { loadHomeImportState, type HomeImportState, type HomeImportedDocument } from '@/lib/home-import'
+import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { Link, router, useFocusEffect } from 'expo-router'
+import { useCallback, useEffect, useState } from 'react'
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-const SUPPORTED_EXTENSIONS = [
-	'.vcf',
-	'.vcf.gz',
-	'.vcf.bz2',
-	'.txt',
-	'.tsv',
-	'.tsv.bz2',
-	'.csv',
-	'.zip',
-	'.gz',
-	'.bz2',
-]
-const PICKER_MIME_TYPES = [
-	'text/*',
-	'text/plain',
-	'text/tab-separated-values',
-	'text/csv',
-	'application/octet-stream',
-	'application/zip',
-	'application/gzip',
-	'application/x-gzip',
-	'application/x-bzip2',
-]
+function getFileExtension(name: string) {
+	const lowerName = name.toLowerCase()
 
-function sanitizeFileName(name: string): string {
-	return name.replace(/[^a-zA-Z0-9._-]/g, '_')
+	if (lowerName.endsWith('.vcf.gz')) {
+		return 'VCF.GZ'
+	}
+	if (lowerName.endsWith('.vcf.bz2')) {
+		return 'VCF.BZ2'
+	}
+	if (lowerName.endsWith('.tsv.bz2')) {
+		return 'TSV.BZ2'
+	}
+
+	const parts = name.split('.')
+	return parts.length > 1 ? parts.at(-1)?.toUpperCase() ?? 'Unknown' : 'Unknown'
 }
 
-function hasSupportedExtension(name: string): boolean {
-	const lowerName = name.toLowerCase()
-	return SUPPORTED_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
+function formatFileSize(size: number | null) {
+	if (!size || size <= 0) {
+		return 'Unknown'
+	}
+
+	const gb = size / 1_000_000_000
+	if (gb >= 1) {
+		return `${gb.toFixed(gb >= 10 ? 1 : 2)} GB`
+	}
+
+	const mb = size / 1_000_000
+	return `${mb.toFixed(mb >= 10 ? 1 : 2)} MB`
+}
+
+function ImportedFileRow({ document }: { document: HomeImportedDocument }) {
+	return (
+		<Link href={{ pathname: '/files/[documentId]', params: { documentId: document.id } }} asChild>
+			<Pressable style={({ pressed }) => [styles.fileRow, pressed ? styles.fileRowPressed : null]}>
+				<View style={styles.fileRowContent}>
+					<OMText variant="headline" style={styles.fileName}>
+						{document.name}
+					</OMText>
+					<OMText variant="caption" style={styles.fileMeta}>
+						{getFileExtension(document.originalName)} • {formatFileSize(document.size)}
+					</OMText>
+				</View>
+				<View style={styles.fileRowTrailing}>
+					<OMText variant="subtitle" style={styles.fileRowAction}>
+						Open
+					</OMText>
+				</View>
+			</Pressable>
+		</Link>
+	)
 }
 
 // ts-prune-ignore-next
 export default function HomeScreen() {
-	const [pickedFile, setPickedFile] = useState<HomeImportedDocument | null>(null)
-	const [isImporting, setIsImporting] = useState(false)
-	const [sourceUrl, setSourceUrl] = useState('')
+	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
 
-	useEffect(() => {
-		const loadStoredDocument = async () => {
-			const storedValue = Storage.getItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-			if (!storedValue) {
-				return
-			}
-
-			try {
-				const storedDocument = JSON.parse(storedValue) as HomeImportedDocument
-				if (Platform.OS === 'web') {
-					setPickedFile(storedDocument)
-					return
-				}
-
-				const info = await getInfoAsync(storedDocument.uri)
-				if (!info.exists) {
-					Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-					return
-				}
-
-				setPickedFile(storedDocument)
-			} catch (error) {
-				console.error('Failed to load imported document:', error)
-				Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-			}
-		}
-
-		void loadStoredDocument()
+	const applyState = useCallback((state: HomeImportState) => {
+		setImportedDocuments(state.importedDocuments)
 	}, [])
 
-	const removeStoredDocument = async () => {
-		if (pickedFile && Platform.OS !== 'web') {
-			try {
-				await deleteAsync(pickedFile.uri, { idempotent: true })
-			} catch (error) {
-				console.error('Failed to delete stored document:', error)
-			}
-		}
+	const loadStoredData = useCallback(async () => {
+		const state = await loadHomeImportState()
+		applyState(state)
+	}, [applyState])
 
-		Storage.removeItemSync(HOME_IMPORTED_DOCUMENT_KEY)
-		setPickedFile(null)
-	}
+	useEffect(() => {
+		void loadStoredData()
+	}, [loadStoredData])
 
-	const handlePickDocument = async () => {
-		try {
-			setIsImporting(true)
+	useFocusEffect(
+		useCallback(() => {
+			void loadStoredData()
+		}, [loadStoredData])
+	)
 
-			const result = await DocumentPicker.getDocumentAsync({
-				copyToCacheDirectory: false,
-				type: PICKER_MIME_TYPES,
-			})
-
-			if (result.canceled) {
-				return
-			}
-
-			const asset = result.assets[0]
-			if (!asset) {
-				return
-			}
-
-			if (!hasSupportedExtension(asset.name)) {
-				Alert.alert(
-					'Unsupported file',
-					'Choose a VCF, TXT, TSV, CSV, ZIP, GZ, or BZ2 genomic data file.'
-				)
-				return
-			}
-
-			if (Platform.OS === 'web') {
-				const storedDocument: HomeImportedDocument = {
-					importedAt: new Date().toISOString(),
-					mimeType: asset.mimeType ?? null,
-					name: asset.name,
-					size: asset.size ?? null,
-					uri: asset.uri,
-					contents: asset.file ? await asset.file.text() : null,
-				}
-
-				Storage.setItemSync(HOME_IMPORTED_DOCUMENT_KEY, JSON.stringify(storedDocument))
-				setPickedFile(storedDocument)
-				return
-			}
-
-			const importsDirectory = new Directory(Paths.cache, 'home-imports')
-			if (!importsDirectory.exists) {
-				importsDirectory.create({ idempotent: true, intermediates: true })
-			}
-
-			const timestamp = Date.now()
-			const targetFile = new File(importsDirectory, `${timestamp}-${sanitizeFileName(asset.name)}`)
-
-			await copyAsync({
-				from: asset.uri,
-				to: targetFile.uri,
-			})
-
-			if (pickedFile) {
-				try {
-					await deleteAsync(pickedFile.uri, { idempotent: true })
-				} catch (error) {
-					console.error('Failed to delete previous stored document:', error)
-				}
-			}
-
-			const storedDocument: HomeImportedDocument = {
-				importedAt: new Date().toISOString(),
-				mimeType: asset.mimeType ?? null,
-				name: asset.name,
-				size: asset.size ?? null,
-				uri: targetFile.uri,
-			}
-
-			Storage.setItemSync(HOME_IMPORTED_DOCUMENT_KEY, JSON.stringify(storedDocument))
-			setPickedFile(storedDocument)
-		} catch (error) {
-			console.error('Failed to pick document:', error)
-			Alert.alert('Import error', 'Unable to open the document picker right now.')
-		} finally {
-			setIsImporting(false)
-		}
-	}
-
-	const handleUrlImport = () => {
-		if (!sourceUrl.trim()) {
-			Alert.alert('Enter a URL', 'Paste a direct file URL to prepare this flow.')
-			return
-		}
-
-		Alert.alert(
-			'URL import coming next',
-			'This will become a direct-to-device import flow. BioVault will not upload your file to our servers.'
-		)
-	}
+	const hasImportedDocuments = importedDocuments.length > 0
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
-			<ScrollView
-				style={styles.screen}
-				contentContainerStyle={styles.content}
-				showsVerticalScrollIndicator={false}
-			>
-				<View style={styles.hero}>
-					<OMText variant="caption" style={styles.eyebrow}>
-						HOME
-					</OMText>
-					<OMText variant="h3" style={styles.title}>
-						Run the Bioscript tests already in BioVault.
-					</OMText>
-					<OMText variant="body" style={styles.body}>
-						Import your own data, use a URL later, or open one of the tests that already exists in
-						the repo. Your file stays on your device and is not uploaded to our servers.
-					</OMText>
-				</View>
-
-				<View style={styles.panel}>
-					<OMText variant="headline" style={styles.panelTitle}>
-						Import your data
-					</OMText>
-					<OMText variant="body" style={styles.panelBody}>
-						Choose a genomic file from your device to start with your own data.
-					</OMText>
-
-					<View style={styles.actions}>
-						<OMButton
-							label={isImporting ? 'Importing...' : 'Choose file'}
-							onPress={() => {
-								void handlePickDocument()
-							}}
-							disabled={isImporting}
-							style={styles.primaryButton}
-						/>
-					</View>
-				</View>
-
-				<View style={styles.panel}>
-					<OMText variant="headline" style={styles.panelTitle}>
-						Import from a URL
-					</OMText>
-					<OMText variant="body" style={styles.panelBody}>
-						Paste a direct file URL for open datasets or shared downloads. This flow will stay
-						local-first too.
-					</OMText>
-					<TextInput
-						value={sourceUrl}
-						onChangeText={setSourceUrl}
-						placeholder="https://example.org/sample.vcf.gz"
-						placeholderTextColor={omTheme.textMuted}
-						autoCapitalize="none"
-						autoCorrect={false}
-						style={styles.urlInput}
-					/>
-					<OMButton
-						label="Use URL"
-						variant="secondary"
-						onPress={handleUrlImport}
-						style={styles.urlButton}
-					/>
-				</View>
-
-				<View style={styles.panel}>
-					<OMText variant="headline" style={styles.panelTitle}>
-						Available tests
-					</OMText>
-					<OMText variant="body" style={styles.panelBody}>
-						These are the tests currently available in the Bioscript repo surface. Some are fully
-						runnable now, and some are still preview-only until their older classifier shape is
-						ported.
-					</OMText>
-
-					<View style={styles.cardStack}>
-						{testCatalog.map((category) => (
-							<Link
-								key={category.slug}
-								href={{ pathname: '/tests/[slug]', params: { slug: category.slug } }}
-								asChild
-							>
-								<Pressable style={styles.categoryCard}>
-									<OMText variant="caption" style={styles.categoryTag}>
-										{category.category.toUpperCase()}
-									</OMText>
-									<OMText variant="headline" style={styles.categoryTitle}>
-										{category.title}
-									</OMText>
-									<OMText variant="body" style={styles.categoryDescription}>
-										{category.subtitle}
-									</OMText>
-									<OMText variant="subtitle" style={styles.categoryLink}>
-										View test details
-									</OMText>
-								</Pressable>
-							</Link>
-						))}
-					</View>
-				</View>
-
-				{pickedFile ? (
-					<View style={styles.panel}>
-						<OMText variant="headline" style={styles.panelTitle}>
-							Imported file
+		<SafeAreaView style={styles.safeArea} edges={['top']}>
+			{!hasImportedDocuments ? (
+				<View style={styles.emptyState}>
+					<View style={styles.emptyStatePanel}>
+						<OMText variant="h4" style={styles.emptyStateTitle}>
+							No genomic files yet
 						</OMText>
-						<OMText variant="body" style={styles.fileName}>
-							{pickedFile.name}
+						<OMText variant="body" style={styles.emptyStateBody}>
+							Import files from your device to start running BioVault tests locally.
 						</OMText>
-						<OMText variant="caption" style={styles.fileMeta}>
-							Imported {new Date(pickedFile.importedAt).toLocaleString()}
+						<OMText variant="caption" style={styles.emptyStateNote}>
+							Your files stay on your device and are never uploaded to our servers.
 						</OMText>
-						<OMText variant="caption" style={styles.fileMeta}>
-							{pickedFile.size ?? 'Unknown'} bytes
-						</OMText>
-						<OMText variant="caption" style={styles.fileMeta}>
-							{pickedFile.mimeType ?? 'Unknown type'}
-						</OMText>
-
-						<Pressable onPress={() => void removeStoredDocument()} style={styles.removeButton}>
-							<OMText variant="subtitle" style={styles.removeButtonText}>
-								Remove imported copy
+						<Pressable
+							onPress={() => router.push('/data-source')}
+							style={({ pressed }) => [styles.emptyStateCta, pressed ? styles.emptyStateCtaPressed : null]}
+						>
+							<OMText variant="subtitle" style={styles.emptyStateCtaText}>
+								Add Files
 							</OMText>
 						</Pressable>
 					</View>
-				) : null}
-			</ScrollView>
+				</View>
+			) : (
+				<ScrollView
+					style={styles.screen}
+					contentContainerStyle={styles.content}
+					showsVerticalScrollIndicator={false}
+				>
+					<View style={styles.hero}>
+						<OMText variant="caption" style={styles.eyebrow}>
+							DATA
+						</OMText>
+						<OMText variant="h3" style={styles.pageTitle}>
+							Your genomic files.
+						</OMText>
+						<OMText variant="body" style={styles.pageBody}>
+							Open any file to rename it, review its tests, or remove it from this device.
+						</OMText>
+					</View>
+
+					<View style={styles.headerRow}>
+						<OMText variant="headline" style={styles.sectionTitle}>
+							Saved files
+						</OMText>
+						<Pressable onPress={() => router.push('/data-source')} style={styles.addButton}>
+							<OMText variant="subtitle" style={styles.addButtonText}>
+								Add Files
+							</OMText>
+						</Pressable>
+					</View>
+
+					<View style={styles.listSurface}>
+						{importedDocuments.map((document, index) => (
+							<View key={document.id} style={index > 0 ? styles.rowDivider : undefined}>
+								<ImportedFileRow document={document} />
+							</View>
+						))}
+					</View>
+				</ScrollView>
+			)}
 		</SafeAreaView>
 	)
 }
@@ -328,16 +153,16 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 	},
 	screen: {
 		flex: 1,
-		backgroundColor: omTheme.background,
+		backgroundColor: omColors.grayscale850,
 	},
 	content: {
 		padding: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
-		gap: omSpacing.l,
+		gap: omSpacing.xl,
 	},
 	hero: {
 		gap: omSpacing.m,
@@ -348,114 +173,122 @@ const styles = StyleSheet.create({
 		paddingHorizontal: omSpacing.s,
 		paddingVertical: omSpacing.xs,
 		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(252,252,253,0.5)',
-		color: omTheme.textMuted,
+		backgroundColor: 'rgba(255,255,255,0.08)',
+		color: omColors.grayscale400,
 		letterSpacing: 1,
 	},
-	title: {
-		color: omTheme.textHeadline,
+	headerRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: omSpacing.l,
+	},
+	pageTitle: {
+		color: omTheme.primaryText,
 		maxWidth: 320,
 	},
-	body: {
-		color: omTheme.textBody,
-		maxWidth: 340,
+	pageBody: {
+		color: omColors.grayscale400,
+		maxWidth: 360,
 		fontSize: 17,
 		lineHeight: 24,
 	},
-	panel: {
+	sectionTitle: {
+		color: omTheme.primaryText,
+	},
+	addButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(83,190,169,0.14)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.28)',
+	},
+	addButtonText: {
+		color: omTheme.accent,
+	},
+	listSurface: {
+		gap: omSpacing.m,
+	},
+	rowDivider: {
+		marginTop: 0,
+	},
+	fileRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		justifyContent: 'space-between',
+		gap: omSpacing.m,
 		padding: omSpacing.xl,
 		borderRadius: omRadius.l,
-		backgroundColor: 'rgba(252,252,253,0.78)',
+		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.06)',
+		borderColor: 'rgba(255,255,255,0.1)',
+		minHeight: 108,
 	},
-	panelTitle: {
-		color: omTheme.textHeadline,
+	fileRowPressed: {
+		backgroundColor: 'rgba(255,255,255,0.04)',
 	},
-	panelBody: {
-		marginTop: omSpacing.s,
-		color: omTheme.textBody,
-	},
-	actions: {
-		marginTop: omSpacing.l,
-		gap: omSpacing.m,
-	},
-	primaryButton: {
-		minHeight: 54,
-		borderRadius: omRadius.l,
-	},
-	urlInput: {
-		marginTop: omSpacing.l,
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.m,
-		borderRadius: omRadius.l,
-		backgroundColor: omTheme.background,
-		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.08)',
-		color: omTheme.textHeadline,
-		fontSize: 16,
-		lineHeight: 22,
-	},
-	urlButton: {
-		marginTop: omSpacing.m,
-		minHeight: 50,
-		borderRadius: omRadius.l,
-	},
-	cardStack: {
-		marginTop: omSpacing.l,
-		gap: omSpacing.m,
-	},
-	categoryCard: {
-		padding: omSpacing.l,
-		borderRadius: omRadius.l,
-		backgroundColor: omTheme.background,
-		borderWidth: 1,
-		borderColor: 'rgba(39,37,50,0.08)',
-	},
-	categoryTag: {
-		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.s,
-		paddingVertical: omSpacing.xs,
-		borderRadius: omRadius.m,
-		backgroundColor: 'rgba(60,159,139,0.12)',
-		color: omTheme.accentDeep,
-		letterSpacing: 0.8,
-	},
-	categoryTitle: {
-		marginTop: omSpacing.m,
-		color: omTheme.textHeadline,
-	},
-	categoryDescription: {
-		marginTop: omSpacing.s,
-		color: omTheme.textBody,
-	},
-	categoryLink: {
-		marginTop: omSpacing.l,
-		color: omTheme.accentDeep,
+	fileRowContent: {
+		flex: 1,
+		gap: omSpacing.xs,
 	},
 	fileName: {
-		marginTop: omSpacing.s,
-		color: omTheme.textHeadline,
-		fontSize: 18,
-		lineHeight: 24,
+		color: omTheme.primaryText,
 	},
 	fileMeta: {
 		marginTop: omSpacing.xs,
-		color: omTheme.textMuted,
-		fontSize: 13,
-		lineHeight: 18,
+		color: omColors.grayscale500,
 	},
-	removeButton: {
-		marginTop: omSpacing.l,
-		alignSelf: 'flex-start',
-		paddingHorizontal: omSpacing.m,
-		paddingVertical: omSpacing.s,
-		borderRadius: omRadius.m,
-		backgroundColor: omTheme.dangerSurface,
+	fileRowTrailing: {
+		paddingTop: omSpacing.xs,
+	},
+	fileRowAction: {
+		color: omTheme.accent,
+	},
+	emptyState: {
+		flex: 1,
+		justifyContent: 'center',
+		paddingHorizontal: omSpacing.xl,
+	},
+	emptyStatePanel: {
+		paddingVertical: omSpacing.xxxl,
+		paddingHorizontal: omSpacing.xxl,
+		borderRadius: omRadius.xl,
+		backgroundColor: omColors.grayscale750,
 		borderWidth: 1,
-		borderColor: omTheme.dangerBorder,
+		borderColor: 'rgba(255,255,255,0.1)',
+		alignItems: 'center',
 	},
-	removeButtonText: {
-		color: omTheme.dangerText,
+	emptyStateTitle: {
+		color: omTheme.primaryText,
+		textAlign: 'center',
+	},
+	emptyStateBody: {
+		marginTop: omSpacing.m,
+		color: omColors.grayscale400,
+		fontSize: 16,
+		lineHeight: 24,
+		textAlign: 'center',
+	},
+	emptyStateNote: {
+		marginTop: omSpacing.l,
+		color: omColors.grayscale500,
+		textAlign: 'center',
+	},
+	emptyStateCta: {
+		marginTop: omSpacing.xl,
+		minHeight: 52,
+		width: '100%',
+		borderRadius: omRadius.l,
+		backgroundColor: omTheme.accent,
+		alignItems: 'center',
+		justifyContent: 'center',
+		paddingHorizontal: omSpacing.xl,
+	},
+	emptyStateCtaPressed: {
+		backgroundColor: omTheme.accentDeep,
+	},
+	emptyStateCtaText: {
+		color: omTheme.primaryText,
 	},
 })

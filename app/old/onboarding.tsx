@@ -3,7 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet, Image, Linking } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { lightTheme } from '@/styles/colors'
-import { Storage } from '@/lib/storage'
+import { Storage } from 'expo-sqlite/kv-store'
 import Animated, {
 	FadeIn,
 	FadeInDown,
