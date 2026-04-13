@@ -113,3 +113,5 @@ data/*
 modules/expo-monty/android/src/main/jniLibs/
 modules/expo-monty/android/build/
 modules/expo-biovault/android/build/
+
+brand.openmined.org/

@@ -4,4 +4,4 @@
 [submodule "bioscript"]
 	path = bioscript
 	url = https://github.com/OpenMined/bioscript.git
-	branch = main
+	branch = madhava/monty
