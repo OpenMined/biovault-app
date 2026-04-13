@@ -2,6 +2,7 @@ import { Asset } from 'expo-asset'
 import { readAsStringAsync } from 'expo-file-system/legacy'
 import { getAppDb } from '@/lib/app-db'
 import { Platform } from 'react-native'
+import YAML from 'yaml'
 
 import { bundledAssaySources, type BundledAssaySource } from '@/lib/bundled-assay-sources'
 import type {
@@ -25,8 +26,8 @@ type InstalledAssayRow = {
 
 type InstalledAssayRecord = {
 	assayPath: string
+	compiledPath: string
 	fileUris: Record<string, string>
-	intermediatePath: string
 	rootUri: string
 }
 
@@ -35,15 +36,15 @@ type LoadedAssayPackage = {
 	packageSource: AssayPackageSource
 }
 
-type JsonMap = Record<string, unknown>
+type YamlMap = Record<string, unknown>
 
 type IntermediateVariantRecord = {
 	alts: string[]
 	deletion_length?: number | null
 	fields?: Record<string, unknown>
 	gene: string | null
-	grch37?: JsonMap | null
-	grch38?: JsonMap | null
+	grch37?: YamlMap | null
+	grch38?: YamlMap | null
 	kind: string | null
 	name: string
 	note: string | null
@@ -103,7 +104,7 @@ function slugFromAssayId(assayId: string): string {
 }
 
 function normalizeInterpretationState(raw: unknown, defaults: { headline: string; body: string }) {
-	const state = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonMap) : {}
+	const state = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as YamlMap) : {}
 	return {
 		headline: asString(state.headline) ?? defaults.headline,
 		body: asString(state.body) ?? defaults.body,
@@ -116,7 +117,7 @@ function formatCoordinate(label: string, raw: unknown): string | null {
 		return null
 	}
 
-	const entry = raw as JsonMap
+	const entry = raw as YamlMap
 	const chrom = asString(entry.chrom)
 	if (!chrom) {
 		return null
@@ -161,7 +162,7 @@ function parseStoredInstalledAssay(row: InstalledAssayRow): InstalledAssayRecord
 		const record = parsed as Partial<InstalledAssayRecord>
 		if (
 			typeof record.assayPath !== 'string' ||
-			typeof record.intermediatePath !== 'string' ||
+			typeof record.compiledPath !== 'string' ||
 			typeof record.rootUri !== 'string' ||
 			!record.fileUris ||
 			typeof record.fileUris !== 'object' ||
@@ -178,8 +179,8 @@ function parseStoredInstalledAssay(row: InstalledAssayRow): InstalledAssayRecord
 
 		return {
 			assayPath: record.assayPath,
+			compiledPath: record.compiledPath,
 			fileUris,
-			intermediatePath: record.intermediatePath,
 			rootUri: record.rootUri,
 		}
 	} catch {
@@ -202,8 +203,8 @@ async function loadBundledAssayPackage(source: BundledAssaySource): Promise<Load
 		packageSource: {
 			assayAssetModuleId: source.assayAssetModuleId,
 			assayPath: source.assayPath,
+			compiledPath: source.compiledPath,
 			fileAssetModuleIds: source.fileAssetModuleIds,
-			intermediatePath: source.intermediatePath,
 			type: 'bundled',
 		},
 	}
@@ -240,9 +241,9 @@ async function loadInstalledAssayPackages(): Promise<LoadedAssayPackage[]> {
 					fileContents,
 					packageSource: {
 						assayPath: stored.assayPath,
+						compiledPath: stored.compiledPath,
 						fileUris: stored.fileUris,
 						installedAt: row.installed_at,
-						intermediatePath: stored.intermediatePath,
 						rootUri: stored.rootUri,
 						source: row.source,
 						type: 'installed',
@@ -258,17 +259,12 @@ async function loadInstalledAssayPackages(): Promise<LoadedAssayPackage[]> {
 	return packages.filter((pkg): pkg is LoadedAssayPackage => pkg !== null)
 }
 
-function readJsonMap(text: string, label: string): JsonMap {
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(text)
-	} catch {
-		throw new Error(`${label} did not contain valid JSON`)
-	}
+function readCompiledMap(text: string, label: string): YamlMap {
+	const parsed = YAML.parse(text)
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new Error(`${label} did not contain a JSON object`)
+		throw new Error(`${label} did not contain a compiled assay mapping`)
 	}
-	return parsed as JsonMap
+	return parsed as YamlMap
 }
 
 function parseVariantRecord(raw: unknown, label: string): IntermediateVariantRecord {
@@ -276,7 +272,7 @@ function parseVariantRecord(raw: unknown, label: string): IntermediateVariantRec
 		throw new Error(`${label} did not contain a variant object`)
 	}
 
-	const variant = raw as JsonMap
+	const variant = raw as YamlMap
 	const name = asString(variant.name)
 	if (!name) {
 		throw new Error(`${label} is missing variant name`)
@@ -290,8 +286,8 @@ function parseVariantRecord(raw: unknown, label: string): IntermediateVariantRec
 				? (variant.fields as Record<string, unknown>)
 				: undefined,
 		gene: asString(variant.gene),
-		grch37: variant.grch37 && typeof variant.grch37 === 'object' && !Array.isArray(variant.grch37) ? (variant.grch37 as JsonMap) : null,
-		grch38: variant.grch38 && typeof variant.grch38 === 'object' && !Array.isArray(variant.grch38) ? (variant.grch38 as JsonMap) : null,
+		grch37: variant.grch37 && typeof variant.grch37 === 'object' && !Array.isArray(variant.grch37) ? (variant.grch37 as YamlMap) : null,
+		grch38: variant.grch38 && typeof variant.grch38 === 'object' && !Array.isArray(variant.grch38) ? (variant.grch38 as YamlMap) : null,
 		kind: asString(variant.kind),
 		name,
 		note: asString(variant.note),
@@ -304,48 +300,48 @@ function parseVariantRecord(raw: unknown, label: string): IntermediateVariantRec
 
 function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManifest {
 	const { fileContents, packageSource } = loadedPackage
-	const intermediatePath = packageSource.intermediatePath
-	const intermediate = readJsonMap(fileContents[intermediatePath], intermediatePath)
+	const compiledPath = packageSource.compiledPath
+	const compiled = readCompiledMap(fileContents[compiledPath], compiledPath)
 
-	if (intermediate.schema !== 'bioscript:assay-intermediate') {
-		throw new Error(`${intermediatePath} does not declare bioscript:assay-intermediate`)
+	if (compiled.schema !== 'bioscript:assay-compiled') {
+		throw new Error(`${compiledPath} does not declare bioscript:assay-compiled`)
 	}
 
 	const assay =
-		intermediate.assay && typeof intermediate.assay === 'object' && !Array.isArray(intermediate.assay)
-			? (intermediate.assay as JsonMap)
+		compiled.assay && typeof compiled.assay === 'object' && !Array.isArray(compiled.assay)
+			? (compiled.assay as YamlMap)
 			: null
 	if (!assay) {
-		throw new Error(`${intermediatePath} is missing assay metadata`)
+		throw new Error(`${compiledPath} is missing assay metadata`)
 	}
 
 	const assayId = asString(assay.id)
 	if (!assayId) {
-		throw new Error(`${intermediatePath} is missing assay.id`)
+		throw new Error(`${compiledPath} is missing assay.id`)
 	}
 
-	const ui = intermediate.ui && typeof intermediate.ui === 'object' && !Array.isArray(intermediate.ui) ? (intermediate.ui as JsonMap) : {}
+	const ui = compiled.ui && typeof compiled.ui === 'object' && !Array.isArray(compiled.ui) ? (compiled.ui as YamlMap) : {}
 	const compatibility =
-		intermediate.compatibility && typeof intermediate.compatibility === 'object' && !Array.isArray(intermediate.compatibility)
-			? (intermediate.compatibility as JsonMap)
+		compiled.compatibility && typeof compiled.compatibility === 'object' && !Array.isArray(compiled.compatibility)
+			? (compiled.compatibility as YamlMap)
 			: {}
 	const privacy =
-		intermediate.privacy && typeof intermediate.privacy === 'object' && !Array.isArray(intermediate.privacy)
-			? (intermediate.privacy as JsonMap)
+		compiled.privacy && typeof compiled.privacy === 'object' && !Array.isArray(compiled.privacy)
+			? (compiled.privacy as YamlMap)
 			: {}
 	const interpretation =
-		intermediate.interpretation && typeof intermediate.interpretation === 'object' && !Array.isArray(intermediate.interpretation)
-			? (intermediate.interpretation as JsonMap)
+		compiled.interpretation && typeof compiled.interpretation === 'object' && !Array.isArray(compiled.interpretation)
+			? (compiled.interpretation as YamlMap)
 			: {}
 
-	const runnableVariants = Array.isArray(intermediate.runnable_variants) ? intermediate.runnable_variants : []
-	const unsupportedVariants = Array.isArray(intermediate.unsupported_variants) ? intermediate.unsupported_variants : []
+	const runnableVariants = Array.isArray(compiled.runnable_variants) ? compiled.runnable_variants : []
+	const unsupportedVariants = Array.isArray(compiled.unsupported_variants) ? compiled.unsupported_variants : []
 	const groupedMembers = new Map<string, AssayMemberItem[]>()
 	const runnableMembers: AssayMemberEntry[] = []
 	const unsupportedMembers: UnsupportedAssayMemberEntry[] = []
 
 	for (const [index, rawVariant] of runnableVariants.entries()) {
-		const variant = parseVariantRecord(rawVariant, `${intermediatePath} runnable_variants[${index}]`)
+		const variant = parseVariantRecord(rawVariant, `${compiledPath} runnable_variants[${index}]`)
 		const item = normalizeMemberItem(variant)
 		const gene = variant.gene ?? 'Unassigned'
 		const items = groupedMembers.get(gene) ?? []
@@ -358,7 +354,7 @@ function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManife
 	}
 
 	for (const [index, rawVariant] of unsupportedVariants.entries()) {
-		const variant = parseVariantRecord(rawVariant, `${intermediatePath} unsupported_variants[${index}]`)
+		const variant = parseVariantRecord(rawVariant, `${compiledPath} unsupported_variants[${index}]`)
 		const item = normalizeMemberItem(variant)
 		const gene = variant.gene ?? 'Unassigned'
 		const items = groupedMembers.get(gene) ?? []
@@ -385,7 +381,7 @@ function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManife
 		disclaimer: asString(assay.disclaimer),
 		category: CATEGORY_MAP[asString(assay.category) ?? 'traits'] ?? 'traits',
 		tags: asStringArray(assay.tags),
-		packageVersion: asString(assay.package_version) ?? asString(intermediate.version) ?? '1.0',
+		packageVersion: asString(assay.package_version) ?? asString(compiled.version) ?? '1.0',
 		sourceOfTruth: asString(assay.source_of_truth) ?? 'package',
 		ui: {
 			template: asString(ui.template) ?? 'variant-panel',

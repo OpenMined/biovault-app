@@ -45,15 +45,15 @@ export type AssayMemberEntry = RunnableAssayMemberEntry | UnsupportedAssayMember
 export type BundledAssayPackageSource = {
 	assayAssetModuleId: number
 	assayPath: string
+	compiledPath: string
 	fileAssetModuleIds: Record<string, number>
-	intermediatePath: string
 	type: 'bundled'
 }
 
 export type InstalledAssayPackageSource = {
 	assayPath: string
+	compiledPath: string
 	fileUris: Record<string, string>
-	intermediatePath: string
 	installedAt: string
 	rootUri: string
 	source: string

@@ -129,14 +129,14 @@ export async function installAssayPackageFromGitHubUrl(url: string) {
 	if (!files[assayPath]) {
 		throw new Error('The selected GitHub path does not contain an assay.yaml file.')
 	}
-	const intermediatePath = `${location.path}/assay.intermediate.json`
-	if (!files[intermediatePath]) {
-		throw new Error('The selected GitHub path does not contain an assay.intermediate.json file.')
+	const compiledPath = `${location.path}/assay.compiled.yaml`
+	if (!files[compiledPath]) {
+		throw new Error('The selected GitHub path does not contain an assay.compiled.yaml file.')
 	}
 
 	return installAssayPackage({
 		assayPath,
-		intermediatePath,
+		compiledPath,
 		files,
 		source: `${location.baseUrl}/${location.owner}/${location.repo}/tree/${location.ref}/${location.path}`,
 	})

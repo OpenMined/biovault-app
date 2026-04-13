@@ -2,11 +2,12 @@ import { getAppDb } from '@/lib/app-db'
 import { invalidateAvailableAssayManifestCache } from '@/lib/assay-loader'
 import { Directory, File, Paths } from 'expo-file-system'
 import { deleteAsync, writeAsStringAsync } from 'expo-file-system/legacy'
+import YAML from 'yaml'
 
 type InstalledAssayManifestRecord = {
 	assayPath: string
+	compiledPath: string
 	fileUris: Record<string, string>
-	intermediatePath: string
 	rootUri: string
 }
 
@@ -27,8 +28,8 @@ export type InstalledAssaySummary = {
 
 export type InstallAssayPackageInput = {
 	assayPath: string
+	compiledPath: string
 	files: Record<string, string>
-	intermediatePath: string
 	source: string
 }
 
@@ -52,38 +53,33 @@ function ensureInstalledAssaysDirectory() {
 	return directory
 }
 
-function parseAssayMetadata(intermediateContents: string, intermediatePath: string) {
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(intermediateContents)
-	} catch {
-		throw new Error(`${intermediatePath} did not contain valid JSON`)
-	}
+function parseAssayMetadata(compiledContents: string, compiledPath: string) {
+	const parsed = YAML.parse(compiledContents)
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new Error(`${intermediatePath} did not contain an assay intermediate object`)
+		throw new Error(`${compiledPath} did not contain a compiled assay mapping`)
 	}
 
-	const intermediate = parsed as Record<string, unknown>
-	if (intermediate.schema !== 'bioscript:assay-intermediate') {
-		throw new Error(`${intermediatePath} does not declare bioscript:assay-intermediate`)
+	const compiled = parsed as Record<string, unknown>
+	if (compiled.schema !== 'bioscript:assay-compiled') {
+		throw new Error(`${compiledPath} does not declare bioscript:assay-compiled`)
 	}
 
 	const assay =
-		intermediate.assay && typeof intermediate.assay === 'object' && !Array.isArray(intermediate.assay)
-			? (intermediate.assay as Record<string, unknown>)
+		compiled.assay && typeof compiled.assay === 'object' && !Array.isArray(compiled.assay)
+			? (compiled.assay as Record<string, unknown>)
 			: null
 	if (!assay) {
-		throw new Error(`${intermediatePath} is missing assay metadata`)
+		throw new Error(`${compiledPath} is missing assay metadata`)
 	}
 
 	const assayId = asString(assay.id)
 	if (!assayId) {
-		throw new Error(`${intermediatePath} is missing assay.id`)
+		throw new Error(`${compiledPath} is missing assay.id`)
 	}
 
 	return {
 		assayId: slugFromAssayId(assayId),
-		version: asString(assay.package_version) ?? asString(intermediate.version) ?? '1.0',
+		version: asString(assay.package_version) ?? asString(compiled.version) ?? '1.0',
 	}
 }
 
@@ -114,8 +110,8 @@ function getStoredRecord(row: InstalledAssayRow): InstalledAssayManifestRecord |
 		return {
 			rootUri: record.rootUri,
 			assayPath: record.assayPath,
+			compiledPath: record.compiledPath,
 			fileUris,
-			intermediatePath: record.intermediatePath,
 		}
 	} catch {
 		return null
@@ -123,12 +119,12 @@ function getStoredRecord(row: InstalledAssayRow): InstalledAssayManifestRecord |
 }
 
 export async function installAssayPackage(input: InstallAssayPackageInput) {
-	const intermediateContents = input.files[input.intermediatePath]
-	if (!intermediateContents) {
-		throw new Error(`Missing assay intermediate file: ${input.intermediatePath}`)
+	const compiledContents = input.files[input.compiledPath]
+	if (!compiledContents) {
+		throw new Error(`Missing compiled assay file: ${input.compiledPath}`)
 	}
 
-	const { assayId, version } = parseAssayMetadata(intermediateContents, input.intermediatePath)
+	const { assayId, version } = parseAssayMetadata(compiledContents, input.compiledPath)
 	const installsDirectory = ensureInstalledAssaysDirectory()
 	const assayDirectory = new Directory(installsDirectory, assayId)
 
@@ -176,8 +172,8 @@ export async function installAssayPackage(input: InstallAssayPackageInput) {
 		JSON.stringify({
 			rootUri: assayDirectory.uri,
 			assayPath: input.assayPath,
+			compiledPath: input.compiledPath,
 			fileUris,
-			intermediatePath: input.intermediatePath,
 		} satisfies InstalledAssayManifestRecord),
 		installedAt,
 		input.source,

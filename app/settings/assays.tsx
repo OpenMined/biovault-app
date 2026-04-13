@@ -113,7 +113,7 @@ export default function AssaySettingsScreen() {
 							Install from GitHub
 						</OMText>
 						<OMText variant="body" style={styles.panelBody}>
-							Paste a GitHub `tree` URL for an assay directory, or a `blob` URL for one of its package files. Published packages must include `assay.intermediate.json`.
+							Paste a GitHub `tree` URL for an assay directory, or a `blob` URL for one of its package files. Published packages must include `assay.compiled.yaml`.
 						</OMText>
 						<TextInput
 							value={githubUrl}
