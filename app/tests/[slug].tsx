@@ -2,10 +2,12 @@ import { AssayFilePickerModal } from '@/components/assays/AssayFilePickerModal'
 import { AssayResultPanel } from '@/components/assays/AssayResultPanel'
 import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
+import type { AssayManifest } from '@/lib/assay-manifests'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import { getPreferredDocumentIdForAssaySync, setPreferredDocumentIdForAssaySync } from '@/lib/assay-preferences'
 import { describeLatestRun, groupTestResultRows } from '@/lib/assay-result-presentation'
-import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
+import { getAvailableAssayManifestById } from '@/lib/assay-registry'
+import { getAssayTemplate } from '@/lib/assay-templates'
 import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
 import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { loadLatestTestRun, saveLatestTestRun } from '@/lib/test-results'
@@ -18,8 +20,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TestDetailScreen() {
 	const params = useLocalSearchParams<{ documentId?: string; sample?: string; showResults?: string; slug?: string }>()
-	const assay = params.slug ? getAvailableAssayManifestByIdSync(params.slug) : null
-
+	const [assay, setAssay] = useState<AssayManifest | null>(null)
+	const [isAssayLoading, setIsAssayLoading] = useState(true)
 	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
 	const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(params.documentId ?? null)
 	const [latestRun, setLatestRun] = useState<Awaited<ReturnType<typeof loadLatestTestRun>>>(null)
@@ -36,6 +38,27 @@ export default function TestDetailScreen() {
 	useEffect(() => {
 		setUseSampleInput(params.sample === 'true')
 	}, [params.sample])
+
+	useEffect(() => {
+		if (!params.slug) {
+			setAssay(null)
+			setIsAssayLoading(false)
+			return
+		}
+
+		setIsAssayLoading(true)
+		void getAvailableAssayManifestById(params.slug)
+			.then((nextAssay) => {
+				setAssay(nextAssay)
+			})
+			.catch((error) => {
+				console.error('Failed to load assay:', error)
+				setAssay(null)
+			})
+			.finally(() => {
+				setIsAssayLoading(false)
+			})
+	}, [params.slug])
 
 	useEffect(() => {
 		if (!assay) {
@@ -108,6 +131,7 @@ export default function TestDetailScreen() {
 	}, [assay, selectedDocument, useSampleInput])
 
 	const groupedRows = useMemo(() => groupTestResultRows(latestRun), [latestRun])
+	const assayTemplate = useMemo(() => (assay ? getAssayTemplate(assay) : null), [assay])
 	const latestRunSummary = useMemo(
 		() => (assay ? describeLatestRun(assay, latestRun) : null),
 		[assay, latestRun]
@@ -141,6 +165,21 @@ export default function TestDetailScreen() {
 				setIsRunning(false)
 			}
 		})()
+	}
+
+	if (isAssayLoading) {
+		return (
+			<SafeAreaView style={styles.safeArea}>
+				<View style={styles.emptyState}>
+					<OMText variant="h4" style={styles.emptyTitle}>
+						Loading assay
+					</OMText>
+					<OMText variant="body" style={styles.emptyBody}>
+						Preparing the assay package for this screen.
+					</OMText>
+				</View>
+			</SafeAreaView>
+		)
 	}
 
 	if (!assay) {
@@ -206,6 +245,7 @@ export default function TestDetailScreen() {
 						groupedRows={groupedRows}
 						latestRun={latestRun}
 						latestRunSummary={latestRunSummary}
+						panelTitle={assayTemplate?.resultPanelTitle}
 					/>
 				) : null}
 
@@ -288,7 +328,7 @@ export default function TestDetailScreen() {
 					) : null}
 
 					<OMText variant="caption" style={styles.runMeta}>
-						Execution mode: {assay.ui.template} template • package v{assay.packageVersion}
+						Execution mode: {assayTemplate?.id ?? assay.ui.template} • package v{assay.packageVersion}
 					</OMText>
 				</View>
 
@@ -564,6 +604,7 @@ export default function TestDetailScreen() {
 						groupedRows={groupedRows}
 						latestRun={latestRun}
 						latestRunSummary={latestRunSummary}
+						panelTitle={assayTemplate?.resultPanelTitle}
 					/>
 				) : null}
 

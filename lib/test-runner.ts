@@ -1,8 +1,9 @@
 import { Asset } from 'expo-asset'
+import type { AssayManifest } from '@/lib/assay-manifests'
 import { BUILT_IN_SAMPLE_DOCUMENT_ID } from '@/lib/home-import'
 import type { HomeImportedDocument } from '@/lib/home-import'
 import { prepareSampleGenomeImport } from '@/lib/genome-import'
-import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
+import { getAvailableAssayManifestById } from '@/lib/assay-registry'
 import type { StoredTestResultRow, StoredTestRun, TestResultStatus } from '@/lib/test-results'
 import { runAssay } from '@/modules/expo-bioscript'
 import { Directory, File, Paths } from 'expo-file-system'
@@ -51,24 +52,34 @@ async function loadBundledAssetText(assetModuleId: number): Promise<string> {
 }
 
 async function getBundledAssayDefinition(slug: string): Promise<BundledAssayDefinition | null> {
-	const assay = getAvailableAssayManifestByIdSync(slug)
-	const bundledAssay = assay?.bundledAssay
-	if (!bundledAssay) {
+	const assay = await getAvailableAssayManifestById(slug)
+	const packageSource = assay?.packageSource
+	if (!packageSource) {
 		return null
 	}
 
-	const fileContents = Object.fromEntries(
-		await Promise.all(
-			Object.entries(bundledAssay.fileAssetModuleIds).map(async ([path, assetModuleId]) => [
-				path,
-				await loadBundledAssetText(assetModuleId),
-			])
-		)
-	)
+	const fileContents =
+		packageSource.type === 'bundled'
+			? Object.fromEntries(
+					await Promise.all(
+						Object.entries(packageSource.fileAssetModuleIds).map(async ([path, assetModuleId]) => [
+							path,
+							await loadBundledAssetText(assetModuleId),
+						])
+					)
+				)
+			: Object.fromEntries(
+					await Promise.all(
+						Object.entries(packageSource.fileUris).map(async ([path, fileUri]) => [
+							path,
+							await readAsStringAsync(fileUri),
+						])
+					)
+				)
 
 	return {
-		assayPath: bundledAssay.assayPath,
-		assayContents: await loadBundledAssetText(bundledAssay.assayAssetModuleId),
+		assayPath: packageSource.assayPath,
+		assayContents: fileContents[packageSource.assayPath] ?? '',
 		fileContents,
 	}
 }
@@ -264,7 +275,7 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 }
 
 export async function runTest(slug: string, importedDocument: HomeImportedDocument | null) {
-	const assay = getAvailableAssayManifestByIdSync(slug)
+	const assay = await getAvailableAssayManifestById(slug)
 	if (!assay) {
 		throw new Error('Assay not found.')
 	}

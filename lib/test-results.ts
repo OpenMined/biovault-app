@@ -1,5 +1,5 @@
 import { getAppDb } from '@/lib/app-db'
-import { getAssayManifestById } from '@/lib/assay-manifests'
+import { listAvailableAssayManifests } from '@/lib/assay-registry'
 import type { UnsupportedAssayVariant } from '@/modules/expo-bioscript'
 
 export type TestResultStatus = 'matched' | 'normal' | 'missing'
@@ -193,6 +193,8 @@ function safelyParseUnsupportedVariantsJson(value: string): UnsupportedAssayVari
 
 export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSummary[]> {
 	const db = await getAppDb()
+	const assays = await listAvailableAssayManifests()
+	const assayTitles = new Map(assays.map((assay) => [assay.id, assay.title]))
 	const rows = await db.getAllAsync<RecentRunRow>(
 		`SELECT
 			r.id,
@@ -210,9 +212,7 @@ export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSumma
 		limit
 	)
 
-	return rows.map((row) => {
-		const assay = getAssayManifestById(row.slug)
-		return {
+	return rows.map((row) => ({
 			id: row.id,
 			inputDocumentId: row.input_document_id ?? null,
 			slug: row.slug,
@@ -220,9 +220,8 @@ export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSumma
 			isPreview: row.is_preview === 1,
 			ranAt: row.ran_at,
 			rowCount: row.row_count,
-			testTitle: assay?.title ?? row.slug,
-		}
-	})
+			testTitle: assayTitles.get(row.slug) ?? row.slug,
+		}))
 }
 
 export async function listRecentTestRunsForInputDocument(
@@ -230,6 +229,8 @@ export async function listRecentTestRunsForInputDocument(
 	limit = 10
 ): Promise<RecentTestRunSummary[]> {
 	const db = await getAppDb()
+	const assays = await listAvailableAssayManifests()
+	const assayTitles = new Map(assays.map((assay) => [assay.id, assay.title]))
 	const rows = await db.getAllAsync<RecentRunRow>(
 		`SELECT
 			r.id,
@@ -249,9 +250,7 @@ export async function listRecentTestRunsForInputDocument(
 		limit
 	)
 
-	return rows.map((row) => {
-		const assay = getAssayManifestById(row.slug)
-		return {
+	return rows.map((row) => ({
 			id: row.id,
 			inputDocumentId: row.input_document_id ?? null,
 			slug: row.slug,
@@ -259,9 +258,8 @@ export async function listRecentTestRunsForInputDocument(
 			isPreview: row.is_preview === 1,
 			ranAt: row.ran_at,
 			rowCount: row.row_count,
-			testTitle: assay?.title ?? row.slug,
-		}
-	})
+			testTitle: assayTitles.get(row.slug) ?? row.slug,
+		}))
 }
 
 export async function deleteResultsDatabase() {

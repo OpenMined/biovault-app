@@ -1,5 +1,4 @@
 import { type AssayDiscoverCategory, type AssayManifest } from '@/lib/assay-manifests'
-import { listAvailableAssayManifestsSync } from '@/lib/assay-registry'
 
 export type ExploreCategorySlug = AssayDiscoverCategory
 
@@ -38,8 +37,8 @@ export const exploreCategories: ExploreCategoryDefinition[] = [
 		icon: 'pill',
 	},
 	{
-		slug: 'health-risk',
-		title: 'Health Risk',
+		slug: 'risk',
+		title: 'Risk',
 		subtitle: 'Predisposition and screening',
 		description: 'Review analyses around inherited risk markers and prevention-oriented health categories.',
 		example: 'Example: cardiovascular risk',
@@ -51,11 +50,10 @@ export function getExploreCategory(slug: string) {
 	return exploreCategories.find((category) => category.slug === slug) ?? null
 }
 
-export function getAssaysForExploreCategory(slug: ExploreCategorySlug): AssayManifest[] {
-	return listAvailableAssayManifestsSync()
-		.filter((manifest) => manifest.category === slug)
+export function getAssaysForExploreCategory(assays: AssayManifest[], slug: ExploreCategorySlug): AssayManifest[] {
+	return assays.filter((manifest) => manifest.category === slug)
 }
 
-export function getTestsForExploreCategory(slug: ExploreCategorySlug): AssayManifest[] {
-	return getAssaysForExploreCategory(slug)
+export function getTestsForExploreCategory(assays: AssayManifest[], slug: ExploreCategorySlug): AssayManifest[] {
+	return getAssaysForExploreCategory(assays, slug)
 }

@@ -1,5 +1,3 @@
-import { generatedAssayManifests } from '@/lib/generated-assay-manifests'
-
 export type AssayDiscoverCategory = 'traits' | 'ancestry' | 'pgx' | 'risk'
 
 export type AssayPrivacy = {
@@ -30,13 +28,26 @@ export type AssayMemberGroup = {
 	items: AssayMemberItem[]
 }
 
+export type BundledAssayPackageSource = {
+	assayAssetModuleId: number
+	assayPath: string
+	fileAssetModuleIds: Record<string, number>
+	type: 'bundled'
+}
+
+export type InstalledAssayPackageSource = {
+	assayPath: string
+	fileUris: Record<string, string>
+	installedAt: string
+	rootUri: string
+	source: string
+	type: 'installed'
+}
+
+export type AssayPackageSource = BundledAssayPackageSource | InstalledAssayPackageSource
+
 export type AssayManifest = {
 	assayMembers: AssayMemberGroup[]
-	bundledAssay: {
-		assayAssetModuleId: number
-		assayPath: string
-		fileAssetModuleIds: Record<string, number>
-	}
 	category: AssayDiscoverCategory
 	compatibility: {
 		assemblies: string[]
@@ -54,6 +65,7 @@ export type AssayManifest = {
 		partial: AssayInterpretationState
 	}
 	packageVersion: string
+	packageSource: AssayPackageSource
 	privacy: AssayPrivacy
 	sourceOfTruth: string
 	summary: string
@@ -64,14 +76,4 @@ export type AssayManifest = {
 		template: string
 		version: string
 	}
-}
-
-export const assayManifests: AssayManifest[] = generatedAssayManifests
-
-export function getAssayManifestById(id: string) {
-	return assayManifests.find((manifest) => manifest.id === id) ?? null
-}
-
-export function listAssayManifests() {
-	return assayManifests
 }
