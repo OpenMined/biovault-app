@@ -1,8 +1,9 @@
 import { getAppDb } from '@/lib/app-db'
-import { getTestBySlug } from '@/lib/test-catalog'
+import { listAvailableAssayManifests } from '@/lib/assay-registry'
 import type { UnsupportedAssayVariant } from '@/modules/expo-bioscript'
 
 export type TestResultStatus = 'matched' | 'normal' | 'missing'
+export type TestRunOutcome = TestResultStatus | 'partial'
 
 export type StoredTestResultRow = {
 	alts?: string[]
@@ -21,6 +22,7 @@ export type StoredTestRun = {
 	inputDocumentId?: string | null
 	inputLabel: string
 	isPreview: boolean
+	outcome: TestRunOutcome
 	ranAt: string
 	rows: StoredTestResultRow[]
 	slug: string
@@ -43,6 +45,7 @@ type RunRowRecord = {
 	input_document_id: string | null
 	input_label: string
 	is_preview: number
+	outcome: TestRunOutcome | null
 	ran_at: string
 	slug: string
 	unsupported_variants_json: string | null
@@ -75,11 +78,12 @@ export async function saveLatestTestRun(run: StoredTestRun) {
 
 	await db.withExclusiveTransactionAsync(async (txn) => {
 		const inserted = await txn.runAsync(
-			'INSERT INTO test_runs (slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json) VALUES (?, ?, ?, ?, ?, ?)',
+			'INSERT INTO test_runs (slug, input_document_id, input_label, is_preview, outcome, ran_at, unsupported_variants_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
 			run.slug,
 			run.inputDocumentId ?? null,
 			run.inputLabel,
 			run.isPreview ? 1 : 0,
+			run.outcome,
 			run.ranAt,
 			run.unsupportedVariants?.length ? JSON.stringify(run.unsupportedVariants) : null
 		)
@@ -113,16 +117,16 @@ export async function loadLatestTestRun(
 	const run =
 		inputDocumentId === undefined
 			? await db.getFirstAsync<RunRowRecord>(
-					'SELECT id, slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
+					'SELECT id, slug, input_document_id, input_label, is_preview, outcome, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
 					slug
 				)
 			: inputDocumentId === null
 				? await db.getFirstAsync<RunRowRecord>(
-						'SELECT id, slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? AND input_document_id IS NULL ORDER BY ran_at DESC, id DESC LIMIT 1',
+						'SELECT id, slug, input_document_id, input_label, is_preview, outcome, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? AND input_document_id IS NULL ORDER BY ran_at DESC, id DESC LIMIT 1',
 						slug
 					)
 				: await db.getFirstAsync<RunRowRecord>(
-						'SELECT id, slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? AND input_document_id = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
+						'SELECT id, slug, input_document_id, input_label, is_preview, outcome, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? AND input_document_id = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
 						slug,
 						inputDocumentId
 					)
@@ -145,6 +149,7 @@ export async function loadLatestTestRun(
 		slug: run.slug,
 		inputLabel: run.input_label,
 		isPreview: run.is_preview === 1,
+		outcome: requireStoredOutcome(run.outcome, run.id),
 		ranAt: run.ran_at,
 		unsupportedVariants: run.unsupported_variants_json
 			? safelyParseUnsupportedVariantsJson(run.unsupported_variants_json)
@@ -161,6 +166,13 @@ export async function loadLatestTestRun(
 			alts: row.alts_json ? safelyParseAltJson(row.alts_json) : undefined,
 		})),
 	}
+}
+
+function requireStoredOutcome(value: TestRunOutcome | null, runId: number): TestRunOutcome {
+	if (value === 'matched' || value === 'normal' || value === 'missing' || value === 'partial') {
+		return value
+	}
+	throw new Error(`Stored test run ${runId} is missing assay outcome.`)
 }
 
 function safelyParseAltJson(value: string): string[] | undefined {
@@ -193,6 +205,8 @@ function safelyParseUnsupportedVariantsJson(value: string): UnsupportedAssayVari
 
 export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSummary[]> {
 	const db = await getAppDb()
+	const assays = await listAvailableAssayManifests()
+	const assayTitles = new Map(assays.map((assay) => [assay.id, assay.title]))
 	const rows = await db.getAllAsync<RecentRunRow>(
 		`SELECT
 			r.id,
@@ -210,9 +224,7 @@ export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSumma
 		limit
 	)
 
-	return rows.map((row) => {
-		const test = getTestBySlug(row.slug)
-		return {
+	return rows.map((row) => ({
 			id: row.id,
 			inputDocumentId: row.input_document_id ?? null,
 			slug: row.slug,
@@ -220,9 +232,8 @@ export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSumma
 			isPreview: row.is_preview === 1,
 			ranAt: row.ran_at,
 			rowCount: row.row_count,
-			testTitle: test?.title ?? row.slug,
-		}
-	})
+			testTitle: assayTitles.get(row.slug) ?? row.slug,
+		}))
 }
 
 export async function listRecentTestRunsForInputDocument(
@@ -230,6 +241,8 @@ export async function listRecentTestRunsForInputDocument(
 	limit = 10
 ): Promise<RecentTestRunSummary[]> {
 	const db = await getAppDb()
+	const assays = await listAvailableAssayManifests()
+	const assayTitles = new Map(assays.map((assay) => [assay.id, assay.title]))
 	const rows = await db.getAllAsync<RecentRunRow>(
 		`SELECT
 			r.id,
@@ -249,9 +262,7 @@ export async function listRecentTestRunsForInputDocument(
 		limit
 	)
 
-	return rows.map((row) => {
-		const test = getTestBySlug(row.slug)
-		return {
+	return rows.map((row) => ({
 			id: row.id,
 			inputDocumentId: row.input_document_id ?? null,
 			slug: row.slug,
@@ -259,9 +270,8 @@ export async function listRecentTestRunsForInputDocument(
 			isPreview: row.is_preview === 1,
 			ranAt: row.ran_at,
 			rowCount: row.row_count,
-			testTitle: test?.title ?? row.slug,
-		}
-	})
+			testTitle: assayTitles.get(row.slug) ?? row.slug,
+		}))
 }
 
 export async function deleteResultsDatabase() {

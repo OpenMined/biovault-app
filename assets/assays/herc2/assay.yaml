@@ -15,6 +15,10 @@ package:
   assay_version: "0.1.0"
   source_of_truth: "script"
 
+ui:
+  template: "binary-call"
+  version: "1.0"
+
 compatibility:
   works_with:
     - "23andme"
@@ -41,3 +45,19 @@ implementation:
 
 outputs:
   format: "tsv"
+
+interpretation:
+  states:
+    matched:
+      headline: "Eye-color signal detected"
+      body: "This assay detected the main HERC2 signal associated with lighter eye color."
+      caveat: "Eye color is influenced by multiple genes."
+    normal:
+      headline: "No flagged signal found"
+      body: "The checked site was present, but the lighter-eye-associated signal was not detected."
+    missing:
+      headline: "Not enough data"
+      body: "This file did not include enough of the expected sites for a confident result."
+    partial:
+      headline: "Partial result"
+      body: "Some expected rows were present, but the file did not cover the full assay."

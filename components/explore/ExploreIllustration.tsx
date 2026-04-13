@@ -1,5 +1,5 @@
 import type { ExploreCategoryDefinition } from '@/lib/explore-categories'
-import { omColors, omRadius, omTheme } from '@/styles/brand'
+import { omColors, omRadius } from '@/styles/brand'
 import { StyleSheet, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
 

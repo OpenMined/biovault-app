@@ -1,16 +1,20 @@
 import { ExploreAssayCard } from '@/components/explore/ExploreAssayCard'
 import { useExploreLayoutContext } from '@/components/explore/ExploreLayoutContext'
 import { OMText } from '@/components/ui/OMText'
+import type { AssayManifest } from '@/lib/assay-manifests'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import {
 	getAssaysForExploreCategory,
 	getExploreCategory,
 	type ExploreCategorySlug,
 } from '@/lib/explore-categories'
+import { listAvailableAssayManifests } from '@/lib/assay-registry'
+import { getAssayTemplate } from '@/lib/assay-templates'
 import { listRecentTestRunsForInputDocument, type RecentTestRunSummary } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { useFocusEffect } from '@react-navigation/native'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
 function getBadgeLabel(status: string | undefined, hasActiveDocument: boolean) {
@@ -33,9 +37,28 @@ function formatRecentRunLabel(value: string) {
 export default function ExploreCategoryScreen() {
 	const params = useLocalSearchParams<{ category?: string }>()
 	const category = params.category ? getExploreCategory(params.category) : null
-	const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
 	const { activeDocument } = useExploreLayoutContext()
+	const [assays, setAssays] = useState<AssayManifest[]>([])
 	const [recentRunsBySlug, setRecentRunsBySlug] = useState<Record<string, RecentTestRunSummary>>({})
+
+	const refreshAssays = useCallback(() => {
+		return listAvailableAssayManifests()
+			.then(setAssays)
+			.catch((error) => {
+				console.error('Failed to load assays:', error)
+				setAssays([])
+			})
+	}, [])
+
+	useEffect(() => {
+		void refreshAssays()
+	}, [refreshAssays])
+
+	useFocusEffect(
+		useCallback(() => {
+			void refreshAssays()
+		}, [refreshAssays])
+	)
 
 	useEffect(() => {
 		if (!activeDocument) {
@@ -54,7 +77,8 @@ export default function ExploreCategoryScreen() {
 	}, [activeDocument])
 
 	const sortedAssays = useMemo(() => {
-		return [...assays].sort((left, right) => {
+		const filteredAssays = category ? getAssaysForExploreCategory(assays, category.slug as ExploreCategorySlug) : []
+		return [...filteredAssays].sort((left, right) => {
 			const leftCompatibility = activeDocument ? assessAssayCompatibility(left, activeDocument).status : 'unknown'
 			const rightCompatibility = activeDocument ? assessAssayCompatibility(right, activeDocument).status : 'unknown'
 			const rank = (status: string) => (status === 'likely-supported' ? 0 : status === 'unknown' ? 1 : 2)
@@ -63,7 +87,7 @@ export default function ExploreCategoryScreen() {
 
 			return rank(leftCompatibility) - rank(rightCompatibility) || leftRun - rightRun || left.title.localeCompare(right.title)
 		})
-	}, [activeDocument, assays, recentRunsBySlug])
+	}, [activeDocument, assays, category, recentRunsBySlug])
 
 	if (!category) {
 		return (
@@ -122,9 +146,7 @@ export default function ExploreCategoryScreen() {
 							: 'neutral'
 						const summary = compatibility
 							? compatibility.summary
-							: assay.runMode === 'bioscript'
-								? 'Runs locally on device through Bioscript.'
-								: 'Preview assay for now.'
+							: getAssayTemplate(assay).runSummary
 
 						return (
 							<ExploreAssayCard

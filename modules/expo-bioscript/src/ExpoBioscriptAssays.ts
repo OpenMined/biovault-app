@@ -5,6 +5,15 @@ import YAML from 'yaml';
 import type { RunAssayRequest, RunFileRequest, RunFileResult } from './ExpoBioscript.types';
 import ExpoBioscriptModule from './ExpoBioscriptModule';
 
+const assayResultSchema = require('../../../bioscript/assay_result_schema.json') as {
+  outcomeField?: unknown;
+};
+
+const ASSAY_OUTCOME_FIELD =
+  typeof assayResultSchema.outcomeField === 'string' && assayResultSchema.outcomeField
+    ? assayResultSchema.outcomeField
+    : 'assay_outcome';
+
 type VariantDefinition = {
   gene?: string;
   label: string;
@@ -238,11 +247,11 @@ function buildProbeScript(variants: VariantDefinition[]): string {
 
   const rows = variants
     .map(
-      (variant) => `    observed_${variant.name} = genotypes.lookup_variant(${variant.name})\n    rows.append({\n        "participant_id": participant_id,\n        "gene": ${bioscriptLiteral(variant.gene ?? 'Unknown')},\n        "label": ${bioscriptLiteral(variant.label)},\n        "rsid": ${bioscriptLiteral(variant.fields.rsid ?? null)},\n        "location": ${bioscriptLiteral(variant.location ?? null)},\n        "kind": ${bioscriptLiteral(String(variant.fields.kind ?? 'snp').toUpperCase())},\n        "ref": ${bioscriptLiteral(variant.fields.ref ?? null)},\n        "alts": ${bioscriptLiteral(variant.alts ?? [])},\n        "observed": observed_${variant.name},\n        "row_status": row_status(observed_${variant.name}, ${variant.name}),\n        "summary": ${bioscriptLiteral(variant.note ?? '')},\n    })`,
+      (variant) => `    observed_${variant.name} = genotypes.lookup_variant(${variant.name})\n    row_status_${variant.name} = row_status(observed_${variant.name}, ${variant.name})\n    rows.append({\n        "participant_id": participant_id,\n        "gene": ${bioscriptLiteral(variant.gene ?? 'Unknown')},\n        "label": ${bioscriptLiteral(variant.label)},\n        "rsid": ${bioscriptLiteral(variant.fields.rsid ?? null)},\n        "location": ${bioscriptLiteral(variant.location ?? null)},\n        "kind": ${bioscriptLiteral(String(variant.fields.kind ?? 'snp').toUpperCase())},\n        "ref": ${bioscriptLiteral(variant.fields.ref ?? null)},\n        "alts": ${bioscriptLiteral(variant.alts ?? [])},\n        "observed": observed_${variant.name},\n        "row_status": row_status_${variant.name},\n        "summary": ${bioscriptLiteral(variant.note ?? '')},\n    })`,
     )
     .join('\n');
 
-  return `${blocks}\n\ndef row_status(observed, variant):\n    if observed is None or observed == "--":\n        return "missing"\n    kind = variant.kind\n    ref = variant.reference\n    alt = variant.alternate\n    if kind == "deletion":\n        if "D" in observed:\n            return "matched"\n        return "normal"\n    if alt is not None and alt in observed:\n        return "matched"\n    if ref is not None and len(observed) == 2 and observed[0] == ref and observed[1] == ref:\n        return "normal"\n    return "normal"\n\n\ndef main():\n    genotypes = bioscript.load_genotypes(input_file)\n    rows = []\n${rows}\n    bioscript.write_tsv(output_file, rows)\n\n\nif __name__ == "__main__":\n    main()\n`;
+  return `${blocks}\n\ndef row_status(observed, variant):\n    if observed is None or observed == "--":\n        return "missing"\n    kind = variant.kind\n    ref = variant.reference\n    alt = variant.alternate\n    if kind == "deletion":\n        if "D" in observed:\n            return "matched"\n        return "normal"\n    if alt is not None and alt in observed:\n        return "matched"\n    if ref is not None and len(observed) == 2 and observed[0] == ref and observed[1] == ref:\n        return "normal"\n    return "normal"\n\n\ndef assay_outcome(rows):\n    if len(rows) == 0:\n        return "missing"\n    statuses = []\n    for row in rows:\n        statuses.append(row["row_status"])\n    all_missing = True\n    has_missing = False\n    has_matched = False\n    for status in statuses:\n        if status != "missing":\n            all_missing = False\n        if status == "missing":\n            has_missing = True\n        if status == "matched":\n            has_matched = True\n    if all_missing:\n        return "missing"\n    if has_missing:\n        return "partial"\n    if has_matched:\n        return "matched"\n    return "normal"\n\n\ndef main():\n    genotypes = bioscript.load_genotypes(input_file)\n    rows = []\n${rows}\n    outcome = assay_outcome(rows)\n    for row in rows:\n        row[${bioscriptLiteral(ASSAY_OUTCOME_FIELD)}] = outcome\n    bioscript.write_tsv(output_file, rows)\n\n\nif __name__ == "__main__":\n    main()\n`;
 }
 
 

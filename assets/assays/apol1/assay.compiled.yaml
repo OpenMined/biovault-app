@@ -1,0 +1,119 @@
+schema: bioscript:assay-compiled
+version: '1.0'
+assay:
+  id: apol1_risk
+  label: APOL1 Risk Classifier
+  summary: Classify APOL1 G0, G1, and G2 haplotype combinations from three defining
+    sites.
+  category: risk
+  tags:
+  - apol1
+  - kidney
+  - risk
+  disclaimer: Research use only. Not medical advice.
+  package_version: 0.1.0
+  source_of_truth: script
+implementation:
+  kind: script
+  script_path: apol1.py
+ui:
+  template: risk-classifier
+  version: '1.0'
+compatibility:
+  works_with:
+  - 23andme
+  - wgs
+  - vcf
+  - cram
+  assemblies:
+  - grch37
+  - grch38
+  notes:
+  - Works when all three APOL1 defining sites are present in the source data.
+privacy:
+  mode: local_only
+  uploads_data: false
+  stores_results_locally: true
+  external_urls: []
+runnable_variants:
+- name: APOL1_G1_rs73885319
+  gene: APOL1
+  summary: APOL1 G1 site 1 SNV.
+  rsids:
+  - rs73885319
+  kind: snv
+  ref: A
+  alts:
+  - G
+  deletion_length: null
+  grch37:
+    chrom: '22'
+    pos: 36661906
+  grch38:
+    chrom: '22'
+    pos: 36265860
+  note: null
+  fields:
+    rsid: rs73885319
+    grch37: 22:36661906-36661906
+    grch38: 22:36265860-36265860
+    ref: A
+    alt: G
+    kind: snp
+- name: APOL1_G1_rs60910145
+  gene: APOL1
+  summary: APOL1 G1 site 2 SNV.
+  rsids:
+  - rs60910145
+  kind: snv
+  ref: T
+  alts:
+  - G
+  deletion_length: null
+  grch37:
+    chrom: '22'
+    pos: 36662034
+  grch38:
+    chrom: '22'
+    pos: 36265988
+  note: null
+  fields:
+    rsid: rs60910145
+    grch37: 22:36662034-36662034
+    grch38: 22:36265988-36265988
+    ref: T
+    alt: G
+    kind: snp
+- name: APOL1_G2
+  gene: APOL1
+  summary: APOL1 G2 six-base deletion.
+  rsids:
+  - rs71785313
+  - rs1317778148
+  - rs143830837
+  kind: deletion
+  ref: I
+  alts:
+  - D
+  deletion_length: 6
+  grch37:
+    chrom: '22'
+    start: 36662046
+    end: 36662051
+  grch38:
+    chrom: '22'
+    start: 36266000
+    end: 36266005
+  note: APOL1 G2 defining deletion.
+  fields:
+    rsid: rs71785313
+    grch37: 22:36662046-36662051
+    grch38: 22:36266000-36266005
+    ref: I
+    alt: D
+    kind: deletion
+    deletion_length: 6
+    motifs:
+    - TTATAA
+    - ATAATT
+unsupported_variants: []

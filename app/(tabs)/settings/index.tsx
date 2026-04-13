@@ -191,6 +191,19 @@ export default function SettingsScreen() {
 
 				<View style={styles.section}>
 					<OMText variant="subtitle" style={styles.sectionTitle}>
+						ASSAYS
+					</OMText>
+					<SettingsActionCard
+						label="PACKAGES"
+						title="Manage assay packages"
+						description="Install or remove assay packages from GitHub on this device."
+						trailing="Manage"
+						onPress={() => router.push('/settings/assays' as const)}
+					/>
+				</View>
+
+				<View style={styles.section}>
+					<OMText variant="subtitle" style={styles.sectionTitle}>
 						DATA MANAGEMENT
 					</OMText>
 					<SettingsActionCard

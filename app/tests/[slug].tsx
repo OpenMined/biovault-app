@@ -2,10 +2,12 @@ import { AssayFilePickerModal } from '@/components/assays/AssayFilePickerModal'
 import { AssayResultPanel } from '@/components/assays/AssayResultPanel'
 import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
+import type { AssayManifest } from '@/lib/assay-manifests'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
 import { getPreferredDocumentIdForAssaySync, setPreferredDocumentIdForAssaySync } from '@/lib/assay-preferences'
 import { describeLatestRun, groupTestResultRows } from '@/lib/assay-result-presentation'
-import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
+import { getAvailableAssayManifestById } from '@/lib/assay-registry'
+import { getAssayTemplate } from '@/lib/assay-templates'
 import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
 import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { loadLatestTestRun, saveLatestTestRun } from '@/lib/test-results'
@@ -18,8 +20,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function TestDetailScreen() {
 	const params = useLocalSearchParams<{ documentId?: string; sample?: string; showResults?: string; slug?: string }>()
-	const assay = params.slug ? getAvailableAssayManifestByIdSync(params.slug) : null
-
+	const [assay, setAssay] = useState<AssayManifest | null>(null)
+	const [isAssayLoading, setIsAssayLoading] = useState(true)
 	const [importedDocuments, setImportedDocuments] = useState<HomeImportedDocument[]>([])
 	const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(params.documentId ?? null)
 	const [latestRun, setLatestRun] = useState<Awaited<ReturnType<typeof loadLatestTestRun>>>(null)
@@ -36,6 +38,27 @@ export default function TestDetailScreen() {
 	useEffect(() => {
 		setUseSampleInput(params.sample === 'true')
 	}, [params.sample])
+
+	useEffect(() => {
+		if (!params.slug) {
+			setAssay(null)
+			setIsAssayLoading(false)
+			return
+		}
+
+		setIsAssayLoading(true)
+		void getAvailableAssayManifestById(params.slug)
+			.then((nextAssay) => {
+				setAssay(nextAssay)
+			})
+			.catch((error) => {
+				console.error('Failed to load assay:', error)
+				setAssay(null)
+			})
+			.finally(() => {
+				setIsAssayLoading(false)
+			})
+	}, [params.slug])
 
 	useEffect(() => {
 		if (!assay) {
@@ -108,6 +131,7 @@ export default function TestDetailScreen() {
 	}, [assay, selectedDocument, useSampleInput])
 
 	const groupedRows = useMemo(() => groupTestResultRows(latestRun), [latestRun])
+	const assayTemplate = useMemo(() => (assay ? getAssayTemplate(assay) : null), [assay])
 	const latestRunSummary = useMemo(
 		() => (assay ? describeLatestRun(assay, latestRun) : null),
 		[assay, latestRun]
@@ -134,13 +158,6 @@ export default function TestDetailScreen() {
 				const savedRun = await loadLatestTestRun(assay.id, useSampleInput ? null : selectedDocument?.id ?? null)
 				setLatestRun(savedRun)
 				await scheduleTestFinishedNotification(assay.title, assay.id)
-
-				if (run.isPreview) {
-					Alert.alert(
-						'Preview assay run saved',
-						'This assay still uses bundled preview rows. Its legacy classifier needs to be ported into the current expo-bioscript runtime.'
-					)
-				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : 'Unable to run assay.'
 				Alert.alert('Assay run failed', message)
@@ -148,6 +165,21 @@ export default function TestDetailScreen() {
 				setIsRunning(false)
 			}
 		})()
+	}
+
+	if (isAssayLoading) {
+		return (
+			<SafeAreaView style={styles.safeArea}>
+				<View style={styles.emptyState}>
+					<OMText variant="h4" style={styles.emptyTitle}>
+						Loading assay
+					</OMText>
+					<OMText variant="body" style={styles.emptyBody}>
+						Preparing the assay package for this screen.
+					</OMText>
+				</View>
+			</SafeAreaView>
+		)
 	}
 
 	if (!assay) {
@@ -213,6 +245,7 @@ export default function TestDetailScreen() {
 						groupedRows={groupedRows}
 						latestRun={latestRun}
 						latestRunSummary={latestRunSummary}
+						panelTitle={assayTemplate?.resultPanelTitle}
 					/>
 				) : null}
 
@@ -291,12 +324,11 @@ export default function TestDetailScreen() {
 					{latestRun ? (
 						<OMText variant="caption" style={styles.runMeta}>
 							Last run: {new Date(latestRun.ranAt).toLocaleString()} • {latestRun.inputLabel}
-							{latestRun.isPreview ? ' • Preview mode' : ''}
 						</OMText>
 					) : null}
 
 					<OMText variant="caption" style={styles.runMeta}>
-						Execution mode: {assay.runMode === 'package' ? 'Live assay package run' : 'Preview only'}
+						Execution mode: {assayTemplate?.id ?? assay.ui.template} • package v{assay.packageVersion}
 					</OMText>
 				</View>
 
@@ -365,10 +397,19 @@ export default function TestDetailScreen() {
 
 						<View style={styles.labelGroup}>
 							<OMText variant="subtitle" style={styles.labelTitle}>
-								Supported file types
+								Declared input families
 							</OMText>
 							<OMText variant="body" style={styles.labelItem}>
-								{assay.compatibility.supportedExtensions.join(', ')}
+								{assay.compatibility.worksWith.length ? assay.compatibility.worksWith.join(', ') : 'Not specified'}
+							</OMText>
+						</View>
+
+						<View style={styles.labelGroup}>
+							<OMText variant="subtitle" style={styles.labelTitle}>
+								Assemblies
+							</OMText>
+							<OMText variant="body" style={styles.labelItem}>
+								{assay.compatibility.assemblies.length ? assay.compatibility.assemblies.join(', ') : 'Not specified'}
 							</OMText>
 						</View>
 
@@ -394,7 +435,7 @@ export default function TestDetailScreen() {
 							More details
 						</OMText>
 						<OMText variant="body" style={styles.panelBody}>
-							Privacy label, source files, and result model.
+							Privacy label, package files, and assay members.
 						</OMText>
 					</View>
 					<OMText variant="subtitle" style={styles.detailsToggleAction}>
@@ -411,36 +452,41 @@ export default function TestDetailScreen() {
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
-									Runs
+									Privacy mode
 								</OMText>
-								{assay.privacy.runs.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
-									</OMText>
-								))}
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.mode}
+								</OMText>
 							</View>
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
-									Reads
+									Uploads data
 								</OMText>
-								{assay.privacy.reads.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
-									</OMText>
-								))}
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.uploadsData ? 'Yes' : 'No'}
+								</OMText>
 							</View>
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
-									Bundled files
+									Stores results locally
 								</OMText>
-								{assay.privacy.usesBundledFiles.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
-									</OMText>
-								))}
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.storesResultsLocally ? 'Yes' : 'No'}
+								</OMText>
 							</View>
+
+							{assay.disclaimer ? (
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Disclaimer
+									</OMText>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.disclaimer}
+									</OMText>
+								</View>
+							) : null}
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
@@ -458,20 +504,11 @@ export default function TestDetailScreen() {
 									</OMText>
 								)}
 							</View>
-
-							<View style={styles.labelGroup}>
-								<OMText variant="subtitle" style={styles.labelTitle}>
-									Stores results
-								</OMText>
-								<OMText variant="body" style={styles.labelItem}>
-									{assay.privacy.storesResults}
-								</OMText>
-							</View>
 						</View>
 
 						<View style={styles.panel}>
 							<OMText variant="headline" style={styles.panelTitle}>
-								Files and sources
+								Assay package
 							</OMText>
 
 							<View style={styles.labelGroup}>
@@ -482,40 +519,46 @@ export default function TestDetailScreen() {
 									<OMText key={item} variant="body" style={styles.labelItem}>
 										{item}
 									</OMText>
-								))}
-							</View>
+									))}
+								</View>
 
-							<View style={styles.labelGroup}>
-								<OMText variant="subtitle" style={styles.labelTitle}>
-									Sources
-								</OMText>
-								{assay.sources.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Renderer
 									</OMText>
-								))}
-							</View>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.ui.template} v{assay.ui.version}
+									</OMText>
+								</View>
+
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Package version
+									</OMText>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.packageVersion}
+									</OMText>
+								</View>
+
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Source of truth
+									</OMText>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.sourceOfTruth}
+									</OMText>
+								</View>
 						</View>
 
 						<View style={styles.panel}>
 							<OMText variant="headline" style={styles.panelTitle}>
-								Result model
+								Assay members
 							</OMText>
 							<OMText variant="body" style={styles.panelBody}>
-								After a run, results can be grouped into these buckets:
+								These are the package-declared assay members, split by what the current runtime can and cannot execute.
 							</OMText>
 
-							<View style={styles.bucketRow}>
-								{assay.resultBuckets.map((bucket) => (
-									<View key={bucket} style={styles.bucketPill}>
-										<OMText variant="caption" style={styles.bucketText}>
-											{bucket}
-										</OMText>
-									</View>
-								))}
-							</View>
-
-							{assay.variantExamples.map((group) => (
+							{assay.assayMembers.map((group) => (
 								<View key={group.gene} style={styles.geneGroup}>
 									<OMText variant="subtitle" style={styles.geneTitle}>
 										{group.gene}
@@ -524,17 +567,12 @@ export default function TestDetailScreen() {
 									{group.items.map((item) => (
 										<View key={item.id} style={styles.variantRow}>
 											<View style={styles.variantHeader}>
-												<OMText variant="body" style={styles.variantName}>
-													{item.rsid ?? item.kind}
-												</OMText>
-												<View style={styles.statusPill}>
-													<OMText variant="caption" style={styles.statusText}>
-														{item.status}
+													<OMText variant="body" style={styles.variantName}>
+														{item.rsid ?? item.kind}
 													</OMText>
-												</View>
 											</View>
 											<OMText variant="caption" style={styles.variantMeta}>
-												{item.location} • {item.kind}
+												{item.location ?? 'Unknown location'} • {item.kind}
 											</OMText>
 											{item.kind === 'INDEL' && (item.ref || item.alts?.length) ? (
 												<View style={styles.variantDetailBlock}>
@@ -558,6 +596,55 @@ export default function TestDetailScreen() {
 								</View>
 							))}
 						</View>
+
+						<View style={styles.panel}>
+							<OMText variant="headline" style={styles.panelTitle}>
+								Runtime support
+							</OMText>
+							<OMText variant="body" style={styles.panelBody}>
+								Only runnable members are used during assay execution. Unsupported members stay visible here with their reason.
+							</OMText>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Runnable members
+								</OMText>
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.runnableMembers.length}
+								</OMText>
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Unsupported members
+								</OMText>
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.unsupportedMembers.length}
+								</OMText>
+							</View>
+
+							{assay.unsupportedMembers.length ? (
+								<View style={styles.unsupportedList}>
+									{assay.unsupportedMembers.map((entry) => (
+										<View key={entry.variant.id} style={styles.unsupportedRow}>
+											<OMText variant="subtitle" style={styles.unsupportedTitle}>
+												{entry.variant.rsid ?? entry.variant.id}
+											</OMText>
+											<OMText variant="caption" style={styles.variantMeta}>
+												{entry.variant.location ?? 'Unknown location'} • {entry.variant.kind}
+											</OMText>
+											<OMText variant="body" style={styles.unsupportedReason}>
+												{entry.reason}
+											</OMText>
+										</View>
+									))}
+								</View>
+							) : (
+								<OMText variant="body" style={styles.labelItem}>
+									None
+								</OMText>
+							)}
+						</View>
 					</>
 				) : null}
 
@@ -566,6 +653,7 @@ export default function TestDetailScreen() {
 						groupedRows={groupedRows}
 						latestRun={latestRun}
 						latestRunSummary={latestRunSummary}
+						panelTitle={assayTemplate?.resultPanelTitle}
 					/>
 				) : null}
 
@@ -763,6 +851,23 @@ const styles = StyleSheet.create({
 	},
 	variantNote: {
 		color: omColors.grayscale400,
+	},
+	unsupportedList: {
+		gap: omSpacing.s,
+	},
+	unsupportedRow: {
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+		gap: omSpacing.xs,
+	},
+	unsupportedTitle: {
+		color: omTheme.primaryText,
+	},
+	unsupportedReason: {
+		color: '#ffb0b0',
 	},
 	fileSelectionStack: {
 		gap: omSpacing.s,

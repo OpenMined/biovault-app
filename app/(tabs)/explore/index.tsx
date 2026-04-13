@@ -3,8 +3,10 @@ import { useActiveDocument } from '@/components/explore/ActiveDocumentContext'
 import { ExploreAssayCard } from '@/components/explore/ExploreAssayCard'
 import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
+import type { AssayManifest } from '@/lib/assay-manifests'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
-import { listAvailableAssayManifestsSync } from '@/lib/assay-registry'
+import { listAvailableAssayManifests } from '@/lib/assay-registry'
+import { getAssayTemplate } from '@/lib/assay-templates'
 import { getExploreCategory } from '@/lib/explore-categories'
 import { isExploreDemoModeEnabledSync, setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
 import { listRecentTestRunsForInputDocument, type RecentTestRunSummary } from '@/lib/test-results'
@@ -39,7 +41,21 @@ export default function ExploreScreen() {
 	const { activeDocument, closePicker, importedDocuments, isPickerOpen, selectDocument, togglePicker } =
 		useActiveDocument()
 	const [isDemoActive, setIsDemoActive] = useState(false)
+	const [assays, setAssays] = useState<AssayManifest[]>([])
 	const [recentRunsBySlug, setRecentRunsBySlug] = useState<Record<string, RecentTestRunSummary>>({})
+
+	const refreshAssays = useCallback(() => {
+		return listAvailableAssayManifests()
+			.then(setAssays)
+			.catch((error) => {
+				console.error('Failed to load assays:', error)
+				setAssays([])
+			})
+	}, [])
+
+	useEffect(() => {
+		void refreshAssays()
+	}, [refreshAssays])
 
 	useEffect(() => {
 		if (!activeDocument) {
@@ -56,8 +72,6 @@ export default function ExploreScreen() {
 				setRecentRunsBySlug({})
 			})
 	}, [activeDocument])
-
-	const assays = useMemo(() => listAvailableAssayManifestsSync(), [])
 
 	const orderedAssays = useMemo(() => {
 		const rankCompatibility = (status: string | undefined) =>
@@ -80,7 +94,8 @@ export default function ExploreScreen() {
 	useFocusEffect(
 		useCallback(() => {
 			setIsDemoActive(isExploreDemoModeEnabledSync())
-		}, [])
+			void refreshAssays()
+		}, [refreshAssays])
 	)
 
 	return (
@@ -155,9 +170,7 @@ export default function ExploreScreen() {
 							: 'neutral'
 						const summary = compatibility
 							? compatibility.summary
-							: assay.runMode === 'bioscript'
-								? 'Runs locally on device through Bioscript.'
-								: 'Preview assay for now.'
+							: getAssayTemplate(assay).runSummary
 
 						return (
 							<ExploreAssayCard

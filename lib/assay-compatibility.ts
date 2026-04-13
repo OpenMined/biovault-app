@@ -6,7 +6,7 @@ export type AssayCompatibilityStatus = 'likely-supported' | 'unknown' | 'unlikel
 export type AssayInputProfile = {
 	displayLabel: string
 	extension: string | null
-	source: 'chip' | 'vcf' | 'compressed-text' | 'unknown'
+	source: 'chip' | 'vcf' | 'compressed-text' | 'cram' | 'unknown'
 }
 
 const COMPOUND_EXTENSIONS = ['.vcf.gz', '.vcf.bz2', '.tsv.bz2', '.txt.zip'] as const
@@ -35,6 +35,10 @@ function detectSource(extension: string | null): AssayInputProfile['source'] {
 		return 'vcf'
 	}
 
+	if (extension === '.cram') {
+		return 'cram'
+	}
+
 	if (extension === '.zip' || extension === '.gz' || extension === '.bz2' || extension === '.txt.zip' || extension === '.tsv.bz2') {
 		return 'compressed-text'
 	}
@@ -44,6 +48,20 @@ function detectSource(extension: string | null): AssayInputProfile['source'] {
 	}
 
 	return 'unknown'
+}
+
+function getCompatibilityTokens(profile: AssayInputProfile): string[] {
+	switch (profile.source) {
+		case 'chip':
+		case 'compressed-text':
+			return ['23andme']
+		case 'vcf':
+			return ['vcf', 'wgs']
+		case 'cram':
+			return ['cram', 'wgs']
+		default:
+			return []
+	}
 }
 
 export function getAssayInputProfile(document: HomeImportedDocument | null): AssayInputProfile {
@@ -67,27 +85,22 @@ export function assessAssayCompatibility(
 	assay: AssayManifest,
 	document: HomeImportedDocument | null
 ): {
-	matchedByExtension: boolean
-	matchedBySource: boolean
+	matchedByDeclaredInput: boolean
 	profile: AssayInputProfile
 	status: AssayCompatibilityStatus
 	summary: string
 } {
 	const profile = getAssayInputProfile(document)
-	const matchedByExtension = profile.extension
-		? assay.compatibility.supportedExtensions.includes(profile.extension)
-		: false
-	const matchedBySource = assay.compatibility.supportedSources.includes(profile.source)
+	const supportedInputs = assay.compatibility.worksWith.map((value) => value.toLowerCase())
+	const profileTokens = getCompatibilityTokens(profile)
+	const matchedByDeclaredInput = profileTokens.some((token) => supportedInputs.includes(token))
 
 	let status: AssayCompatibilityStatus = 'unknown'
 	let summary = 'This file may work, but the app cannot confidently confirm compatibility yet.'
 
-	if (matchedByExtension && matchedBySource) {
+	if (matchedByDeclaredInput) {
 		status = 'likely-supported'
-		summary = 'This file format is a strong match for the assay.'
-	} else if (matchedByExtension || matchedBySource) {
-		status = 'unknown'
-		summary = 'Some compatibility signals match, but the app cannot confirm support yet.'
+		summary = 'This file type is a strong match for the assay package metadata.'
 	} else if (profile.source === 'unknown' && !profile.extension) {
 		status = 'unknown'
 		summary = 'The file type could not be identified from its name.'
@@ -98,8 +111,7 @@ export function assessAssayCompatibility(
 
 	return {
 		profile,
-		matchedByExtension,
-		matchedBySource,
+		matchedByDeclaredInput,
 		status,
 		summary,
 	}

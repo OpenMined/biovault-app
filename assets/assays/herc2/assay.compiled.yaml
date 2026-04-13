@@ -1,0 +1,61 @@
+schema: bioscript:assay-compiled
+version: '1.0'
+assay:
+  id: herc2_eye_color
+  label: HERC2 Eye Color
+  summary: Classify the main HERC2 eye-color signal from one defining site.
+  category: traits
+  tags:
+  - herc2
+  - eye-color
+  disclaimer: Research use only. Not medical advice.
+  package_version: 0.1.0
+  source_of_truth: script
+implementation:
+  kind: script
+  script_path: herc2.py
+ui:
+  template: binary-call
+  version: '1.0'
+compatibility:
+  works_with:
+  - 23andme
+  - wgs
+  - vcf
+  assemblies:
+  - grch37
+  - grch38
+  notes:
+  - Checks one major HERC2 eye-color signal.
+privacy:
+  mode: local_only
+  uploads_data: false
+  stores_results_locally: true
+  external_urls: []
+runnable_variants:
+- name: HERC2_rs12913832
+  gene: HERC2
+  summary: Main HERC2 eye-color SNP.
+  rsids:
+  - rs12913832
+  - rs60078917
+  kind: snv
+  ref: A
+  alts:
+  - G
+  deletion_length: null
+  grch37:
+    chrom: '15'
+    pos: 28365618
+  grch38:
+    chrom: '15'
+    pos: 28120472
+  note: Associated with lighter eye color in the bundled HERC2 example.
+  fields:
+    rsid: rs12913832
+    grch37: 15:28365618-28365618
+    grch38: 15:28120472-28120472
+    ref: A
+    alt: G
+    kind: snp
+unsupported_variants: []

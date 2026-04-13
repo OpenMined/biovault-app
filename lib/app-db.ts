@@ -50,6 +50,7 @@ function ensureSchema(db: SQLiteDatabase) {
 			input_document_id TEXT,
 			input_label TEXT NOT NULL,
 			is_preview INTEGER NOT NULL DEFAULT 0,
+			outcome TEXT,
 			ran_at TEXT NOT NULL,
 			unsupported_variants_json TEXT
 		);
@@ -78,6 +79,10 @@ function ensureSchema(db: SQLiteDatabase) {
 
 	if (!testRunColumns.includes('unsupported_variants_json')) {
 		db.execSync('ALTER TABLE test_runs ADD COLUMN unsupported_variants_json TEXT;')
+	}
+
+	if (!testRunColumns.includes('outcome')) {
+		db.execSync('ALTER TABLE test_runs ADD COLUMN outcome TEXT;')
 	}
 
 	const testResultColumns = db

@@ -1,9 +1,11 @@
 import { Asset } from 'expo-asset'
+import type { AssayManifest } from '@/lib/assay-manifests'
+import { ALLOWED_ASSAY_OUTCOMES, ASSAY_OUTCOME_FIELD } from '@/lib/assay-result-schema'
 import { BUILT_IN_SAMPLE_DOCUMENT_ID } from '@/lib/home-import'
 import type { HomeImportedDocument } from '@/lib/home-import'
 import { prepareSampleGenomeImport } from '@/lib/genome-import'
-import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
-import type { StoredTestResultRow, StoredTestRun, TestResultStatus } from '@/lib/test-results'
+import { getAvailableAssayManifestById } from '@/lib/assay-registry'
+import type { StoredTestResultRow, StoredTestRun, TestResultStatus, TestRunOutcome } from '@/lib/test-results'
 import { runAssay } from '@/modules/expo-bioscript'
 import { Directory, File, Paths } from 'expo-file-system'
 import { readAsStringAsync } from 'expo-file-system/legacy'
@@ -51,24 +53,34 @@ async function loadBundledAssetText(assetModuleId: number): Promise<string> {
 }
 
 async function getBundledAssayDefinition(slug: string): Promise<BundledAssayDefinition | null> {
-	const assay = getAvailableAssayManifestByIdSync(slug)
-	const bundledAssay = assay?.bundledAssay
-	if (!bundledAssay) {
+	const assay = await getAvailableAssayManifestById(slug)
+	const packageSource = assay?.packageSource
+	if (!packageSource) {
 		return null
 	}
 
-	const fileContents = Object.fromEntries(
-		await Promise.all(
-			Object.entries(bundledAssay.fileAssetModuleIds).map(async ([path, assetModuleId]) => [
-				path,
-				await loadBundledAssetText(assetModuleId),
-			])
-		)
-	)
+	const fileContents =
+		packageSource.type === 'bundled'
+			? Object.fromEntries(
+					await Promise.all(
+						Object.entries(packageSource.fileAssetModuleIds).map(async ([path, assetModuleId]) => [
+							path,
+							await loadBundledAssetText(assetModuleId),
+						])
+					)
+				)
+			: Object.fromEntries(
+					await Promise.all(
+						Object.entries(packageSource.fileUris).map(async ([path, fileUri]) => [
+							path,
+							await readAsStringAsync(fileUri),
+						])
+					)
+				)
 
 	return {
-		assayPath: bundledAssay.assayPath,
-		assayContents: await loadBundledAssetText(bundledAssay.assayAssetModuleId),
+		assayPath: packageSource.assayPath,
+		assayContents: fileContents[packageSource.assayPath] ?? '',
 		fileContents,
 	}
 }
@@ -194,6 +206,23 @@ function normalizeBioscriptRows(rows: Array<Record<string, string>>): StoredTest
 	}))
 }
 
+function normalizeOutcome(value: string | undefined): TestRunOutcome | undefined {
+	if (value && ALLOWED_ASSAY_OUTCOMES.has(value)) {
+		return value
+	}
+	return undefined
+}
+
+function extractOutcome(rows: Array<Record<string, string>>, normalizedRows: StoredTestResultRow[]): TestRunOutcome {
+	const explicitOutcome = rows.map((row) => normalizeOutcome(row[ASSAY_OUTCOME_FIELD])).find(Boolean)
+	if (explicitOutcome) {
+		return explicitOutcome
+	}
+	throw new Error(
+		`Assay output is missing required '${ASSAY_OUTCOME_FIELD}' field for all ${normalizedRows.length} result rows.`
+	)
+}
+
 async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocument | null) {
 	const assayPackage = await getBundledAssayDefinition(slug)
 	if (!assayPackage) {
@@ -219,9 +248,12 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 		})
 
 		const output = result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? ''
+		const parsedRows = parseDelimited(output)
+		const normalizedRows = normalizeBioscriptRows(parsedRows)
 		return {
 			inputLabel: input.inputLabel,
-			rows: normalizeBioscriptRows(parseDelimited(output)),
+			outcome: extractOutcome(parsedRows, normalizedRows),
+			rows: normalizedRows,
 			unsupportedVariants: result.assay?.unsupportedVariants ?? [],
 		}
 	}
@@ -238,7 +270,7 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 	const bioscriptRoot = toNativePath(bioscriptDirectory.uri)
 	const runtimeInputFile = `inputs/${sanitizeFileName(input.inputLabel)}`
 	const outputFile = new File(bioscriptDirectory, 'assay-output.tsv')
-	await runAssay({
+	const result = await runAssay({
 		assayPath: assayPackage.assayPath,
 		assayContents: assayPackage.assayContents,
 		fileContents: assayPackage.fileContents,
@@ -256,60 +288,31 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 	})
 
 	const output = await readAsStringAsync(outputFile.uri)
+	const parsedRows = parseDelimited(output)
+	const normalizedRows = normalizeBioscriptRows(parsedRows)
 	return {
 		inputLabel: input.inputLabel,
-		rows: normalizeBioscriptRows(parseDelimited(output)),
-		unsupportedVariants: [],
+		outcome: extractOutcome(parsedRows, normalizedRows),
+		rows: normalizedRows,
+		unsupportedVariants: result.assay?.unsupportedVariants ?? [],
 	}
-}
-
-function buildPreviewRows(slug: string): StoredTestResultRow[] {
-	const assay = getAvailableAssayManifestByIdSync(slug)
-	if (!assay) {
-		return []
-	}
-
-	return assay.variantExamples.flatMap((group) =>
-		group.items.map((item) => ({
-			gene: group.gene,
-			label: item.rsid ?? item.id,
-			rsid: item.rsid,
-			location: item.location,
-			kind: item.kind,
-			status: item.status,
-			note: item.note,
-			ref: item.ref,
-			alts: item.alts,
-		}))
-	)
 }
 
 export async function runTest(slug: string, importedDocument: HomeImportedDocument | null) {
-	const assay = getAvailableAssayManifestByIdSync(slug)
+	const assay = await getAvailableAssayManifestById(slug)
 	if (!assay) {
 		throw new Error('Assay not found.')
 	}
 
-	if (assay.runMode === 'package') {
-		const result = await runBioscriptTest(slug, importedDocument)
-		const run: StoredTestRun = {
-			inputDocumentId: importedDocument?.id ?? null,
-			slug,
-			ranAt: new Date().toISOString(),
-			inputLabel: result.inputLabel,
-			isPreview: false,
-			rows: result.rows,
-			unsupportedVariants: result.unsupportedVariants,
-		}
-		return run
-	}
-
+	const result = await runBioscriptTest(slug, importedDocument)
 	return {
 		inputDocumentId: importedDocument?.id ?? null,
 		slug,
 		ranAt: new Date().toISOString(),
-		inputLabel: importedDocument?.name ?? 'Bundled preview data',
-		isPreview: true,
-		rows: buildPreviewRows(slug),
+		inputLabel: result.inputLabel,
+		isPreview: false,
+		outcome: result.outcome,
+		rows: result.rows,
+		unsupportedVariants: result.unsupportedVariants,
 	}
 }
