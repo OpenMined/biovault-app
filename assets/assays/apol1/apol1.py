@@ -75,6 +75,16 @@ def classify_apol1(site1, site2, g2):
     return "G0/G0"
 
 
+def assay_outcome(site1, site2, g2, status):
+    if site1 is None and site2 is None and g2 is None:
+        return "missing"
+    if site1 is None or site2 is None or g2 is None:
+        return "partial"
+    if status == "G0/G0":
+        return "normal"
+    return "matched"
+
+
 def row_status(observed, ref):
     if observed is None:
         return "missing"
@@ -94,6 +104,7 @@ def main():
     site2 = genotypes.lookup_variant(G1_SITE_2)
     g2 = genotypes.lookup_variant(G2_SITE)
     status = classify_apol1(site1, site2, g2)
+    outcome = assay_outcome(site1, site2, g2, status)
 
     rows = [
         {
@@ -104,6 +115,7 @@ def main():
             "kind": "SNV",
             "observed": site1,
             "row_status": row_status(site1, "A"),
+            "assay_outcome": outcome,
             "summary": status,
         },
         {
@@ -114,6 +126,7 @@ def main():
             "kind": "SNV",
             "observed": site2,
             "row_status": row_status(site2, "T"),
+            "assay_outcome": outcome,
             "summary": status,
         },
         {
@@ -124,6 +137,7 @@ def main():
             "kind": "INDEL",
             "observed": g2,
             "row_status": row_status(g2, "I"),
+            "assay_outcome": outcome,
             "summary": status,
         },
     ]

@@ -1,5 +1,5 @@
 import type { AssayManifest } from '@/lib/assay-manifests'
-import type { StoredTestRun, TestResultStatus } from '@/lib/test-results'
+import type { StoredTestRun, TestResultStatus, TestRunOutcome } from '@/lib/test-results'
 
 export type AssayRunSummary = {
 	body: string
@@ -21,11 +21,11 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 		return null
 	}
 
+	const outcome = latestRun.outcome
 	const matchedRows = latestRun.rows.filter((row) => row.status === 'matched')
-	const normalRows = latestRun.rows.filter((row) => row.status === 'normal')
 	const missingRows = latestRun.rows.filter((row) => row.status === 'missing')
 
-	if (matchedRows.length > 0) {
+	if (outcome === 'matched') {
 		return {
 			headline: assay.interpretation.matched.headline,
 			body: assay.interpretation.matched.body,
@@ -39,7 +39,7 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 		}
 	}
 
-	if (normalRows.length > 0 && missingRows.length === 0) {
+	if (outcome === 'normal') {
 		return {
 			headline: assay.interpretation.normal.headline,
 			body: assay.interpretation.normal.body,
@@ -47,7 +47,7 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 		}
 	}
 
-	if (missingRows.length > 0 && normalRows.length === 0) {
+	if (outcome === 'missing') {
 		return {
 			headline: assay.interpretation.missing.headline,
 			body: assay.interpretation.missing.body,

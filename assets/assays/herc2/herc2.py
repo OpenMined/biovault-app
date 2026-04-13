@@ -31,6 +31,7 @@ def main():
         "kind": "SNV",
         "observed": observed,
         "row_status": row_status,
+        "assay_outcome": row_status,
         "eye_color": eye_color,
     }]
     bioscript.write_tsv(output_file, rows)

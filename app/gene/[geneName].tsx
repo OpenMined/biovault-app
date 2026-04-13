@@ -143,7 +143,6 @@ export default function GeneDetailScreen() {
 				}
 			}
 
-			// SQLite-backed fallback is temporarily disabled.
 			setVariants([])
 			setUserMatches([])
 		} catch (error) {
