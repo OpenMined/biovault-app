@@ -1,0 +1,37 @@
+name: "APOL1_G2"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "APOL1"
+summary: "APOL1 G2 six-base deletion."
+
+identifiers:
+  rsids:
+    - "rs71785313"
+    - "rs1317778148"
+    - "rs143830837"
+  aliases: []
+
+coordinates:
+  grch37:
+    chrom: "22"
+    start: 36662046
+    end: 36662051
+  grch38:
+    chrom: "22"
+    start: 36266000
+    end: 36266005
+
+alleles:
+  kind: "deletion"
+  ref: "I"
+  alts:
+    - "D"
+  canonical_alt: "D"
+  deletion_length: 6
+  motifs:
+    - "TTATAA"
+    - "ATAATT"
+
+findings:
+  - alt: "D"
+    notes: "APOL1 G2 defining deletion."

@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd modules/expo-biovault/rust
-
-# Enforce formatting
+cd bioscript/rust
 cargo fmt --all
-
-# Lint everything (lib, bins, tests, benches, examples), treat warnings as errors
-cargo clippy --fix --allow-dirty --all-targets --all-features --no-deps -- -D warnings
+cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --no-deps -- -D warnings

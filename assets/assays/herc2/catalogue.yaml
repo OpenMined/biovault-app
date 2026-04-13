@@ -1,0 +1,9 @@
+schema: "bioscript:catalogue"
+version: "1.0"
+catalogue_id: "herc2-eye-color"
+label: "HERC2 Eye Color"
+
+variants:
+  - id: "HERC2_rs12913832"
+    path: "variants/rs12913832.yaml"
+    version: "1.0"

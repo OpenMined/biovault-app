@@ -7,6 +7,7 @@ JNI_LIBS_DIR="$ANDROID_DIR/src/main/jniLibs"
 CARGO_HOME_DIR="${CARGO_HOME:-/tmp/expo-bioscript-cargo}"
 SDK_ROOT_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 APP_ANDROID_LOCAL_PROPERTIES="$ROOT_DIR/../../android/local.properties"
+OUTPUT_LIBRARY_NAME="libbioscript_ffi.so"
 
 if [ -n "${BIOSCRIPT_ROOT:-}" ]; then
   RESOLVED_BIOSCRIPT_ROOT="$BIOSCRIPT_ROOT"
@@ -90,9 +91,13 @@ for ABI in "$@"; do
   NDK_ARGS="$NDK_ARGS -t $ABI"
 done
 
-mkdir -p "$CARGO_HOME_DIR" "$JNI_LIBS_DIR"
-find "$JNI_LIBS_DIR" -name 'libbioscript.so' -delete
+mkdir -p "$CARGO_HOME_DIR"
+rm -rf "$JNI_LIBS_DIR"
+mkdir -p "$JNI_LIBS_DIR"
 
 cd "$RUST_WORKSPACE_DIR"
 # shellcheck disable=SC2086
 CARGO_HOME="$CARGO_HOME_DIR" cargo ndk $NDK_ARGS -o "$JNI_LIBS_DIR" build --manifest-path "$RUST_MANIFEST" --release
+
+find "$JNI_LIBS_DIR" -type f ! -name "$OUTPUT_LIBRARY_NAME" -delete
+find "$JNI_LIBS_DIR" -type d -empty -delete

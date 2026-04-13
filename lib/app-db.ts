@@ -50,7 +50,8 @@ function ensureSchema(db: SQLiteDatabase) {
 			input_document_id TEXT,
 			input_label TEXT NOT NULL,
 			is_preview INTEGER NOT NULL DEFAULT 0,
-			ran_at TEXT NOT NULL
+			ran_at TEXT NOT NULL,
+			unsupported_variants_json TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS test_result_rows (
@@ -70,6 +71,14 @@ function ensureSchema(db: SQLiteDatabase) {
 		CREATE INDEX IF NOT EXISTS idx_test_runs_input_document_id_ran_at ON test_runs (input_document_id, ran_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_test_result_rows_run_id ON test_result_rows (run_id);
 	`)
+
+	const testRunColumns = db
+		.getAllSync<{ name: string }>('PRAGMA table_info(test_runs)')
+		.map((column) => column.name)
+
+	if (!testRunColumns.includes('unsupported_variants_json')) {
+		db.execSync('ALTER TABLE test_runs ADD COLUMN unsupported_variants_json TEXT;')
+	}
 
 	const testResultColumns = db
 		.getAllSync<{ name: string }>('PRAGMA table_info(test_result_rows)')

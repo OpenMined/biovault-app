@@ -1,0 +1,29 @@
+name: "HERC2_rs12913832"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "HERC2"
+summary: "Main HERC2 eye-color SNP."
+
+identifiers:
+  rsids:
+    - "rs12913832"
+    - "rs60078917"
+  aliases: []
+
+coordinates:
+  grch37:
+    chrom: "15"
+    pos: 28365618
+  grch38:
+    chrom: "15"
+    pos: 28120472
+
+alleles:
+  kind: "snv"
+  ref: "A"
+  alts:
+    - "G"
+
+findings:
+  - alt: "G"
+    notes: "Associated with lighter eye color in the bundled HERC2 example."

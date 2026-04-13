@@ -113,7 +113,7 @@ export default function TestDetailScreen() {
 		[assay, latestRun]
 	)
 	const canRun = useSampleInput || !!selectedDocument
-	const runButtonLabel = isRunning ? 'Running...' : canRun ? (latestRun ? 'Run again' : 'Run test') : 'Select a file to run'
+	const runButtonLabel = isRunning ? 'Running...' : canRun ? (latestRun ? 'Run again' : 'Run assay') : 'Select a file to run'
 	const shouldPrioritizeResults = params.showResults === 'true' && !!latestRun
 
 	const handleRun = () => {
@@ -137,13 +137,13 @@ export default function TestDetailScreen() {
 
 				if (run.isPreview) {
 					Alert.alert(
-						'Preview run saved',
-						'This test still uses bundled preview rows. Its legacy classifier needs to be ported into the current expo-bioscript runtime.'
+						'Preview assay run saved',
+						'This assay still uses bundled preview rows. Its legacy classifier needs to be ported into the current expo-bioscript runtime.'
 					)
 				}
 			} catch (error) {
-				const message = error instanceof Error ? error.message : 'Unable to run test.'
-				Alert.alert('Run failed', message)
+				const message = error instanceof Error ? error.message : 'Unable to run assay.'
+				Alert.alert('Assay run failed', message)
 			} finally {
 				setIsRunning(false)
 			}
@@ -155,12 +155,12 @@ export default function TestDetailScreen() {
 			<SafeAreaView style={styles.safeArea}>
 				<View style={styles.emptyState}>
 					<OMText variant="h4" style={styles.emptyTitle}>
-						Test not found
+						Assay not found
 					</OMText>
 					<OMText variant="body" style={styles.emptyBody}>
-						This test route does not exist yet.
+						This assay route does not exist yet.
 					</OMText>
-					<Link href="/(tabs)/index" asChild>
+					<Link href="/" asChild>
 						<Pressable style={styles.backLink}>
 							<OMText variant="subtitle" style={styles.backLinkText}>
 								Back to Home
@@ -296,7 +296,7 @@ export default function TestDetailScreen() {
 					) : null}
 
 					<OMText variant="caption" style={styles.runMeta}>
-						Execution mode: {assay.runMode === 'bioscript' ? 'Live Bioscript run' : 'Preview only'}
+						Execution mode: {assay.runMode === 'package' ? 'Live assay package run' : 'Preview only'}
 					</OMText>
 				</View>
 

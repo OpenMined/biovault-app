@@ -1,9 +1,0 @@
-{
-	"platforms": ["apple", "android"],
-	"apple": {
-		"modules": ["ExpoBiovaultModule"]
-	},
-	"android": {
-		"modules": ["expo.modules.biovault.ExpoBiovaultModule"]
-	}
-}

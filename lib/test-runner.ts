@@ -4,9 +4,9 @@ import type { HomeImportedDocument } from '@/lib/home-import'
 import { prepareSampleGenomeImport } from '@/lib/genome-import'
 import { getAvailableAssayManifestByIdSync } from '@/lib/assay-registry'
 import type { StoredTestResultRow, StoredTestRun, TestResultStatus } from '@/lib/test-results'
-import { runFile } from '@/modules/expo-bioscript'
+import { runAssay } from '@/modules/expo-bioscript'
 import { Directory, File, Paths } from 'expo-file-system'
-import { readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy'
+import { readAsStringAsync } from 'expo-file-system/legacy'
 import { Platform } from 'react-native'
 
 function sanitizeFileName(name: string): string {
@@ -15,36 +15,6 @@ function sanitizeFileName(name: string): string {
 
 function toNativePath(uri: string): string {
 	return uri.replace('file://', '')
-}
-
-function commonPathPrefix(paths: string[]): string {
-	if (paths.length === 0) {
-		throw new Error('No paths provided')
-	}
-
-	const splitPaths = paths.map((path) => path.split('/').filter(Boolean))
-	const prefix: string[] = []
-	const firstPath = splitPaths[0]
-
-	if (!firstPath) {
-		throw new Error('No paths provided')
-	}
-
-	for (let index = 0; ; index += 1) {
-		const segment = firstPath[index]
-		if (!segment) {
-			break
-		}
-
-		if (splitPaths.every((path) => path[index] === segment)) {
-			prefix.push(segment)
-			continue
-		}
-
-		break
-	}
-
-	return `/${prefix.join('/')}`
 }
 
 function toRelativePath(rootPath: string, fileUri: string): string {
@@ -58,10 +28,10 @@ function toRelativePath(rootPath: string, fileUri: string): string {
 	return nativePath.slice(normalizedRoot.length)
 }
 
-type ScriptDefinition = {
-	outputFile: string
-	scriptContents: string
-	scriptName: string
+type BundledAssayDefinition = {
+	assayContents: string
+	assayPath: string
+	fileContents: Record<string, string>
 }
 
 async function loadBundledAssetText(assetModuleId: number): Promise<string> {
@@ -80,19 +50,29 @@ async function loadBundledAssetText(assetModuleId: number): Promise<string> {
 	return readAsStringAsync(localUri)
 }
 
-async function getScriptDefinition(slug: string): Promise<ScriptDefinition | null> {
+async function getBundledAssayDefinition(slug: string): Promise<BundledAssayDefinition | null> {
 	const assay = getAvailableAssayManifestByIdSync(slug)
-	const bundledBioscript = assay?.bundledBioscript
-	if (!bundledBioscript) {
+	const bundledAssay = assay?.bundledAssay
+	if (!bundledAssay) {
 		return null
 	}
 
+	const fileContents = Object.fromEntries(
+		await Promise.all(
+			Object.entries(bundledAssay.fileAssetModuleIds).map(async ([path, assetModuleId]) => [
+				path,
+				await loadBundledAssetText(assetModuleId),
+			])
+		)
+	)
+
 	return {
-		scriptName: bundledBioscript.scriptName,
-		outputFile: bundledBioscript.outputFile,
-		scriptContents: await loadBundledAssetText(bundledBioscript.assetModuleId),
+		assayPath: bundledAssay.assayPath,
+		assayContents: await loadBundledAssetText(bundledAssay.assayAssetModuleId),
+		fileContents,
 	}
 }
+
 
 type ResolvedInput = {
 	contents: string
@@ -215,20 +195,21 @@ function normalizeBioscriptRows(rows: Array<Record<string, string>>): StoredTest
 }
 
 async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocument | null) {
-	const script = await getScriptDefinition(slug)
-	if (!script) {
-		throw new Error('No executable Bioscript definition exists for this test yet.')
+	const assayPackage = await getBundledAssayDefinition(slug)
+	if (!assayPackage) {
+		throw new Error('No executable assay package exists for this assay yet.')
 	}
 
 	const input = await getResolvedInput(importedDocument)
 
 	if (Platform.OS === 'web') {
-		const result = await runFile({
-			scriptPath: script.scriptName,
-			scriptContents: script.scriptContents,
+		const result = await runAssay({
+			assayPath: assayPackage.assayPath,
+			assayContents: assayPackage.assayContents,
+			fileContents: assayPackage.fileContents,
 			inputFile: input.inputLabel,
 			inputContents: input.contents,
-			outputFile: script.outputFile,
+			outputFile: 'assay-output.tsv',
 			participantId: sanitizeFileName(input.inputLabel),
 			inputFormat: 'text',
 			maxDurationMs: 60_000,
@@ -237,14 +218,14 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 			maxRecursionDepth: 512,
 		})
 
-		const output = result.outputText ?? result.outputFiles?.[script.outputFile] ?? ''
+		const output = result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? ''
 		return {
 			inputLabel: input.inputLabel,
 			rows: normalizeBioscriptRows(parseDelimited(output)),
+			unsupportedVariants: result.assay?.unsupportedVariants ?? [],
 		}
 	}
 
-	const bioscriptRoot = commonPathPrefix([toNativePath(Paths.document.uri), toNativePath(Paths.cache.uri)])
 	const bioscriptDirectory = new Directory(Paths.document, 'bioscript-tests')
 	if (!bioscriptDirectory.exists) {
 		bioscriptDirectory.create({ idempotent: true, intermediates: true })
@@ -254,14 +235,16 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 		cacheDirectory.create({ idempotent: true, intermediates: true })
 	}
 
-	const scriptFile = new File(bioscriptDirectory, script.scriptName)
-	const outputFile = new File(bioscriptDirectory, script.outputFile)
-	await writeAsStringAsync(scriptFile.uri, script.scriptContents)
-
-	await runFile({
-		scriptPath: toNativePath(scriptFile.uri),
+	const bioscriptRoot = toNativePath(bioscriptDirectory.uri)
+	const runtimeInputFile = `inputs/${sanitizeFileName(input.inputLabel)}`
+	const outputFile = new File(bioscriptDirectory, 'assay-output.tsv')
+	await runAssay({
+		assayPath: assayPackage.assayPath,
+		assayContents: assayPackage.assayContents,
+		fileContents: assayPackage.fileContents,
 		root: bioscriptRoot,
-		inputFile: toRelativePath(bioscriptRoot, input.uri!),
+		inputFile: runtimeInputFile,
+		inputContents: input.contents,
 		outputFile: toRelativePath(bioscriptRoot, outputFile.uri),
 		participantId: sanitizeFileName(input.inputLabel),
 		autoIndex: true,
@@ -276,6 +259,7 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 	return {
 		inputLabel: input.inputLabel,
 		rows: normalizeBioscriptRows(parseDelimited(output)),
+		unsupportedVariants: [],
 	}
 }
 
@@ -303,10 +287,10 @@ function buildPreviewRows(slug: string): StoredTestResultRow[] {
 export async function runTest(slug: string, importedDocument: HomeImportedDocument | null) {
 	const assay = getAvailableAssayManifestByIdSync(slug)
 	if (!assay) {
-		throw new Error('Test not found.')
+		throw new Error('Assay not found.')
 	}
 
-	if (assay.runMode === 'bioscript') {
+	if (assay.runMode === 'package') {
 		const result = await runBioscriptTest(slug, importedDocument)
 		const run: StoredTestRun = {
 			inputDocumentId: importedDocument?.id ?? null,
@@ -315,6 +299,7 @@ export async function runTest(slug: string, importedDocument: HomeImportedDocume
 			inputLabel: result.inputLabel,
 			isPreview: false,
 			rows: result.rows,
+			unsupportedVariants: result.unsupportedVariants,
 		}
 		return run
 	}

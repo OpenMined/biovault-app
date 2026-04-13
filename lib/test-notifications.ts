@@ -22,6 +22,6 @@ export async function scheduleTestFinishedNotification(testTitle: string, slug: 
 			trigger: null,
 		})
 	} catch (error) {
-		console.error('Failed to schedule test completion notification:', error)
+		console.error('Failed to schedule assay completion notification:', error)
 	}
 }

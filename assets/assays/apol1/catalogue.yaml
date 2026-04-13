@@ -1,0 +1,15 @@
+schema: "bioscript:catalogue"
+version: "1.0"
+catalogue_id: "apol1-risk"
+label: "APOL1 Risk Classifier"
+
+variants:
+  - id: "APOL1_G1_rs73885319"
+    path: "variants/rs73885319.yaml"
+    version: "1.0"
+  - id: "APOL1_G1_rs60910145"
+    path: "variants/rs60910145.yaml"
+    version: "1.0"
+  - id: "APOL1_G2"
+    path: "variants/g2.yaml"
+    version: "1.0"

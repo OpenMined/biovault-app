@@ -339,7 +339,8 @@ function writeTsv(context: RuntimeContext, path: string, rows: unknown): null {
   const normalizedRows = normalizeRows(rows);
   let output = '';
   if (normalizedRows.length > 0) {
-    const headers = Object.keys(normalizedRows[0]);
+    const firstRow = normalizedRows[0]!;
+    const headers = Object.keys(firstRow);
     output += `${headers.join('\t')}\n`;
     for (const row of normalizedRows) {
       output += `${headers.map((header) => stringifyValue(row[header])).join('\t')}\n`;
@@ -414,17 +415,19 @@ function parseDelimitedGenotypes(content: string): GenotypeStore {
     return { values };
   }
 
-  const delimiter = chooseDelimiter(dataLines[0]);
+  const firstLine = dataLines[0]!;
+  const delimiter = chooseDelimiter(firstLine);
   let headerMap: Record<string, number> | null = null;
   let startIndex = 0;
-  const maybeHeader = splitDelimitedLine(dataLines[0], delimiter).map((value) => value.trim().toLowerCase());
+  const maybeHeader = splitDelimitedLine(firstLine, delimiter).map((value) => value.trim().toLowerCase());
   if (looksLikeHeader(maybeHeader)) {
     headerMap = indexHeader(maybeHeader);
     startIndex = 1;
   }
 
   for (let index = startIndex; index < dataLines.length; index += 1) {
-    const parts = splitDelimitedLine(dataLines[index], delimiter).map((value) => value.trim());
+    const line = dataLines[index]!;
+    const parts = splitDelimitedLine(line, delimiter).map((value) => value.trim());
     if (parts.length === 0) {
       continue;
     }

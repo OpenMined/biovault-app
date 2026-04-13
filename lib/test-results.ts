@@ -1,5 +1,6 @@
 import { getAppDb } from '@/lib/app-db'
 import { getTestBySlug } from '@/lib/test-catalog'
+import type { UnsupportedAssayVariant } from '@/modules/expo-bioscript'
 
 export type TestResultStatus = 'matched' | 'normal' | 'missing'
 
@@ -23,6 +24,7 @@ export type StoredTestRun = {
 	ranAt: string
 	rows: StoredTestResultRow[]
 	slug: string
+	unsupportedVariants?: UnsupportedAssayVariant[]
 }
 
 export type RecentTestRunSummary = {
@@ -43,6 +45,7 @@ type RunRowRecord = {
 	is_preview: number
 	ran_at: string
 	slug: string
+	unsupported_variants_json: string | null
 }
 
 type ResultRowRecord = {
@@ -72,12 +75,13 @@ export async function saveLatestTestRun(run: StoredTestRun) {
 
 	await db.withExclusiveTransactionAsync(async (txn) => {
 		const inserted = await txn.runAsync(
-			'INSERT INTO test_runs (slug, input_document_id, input_label, is_preview, ran_at) VALUES (?, ?, ?, ?, ?)',
+			'INSERT INTO test_runs (slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json) VALUES (?, ?, ?, ?, ?, ?)',
 			run.slug,
 			run.inputDocumentId ?? null,
 			run.inputLabel,
 			run.isPreview ? 1 : 0,
-			run.ranAt
+			run.ranAt,
+			run.unsupportedVariants?.length ? JSON.stringify(run.unsupportedVariants) : null
 		)
 
 		const runId = inserted.lastInsertRowId
@@ -109,16 +113,16 @@ export async function loadLatestTestRun(
 	const run =
 		inputDocumentId === undefined
 			? await db.getFirstAsync<RunRowRecord>(
-					'SELECT id, slug, input_document_id, input_label, is_preview, ran_at FROM test_runs WHERE slug = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
+					'SELECT id, slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
 					slug
 				)
 			: inputDocumentId === null
 				? await db.getFirstAsync<RunRowRecord>(
-						'SELECT id, slug, input_document_id, input_label, is_preview, ran_at FROM test_runs WHERE slug = ? AND input_document_id IS NULL ORDER BY ran_at DESC, id DESC LIMIT 1',
+						'SELECT id, slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? AND input_document_id IS NULL ORDER BY ran_at DESC, id DESC LIMIT 1',
 						slug
 					)
 				: await db.getFirstAsync<RunRowRecord>(
-						'SELECT id, slug, input_document_id, input_label, is_preview, ran_at FROM test_runs WHERE slug = ? AND input_document_id = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
+						'SELECT id, slug, input_document_id, input_label, is_preview, ran_at, unsupported_variants_json FROM test_runs WHERE slug = ? AND input_document_id = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
 						slug,
 						inputDocumentId
 					)
@@ -142,6 +146,9 @@ export async function loadLatestTestRun(
 		inputLabel: run.input_label,
 		isPreview: run.is_preview === 1,
 		ranAt: run.ran_at,
+		unsupportedVariants: run.unsupported_variants_json
+			? safelyParseUnsupportedVariantsJson(run.unsupported_variants_json)
+			: undefined,
 		rows: rows.map((row) => ({
 			gene: row.gene,
 			label: row.label,
@@ -160,6 +167,25 @@ function safelyParseAltJson(value: string): string[] | undefined {
 	try {
 		const parsed = JSON.parse(value)
 		return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : undefined
+	} catch {
+		return undefined
+	}
+}
+
+function safelyParseUnsupportedVariantsJson(value: string): UnsupportedAssayVariant[] | undefined {
+	try {
+		const parsed = JSON.parse(value)
+		if (!Array.isArray(parsed)) {
+			return undefined
+		}
+		return parsed.filter(
+			(item): item is UnsupportedAssayVariant =>
+				!!item &&
+				typeof item === 'object' &&
+				typeof (item as UnsupportedAssayVariant).variantName === 'string' &&
+				typeof (item as UnsupportedAssayVariant).target === 'string' &&
+				typeof (item as UnsupportedAssayVariant).reason === 'string'
+		)
 	} catch {
 		return undefined
 	}

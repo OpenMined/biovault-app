@@ -2,7 +2,7 @@ export type AssayDiscoverCategory = 'traits' | 'ancestry' | 'pgx' | 'health-risk
 
 export type AssayCatalogCategory = 'traits' | 'clinical' | 'research'
 
-export type AssayRunMode = 'bioscript' | 'preview'
+export type AssayRunMode = 'package' | 'preview'
 
 export type AssayPrivacyLabel = {
 	externalUrls: string[]
@@ -44,10 +44,10 @@ export type AssayResultSummary = {
 }
 
 export type AssayManifest = {
-	bundledBioscript?: {
-		assetModuleId: number
-		outputFile: string
-		scriptName: string
+	bundledAssay?: {
+		assayAssetModuleId: number
+		assayPath: string
+		fileAssetModuleIds: Record<string, number>
 	}
 	category: AssayDiscoverCategory
 	catalogCategory: AssayCatalogCategory
@@ -78,11 +78,16 @@ export const assayManifests: AssayManifest[] = [
 		subtitle:
 			'An eye-color example based on the existing HERC2 Bioscript classifier in the repo examples.',
 		description:
-			'This test looks at the main HERC2 signal used in the existing Bioscript eye-color example and turns it into a simple, local-first result view.',
-		bundledBioscript: {
-			assetModuleId: require('../assets/assays/herc2.txt'),
-			scriptName: 'herc2.py',
-			outputFile: 'herc2-output.tsv',
+			'This assay looks at the main HERC2 signal used in the existing Bioscript eye-color example and turns it into a simple, local-first result view.',
+		bundledAssay: {
+			assayAssetModuleId: require('../assets/assays/herc2/assay.yaml'),
+			assayPath: 'assets/assays/herc2/assay.yaml',
+			fileAssetModuleIds: {
+				'assets/assays/herc2/assay.yaml': require('../assets/assays/herc2/assay.yaml'),
+				'assets/assays/herc2/catalogue.yaml': require('../assets/assays/herc2/catalogue.yaml'),
+				'assets/assays/herc2/herc2.py': require('../assets/assays/herc2/herc2.py'),
+				'assets/assays/herc2/variants/rs12913832.yaml': require('../assets/assays/herc2/variants/rs12913832.yaml'),
+			},
 		},
 		compatibility: {
 			supportedExtensions: ['.txt', '.tsv', '.csv', '.zip', '.gz', '.bz2'],
@@ -92,12 +97,12 @@ export const assayManifests: AssayManifest[] = [
 				'This assay checks one main HERC2 site and may be missing from some file formats.',
 			],
 		},
-		files: ['bioscript/old/examples/herc2/classify_herc2.py'],
+		files: ['assets/assays/herc2/assay.yaml', 'assets/assays/herc2/catalogue.yaml', 'assets/assays/herc2/herc2.py'],
 		sources: ['Bundled Bioscript definition only'],
-		runMode: 'bioscript',
+		runMode: 'package',
 		privacy: {
 			runs: ['On device through expo-bioscript'],
-			reads: ['Your selected genomic file', 'Bundled HERC2 test definition'],
+			reads: ['Your selected genomic file', 'Bundled HERC2 assay definition'],
 			usesBundledFiles: ['Yes'],
 			externalUrls: [],
 			storesResults: 'Locally in the BioVault database after the run completes',
@@ -141,11 +146,18 @@ export const assayManifests: AssayManifest[] = [
 		subtitle:
 			'A real Bioscript script already lives in the repo and can run locally through expo-bioscript.',
 		description:
-			'This test checks the APOL1 G1 and G2 sites and derives an overall APOL1 status. It is the strongest current candidate for a true end-to-end local Bioscript run in the app.',
-		bundledBioscript: {
-			assetModuleId: require('../assets/assays/apol1.txt'),
-			scriptName: 'apol1.py',
-			outputFile: 'apol1-output.tsv',
+			'This assay checks the APOL1 G1 and G2 sites and derives an overall APOL1 status. It is the strongest current candidate for a true end-to-end local Bioscript run in the app.',
+		bundledAssay: {
+			assayAssetModuleId: require('../assets/assays/apol1/assay.yaml'),
+			assayPath: 'assets/assays/apol1/assay.yaml',
+			fileAssetModuleIds: {
+				'assets/assays/apol1/assay.yaml': require('../assets/assays/apol1/assay.yaml'),
+				'assets/assays/apol1/catalogue.yaml': require('../assets/assays/apol1/catalogue.yaml'),
+				'assets/assays/apol1/apol1.py': require('../assets/assays/apol1/apol1.py'),
+				'assets/assays/apol1/variants/rs73885319.yaml': require('../assets/assays/apol1/variants/rs73885319.yaml'),
+				'assets/assays/apol1/variants/rs60910145.yaml': require('../assets/assays/apol1/variants/rs60910145.yaml'),
+				'assets/assays/apol1/variants/g2.yaml': require('../assets/assays/apol1/variants/g2.yaml'),
+			},
 		},
 		compatibility: {
 			supportedExtensions: ['.txt', '.tsv', '.csv', '.zip', '.gz', '.bz2', '.vcf', '.vcf.gz', '.vcf.bz2'],
@@ -155,9 +167,9 @@ export const assayManifests: AssayManifest[] = [
 				'Deletion-based APOL1 G2 calls may be absent in some chip exports.',
 			],
 		},
-		files: ['bioscript/bioscripts/apol1.py'],
+		files: ['assets/assays/apol1/assay.yaml', 'assets/assays/apol1/catalogue.yaml', 'assets/assays/apol1/apol1.py'],
 		sources: ['Bundled Bioscript definition only'],
-		runMode: 'bioscript',
+		runMode: 'package',
 		privacy: {
 			runs: ['On device through expo-bioscript'],
 			reads: ['Your selected genomic file', 'Bundled APOL1 script'],
@@ -222,7 +234,7 @@ export const assayManifests: AssayManifest[] = [
 		subtitle:
 			'A legacy Bioscript example driven by a bundled ClinVar TSV. Good for the privacy label and row model, but not fully ported to expo-bioscript yet.',
 		description:
-			'This test is based on the older thalassemia example in the repo. It is useful for designing grouped variant output, but still needs its asset-driven classifier ported into the app runtime.',
+			'This assay is based on the older thalassemia example in the repo. It is useful for designing grouped variant output, but still needs its asset-driven classifier ported into the app runtime.',
 		compatibility: {
 			supportedExtensions: ['.txt', '.tsv', '.csv', '.zip', '.gz', '.bz2', '.vcf', '.vcf.gz', '.vcf.bz2'],
 			supportedSources: ['chip', 'vcf', 'compressed-text'],

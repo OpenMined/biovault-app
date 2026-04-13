@@ -1,0 +1,43 @@
+schema: "bioscript:assay"
+version: "1.0"
+assay_id: "herc2_eye_color"
+label: "HERC2 Eye Color"
+summary: "Classify the main HERC2 eye-color signal from one defining site."
+
+metadata:
+  category: "traits"
+  tags:
+    - "herc2"
+    - "eye-color"
+  disclaimer: "Research use only. Not medical advice."
+
+package:
+  assay_version: "0.1.0"
+  source_of_truth: "script"
+
+compatibility:
+  works_with:
+    - "23andme"
+    - "wgs"
+    - "vcf"
+  assemblies:
+    - "grch37"
+    - "grch38"
+  notes: "Checks one major HERC2 eye-color signal."
+
+privacy:
+  mode: "local_only"
+  uploads_data: false
+  stores_results_locally: true
+  external_urls: []
+
+inputs:
+  catalogue: "catalogue.yaml"
+
+implementation:
+  kind: "script"
+  path: "herc2.py"
+  runtime: "bioscript"
+
+outputs:
+  format: "tsv"

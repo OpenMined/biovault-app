@@ -1,0 +1,24 @@
+name: "APOL1_G1_rs60910145"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "APOL1"
+summary: "APOL1 G1 site 2 SNV."
+
+identifiers:
+  rsids:
+    - "rs60910145"
+  aliases: []
+
+coordinates:
+  grch37:
+    chrom: "22"
+    pos: 36662034
+  grch38:
+    chrom: "22"
+    pos: 36265988
+
+alleles:
+  kind: "snv"
+  ref: "T"
+  alts:
+    - "G"
