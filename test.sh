@@ -1,31 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Simple test runner with fast/slow suites
-# Usage:
-#   ./test.sh            # fast (default)
-#   ./test.sh --fast     # fast only
-#   ./test.sh --slow     # slow only (features = slow-tests)
-#   ./test.sh --all      # both fast then slow
-
 MODE=${1:---fast}
 
-cd modules/expo-biovault/rust
+cd bioscript/rust
 
 echo "==> cargo fmt"
-cargo fmt
+cargo fmt --all
 
 echo "==> cargo clippy"
-cargo clippy --all-targets --all-features -q || true
+cargo clippy --workspace --all-targets --all-features -q || true
 
 run_fast() {
   echo "==> Running fast tests"
-  cargo test
+  cargo test --workspace
 }
 
 run_slow() {
   echo "==> Running slow tests (ignored only)"
-  BIOVAULT_NONINTERACTIVE=1 cargo test -- --ignored
+  cargo test --workspace -- --ignored
 }
 
 case "$MODE" in

@@ -1,2 +1,2 @@
 #!/bin/bash
-cargo run --manifest-path ./modules/expo-biovault/rust/Cargo.toml "$@"
+cargo run --manifest-path ./bioscript/rust/bioscript-cli/Cargo.toml "$@"

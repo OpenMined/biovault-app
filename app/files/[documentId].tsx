@@ -121,7 +121,7 @@ export default function ImportedFileScreen() {
 							</Pressable>
 						</View>
 						<OMText variant="body" style={styles.body}>
-							Review recent results for this file here. To run a test, browse assays from Explore and
+							Review recent assay results for this file here. To run an assay, browse assays from Explore and
 							select this file there.
 						</OMText>
 					</View>

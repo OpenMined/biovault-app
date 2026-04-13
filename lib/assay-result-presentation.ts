@@ -32,11 +32,13 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 					? assay.resultSummary.matchHeadlineSingular
 					: assay.resultSummary.matchHeadlinePlural ?? assay.resultSummary.matchHeadlineSingular,
 			body: assay.resultSummary.matchBody,
-			caveat:
+			caveat: summarizeCaveat(
 				missingRows.length > 0
 					? assay.resultSummary.matchCaveat ??
 						`${missingRows.length} expected checks were missing from the file, so this is a partial result.`
 					: assay.resultSummary.matchCaveat ?? null,
+				latestRun.unsupportedVariants?.length ?? 0
+			),
 		}
 	}
 
@@ -44,7 +46,7 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 		return {
 			headline: assay.resultSummary.normalHeadline,
 			body: assay.resultSummary.normalBody,
-			caveat: null,
+			caveat: summarizeCaveat(null, latestRun.unsupportedVariants?.length ?? 0),
 		}
 	}
 
@@ -52,17 +54,35 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 		return {
 			headline: assay.resultSummary.missingHeadline,
 			body: assay.resultSummary.missingBody,
-			caveat: assay.resultSummary.missingCaveat ?? 'Try a different file or a whole-genome format if you have one.',
+			caveat: summarizeCaveat(
+				assay.resultSummary.missingCaveat ?? 'Try a different file or a whole-genome format if you have one.',
+				latestRun.unsupportedVariants?.length ?? 0
+			),
 		}
 	}
 
 	return {
 		headline: assay.resultSummary.partialHeadline,
 		body: assay.resultSummary.partialBody,
-		caveat:
+		caveat: summarizeCaveat(
 			assay.resultSummary.partialCaveat ??
-			(missingRows.length > 0 ? `${missingRows.length} rows were missing from the file.` : null),
+				(missingRows.length > 0 ? `${missingRows.length} rows were missing from the file.` : null),
+			latestRun.unsupportedVariants?.length ?? 0
+		),
 	}
+}
+
+function summarizeCaveat(base: string | null, unsupportedCount: number): string | null {
+	if (unsupportedCount <= 0) {
+		return base
+	}
+
+	const runtimeNote =
+		unsupportedCount === 1
+			? '1 assay member could not be executed on this device runtime yet.'
+			: `${unsupportedCount} assay members could not be executed on this device runtime yet.`
+
+	return base ? `${base} ${runtimeNote}` : runtimeNote
 }
 
 export function groupTestResultRows(latestRun: StoredTestRun | null): GeneGroupedResultRows {

@@ -11,8 +11,7 @@ Pod::Spec.new do |s|
   s.author = package['author']
   s.homepage = package['homepage']
   s.platforms = {
-    :ios => '15.1',
-    :tvos => '15.1'
+    :ios => '15.1'
   }
   s.swift_version = '5.9'
   s.source = { :git => 'https://github.com/OpenMined/biovault-app.git' }
@@ -26,8 +25,8 @@ Pod::Spec.new do |s|
     set -e
     sh ../scripts/build-rust-ios.sh
   CMD
-  s.vendored_libraries = 'Artifacts/*.a'
+  s.vendored_frameworks = 'Artifacts/BioscriptFFI.xcframework'
 
   s.source_files = 'ExpoBioscriptModule.swift'
-  s.preserve_paths = '../../bioscript/rust/**/*', '../scripts/**/*', 'Artifacts/*.a'
+  s.preserve_paths = '../../bioscript/rust/**/*', '../scripts/**/*', 'Artifacts/BioscriptFFI.xcframework', 'Artifacts/include/**/*'
 end

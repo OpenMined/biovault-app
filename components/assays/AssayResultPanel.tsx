@@ -62,6 +62,30 @@ export function AssayResultPanel({
 				what the file did not cover.
 			</OMText>
 
+			{latestRun.unsupportedVariants?.length ? (
+				<View style={styles.unsupportedCard}>
+					<OMText variant="subtitle" style={styles.unsupportedTitle}>
+						Not run by current runtime ({latestRun.unsupportedVariants.length})
+					</OMText>
+					<OMText variant="caption" style={styles.unsupportedBody}>
+						These assay members are part of the package, but the current on-device BioScript runtime cannot execute them yet.
+					</OMText>
+					{latestRun.unsupportedVariants.map((item) => (
+						<View key={`${item.variantName}-${item.target}`} style={styles.unsupportedRow}>
+							<OMText variant="caption" style={styles.unsupportedVariantName}>
+								{item.variantName}
+							</OMText>
+							<OMText variant="caption" style={styles.unsupportedVariantMeta}>
+								{item.target}
+							</OMText>
+							<OMText variant="caption" style={styles.unsupportedVariantReason}>
+								{item.reason}
+							</OMText>
+						</View>
+					))}
+				</View>
+			) : null}
+
 			{groupedRows.map((geneGroup) => {
 				return (
 					<View key={geneGroup.gene} style={styles.geneGroup}>
@@ -164,6 +188,35 @@ const styles = StyleSheet.create({
 	},
 	panelBody: {
 		color: omColors.grayscale400,
+	},
+	unsupportedCard: {
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255, 196, 0, 0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(255, 196, 0, 0.18)',
+		gap: omSpacing.s,
+	},
+	unsupportedTitle: {
+		color: omTheme.primaryText,
+	},
+	unsupportedBody: {
+		color: omColors.grayscale300,
+	},
+	unsupportedRow: {
+		gap: omSpacing.xs,
+		paddingTop: omSpacing.xs,
+		borderTopWidth: 1,
+		borderTopColor: 'rgba(255,255,255,0.08)',
+	},
+	unsupportedVariantName: {
+		color: omTheme.primaryText,
+	},
+	unsupportedVariantMeta: {
+		color: omColors.grayscale400,
+	},
+	unsupportedVariantReason: {
+		color: omTheme.warningText,
 	},
 	summaryCard: {
 		padding: omSpacing.m,

@@ -10,7 +10,8 @@
   },
   "sideEffects": false,
   "dependencies": {
-    "@napi-rs/wasm-runtime": "^1.1.1"
+    "@napi-rs/wasm-runtime": "^1.1.1",
+    "yaml": "^2.8.3"
   },
   "files": [
     "src",

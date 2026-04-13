@@ -139,7 +139,7 @@ export default function ResultsScreen() {
 						<OMText variant="body" style={styles.emptyBody}>
 							{activeDocument
 								? 'No saved assay results match the selected file yet.'
-								: 'Run a test from Explore, Files, or a test detail screen and it will appear here.'}
+								: 'Run an assay from Explore, Files, or an assay detail screen and it will appear here.'}
 						</OMText>
 					</View>
 				)}

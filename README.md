@@ -115,206 +115,80 @@ Or this script:
 3. Open your browser to `http://localhost:8081` (or the port shown in terminal)
 4. The web version includes additional tabs not available on mobile
 
-## Rust Module Development
+## Rust Runtime Development
 
-This app includes a native Rust module (`modules/expo-biovault`) for high-performance genome file parsing.
+This app now uses the `expo-bioscript` native module plus the shared `bioscript` workspace checked into `./bioscript`.
 
-### Prerequisites for Rust Development
+### What lives where
 
-- **Rust toolchain**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **iOS development**: Xcode and iOS targets
-- **Android development**: Android Studio, NDK, and Android targets
+- `modules/expo-bioscript/`
+  - Expo native wrapper used by the app
+  - builds iOS/Android artifacts from the shared BioScript FFI crate
+- `bioscript/rust/`
+  - shared Rust workspace
+  - contains `bioscript-cli`, `bioscript-ffi`, `bioscript-runtime`, and related crates
 
-### Setting Up Rust Targets
+### Building native BioScript artifacts
 
-```bash
-# iOS targets
-rustup target add aarch64-apple-ios          # iOS device
-rustup target add aarch64-apple-ios-sim      # iOS simulator
+Prerequisites:
 
-# Android targets
-rustup target add aarch64-linux-android      # Android ARM64
-cargo install cargo-ndk                      # Android NDK helper
-```
+- Rust toolchain
+- Xcode and iOS targets for iOS development
+- Android SDK/NDK and Rust Android targets for Android development
 
-### Building Rust Libraries
-
-**For iOS Simulator (development)**:
+Install Rust targets:
 
 ```bash
-npm run cargo-ios -- --target='ios-sim'
+rustup target add aarch64-apple-ios
+rustup target add aarch64-apple-ios-sim
+rustup target add aarch64-linux-android
+rustup target add x86_64-linux-android
+cargo install cargo-ndk
 ```
 
-**For iOS Device**:
+Build iOS artifacts for `expo-bioscript`:
 
 ```bash
-npm run cargo-ios -- --target='ios'
+npm run cargo-ios
 ```
 
-**For Android**:
+Build Android artifacts for `expo-bioscript`:
 
 ```bash
 npm run cargo-android
 ```
 
-### Android NDK Setup
+The build scripts resolve the shared BioScript workspace from `./bioscript` by default.
+If needed, you can override that with `BIOSCRIPT_ROOT=/path/to/bioscript`.
 
-The Android build requires NDK configuration. Install via Android Studio:
+### Shared Rust workspace commands
 
-- Android Studio → SDK Manager → SDK Tools → NDK (Side by side)
+Run workspace tests:
 
-The build scripts automatically configure the NDK toolchain.
-
-### Module Structure
-
-```
-modules/expo-biovault/
-├── expo-module.config.json     # Module configuration
-├── index.ts                    # JS exports
-├── src/
-│   └── ExpoBiovaultModule.ts    # TypeScript definitions
-├── ios/
-│   ├── ExpoBiovault.podspec     # iOS CocoaPods spec
-│   ├── ExpoBiovaultModule.swift # iOS native implementation
-│   └── rust/                   # iOS Rust libraries (auto-generated)
-└── android/
-    ├── build.gradle
-    ├── src/main/
-    │   ├── java/.../ExpoBiovaultModule.kt  # Android native implementation
-    │   └── jniLibs/                        # Android Rust libraries (auto-generated)
-    └── AndroidManifest.xml
+```bash
+./test.sh --fast
 ```
 
-### Adding New Rust Functions
+Run coverage:
 
-1. **Add to Rust** (`modules/expo-biovault/rust/src/lib.rs`):
+```bash
+./coverage.sh
+```
 
-   ```rust
-   #[unsafe(no_mangle)]
-   pub extern "C" fn your_function(input: *const c_char) -> *mut c_char {
-       // Your implementation
-   }
-   ```
+Run clippy fixes:
 
-2. **Add iOS binding** (`modules/expo-biovault/ios/ExpoBiovaultModule.swift`):
+```bash
+./clippy.sh
+```
 
-   ```swift
-   @_silgen_name("your_function")
-   func your_function(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+Run the BioScript CLI directly:
 
-   AsyncFunction("yourFunction") { (input: String) -> String in
-       // Convert strings and call Rust function
-   }
-   ```
-
-3. **Add Android binding** (`modules/expo-biovault/android/.../ExpoBiovaultModule.kt`):
-
-   ```kotlin
-   external fun yourFunction(input: String): String
-
-   AsyncFunction("yourFunction") { input: String ->
-       yourFunction(input)
-   }
-   ```
-
-4. **Export from module** (`modules/expo-biovault/index.ts`):
-
-   ```typescript
-   export async function yourFunction(input: string): Promise<string> {
-   	return await ExpoBiovaultModule.yourFunction(input)
-   }
-   ```
-
-5. **Rebuild libraries**:
-   ```bash
-   npm run cargo-ios -- --target='ios-sim'  # or 'ios' for device
-   npm run cargo-android
-   ```
-
-### Troubleshooting
-
-**"Cannot find native module" error**:
-
-- Run `npx expo prebuild --clean` to regenerate native projects
-- For device testing, use `npx expo run:ios --device` (not Expo Dev Client)
-
-**iOS architecture mismatch**:
-
-- Use `--target='ios-sim'` for simulator
-- Use `--target='ios'` for device
-- The build scripts automatically copy the correct library
-
-**Android linking errors**:
-
-- Ensure NDK is installed via Android Studio
-- Check that `.so` files are in `android/src/main/jniLibs/arm64-v8a/`
-
-### Development Tools
-
-#### **Recommended Extensions**
-
-- [Radon Extension](https://ide.swmansion.com/) - Integrated simulator management for VS Code/Cursor
-- [Expo Orbit](https://expo.dev/orbit) - Desktop app for managing simulators and builds
-
+```bash
+./cli --help
+```
 
 ## Testing the Rust via CLI
-```
-./cli parse --file /Users/madhavajay/dev/sequencing.com/23andme/genome_Madhava_Jay_v4_Full_20250611034825.zip --output madhava
-```
-
-
-## Adding a new Rust method to the app
-
-Add your FFI
-```rust
-// lib.rs
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn process_23andme_file(
-```
-
-```swift
-// ExpoBioVaultModule.swift
-@_silgen_name("process_23andme_file")
-
-func process_23andme_file(_ inputPath: UnsafePointer<CChar>, _ customName: UnsafePointer<CChar>, _ outputDir: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
-///
-
-public class ExpoBiovaultModule: Module {
-  public func definition() -> ModuleDefinition {
-    Name("ExpoBiovault")
-
-    AsyncFunction("processGenomeFile") { (inputPath: String, customName: String, outputDir: String) -> String in
-      let inputCString = inputPath.cString(using: .utf8)!
-      let nameCString = customName.cString(using: .utf8)!
-      let outputCString = outputDir.cString(using: .utf8)!
-      
-      guard let resultPtr = process_23andme_file(inputCString, nameCString, outputCString) else {
-        throw Exception(name: "ProcessingError", description: "Failed to process genome file")
-      }
-      
-      let result = String(cString: resultPtr)
-      free_string(resultPtr)
-      return result
-    }
-  }
-}
-```
-
-TypeScript:
-```typescript
-// ExpoBioVaultModule.ts
-declare class ExpoBiovaultModule extends NativeModule {
-	processGenomeFile(inputPath: string, customName: string, outputDir: string): Promise<string>
-}
-
-// index.ts
-import ExpoBiovaultModule from './src/ExpoBiovaultModule'
-
-export async function processGenomeFile(
-	inputPath: string,
-	customName: string,
-	outputDir: string
-): Promise<string> {
-	return await ExpoBiovaultModule.processGenomeFile(inputPath, customName, outputDir)
-}
+```bash
+./cli --help
+./cli parse --file /path/to/genome.zip --output sample
 ```

@@ -1,0 +1,45 @@
+schema: "bioscript:assay"
+version: "1.0"
+assay_id: "apol1_risk"
+label: "APOL1 Risk Classifier"
+summary: "Classify APOL1 G0, G1, and G2 haplotype combinations from three defining sites."
+
+metadata:
+  category: "health_risk"
+  tags:
+    - "apol1"
+    - "kidney"
+    - "risk"
+  disclaimer: "Research use only. Not medical advice."
+
+package:
+  assay_version: "0.1.0"
+  source_of_truth: "script"
+
+compatibility:
+  works_with:
+    - "23andme"
+    - "wgs"
+    - "vcf"
+    - "cram"
+  assemblies:
+    - "grch37"
+    - "grch38"
+  notes: "Works when all three APOL1 defining sites are present in the source data."
+
+privacy:
+  mode: "local_only"
+  uploads_data: false
+  stores_results_locally: true
+  external_urls: []
+
+inputs:
+  catalogue: "catalogue.yaml"
+
+implementation:
+  kind: "script"
+  path: "apol1.py"
+  runtime: "bioscript"
+
+outputs:
+  format: "tsv"
