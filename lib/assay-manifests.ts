@@ -20,6 +20,7 @@ export type AssayMemberItem = {
 	location: string | null
 	note: string
 	ref?: string | null
+	runtimeKind?: string | null
 	rsid?: string | null
 }
 
@@ -28,16 +29,31 @@ export type AssayMemberGroup = {
 	items: AssayMemberItem[]
 }
 
+export type RunnableAssayMemberEntry = {
+	type: 'runnable'
+	variant: AssayMemberItem
+}
+
+export type UnsupportedAssayMemberEntry = {
+	reason: string
+	type: 'unsupported'
+	variant: AssayMemberItem
+}
+
+export type AssayMemberEntry = RunnableAssayMemberEntry | UnsupportedAssayMemberEntry
+
 export type BundledAssayPackageSource = {
 	assayAssetModuleId: number
 	assayPath: string
 	fileAssetModuleIds: Record<string, number>
+	intermediatePath: string
 	type: 'bundled'
 }
 
 export type InstalledAssayPackageSource = {
 	assayPath: string
 	fileUris: Record<string, string>
+	intermediatePath: string
 	installedAt: string
 	rootUri: string
 	source: string
@@ -67,6 +83,7 @@ export type AssayManifest = {
 	packageVersion: string
 	packageSource: AssayPackageSource
 	privacy: AssayPrivacy
+	runnableMembers: AssayMemberEntry[]
 	sourceOfTruth: string
 	summary: string
 	subtitle: string
@@ -76,4 +93,5 @@ export type AssayManifest = {
 		template: string
 		version: string
 	}
+	unsupportedMembers: UnsupportedAssayMemberEntry[]
 }

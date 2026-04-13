@@ -2,13 +2,11 @@ import { getAppDb } from '@/lib/app-db'
 import { invalidateAvailableAssayManifestCache } from '@/lib/assay-loader'
 import { Directory, File, Paths } from 'expo-file-system'
 import { deleteAsync, writeAsStringAsync } from 'expo-file-system/legacy'
-import YAML from 'yaml'
-
-type YamlMap = Record<string, unknown>
 
 type InstalledAssayManifestRecord = {
 	assayPath: string
 	fileUris: Record<string, string>
+	intermediatePath: string
 	rootUri: string
 }
 
@@ -30,6 +28,7 @@ export type InstalledAssaySummary = {
 export type InstallAssayPackageInput = {
 	assayPath: string
 	files: Record<string, string>
+	intermediatePath: string
 	source: string
 }
 
@@ -53,26 +52,38 @@ function ensureInstalledAssaysDirectory() {
 	return directory
 }
 
-function parseAssayMetadata(assayContents: string, assayPath: string) {
-	const parsed = YAML.parse(assayContents)
+function parseAssayMetadata(intermediateContents: string, intermediatePath: string) {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(intermediateContents)
+	} catch {
+		throw new Error(`${intermediatePath} did not contain valid JSON`)
+	}
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new Error(`${assayPath} did not contain a YAML mapping`)
+		throw new Error(`${intermediatePath} did not contain an assay intermediate object`)
 	}
 
-	const assay = parsed as YamlMap
-	const assayId = asString(assay.assay_id)
+	const intermediate = parsed as Record<string, unknown>
+	if (intermediate.schema !== 'bioscript:assay-intermediate') {
+		throw new Error(`${intermediatePath} does not declare bioscript:assay-intermediate`)
+	}
+
+	const assay =
+		intermediate.assay && typeof intermediate.assay === 'object' && !Array.isArray(intermediate.assay)
+			? (intermediate.assay as Record<string, unknown>)
+			: null
+	if (!assay) {
+		throw new Error(`${intermediatePath} is missing assay metadata`)
+	}
+
+	const assayId = asString(assay.id)
 	if (!assayId) {
-		throw new Error(`${assayPath} is missing assay_id`)
+		throw new Error(`${intermediatePath} is missing assay.id`)
 	}
-
-	const packageBlock =
-		assay.package && typeof assay.package === 'object' && !Array.isArray(assay.package)
-			? (assay.package as YamlMap)
-			: {}
 
 	return {
 		assayId: slugFromAssayId(assayId),
-		version: asString(packageBlock.assay_version) ?? asString(assay.version) ?? '1.0',
+		version: asString(assay.package_version) ?? asString(intermediate.version) ?? '1.0',
 	}
 }
 
@@ -104,6 +115,7 @@ function getStoredRecord(row: InstalledAssayRow): InstalledAssayManifestRecord |
 			rootUri: record.rootUri,
 			assayPath: record.assayPath,
 			fileUris,
+			intermediatePath: record.intermediatePath,
 		}
 	} catch {
 		return null
@@ -111,12 +123,12 @@ function getStoredRecord(row: InstalledAssayRow): InstalledAssayManifestRecord |
 }
 
 export async function installAssayPackage(input: InstallAssayPackageInput) {
-	const assayContents = input.files[input.assayPath]
-	if (!assayContents) {
-		throw new Error(`Missing assay definition file: ${input.assayPath}`)
+	const intermediateContents = input.files[input.intermediatePath]
+	if (!intermediateContents) {
+		throw new Error(`Missing assay intermediate file: ${input.intermediatePath}`)
 	}
 
-	const { assayId, version } = parseAssayMetadata(assayContents, input.assayPath)
+	const { assayId, version } = parseAssayMetadata(intermediateContents, input.intermediatePath)
 	const installsDirectory = ensureInstalledAssaysDirectory()
 	const assayDirectory = new Directory(installsDirectory, assayId)
 
@@ -165,6 +177,7 @@ export async function installAssayPackage(input: InstallAssayPackageInput) {
 			rootUri: assayDirectory.uri,
 			assayPath: input.assayPath,
 			fileUris,
+			intermediatePath: input.intermediatePath,
 		} satisfies InstalledAssayManifestRecord),
 		installedAt,
 		input.source,

@@ -1,0 +1,80 @@
+{
+  "assay": {
+    "category": "traits",
+    "disclaimer": "Research use only. Not medical advice.",
+    "id": "herc2_eye_color",
+    "label": "HERC2 Eye Color",
+    "package_version": "0.1.0",
+    "source_of_truth": "script",
+    "summary": "Classify the main HERC2 eye-color signal from one defining site.",
+    "tags": [
+      "herc2",
+      "eye-color"
+    ]
+  },
+  "compatibility": {
+    "assemblies": [
+      "grch37",
+      "grch38"
+    ],
+    "notes": [
+      "Checks one major HERC2 eye-color signal."
+    ],
+    "works_with": [
+      "23andme",
+      "wgs",
+      "vcf"
+    ]
+  },
+  "implementation": {
+    "kind": "script",
+    "script_path": "herc2.py"
+  },
+  "privacy": {
+    "external_urls": [],
+    "mode": "local_only",
+    "stores_results_locally": true,
+    "uploads_data": false
+  },
+  "runnable_variants": [
+    {
+      "alts": [
+        "G"
+      ],
+      "deletion_length": null,
+      "fields": {
+        "alt": "G",
+        "grch37": "15:28365618-28365618",
+        "grch38": "15:28120472-28120472",
+        "kind": "snp",
+        "ref": "A",
+        "rsid": "rs12913832"
+      },
+      "gene": "HERC2",
+      "grch37": {
+        "chrom": "15",
+        "pos": 28365618
+      },
+      "grch38": {
+        "chrom": "15",
+        "pos": 28120472
+      },
+      "kind": "snv",
+      "name": "HERC2_rs12913832",
+      "note": "Associated with lighter eye color in the bundled HERC2 example.",
+      "ref": "A",
+      "rsids": [
+        "rs12913832",
+        "rs60078917"
+      ],
+      "summary": "Main HERC2 eye-color SNP."
+    }
+  ],
+  "schema": "bioscript:assay-intermediate",
+  "ui": {
+    "template": "binary-call",
+    "version": "1.0"
+  },
+  "unsupported_variants": [],
+  "version": "1.0"
+}

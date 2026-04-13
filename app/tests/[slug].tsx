@@ -555,7 +555,7 @@ export default function TestDetailScreen() {
 								Assay members
 							</OMText>
 							<OMText variant="body" style={styles.panelBody}>
-								These are the package-declared assay members available to this renderer.
+								These are the package-declared assay members, split by what the current runtime can and cannot execute.
 							</OMText>
 
 							{assay.assayMembers.map((group) => (
@@ -595,6 +595,55 @@ export default function TestDetailScreen() {
 									))}
 								</View>
 							))}
+						</View>
+
+						<View style={styles.panel}>
+							<OMText variant="headline" style={styles.panelTitle}>
+								Runtime support
+							</OMText>
+							<OMText variant="body" style={styles.panelBody}>
+								Only runnable members are used during assay execution. Unsupported members stay visible here with their reason.
+							</OMText>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Runnable members
+								</OMText>
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.runnableMembers.length}
+								</OMText>
+							</View>
+
+							<View style={styles.labelGroup}>
+								<OMText variant="subtitle" style={styles.labelTitle}>
+									Unsupported members
+								</OMText>
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.unsupportedMembers.length}
+								</OMText>
+							</View>
+
+							{assay.unsupportedMembers.length ? (
+								<View style={styles.unsupportedList}>
+									{assay.unsupportedMembers.map((entry) => (
+										<View key={entry.variant.id} style={styles.unsupportedRow}>
+											<OMText variant="subtitle" style={styles.unsupportedTitle}>
+												{entry.variant.rsid ?? entry.variant.id}
+											</OMText>
+											<OMText variant="caption" style={styles.variantMeta}>
+												{entry.variant.location ?? 'Unknown location'} • {entry.variant.kind}
+											</OMText>
+											<OMText variant="body" style={styles.unsupportedReason}>
+												{entry.reason}
+											</OMText>
+										</View>
+									))}
+								</View>
+							) : (
+								<OMText variant="body" style={styles.labelItem}>
+									None
+								</OMText>
+							)}
 						</View>
 					</>
 				) : null}
@@ -802,6 +851,23 @@ const styles = StyleSheet.create({
 	},
 	variantNote: {
 		color: omColors.grayscale400,
+	},
+	unsupportedList: {
+		gap: omSpacing.s,
+	},
+	unsupportedRow: {
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+		gap: omSpacing.xs,
+	},
+	unsupportedTitle: {
+		color: omTheme.primaryText,
+	},
+	unsupportedReason: {
+		color: '#ffb0b0',
 	},
 	fileSelectionStack: {
 		gap: omSpacing.s,

@@ -2,19 +2,19 @@ import { Asset } from 'expo-asset'
 import { readAsStringAsync } from 'expo-file-system/legacy'
 import { getAppDb } from '@/lib/app-db'
 import { Platform } from 'react-native'
-import YAML from 'yaml'
 
 import { bundledAssaySources, type BundledAssaySource } from '@/lib/bundled-assay-sources'
 import type {
 	AssayDiscoverCategory,
 	AssayManifest,
+	AssayMemberEntry,
 	AssayMemberGroup,
 	AssayMemberItem,
 	AssayPackageSource,
 	InstalledAssayPackageSource,
+	UnsupportedAssayMemberEntry,
 } from '@/lib/assay-manifests'
 
-type YamlMap = Record<string, unknown>
 type InstalledAssayRow = {
 	id: string
 	installed_at: string
@@ -22,14 +22,35 @@ type InstalledAssayRow = {
 	source: string
 	version: string
 }
+
 type InstalledAssayRecord = {
 	assayPath: string
 	fileUris: Record<string, string>
+	intermediatePath: string
 	rootUri: string
 }
+
 type LoadedAssayPackage = {
 	fileContents: Record<string, string>
 	packageSource: AssayPackageSource
+}
+
+type JsonMap = Record<string, unknown>
+
+type IntermediateVariantRecord = {
+	alts: string[]
+	deletion_length?: number | null
+	fields?: Record<string, unknown>
+	gene: string | null
+	grch37?: JsonMap | null
+	grch38?: JsonMap | null
+	kind: string | null
+	name: string
+	note: string | null
+	ref: string | null
+	reason?: string | null
+	rsids: string[]
+	summary: string | null
 }
 
 const CATEGORY_MAP: Record<string, AssayDiscoverCategory> = {
@@ -62,14 +83,6 @@ async function loadInstalledFileText(fileUri: string): Promise<string> {
 	return readAsStringAsync(fileUri)
 }
 
-function readYamlMap(text: string, label: string): YamlMap {
-	const value = YAML.parse(text)
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		throw new Error(`${label} did not contain a YAML mapping`)
-	}
-	return value as YamlMap
-}
-
 function asString(value: unknown): string | null {
 	return typeof value === 'string' && value.trim() ? value : null
 }
@@ -89,59 +102,8 @@ function slugFromAssayId(assayId: string): string {
 		.replace(/^-+|-+$/g, '')
 }
 
-function relativeDirname(path: string): string {
-	const normalized = path.replace(/\\/g, '/')
-	const lastSlash = normalized.lastIndexOf('/')
-	return lastSlash === -1 ? '' : normalized.slice(0, lastSlash)
-}
-
-function joinRelative(base: string, relative: string): string {
-	const parts = `${base}/${relative}`.replace(/\\/g, '/').split('/').filter(Boolean)
-	const stack: string[] = []
-
-	for (const part of parts) {
-		if (part === '.') {
-			continue
-		}
-		if (part === '..') {
-			stack.pop()
-			continue
-		}
-		stack.push(part)
-	}
-
-	return stack.join('/')
-}
-
-function formatLocation(coordinates: YamlMap | null | undefined): string | null {
-	if (!coordinates) {
-		return null
-	}
-
-	for (const assembly of ['grch37', 'grch38']) {
-		const raw = coordinates[assembly]
-		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-			continue
-		}
-
-		const entry = raw as YamlMap
-		const chrom = asString(entry.chrom)
-		if (!chrom) {
-			continue
-		}
-		if (typeof entry.pos === 'number') {
-			return `${assembly.toUpperCase()} chr${chrom}:${entry.pos}`
-		}
-		if (typeof entry.start === 'number' && typeof entry.end === 'number') {
-			return `${assembly.toUpperCase()} chr${chrom}:${entry.start}-${entry.end}`
-		}
-	}
-
-	return null
-}
-
 function normalizeInterpretationState(raw: unknown, defaults: { headline: string; body: string }) {
-	const state = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as YamlMap) : {}
+	const state = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonMap) : {}
 	return {
 		headline: asString(state.headline) ?? defaults.headline,
 		body: asString(state.body) ?? defaults.body,
@@ -149,33 +111,43 @@ function normalizeInterpretationState(raw: unknown, defaults: { headline: string
 	}
 }
 
-function normalizeMemberItem(variantId: string, variant: YamlMap): AssayMemberItem {
-	const identifiers =
-		variant.identifiers && typeof variant.identifiers === 'object' && !Array.isArray(variant.identifiers)
-			? (variant.identifiers as YamlMap)
-			: {}
-	const alleles =
-		variant.alleles && typeof variant.alleles === 'object' && !Array.isArray(variant.alleles)
-			? (variant.alleles as YamlMap)
-			: {}
-	const findings = Array.isArray(variant.findings) ? variant.findings : []
-	const firstFinding =
-		findings.find((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)) as YamlMap | undefined
-	const rsids = asStringArray(identifiers.rsids)
-	const alts = asStringArray(alleles.alts)
-	const kind = asString(alleles.kind)
+function formatCoordinate(label: string, raw: unknown): string | null {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		return null
+	}
 
+	const entry = raw as JsonMap
+	const chrom = asString(entry.chrom)
+	if (!chrom) {
+		return null
+	}
+	if (typeof entry.pos === 'number') {
+		return `${label} chr${chrom}:${entry.pos}`
+	}
+	if (typeof entry.start === 'number' && typeof entry.end === 'number') {
+		return `${label} chr${chrom}:${entry.start}-${entry.end}`
+	}
+	return null
+}
+
+function formatLocation(variant: IntermediateVariantRecord): string | null {
+	return formatCoordinate('GRCH37', variant.grch37) ?? formatCoordinate('GRCH38', variant.grch38)
+}
+
+function normalizeVariantKind(kind: string | null): 'SNV' | 'INDEL' {
+	return kind === 'deletion' || kind === 'insertion' || kind === 'indel' ? 'INDEL' : 'SNV'
+}
+
+function normalizeMemberItem(variant: IntermediateVariantRecord): AssayMemberItem {
 	return {
-		id: variantId,
-		rsid: rsids[0] ?? null,
-		location:
-			variant.coordinates && typeof variant.coordinates === 'object' && !Array.isArray(variant.coordinates)
-				? formatLocation(variant.coordinates as YamlMap)
-				: null,
-		kind: kind === 'deletion' || kind === 'insertion' || kind === 'indel' ? 'INDEL' : 'SNV',
-		ref: asString(alleles.ref),
-		alts,
-		note: asString(firstFinding?.notes) ?? asString(variant.summary) ?? '',
+		id: variant.name,
+		rsid: variant.rsids[0] ?? null,
+		location: formatLocation(variant),
+		kind: normalizeVariantKind(variant.kind),
+		ref: variant.ref,
+		runtimeKind: variant.kind,
+		alts: variant.alts,
+		note: variant.note ?? variant.summary ?? '',
 	}
 }
 
@@ -189,6 +161,7 @@ function parseStoredInstalledAssay(row: InstalledAssayRow): InstalledAssayRecord
 		const record = parsed as Partial<InstalledAssayRecord>
 		if (
 			typeof record.assayPath !== 'string' ||
+			typeof record.intermediatePath !== 'string' ||
 			typeof record.rootUri !== 'string' ||
 			!record.fileUris ||
 			typeof record.fileUris !== 'object' ||
@@ -206,6 +179,7 @@ function parseStoredInstalledAssay(row: InstalledAssayRow): InstalledAssayRecord
 		return {
 			assayPath: record.assayPath,
 			fileUris,
+			intermediatePath: record.intermediatePath,
 			rootUri: record.rootUri,
 		}
 	} catch {
@@ -229,6 +203,7 @@ async function loadBundledAssayPackage(source: BundledAssaySource): Promise<Load
 			assayAssetModuleId: source.assayAssetModuleId,
 			assayPath: source.assayPath,
 			fileAssetModuleIds: source.fileAssetModuleIds,
+			intermediatePath: source.intermediatePath,
 			type: 'bundled',
 		},
 	}
@@ -267,6 +242,7 @@ async function loadInstalledAssayPackages(): Promise<LoadedAssayPackage[]> {
 						assayPath: stored.assayPath,
 						fileUris: stored.fileUris,
 						installedAt: row.installed_at,
+						intermediatePath: stored.intermediatePath,
 						rootUri: stored.rootUri,
 						source: row.source,
 						type: 'installed',
@@ -282,78 +258,117 @@ async function loadInstalledAssayPackages(): Promise<LoadedAssayPackage[]> {
 	return packages.filter((pkg): pkg is LoadedAssayPackage => pkg !== null)
 }
 
+function readJsonMap(text: string, label: string): JsonMap {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(text)
+	} catch {
+		throw new Error(`${label} did not contain valid JSON`)
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new Error(`${label} did not contain a JSON object`)
+	}
+	return parsed as JsonMap
+}
+
+function parseVariantRecord(raw: unknown, label: string): IntermediateVariantRecord {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		throw new Error(`${label} did not contain a variant object`)
+	}
+
+	const variant = raw as JsonMap
+	const name = asString(variant.name)
+	if (!name) {
+		throw new Error(`${label} is missing variant name`)
+	}
+
+	return {
+		alts: asStringArray(variant.alts),
+		deletion_length: typeof variant.deletion_length === 'number' ? variant.deletion_length : null,
+		fields:
+			variant.fields && typeof variant.fields === 'object' && !Array.isArray(variant.fields)
+				? (variant.fields as Record<string, unknown>)
+				: undefined,
+		gene: asString(variant.gene),
+		grch37: variant.grch37 && typeof variant.grch37 === 'object' && !Array.isArray(variant.grch37) ? (variant.grch37 as JsonMap) : null,
+		grch38: variant.grch38 && typeof variant.grch38 === 'object' && !Array.isArray(variant.grch38) ? (variant.grch38 as JsonMap) : null,
+		kind: asString(variant.kind),
+		name,
+		note: asString(variant.note),
+		ref: asString(variant.ref),
+		reason: asString(variant.reason),
+		rsids: asStringArray(variant.rsids),
+		summary: asString(variant.summary),
+	}
+}
+
 function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManifest {
 	const { fileContents, packageSource } = loadedPackage
-	const assayPath = packageSource.assayPath
+	const intermediatePath = packageSource.intermediatePath
+	const intermediate = readJsonMap(fileContents[intermediatePath], intermediatePath)
 
-	const assay = readYamlMap(fileContents[assayPath], assayPath)
-	const assayId = asString(assay.assay_id)
-	if (!assayId) {
-		throw new Error(`${assayPath} is missing assay_id`)
+	if (intermediate.schema !== 'bioscript:assay-intermediate') {
+		throw new Error(`${intermediatePath} does not declare bioscript:assay-intermediate`)
 	}
 
-	const metadata =
-		assay.metadata && typeof assay.metadata === 'object' && !Array.isArray(assay.metadata)
-			? (assay.metadata as YamlMap)
-			: {}
-	const packageBlock =
-		assay.package && typeof assay.package === 'object' && !Array.isArray(assay.package)
-			? (assay.package as YamlMap)
-			: {}
-	const ui = assay.ui && typeof assay.ui === 'object' && !Array.isArray(assay.ui) ? (assay.ui as YamlMap) : {}
+	const assay =
+		intermediate.assay && typeof intermediate.assay === 'object' && !Array.isArray(intermediate.assay)
+			? (intermediate.assay as JsonMap)
+			: null
+	if (!assay) {
+		throw new Error(`${intermediatePath} is missing assay metadata`)
+	}
+
+	const assayId = asString(assay.id)
+	if (!assayId) {
+		throw new Error(`${intermediatePath} is missing assay.id`)
+	}
+
+	const ui = intermediate.ui && typeof intermediate.ui === 'object' && !Array.isArray(intermediate.ui) ? (intermediate.ui as JsonMap) : {}
 	const compatibility =
-		assay.compatibility && typeof assay.compatibility === 'object' && !Array.isArray(assay.compatibility)
-			? (assay.compatibility as YamlMap)
+		intermediate.compatibility && typeof intermediate.compatibility === 'object' && !Array.isArray(intermediate.compatibility)
+			? (intermediate.compatibility as JsonMap)
 			: {}
 	const privacy =
-		assay.privacy && typeof assay.privacy === 'object' && !Array.isArray(assay.privacy)
-			? (assay.privacy as YamlMap)
+		intermediate.privacy && typeof intermediate.privacy === 'object' && !Array.isArray(intermediate.privacy)
+			? (intermediate.privacy as JsonMap)
 			: {}
 	const interpretation =
-		assay.interpretation && typeof assay.interpretation === 'object' && !Array.isArray(assay.interpretation)
-			? (assay.interpretation as YamlMap)
-			: {}
-	const interpretationStates =
-		interpretation.states && typeof interpretation.states === 'object' && !Array.isArray(interpretation.states)
-			? (interpretation.states as YamlMap)
-			: {}
-	const implementation =
-		assay.implementation && typeof assay.implementation === 'object' && !Array.isArray(assay.implementation)
-			? (assay.implementation as YamlMap)
-			: {}
-	const inputs =
-		assay.inputs && typeof assay.inputs === 'object' && !Array.isArray(assay.inputs)
-			? (assay.inputs as YamlMap)
+		intermediate.interpretation && typeof intermediate.interpretation === 'object' && !Array.isArray(intermediate.interpretation)
+			? (intermediate.interpretation as JsonMap)
 			: {}
 
-	const cataloguePath = asString(inputs.catalogue)
-	if (!cataloguePath) {
-		throw new Error(`${assayPath} is missing inputs.catalogue`)
-	}
-
-	const assayDir = relativeDirname(assayPath)
-	const fullCataloguePath = joinRelative(assayDir, cataloguePath)
-	const catalogue = readYamlMap(fileContents[fullCataloguePath], fullCataloguePath)
-	const variants = Array.isArray(catalogue.variants) ? catalogue.variants : []
+	const runnableVariants = Array.isArray(intermediate.runnable_variants) ? intermediate.runnable_variants : []
+	const unsupportedVariants = Array.isArray(intermediate.unsupported_variants) ? intermediate.unsupported_variants : []
 	const groupedMembers = new Map<string, AssayMemberItem[]>()
+	const runnableMembers: AssayMemberEntry[] = []
+	const unsupportedMembers: UnsupportedAssayMemberEntry[] = []
 
-	for (const variantRef of variants) {
-		if (!variantRef || typeof variantRef !== 'object' || Array.isArray(variantRef)) {
-			continue
-		}
-		const variantEntry = variantRef as YamlMap
-		const relativeVariantPath = asString(variantEntry.path)
-		if (!relativeVariantPath) {
-			continue
-		}
-
-		const fullVariantPath = joinRelative(assayDir, relativeVariantPath)
-		const variant = readYamlMap(fileContents[fullVariantPath], fullVariantPath)
-		const gene = asString(variant.gene) ?? 'Unassigned'
-		const item = normalizeMemberItem(asString(variantEntry.id) ?? asString(variant.name) ?? relativeVariantPath, variant)
+	for (const [index, rawVariant] of runnableVariants.entries()) {
+		const variant = parseVariantRecord(rawVariant, `${intermediatePath} runnable_variants[${index}]`)
+		const item = normalizeMemberItem(variant)
+		const gene = variant.gene ?? 'Unassigned'
 		const items = groupedMembers.get(gene) ?? []
 		items.push(item)
 		groupedMembers.set(gene, items)
+		runnableMembers.push({
+			type: 'runnable',
+			variant: item,
+		})
+	}
+
+	for (const [index, rawVariant] of unsupportedVariants.entries()) {
+		const variant = parseVariantRecord(rawVariant, `${intermediatePath} unsupported_variants[${index}]`)
+		const item = normalizeMemberItem(variant)
+		const gene = variant.gene ?? 'Unassigned'
+		const items = groupedMembers.get(gene) ?? []
+		items.push(item)
+		groupedMembers.set(gene, items)
+		unsupportedMembers.push({
+			type: 'unsupported',
+			reason: variant.reason ?? 'unsupported by bioscript runtime',
+			variant: item,
+		})
 	}
 
 	const assayMembers: AssayMemberGroup[] = Array.from(groupedMembers.entries()).map(([gene, items]) => ({
@@ -367,11 +382,11 @@ function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManife
 		subtitle: asString(assay.summary) ?? '',
 		summary: asString(assay.summary) ?? '',
 		description: asString(assay.summary) ?? '',
-		disclaimer: asString(metadata.disclaimer),
-		category: CATEGORY_MAP[asString(metadata.category) ?? 'traits'] ?? 'traits',
-		tags: asStringArray(metadata.tags),
-		packageVersion: asString(packageBlock.assay_version) ?? asString(assay.version) ?? '1.0',
-		sourceOfTruth: asString(packageBlock.source_of_truth) ?? 'package',
+		disclaimer: asString(assay.disclaimer),
+		category: CATEGORY_MAP[asString(assay.category) ?? 'traits'] ?? 'traits',
+		tags: asStringArray(assay.tags),
+		packageVersion: asString(assay.package_version) ?? asString(intermediate.version) ?? '1.0',
+		sourceOfTruth: asString(assay.source_of_truth) ?? 'package',
 		ui: {
 			template: asString(ui.template) ?? 'variant-panel',
 			version: asString(ui.version) ?? '1.0',
@@ -379,11 +394,7 @@ function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManife
 		compatibility: {
 			worksWith: asStringArray(compatibility.works_with),
 			assemblies: asStringArray(compatibility.assemblies),
-			notes: Array.isArray(compatibility.notes)
-				? asStringArray(compatibility.notes)
-				: asString(compatibility.notes)
-					? [asString(compatibility.notes)!]
-					: [],
+			notes: asStringArray(compatibility.notes),
 		},
 		privacy: {
 			mode: asString(privacy.mode) ?? 'unknown',
@@ -392,19 +403,19 @@ function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManife
 			externalUrls: asStringArray(privacy.external_urls),
 		},
 		interpretation: {
-			matched: normalizeInterpretationState(interpretationStates.matched, {
+			matched: normalizeInterpretationState(interpretation.matched, {
 				headline: 'Signal detected',
 				body: 'This assay detected one or more matching rows.',
 			}),
-			normal: normalizeInterpretationState(interpretationStates.normal, {
+			normal: normalizeInterpretationState(interpretation.normal, {
 				headline: 'No flagged signal found',
 				body: 'The checked rows were present, but no flagged signal was detected.',
 			}),
-			missing: normalizeInterpretationState(interpretationStates.missing, {
+			missing: normalizeInterpretationState(interpretation.missing, {
 				headline: 'Not enough data',
 				body: 'This file did not include enough expected data for a confident result.',
 			}),
-			partial: normalizeInterpretationState(interpretationStates.partial, {
+			partial: normalizeInterpretationState(interpretation.partial, {
 				headline: 'Partial result',
 				body: 'Some expected rows were present, but coverage was incomplete.',
 			}),
@@ -412,6 +423,8 @@ function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManife
 		files: Object.keys(fileContents).sort(),
 		packageSource,
 		assayMembers,
+		runnableMembers,
+		unsupportedMembers,
 	}
 }
 

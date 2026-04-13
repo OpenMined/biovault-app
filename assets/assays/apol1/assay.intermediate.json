@@ -1,0 +1,152 @@
+{
+  "assay": {
+    "category": "risk",
+    "disclaimer": "Research use only. Not medical advice.",
+    "id": "apol1_risk",
+    "label": "APOL1 Risk Classifier",
+    "package_version": "0.1.0",
+    "source_of_truth": "script",
+    "summary": "Classify APOL1 G0, G1, and G2 haplotype combinations from three defining sites.",
+    "tags": [
+      "apol1",
+      "kidney",
+      "risk"
+    ]
+  },
+  "compatibility": {
+    "assemblies": [
+      "grch37",
+      "grch38"
+    ],
+    "notes": [
+      "Works when all three APOL1 defining sites are present in the source data."
+    ],
+    "works_with": [
+      "23andme",
+      "wgs",
+      "vcf",
+      "cram"
+    ]
+  },
+  "implementation": {
+    "kind": "script",
+    "script_path": "apol1.py"
+  },
+  "privacy": {
+    "external_urls": [],
+    "mode": "local_only",
+    "stores_results_locally": true,
+    "uploads_data": false
+  },
+  "runnable_variants": [
+    {
+      "alts": [
+        "G"
+      ],
+      "deletion_length": null,
+      "fields": {
+        "alt": "G",
+        "grch37": "22:36661906-36661906",
+        "grch38": "22:36265860-36265860",
+        "kind": "snp",
+        "ref": "A",
+        "rsid": "rs73885319"
+      },
+      "gene": "APOL1",
+      "grch37": {
+        "chrom": "22",
+        "pos": 36661906
+      },
+      "grch38": {
+        "chrom": "22",
+        "pos": 36265860
+      },
+      "kind": "snv",
+      "name": "APOL1_G1_rs73885319",
+      "note": null,
+      "ref": "A",
+      "rsids": [
+        "rs73885319"
+      ],
+      "summary": "APOL1 G1 site 1 SNV."
+    },
+    {
+      "alts": [
+        "G"
+      ],
+      "deletion_length": null,
+      "fields": {
+        "alt": "G",
+        "grch37": "22:36662034-36662034",
+        "grch38": "22:36265988-36265988",
+        "kind": "snp",
+        "ref": "T",
+        "rsid": "rs60910145"
+      },
+      "gene": "APOL1",
+      "grch37": {
+        "chrom": "22",
+        "pos": 36662034
+      },
+      "grch38": {
+        "chrom": "22",
+        "pos": 36265988
+      },
+      "kind": "snv",
+      "name": "APOL1_G1_rs60910145",
+      "note": null,
+      "ref": "T",
+      "rsids": [
+        "rs60910145"
+      ],
+      "summary": "APOL1 G1 site 2 SNV."
+    },
+    {
+      "alts": [
+        "D"
+      ],
+      "deletion_length": 6,
+      "fields": {
+        "alt": "D",
+        "deletion_length": 6,
+        "grch37": "22:36662046-36662051",
+        "grch38": "22:36266000-36266005",
+        "kind": "deletion",
+        "motifs": [
+          "TTATAA",
+          "ATAATT"
+        ],
+        "ref": "I",
+        "rsid": "rs71785313"
+      },
+      "gene": "APOL1",
+      "grch37": {
+        "chrom": "22",
+        "end": 36662051,
+        "start": 36662046
+      },
+      "grch38": {
+        "chrom": "22",
+        "end": 36266005,
+        "start": 36266000
+      },
+      "kind": "deletion",
+      "name": "APOL1_G2",
+      "note": "APOL1 G2 defining deletion.",
+      "ref": "I",
+      "rsids": [
+        "rs71785313",
+        "rs1317778148",
+        "rs143830837"
+      ],
+      "summary": "APOL1 G2 six-base deletion."
+    }
+  ],
+  "schema": "bioscript:assay-intermediate",
+  "ui": {
+    "template": "risk-classifier",
+    "version": "1.0"
+  },
+  "unsupported_variants": [],
+  "version": "1.0"
+}
