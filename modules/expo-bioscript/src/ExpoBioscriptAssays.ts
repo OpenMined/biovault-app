@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import type { RunAssayRequest, RunFileRequest, RunFileResult } from './ExpoBioscript.types';
 import ExpoBioscriptModule from './ExpoBioscriptModule';
 
-const assayResultSchema = require('../../bioscript/assay_result_schema.json') as {
+const assayResultSchema = require('../../../bioscript/assay_result_schema.json') as {
   outcomeField?: unknown;
 };
 
