@@ -134,13 +134,6 @@ export default function TestDetailScreen() {
 				const savedRun = await loadLatestTestRun(assay.id, useSampleInput ? null : selectedDocument?.id ?? null)
 				setLatestRun(savedRun)
 				await scheduleTestFinishedNotification(assay.title, assay.id)
-
-				if (run.isPreview) {
-					Alert.alert(
-						'Preview assay run saved',
-						'This assay still uses bundled preview rows. Its legacy classifier needs to be ported into the current expo-bioscript runtime.'
-					)
-				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : 'Unable to run assay.'
 				Alert.alert('Assay run failed', message)
@@ -291,12 +284,11 @@ export default function TestDetailScreen() {
 					{latestRun ? (
 						<OMText variant="caption" style={styles.runMeta}>
 							Last run: {new Date(latestRun.ranAt).toLocaleString()} • {latestRun.inputLabel}
-							{latestRun.isPreview ? ' • Preview mode' : ''}
 						</OMText>
 					) : null}
 
 					<OMText variant="caption" style={styles.runMeta}>
-						Execution mode: {assay.runMode === 'package' ? 'Live assay package run' : 'Preview only'}
+						Execution mode: {assay.ui.template} template • package v{assay.packageVersion}
 					</OMText>
 				</View>
 
@@ -365,10 +357,19 @@ export default function TestDetailScreen() {
 
 						<View style={styles.labelGroup}>
 							<OMText variant="subtitle" style={styles.labelTitle}>
-								Supported file types
+								Declared input families
 							</OMText>
 							<OMText variant="body" style={styles.labelItem}>
-								{assay.compatibility.supportedExtensions.join(', ')}
+								{assay.compatibility.worksWith.length ? assay.compatibility.worksWith.join(', ') : 'Not specified'}
+							</OMText>
+						</View>
+
+						<View style={styles.labelGroup}>
+							<OMText variant="subtitle" style={styles.labelTitle}>
+								Assemblies
+							</OMText>
+							<OMText variant="body" style={styles.labelItem}>
+								{assay.compatibility.assemblies.length ? assay.compatibility.assemblies.join(', ') : 'Not specified'}
 							</OMText>
 						</View>
 
@@ -394,7 +395,7 @@ export default function TestDetailScreen() {
 							More details
 						</OMText>
 						<OMText variant="body" style={styles.panelBody}>
-							Privacy label, source files, and result model.
+							Privacy label, package files, and assay members.
 						</OMText>
 					</View>
 					<OMText variant="subtitle" style={styles.detailsToggleAction}>
@@ -411,36 +412,41 @@ export default function TestDetailScreen() {
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
-									Runs
+									Privacy mode
 								</OMText>
-								{assay.privacy.runs.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
-									</OMText>
-								))}
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.mode}
+								</OMText>
 							</View>
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
-									Reads
+									Uploads data
 								</OMText>
-								{assay.privacy.reads.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
-									</OMText>
-								))}
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.uploadsData ? 'Yes' : 'No'}
+								</OMText>
 							</View>
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
-									Bundled files
+									Stores results locally
 								</OMText>
-								{assay.privacy.usesBundledFiles.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
-									</OMText>
-								))}
+								<OMText variant="body" style={styles.labelItem}>
+									{assay.privacy.storesResultsLocally ? 'Yes' : 'No'}
+								</OMText>
 							</View>
+
+							{assay.disclaimer ? (
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Disclaimer
+									</OMText>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.disclaimer}
+									</OMText>
+								</View>
+							) : null}
 
 							<View style={styles.labelGroup}>
 								<OMText variant="subtitle" style={styles.labelTitle}>
@@ -458,20 +464,11 @@ export default function TestDetailScreen() {
 									</OMText>
 								)}
 							</View>
-
-							<View style={styles.labelGroup}>
-								<OMText variant="subtitle" style={styles.labelTitle}>
-									Stores results
-								</OMText>
-								<OMText variant="body" style={styles.labelItem}>
-									{assay.privacy.storesResults}
-								</OMText>
-							</View>
 						</View>
 
 						<View style={styles.panel}>
 							<OMText variant="headline" style={styles.panelTitle}>
-								Files and sources
+								Assay package
 							</OMText>
 
 							<View style={styles.labelGroup}>
@@ -482,40 +479,46 @@ export default function TestDetailScreen() {
 									<OMText key={item} variant="body" style={styles.labelItem}>
 										{item}
 									</OMText>
-								))}
-							</View>
+									))}
+								</View>
 
-							<View style={styles.labelGroup}>
-								<OMText variant="subtitle" style={styles.labelTitle}>
-									Sources
-								</OMText>
-								{assay.sources.map((item) => (
-									<OMText key={item} variant="body" style={styles.labelItem}>
-										{item}
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Renderer
 									</OMText>
-								))}
-							</View>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.ui.template} v{assay.ui.version}
+									</OMText>
+								</View>
+
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Package version
+									</OMText>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.packageVersion}
+									</OMText>
+								</View>
+
+								<View style={styles.labelGroup}>
+									<OMText variant="subtitle" style={styles.labelTitle}>
+										Source of truth
+									</OMText>
+									<OMText variant="body" style={styles.labelItem}>
+										{assay.sourceOfTruth}
+									</OMText>
+								</View>
 						</View>
 
 						<View style={styles.panel}>
 							<OMText variant="headline" style={styles.panelTitle}>
-								Result model
+								Assay members
 							</OMText>
 							<OMText variant="body" style={styles.panelBody}>
-								After a run, results can be grouped into these buckets:
+								These are the package-declared assay members available to this renderer.
 							</OMText>
 
-							<View style={styles.bucketRow}>
-								{assay.resultBuckets.map((bucket) => (
-									<View key={bucket} style={styles.bucketPill}>
-										<OMText variant="caption" style={styles.bucketText}>
-											{bucket}
-										</OMText>
-									</View>
-								))}
-							</View>
-
-							{assay.variantExamples.map((group) => (
+							{assay.assayMembers.map((group) => (
 								<View key={group.gene} style={styles.geneGroup}>
 									<OMText variant="subtitle" style={styles.geneTitle}>
 										{group.gene}
@@ -524,17 +527,12 @@ export default function TestDetailScreen() {
 									{group.items.map((item) => (
 										<View key={item.id} style={styles.variantRow}>
 											<View style={styles.variantHeader}>
-												<OMText variant="body" style={styles.variantName}>
-													{item.rsid ?? item.kind}
-												</OMText>
-												<View style={styles.statusPill}>
-													<OMText variant="caption" style={styles.statusText}>
-														{item.status}
+													<OMText variant="body" style={styles.variantName}>
+														{item.rsid ?? item.kind}
 													</OMText>
-												</View>
 											</View>
 											<OMText variant="caption" style={styles.variantMeta}>
-												{item.location} • {item.kind}
+												{item.location ?? 'Unknown location'} • {item.kind}
 											</OMText>
 											{item.kind === 'INDEL' && (item.ref || item.alts?.length) ? (
 												<View style={styles.variantDetailBlock}>

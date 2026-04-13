@@ -263,53 +263,20 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 	}
 }
 
-function buildPreviewRows(slug: string): StoredTestResultRow[] {
-	const assay = getAvailableAssayManifestByIdSync(slug)
-	if (!assay) {
-		return []
-	}
-
-	return assay.variantExamples.flatMap((group) =>
-		group.items.map((item) => ({
-			gene: group.gene,
-			label: item.rsid ?? item.id,
-			rsid: item.rsid,
-			location: item.location,
-			kind: item.kind,
-			status: item.status,
-			note: item.note,
-			ref: item.ref,
-			alts: item.alts,
-		}))
-	)
-}
-
 export async function runTest(slug: string, importedDocument: HomeImportedDocument | null) {
 	const assay = getAvailableAssayManifestByIdSync(slug)
 	if (!assay) {
 		throw new Error('Assay not found.')
 	}
 
-	if (assay.runMode === 'package') {
-		const result = await runBioscriptTest(slug, importedDocument)
-		const run: StoredTestRun = {
-			inputDocumentId: importedDocument?.id ?? null,
-			slug,
-			ranAt: new Date().toISOString(),
-			inputLabel: result.inputLabel,
-			isPreview: false,
-			rows: result.rows,
-			unsupportedVariants: result.unsupportedVariants,
-		}
-		return run
-	}
-
+	const result = await runBioscriptTest(slug, importedDocument)
 	return {
 		inputDocumentId: importedDocument?.id ?? null,
 		slug,
 		ranAt: new Date().toISOString(),
-		inputLabel: importedDocument?.name ?? 'Bundled preview data',
-		isPreview: true,
-		rows: buildPreviewRows(slug),
+		inputLabel: result.inputLabel,
+		isPreview: false,
+		rows: result.rows,
+		unsupportedVariants: result.unsupportedVariants,
 	}
 }

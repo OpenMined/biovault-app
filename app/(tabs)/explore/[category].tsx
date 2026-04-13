@@ -33,7 +33,6 @@ function formatRecentRunLabel(value: string) {
 export default function ExploreCategoryScreen() {
 	const params = useLocalSearchParams<{ category?: string }>()
 	const category = params.category ? getExploreCategory(params.category) : null
-	const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
 	const { activeDocument } = useExploreLayoutContext()
 	const [recentRunsBySlug, setRecentRunsBySlug] = useState<Record<string, RecentTestRunSummary>>({})
 
@@ -54,6 +53,7 @@ export default function ExploreCategoryScreen() {
 	}, [activeDocument])
 
 	const sortedAssays = useMemo(() => {
+		const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
 		return [...assays].sort((left, right) => {
 			const leftCompatibility = activeDocument ? assessAssayCompatibility(left, activeDocument).status : 'unknown'
 			const rightCompatibility = activeDocument ? assessAssayCompatibility(right, activeDocument).status : 'unknown'
@@ -63,7 +63,7 @@ export default function ExploreCategoryScreen() {
 
 			return rank(leftCompatibility) - rank(rightCompatibility) || leftRun - rightRun || left.title.localeCompare(right.title)
 		})
-	}, [activeDocument, assays, recentRunsBySlug])
+	}, [activeDocument, category, recentRunsBySlug])
 
 	if (!category) {
 		return (
@@ -122,9 +122,7 @@ export default function ExploreCategoryScreen() {
 							: 'neutral'
 						const summary = compatibility
 							? compatibility.summary
-							: assay.runMode === 'bioscript'
-								? 'Runs locally on device through Bioscript.'
-								: 'Preview assay for now.'
+							: `Runs locally on device through the ${assay.ui.template} template.`
 
 						return (
 							<ExploreAssayCard

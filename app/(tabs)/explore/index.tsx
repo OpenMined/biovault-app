@@ -155,9 +155,7 @@ export default function ExploreScreen() {
 							: 'neutral'
 						const summary = compatibility
 							? compatibility.summary
-							: assay.runMode === 'bioscript'
-								? 'Runs locally on device through Bioscript.'
-								: 'Preview assay for now.'
+							: `Runs locally on device through the ${assay.ui.template} template.`
 
 						return (
 							<ExploreAssayCard

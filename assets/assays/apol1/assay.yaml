@@ -5,7 +5,7 @@ label: "APOL1 Risk Classifier"
 summary: "Classify APOL1 G0, G1, and G2 haplotype combinations from three defining sites."
 
 metadata:
-  category: "health_risk"
+  category: "risk"
   tags:
     - "apol1"
     - "kidney"
@@ -15,6 +15,10 @@ metadata:
 package:
   assay_version: "0.1.0"
   source_of_truth: "script"
+
+ui:
+  template: "risk-classifier"
+  version: "1.0"
 
 compatibility:
   works_with:
@@ -43,3 +47,20 @@ implementation:
 
 outputs:
   format: "tsv"
+
+interpretation:
+  states:
+    matched:
+      headline: "APOL1-associated signal detected"
+      body: "This assay detected one or more APOL1 sites used to derive an overall APOL1 status."
+      caveat: "Interpretation depends on the full G1 and G2 pattern."
+    normal:
+      headline: "No flagged APOL1 signal found"
+      body: "The checked APOL1 sites were present, but this assay did not detect a flagged pattern."
+    missing:
+      headline: "Not enough APOL1 data"
+      body: "This file did not include enough APOL1 sites for a confident result."
+      caveat: "Deletion-based APOL1 G2 calls are often absent from chip-style exports."
+    partial:
+      headline: "Partial APOL1 result"
+      body: "Some APOL1 sites were present, but the file did not cover the full assay."

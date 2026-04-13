@@ -1,5 +1,5 @@
 import { getAppDb } from '@/lib/app-db'
-import { getTestBySlug } from '@/lib/test-catalog'
+import { getAssayManifestById } from '@/lib/assay-manifests'
 import type { UnsupportedAssayVariant } from '@/modules/expo-bioscript'
 
 export type TestResultStatus = 'matched' | 'normal' | 'missing'
@@ -211,7 +211,7 @@ export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSumma
 	)
 
 	return rows.map((row) => {
-		const test = getTestBySlug(row.slug)
+		const assay = getAssayManifestById(row.slug)
 		return {
 			id: row.id,
 			inputDocumentId: row.input_document_id ?? null,
@@ -220,7 +220,7 @@ export async function listRecentTestRuns(limit = 20): Promise<RecentTestRunSumma
 			isPreview: row.is_preview === 1,
 			ranAt: row.ran_at,
 			rowCount: row.row_count,
-			testTitle: test?.title ?? row.slug,
+			testTitle: assay?.title ?? row.slug,
 		}
 	})
 }
@@ -250,7 +250,7 @@ export async function listRecentTestRunsForInputDocument(
 	)
 
 	return rows.map((row) => {
-		const test = getTestBySlug(row.slug)
+		const assay = getAssayManifestById(row.slug)
 		return {
 			id: row.id,
 			inputDocumentId: row.input_document_id ?? null,
@@ -259,7 +259,7 @@ export async function listRecentTestRunsForInputDocument(
 			isPreview: row.is_preview === 1,
 			ranAt: row.ran_at,
 			rowCount: row.row_count,
-			testTitle: test?.title ?? row.slug,
+			testTitle: assay?.title ?? row.slug,
 		}
 	})
 }
