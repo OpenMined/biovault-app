@@ -1,10 +1,9 @@
-import { Asset } from 'expo-asset'
 import { readAsStringAsync } from 'expo-file-system/legacy'
 import { getAppDb } from '@/lib/app-db'
 import { Platform } from 'react-native'
 import YAML from 'yaml'
 
-import { bundledAssaySources, type BundledAssaySource } from '@/lib/bundled-assay-sources'
+import { fetchGitHubAssayIndex } from '@/lib/github-assay-packages'
 import type {
 	AssayDiscoverCategory,
 	AssayManifest,
@@ -13,6 +12,7 @@ import type {
 	AssayMemberItem,
 	AssayPackageSource,
 	InstalledAssayPackageSource,
+	RemoteAssayPackageSource,
 	UnsupportedAssayMemberEntry,
 } from '@/lib/assay-manifests'
 
@@ -61,24 +61,16 @@ const CATEGORY_MAP: Record<string, AssayDiscoverCategory> = {
 	traits: 'traits',
 }
 
+const REMOTE_ASSAY_REPO = {
+	baseUrl: 'https://github.com',
+	owner: 'keelancj',
+	path: 'assays',
+	ref: 'madhava/updating-format',
+	repo: 'exvitae',
+} as const
+
 let manifestCache: AssayManifest[] | null = null
 let manifestPromise: Promise<AssayManifest[]> | null = null
-
-async function loadBundledAssetText(assetModuleId: number): Promise<string> {
-	const asset = Asset.fromModule(assetModuleId)
-
-	if (Platform.OS === 'web') {
-		const response = await fetch(asset.uri)
-		if (!response.ok) {
-			throw new Error(`Unable to load bundled assay asset (${response.status}).`)
-		}
-		return response.text()
-	}
-
-	await asset.downloadAsync()
-	const localUri = asset.localUri ?? asset.uri
-	return readAsStringAsync(localUri)
-}
 
 async function loadInstalledFileText(fileUri: string): Promise<string> {
 	return readAsStringAsync(fileUri)
@@ -173,7 +165,7 @@ function parseStoredInstalledAssay(row: InstalledAssayRow): InstalledAssayRecord
 
 		const fileUris = Object.fromEntries(
 			Object.entries(record.fileUris).filter(
-				([relativePath, uri]): uri is string => typeof relativePath === 'string' && typeof uri === 'string'
+				(entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'
 			)
 		)
 
@@ -185,28 +177,6 @@ function parseStoredInstalledAssay(row: InstalledAssayRow): InstalledAssayRecord
 		}
 	} catch {
 		return null
-	}
-}
-
-async function loadBundledAssayPackage(source: BundledAssaySource): Promise<LoadedAssayPackage> {
-	const fileContents = Object.fromEntries(
-		await Promise.all(
-			Object.entries(source.fileAssetModuleIds).map(async ([filePath, assetModuleId]) => [
-				filePath,
-				await loadBundledAssetText(assetModuleId),
-			])
-		)
-	)
-
-	return {
-		fileContents,
-		packageSource: {
-			assayAssetModuleId: source.assayAssetModuleId,
-			assayPath: source.assayPath,
-			compiledPath: source.compiledPath,
-			fileAssetModuleIds: source.fileAssetModuleIds,
-			type: 'bundled',
-		},
 	}
 }
 
@@ -256,7 +226,79 @@ async function loadInstalledAssayPackages(): Promise<LoadedAssayPackage[]> {
 		})
 	)
 
-	return packages.filter((pkg): pkg is LoadedAssayPackage => pkg !== null)
+	return packages.reduce<LoadedAssayPackage[]>((acc, pkg) => {
+		if (pkg) {
+			acc.push(pkg)
+		}
+		return acc
+	}, [])
+}
+
+async function loadRemoteAssayPackages(): Promise<LoadedAssayPackage[]> {
+	try {
+		console.log('[github-assays] loader remote start')
+		const entries = await fetchGitHubAssayIndex({ ...REMOTE_ASSAY_REPO })
+		console.log('[github-assays] loader remote index', {
+			count: entries.length,
+			paths: entries.map((entry) => entry.path),
+		})
+		return entries.map(
+			(entry) =>
+				({
+					fileContents: {
+						[entry.compiled_path]: YAML.stringify({
+							schema: 'bioscript:assay-compiled',
+							version: entry.package_version ?? '1.0',
+							assay: {
+								id: entry.id,
+								label: entry.title ?? entry.id,
+								summary: entry.summary ?? '',
+								category: entry.category ?? 'traits',
+								tags: entry.tags ?? [],
+								disclaimer: entry.disclaimer ?? null,
+								package_version: entry.package_version ?? '1.0',
+								source_of_truth: entry.source_of_truth ?? 'package',
+							},
+							ui: {
+								template: entry.template ?? 'variant-panel',
+								version: '1.0',
+							},
+							compatibility: {
+								works_with: entry.works_with ?? [],
+								assemblies: entry.assemblies ?? [],
+								notes: entry.notes ?? [],
+							},
+							privacy: {
+								mode: 'unknown',
+								uploads_data: false,
+								stores_results_locally: true,
+								external_urls: [],
+							},
+							interpretation: {},
+							runnable_variants: [],
+							unsupported_variants: [],
+						}),
+					},
+					packageSource: {
+						assayPath: entry.assay_path,
+						artifactFormat: entry.artifact_format,
+						artifactSha256: entry.artifact_sha256,
+						artifactSize: entry.artifact_size,
+						artifactUrl: entry.artifact_url,
+						compiledPath: entry.compiled_path,
+						location: {
+							...REMOTE_ASSAY_REPO,
+							path: entry.path,
+						},
+						source: `https://github.com/${REMOTE_ASSAY_REPO.owner}/${REMOTE_ASSAY_REPO.repo}/tree/${REMOTE_ASSAY_REPO.ref}/${entry.path}`,
+						type: 'remote',
+					} satisfies RemoteAssayPackageSource,
+				}) satisfies LoadedAssayPackage
+		)
+	} catch (error) {
+		console.warn('[github-assays] loader remote failed', error)
+		return []
+	}
 }
 
 function readCompiledMap(text: string, label: string): YamlMap {
@@ -301,7 +343,11 @@ function parseVariantRecord(raw: unknown, label: string): IntermediateVariantRec
 function parseLoadedAssayPackage(loadedPackage: LoadedAssayPackage): AssayManifest {
 	const { fileContents, packageSource } = loadedPackage
 	const compiledPath = packageSource.compiledPath
-	const compiled = readCompiledMap(fileContents[compiledPath], compiledPath)
+	const compiledContents = fileContents[compiledPath]
+	if (!compiledContents) {
+		throw new Error(`${compiledPath} could not be loaded`)
+	}
+	const compiled = readCompiledMap(compiledContents, compiledPath)
 
 	if (compiled.schema !== 'bioscript:assay-compiled') {
 		throw new Error(`${compiledPath} does not declare bioscript:assay-compiled`)
@@ -434,13 +480,10 @@ export async function listAvailableAssayManifests(): Promise<AssayManifest[]> {
 		return manifestCache
 	}
 	if (!manifestPromise) {
-		manifestPromise = Promise.all([
-			Promise.all(bundledAssaySources.map(loadBundledAssayPackage)),
-			loadInstalledAssayPackages(),
-		]).then(([bundledPackages, installedPackages]) => {
+		manifestPromise = Promise.all([loadRemoteAssayPackages(), loadInstalledAssayPackages()]).then(([remotePackages, installedPackages]) => {
 			const manifestsById = new Map<string, AssayManifest>()
 
-			for (const loadedPackage of bundledPackages) {
+			for (const loadedPackage of remotePackages) {
 				const manifest = parseLoadedAssayPackage(loadedPackage)
 				manifestsById.set(manifest.id, manifest)
 			}

@@ -43,6 +43,9 @@ export type UnsupportedAssayVariant = {
 export type RunAssayRequest = {
   assayPath: string;
   assayContents?: string;
+  compiledContents?: string;
+  compiledPath?: string;
+  progressFile?: string;
   root?: string;
   inputFile?: string;
   inputContents?: string;

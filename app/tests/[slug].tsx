@@ -4,6 +4,7 @@ import { OMButton } from '@/components/ui/OMButton'
 import { OMText } from '@/components/ui/OMText'
 import type { AssayManifest } from '@/lib/assay-manifests'
 import { assessAssayCompatibility } from '@/lib/assay-compatibility'
+import { endAssayRunLiveActivity, syncAssayRunLiveActivity } from '@/lib/assay-live-activity'
 import { getPreferredDocumentIdForAssaySync, setPreferredDocumentIdForAssaySync } from '@/lib/assay-preferences'
 import { describeLatestRun, groupTestResultRows } from '@/lib/assay-result-presentation'
 import { getAvailableAssayManifestById } from '@/lib/assay-registry'
@@ -11,7 +12,7 @@ import { getAssayTemplate } from '@/lib/assay-templates'
 import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
 import { scheduleTestFinishedNotification } from '@/lib/test-notifications'
 import { loadLatestTestRun, saveLatestTestRun } from '@/lib/test-results'
-import { runTest } from '@/lib/test-runner'
+import { runTest, type TestRunProgress } from '@/lib/test-runner'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { Link, router, useLocalSearchParams } from 'expo-router'
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
@@ -26,6 +27,9 @@ export default function TestDetailScreen() {
 	const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(params.documentId ?? null)
 	const [latestRun, setLatestRun] = useState<Awaited<ReturnType<typeof loadLatestTestRun>>>(null)
 	const [isRunning, setIsRunning] = useState(false)
+	const [runProgress, setRunProgress] = useState<TestRunProgress | null>(null)
+	const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+	const [runClockMs, setRunClockMs] = useState(0)
 	const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
 	const [showMoreDetails, setShowMoreDetails] = useState(false)
 	const [useSampleInput, setUseSampleInput] = useState(params.sample === 'true')
@@ -139,6 +143,38 @@ export default function TestDetailScreen() {
 	const canRun = useSampleInput || !!selectedDocument
 	const runButtonLabel = isRunning ? 'Running...' : canRun ? (latestRun ? 'Run again' : 'Run assay') : 'Select a file to run'
 	const shouldPrioritizeResults = params.showResults === 'true' && !!latestRun
+	const activeRunProgress: TestRunProgress | null = isRunning
+		? (runProgress ?? {
+				completed: null,
+				detail: 'Assay is running',
+				elapsedMs: runClockMs,
+				phase: 'starting',
+				total: null,
+			})
+		: null
+	const displayedElapsedMs = Math.max(activeRunProgress?.elapsedMs ?? 0, runClockMs)
+
+	useEffect(() => {
+		return () => {
+			void endAssayRunLiveActivity()
+		}
+	}, [])
+
+	useEffect(() => {
+		if (!isRunning || runStartedAt === null) {
+			setRunClockMs(0)
+			return
+		}
+
+		setRunClockMs(Date.now() - runStartedAt)
+		const intervalId = setInterval(() => {
+			setRunClockMs(Date.now() - runStartedAt)
+		}, 500)
+
+		return () => {
+			clearInterval(intervalId)
+		}
+	}, [isRunning, runStartedAt])
 
 	const handleRun = () => {
 		if (!assay) {
@@ -146,9 +182,23 @@ export default function TestDetailScreen() {
 		}
 
 		void (async () => {
-			try {
-				setIsRunning(true)
-				const run = await runTest(assay.id, useSampleInput ? null : selectedDocument)
+				let latestProgress: TestRunProgress = {
+					completed: 0,
+					detail: 'Preparing assay runtime',
+					elapsedMs: 0,
+					phase: 'starting',
+					total: null,
+				}
+				try {
+					setRunStartedAt(Date.now())
+					setIsRunning(true)
+					setRunProgress(latestProgress)
+					await syncAssayRunLiveActivity(assay.title, latestProgress)
+				const run = await runTest(assay.id, useSampleInput ? null : selectedDocument, (progress) => {
+					latestProgress = progress
+					setRunProgress(progress)
+					void syncAssayRunLiveActivity(assay.title, progress)
+				})
 
 				if (!useSampleInput && selectedDocument) {
 					setPreferredDocumentIdForAssaySync(assay.id, selectedDocument.id)
@@ -162,6 +212,14 @@ export default function TestDetailScreen() {
 				const message = error instanceof Error ? error.message : 'Unable to run assay.'
 				Alert.alert('Assay run failed', message)
 			} finally {
+				await endAssayRunLiveActivity(assay.title, {
+					completed: latestProgress.completed,
+					elapsedMs: Math.max(latestProgress.elapsedMs, runStartedAt ? Date.now() - runStartedAt : 0),
+					phase: 'complete',
+					total: latestProgress.total,
+				})
+				setRunProgress(null)
+				setRunStartedAt(null)
 				setIsRunning(false)
 			}
 		})()
@@ -262,6 +320,28 @@ export default function TestDetailScreen() {
 					<OMText variant="headline" style={styles.panelTitle}>
 						Choose file
 					</OMText>
+
+						{isRunning && activeRunProgress ? (
+							<View style={styles.progressCard}>
+								<OMText variant="subtitle" style={styles.progressTitle}>
+									Running assay
+								</OMText>
+								<OMText variant="body" style={styles.progressBody}>
+									Phase: {formatProgressPhase(activeRunProgress.phase)}
+								</OMText>
+							{activeRunProgress.detail ? (
+								<OMText variant="caption" style={styles.progressDetail}>
+									{activeRunProgress.detail}
+								</OMText>
+							) : null}
+								<OMText variant="caption" style={styles.runMeta}>
+								Elapsed: {formatElapsedSeconds(displayedElapsedMs)}
+								{activeRunProgress.completed !== null || activeRunProgress.total !== null
+									? ` • Progress: ${activeRunProgress.completed ?? 0}${activeRunProgress.total !== null ? ` / ${activeRunProgress.total}` : ''}`
+									: ''}
+								</OMText>
+							</View>
+					) : null}
 
 					{useSampleInput ? (
 						<OMText variant="body" style={styles.panelBody}>
@@ -663,6 +743,27 @@ export default function TestDetailScreen() {
 	)
 }
 
+function formatElapsedSeconds(elapsedMs: number) {
+	return `${Math.max(0, Math.floor(elapsedMs / 1000))}s`
+}
+
+function formatProgressPhase(phase: string) {
+	switch (phase) {
+		case 'starting':
+			return 'Starting'
+		case 'loading_genotypes':
+			return 'Loading genotypes'
+		case 'running_variants':
+			return 'Checking variants'
+		case 'writing_output':
+			return 'Writing output'
+		case 'complete':
+			return 'Complete'
+		default:
+			return phase
+	}
+}
+
 const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
@@ -750,6 +851,23 @@ const styles = StyleSheet.create({
 		color: omTheme.primaryText,
 	},
 	panelBody: {
+		color: omColors.grayscale400,
+	},
+	progressCard: {
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(82,168,197,0.1)',
+		borderWidth: 1,
+		borderColor: 'rgba(82,168,197,0.18)',
+		gap: omSpacing.xs,
+	},
+	progressTitle: {
+		color: omTheme.primaryText,
+	},
+	progressBody: {
+		color: omColors.grayscale300,
+	},
+	progressDetail: {
 		color: omColors.grayscale400,
 	},
 	runMeta: {

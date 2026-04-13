@@ -1,18 +1,62 @@
 import { installAssayPackage } from '@/lib/installed-assays'
 
 type GitHubDirectoryEntry = {
-	download_url: string | null
 	name: string
 	path: string
 	type: 'dir' | 'file'
+	url: string
 }
 
-type ResolvedGitHubPackageLocation = {
+type GitHubTreeEntry = {
+	path: string
+	type: 'blob' | 'tree' | 'commit'
+	url: string
+}
+
+export type GitHubPackageLocation = {
 	baseUrl: string
 	owner: string
 	path: string
 	ref: string
 	repo: string
+}
+
+export type RemoteGitHubAssayPackage = {
+	assayPath: string
+	compiledContents: string
+	compiledPath: string
+	location: GitHubPackageLocation
+	source: string
+}
+
+export type GitHubAssayIndexEntry = {
+	assemblies?: string[]
+	assay_path: string
+	artifact_format: string
+	artifact_sha256: string
+	artifact_size: number
+	artifact_url: string
+	category?: string
+	compiled_path: string
+	disclaimer?: string | null
+	id: string
+	notes?: string[]
+	package_version?: string
+	path: string
+	runnable_variant_count?: number
+	source_of_truth?: string
+	summary?: string
+	tags?: string[]
+	template?: string
+	title?: string
+	unsupported_variant_count?: number
+	works_with?: string[]
+}
+
+type GitHubAssayIndex = {
+	assays?: GitHubAssayIndexEntry[]
+	schema?: string
+	version?: string
 }
 
 function trimTrailingSlash(value: string) {
@@ -26,7 +70,24 @@ function getDecodedPath(pathname: string) {
 		.map((part) => decodeURIComponent(part))
 }
 
-function parseGitHubPathUrl(input: string): ResolvedGitHubPackageLocation {
+function getGitHubToken() {
+	const token = '' // add token here for read-only access to exvitae branch (temporary) token-line
+	return token ? token : null
+}
+
+function getGitHubHeaders(accept: string): HeadersInit {
+	const token = getGitHubToken()
+	return {
+		Accept: accept,
+		...(token ? { Authorization: `Bearer ${token}` } : {}),
+	}
+}
+
+function buildGitHubTreeUrl(location: GitHubPackageLocation) {
+	return `${location.baseUrl}/${location.owner}/${location.repo}/tree/${location.ref}/${location.path}`
+}
+
+function parseGitHubPathUrl(input: string): GitHubPackageLocation {
 	let url: URL
 	try {
 		url = new URL(input.trim())
@@ -68,21 +129,63 @@ function parseGitHubPathUrl(input: string): ResolvedGitHubPackageLocation {
 }
 
 async function fetchGitHubJson<T>(url: string): Promise<T> {
+	console.log('[github-assays] request json', {
+		hasToken: Boolean(getGitHubToken()),
+		url,
+	})
 	const response = await fetch(url, {
-		headers: {
-			Accept: 'application/vnd.github+json',
-		},
+		headers: getGitHubHeaders('application/vnd.github+json'),
 	})
 
 	if (!response.ok) {
+		console.log('[github-assays] request json failed', {
+			status: response.status,
+			url,
+		})
 		throw new Error(`GitHub request failed with status ${response.status}.`)
 	}
 
+	console.log('[github-assays] request json ok', {
+		status: response.status,
+		url,
+	})
 	return response.json() as Promise<T>
 }
 
+async function fetchGitHubText(url: string): Promise<string> {
+	console.log('[github-assays] request text', {
+		hasToken: Boolean(getGitHubToken()),
+		url,
+	})
+	const response = await fetch(url, {
+		headers: getGitHubHeaders('application/vnd.github.raw+json'),
+	})
+
+	if (!response.ok) {
+		console.log('[github-assays] request text failed', {
+			status: response.status,
+			url,
+		})
+		throw new Error(`Unable to download assay file (${response.status}).`)
+	}
+
+	console.log('[github-assays] request text ok', {
+		status: response.status,
+		url,
+	})
+	return response.text()
+}
+
+export async function fetchGitHubFileText(
+	location: GitHubPackageLocation,
+	path: string
+): Promise<string> {
+	const endpoint = `https://api.github.com/repos/${location.owner}/${location.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(location.ref)}`
+	return fetchGitHubText(endpoint)
+}
+
 async function fetchDirectoryEntries(
-	location: ResolvedGitHubPackageLocation,
+	location: GitHubPackageLocation,
 	path: string
 ): Promise<GitHubDirectoryEntry[]> {
 	const endpoint = `https://api.github.com/repos/${location.owner}/${location.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(location.ref)}`
@@ -90,16 +193,24 @@ async function fetchDirectoryEntries(
 	return Array.isArray(payload) ? payload : [payload]
 }
 
-async function fetchTextFile(downloadUrl: string): Promise<string> {
-	const response = await fetch(downloadUrl)
-	if (!response.ok) {
-		throw new Error(`Unable to download assay file (${response.status}).`)
+async function fetchRecursiveTree(location: GitHubPackageLocation): Promise<GitHubTreeEntry[]> {
+	const treeRef = encodeURIComponent(location.ref)
+	const endpoint = `https://api.github.com/repos/${location.owner}/${location.repo}/git/trees/${treeRef}?recursive=1`
+	const payload = await fetchGitHubJson<{ tree?: GitHubTreeEntry[]; truncated?: boolean }>(endpoint)
+	if (!Array.isArray(payload.tree)) {
+		throw new Error('GitHub tree response did not contain a tree array.')
 	}
-	return response.text()
+	if (payload.truncated) {
+		console.log('[github-assays] recursive tree truncated', {
+			ref: location.ref,
+			repo: `${location.owner}/${location.repo}`,
+		})
+	}
+	return payload.tree
 }
 
-async function collectGitHubPackageFiles(
-	location: ResolvedGitHubPackageLocation,
+export async function fetchGitHubPackageFiles(
+	location: GitHubPackageLocation,
 	path: string,
 	files: Record<string, string>
 ): Promise<void> {
@@ -107,23 +218,83 @@ async function collectGitHubPackageFiles(
 
 	for (const entry of entries) {
 		if (entry.type === 'dir') {
-			await collectGitHubPackageFiles(location, entry.path, files)
+			await fetchGitHubPackageFiles(location, entry.path, files)
 			continue
 		}
 
-		if (entry.type !== 'file' || !entry.download_url) {
+		if (entry.type !== 'file') {
 			continue
 		}
 
-		files[entry.path] = await fetchTextFile(entry.download_url)
+		files[entry.path] = await fetchGitHubText(entry.url)
 	}
+}
+
+export async function listRemoteGitHubAssayPackages(rootLocation: GitHubPackageLocation): Promise<RemoteGitHubAssayPackage[]> {
+	console.log('[github-assays] list remote packages start', rootLocation)
+	const tree = await fetchRecursiveTree(rootLocation)
+	const prefix = `${rootLocation.path}/`
+	const compiledPaths = tree
+		.filter((entry) => entry.type === 'blob' && entry.path.startsWith(prefix) && entry.path.endsWith('/assay.compiled.yaml'))
+		.map((entry) => entry.path)
+		.sort()
+
+	console.log('[github-assays] recursive tree candidates', {
+		count: compiledPaths.length,
+	})
+
+	const packages = await Promise.all(
+		compiledPaths.map(async (compiledPath) => {
+			const path = compiledPath.slice(0, -'/assay.compiled.yaml'.length)
+			const location = {
+				...rootLocation,
+				path,
+			}
+			const endpoint = `https://api.github.com/repos/${location.owner}/${location.repo}/contents/${encodeURI(compiledPath)}?ref=${encodeURIComponent(location.ref)}`
+			const compiledContents = await fetchGitHubText(endpoint)
+			const assayPath = `${path}/assay.yaml`
+			console.log('[github-assays] found remote assay package', {
+				assayPath,
+				compiledPath,
+			})
+			return {
+				assayPath,
+				compiledContents,
+				compiledPath,
+				location,
+				source: buildGitHubTreeUrl(location),
+			} satisfies RemoteGitHubAssayPackage
+		})
+	)
+
+	console.log('[github-assays] list remote packages done', {
+		count: packages.length,
+	})
+	return packages
+}
+
+export async function fetchGitHubAssayIndex(rootLocation: GitHubPackageLocation): Promise<GitHubAssayIndexEntry[]> {
+	const indexPath = `${rootLocation.path}/index.json`
+	const endpoint = `https://api.github.com/repos/${rootLocation.owner}/${rootLocation.repo}/contents/${encodeURI(indexPath)}?ref=${encodeURIComponent(rootLocation.ref)}`
+	console.log('[github-assays] fetch assay index start', {
+		indexPath,
+		repo: `${rootLocation.owner}/${rootLocation.repo}`,
+		ref: rootLocation.ref,
+	})
+	const text = await fetchGitHubText(endpoint)
+	const parsed = JSON.parse(text) as GitHubAssayIndex
+	const assays = Array.isArray(parsed.assays) ? parsed.assays : []
+	console.log('[github-assays] fetch assay index done', {
+		count: assays.length,
+	})
+	return assays
 }
 
 export async function installAssayPackageFromGitHubUrl(url: string) {
 	const location = parseGitHubPathUrl(url)
 	const files: Record<string, string> = {}
 
-	await collectGitHubPackageFiles(location, location.path, files)
+	await fetchGitHubPackageFiles(location, location.path, files)
 
 	const assayPath = `${location.path}/assay.yaml`
 	if (!files[assayPath]) {
@@ -138,6 +309,6 @@ export async function installAssayPackageFromGitHubUrl(url: string) {
 		assayPath,
 		compiledPath,
 		files,
-		source: `${location.baseUrl}/${location.owner}/${location.repo}/tree/${location.ref}/${location.path}`,
+		source: buildGitHubTreeUrl(location),
 	})
 }

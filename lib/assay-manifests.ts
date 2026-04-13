@@ -42,14 +42,6 @@ export type UnsupportedAssayMemberEntry = {
 
 export type AssayMemberEntry = RunnableAssayMemberEntry | UnsupportedAssayMemberEntry
 
-export type BundledAssayPackageSource = {
-	assayAssetModuleId: number
-	assayPath: string
-	compiledPath: string
-	fileAssetModuleIds: Record<string, number>
-	type: 'bundled'
-}
-
 export type InstalledAssayPackageSource = {
 	assayPath: string
 	compiledPath: string
@@ -60,7 +52,27 @@ export type InstalledAssayPackageSource = {
 	type: 'installed'
 }
 
-export type AssayPackageSource = BundledAssayPackageSource | InstalledAssayPackageSource
+export type RemoteAssayPackageSource = {
+	assayPath: string
+	artifactFormat: string
+	artifactSha256: string
+	artifactSize: number
+	artifactUrl: string
+	compiledPath: string
+	location: {
+		baseUrl: string
+		owner: string
+		path: string
+		ref: string
+		repo: string
+	}
+	source: string
+	type: 'remote'
+}
+
+export type AssayPackageSource =
+	| InstalledAssayPackageSource
+	| RemoteAssayPackageSource
 
 export type AssayManifest = {
 	assayMembers: AssayMemberGroup[]

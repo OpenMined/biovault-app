@@ -16,6 +16,8 @@ import { router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
+const TARGET_GITHUB_REPO = 'github.com/keelancj/exvitae/'
+
 function getCategoryLabel(category: string) {
 	return getExploreCategory(category)?.title ?? category
 }
@@ -35,6 +37,10 @@ function getBadgeLabel(status: string | undefined, hasActiveDocument: boolean) {
 
 function formatRecentRunLabel(value: string) {
 	return `Ran ${new Date(value).toLocaleDateString()}`
+}
+
+function getAssaySourceLabel(assay: AssayManifest) {
+	return assay.packageSource.source.toLowerCase().includes(TARGET_GITHUB_REPO) ? 'GitHub' : 'Local'
 }
 
 export default function ExploreScreen() {
@@ -156,43 +162,44 @@ export default function ExploreScreen() {
 				<View style={styles.listWrap}>
 					{isPickerOpen ? <Pressable style={styles.listDismissOverlay} onPress={closePicker} /> : null}
 					<View style={styles.list}>
-					{orderedAssays.map((assay) => {
-						const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
-						const recentRun = recentRunsBySlug[assay.id]
-						const hasRun = !!recentRun
-						const badgeLabel = getBadgeLabel(compatibility?.status, Boolean(activeDocument))
-						const badgeTone = compatibility
-							? compatibility.status === 'likely-supported'
-								? 'good'
-								: compatibility.status === 'unlikely'
-									? 'weak'
-									: 'neutral'
-							: 'neutral'
-						const summary = compatibility
-							? compatibility.summary
-							: getAssayTemplate(assay).runSummary
+						{orderedAssays.map((assay) => {
+							const compatibility = activeDocument ? assessAssayCompatibility(assay, activeDocument) : null
+							const recentRun = recentRunsBySlug[assay.id]
+							const hasRun = !!recentRun
+							const badgeLabel = getBadgeLabel(compatibility?.status, Boolean(activeDocument))
+							const badgeTone = compatibility
+								? compatibility.status === 'likely-supported'
+									? 'good'
+									: compatibility.status === 'unlikely'
+										? 'weak'
+										: 'neutral'
+								: 'neutral'
+							const summary = compatibility
+								? compatibility.summary
+								: getAssayTemplate(assay).runSummary
+							const sourceLabel = getAssaySourceLabel(assay)
 
-						return (
-							<ExploreAssayCard
-								key={assay.id}
-								title={assay.title}
-								body={assay.subtitle}
-								summary={`${getCategoryLabel(assay.category)} • ${summary}`}
-								badgeLabel={badgeLabel}
-								badgeTone={badgeTone}
-								isPreviouslyRun={hasRun}
-								recentRunLabel={recentRun ? formatRecentRunLabel(recentRun.ranAt) : null}
-								href={{
-									pathname: '/tests/[slug]',
-									params: {
-										slug: assay.id,
-										...(activeDocument ? { documentId: activeDocument.id } : {}),
-										...(hasRun ? { showResults: 'true' } : {}),
-									},
-								}}
-							/>
-						)
-					})}
+							return (
+								<ExploreAssayCard
+									key={assay.id}
+									title={assay.title}
+									body={assay.subtitle}
+									summary={`${sourceLabel} • ${getCategoryLabel(assay.category)} • ${summary}`}
+									badgeLabel={badgeLabel}
+									badgeTone={badgeTone}
+									isPreviouslyRun={hasRun}
+									recentRunLabel={recentRun ? formatRecentRunLabel(recentRun.ranAt) : null}
+									href={{
+										pathname: '/tests/[slug]',
+										params: {
+											slug: assay.id,
+											...(activeDocument ? { documentId: activeDocument.id } : {}),
+											...(hasRun ? { showResults: 'true' } : {}),
+										},
+									}}
+								/>
+							)
+						})}
 					</View>
 				</View>
 			</ScrollView>

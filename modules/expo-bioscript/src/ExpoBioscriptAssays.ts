@@ -125,48 +125,38 @@ function formatCoord(coords: Record<string, unknown> | null | undefined): string
   return undefined;
 }
 
-function yamlVariantToDefinition(path: string, data: Record<string, unknown>): VariantDefinition {
-  const schema = data.schema;
-  if (schema !== 'bioscript:variant' && schema !== 'bioscript:variant:1.0') {
-    throw new Error(`${path} is not a bioscript:variant record`);
-  }
-
-  const identifiers = (data.identifiers as Record<string, unknown> | undefined) ?? {};
-  const coordinates = (data.coordinates as Record<string, unknown> | undefined) ?? {};
-  const alleles = (data.alleles as Record<string, unknown> | undefined) ?? {};
-  const rsids = Array.isArray(identifiers.rsids) ? identifiers.rsids.filter((item): item is string => typeof item === 'string') : [];
-  const canonicalAlt = typeof alleles.canonical_alt === 'string' ? alleles.canonical_alt : undefined;
-  const alts = Array.isArray(alleles.alts) ? alleles.alts.filter((item): item is string => typeof item === 'string') : [];
-  const ref = typeof alleles.ref === 'string' ? alleles.ref : undefined;
-  const deletionLength = typeof alleles.deletion_length === 'number' ? alleles.deletion_length : undefined;
-  const motifs = Array.isArray(alleles.motifs) ? alleles.motifs.filter((item): item is string => typeof item === 'string') : undefined;
-  const rawKind = typeof alleles.kind === 'string' ? alleles.kind : 'snv';
+function compiledVariantToDefinition(path: string, data: Record<string, unknown>): VariantDefinition {
+  const fields = (data.fields as Record<string, unknown> | undefined) ?? {};
+  const rsids = Array.isArray(data.rsids) ? data.rsids.filter((item): item is string => typeof item === 'string') : [];
+  const alts = Array.isArray(data.alts) ? data.alts.filter((item): item is string => typeof item === 'string') : [];
+  const grch37 = formatCoord(data.grch37 as Record<string, unknown> | undefined) ?? (typeof fields.grch37 === 'string' ? fields.grch37 : undefined);
+  const grch38 = formatCoord(data.grch38 as Record<string, unknown> | undefined) ?? (typeof fields.grch38 === 'string' ? fields.grch38 : undefined);
+  const ref = typeof data.ref === 'string' ? data.ref : typeof fields.ref === 'string' ? fields.ref : undefined;
+  const deletionLength =
+    typeof data.deletion_length === 'number'
+      ? data.deletion_length
+      : typeof fields.deletion_length === 'number'
+        ? fields.deletion_length
+        : undefined;
+  const rawKind =
+    typeof fields.kind === 'string'
+      ? fields.kind
+      : typeof data.kind === 'string'
+        ? data.kind
+        : 'snv';
   const kindMap: Record<string, string> = { snv: 'snp', deletion: 'deletion', insertion: 'insertion', indel: 'indel' };
-  const kind = kindMap[rawKind] ?? rawKind;
-  const grch37 = formatCoord(coordinates.grch37 as Record<string, unknown> | undefined);
-  const grch38 = formatCoord(coordinates.grch38 as Record<string, unknown> | undefined);
-  const findings = Array.isArray(data.findings) ? data.findings : [];
-  const firstFinding = findings.find((item) => item && typeof item === 'object' && !Array.isArray(item)) as Record<string, unknown> | undefined;
-  const note = typeof firstFinding?.notes === 'string' ? firstFinding.notes : undefined;
+  const kind = kindMap[String(rawKind).toLowerCase()] ?? String(rawKind).toLowerCase();
+  const alt = typeof fields.alt === 'string' ? fields.alt : alts[0];
+  const note = typeof data.note === 'string' ? data.note : typeof data.summary === 'string' ? data.summary : undefined;
   const gene = typeof data.gene === 'string' ? data.gene : undefined;
-  const location = grch37 ? `GRCh37 chr${grch37.split(':')[0]}:${grch37.split(':')[1]?.replace(/-.+$/, '') ?? ''}` : grch38 ? `GRCh38 chr${grch38.split(':')[0]}:${grch38.split(':')[1]?.replace(/-.+$/, '') ?? ''}` : undefined;
-
-  if (!rsids.length && !grch37 && !grch38) {
-    throw new Error(`${path} must declare at least one rsid or genomic coordinate`);
-  }
-  if ((kind === 'snp' || kind === 'deletion') && !ref) {
-    throw new Error(`${path} ${kind} variant missing ref allele`);
-  }
-  const alt = canonicalAlt && alts.includes(canonicalAlt) ? canonicalAlt : alts[0];
-  if ((kind === 'snp' || kind === 'deletion') && !alt) {
-    throw new Error(`${path} ${kind} variant missing alt allele`);
-  }
-  if (kind === 'deletion' && !deletionLength) {
-    throw new Error(`${path} deletion variant missing deletion_length`);
-  }
-
   const variantNameSource = typeof data.name === 'string' && data.name ? data.name : path.split('/').pop() ?? 'variant';
   const name = variantNameSource.replace(/[^A-Za-z0-9_]/g, '_');
+  const location = grch37
+    ? `GRCh37 chr${grch37.split(':')[0]}:${grch37.split(':')[1]?.replace(/-.+$/, '') ?? ''}`
+    : grch38
+      ? `GRCh38 chr${grch38.split(':')[0]}:${grch38.split(':')[1]?.replace(/-.+$/, '') ?? ''}`
+      : undefined;
+
   return {
     gene,
     label: rsids[0] ?? name,
@@ -182,26 +172,8 @@ function yamlVariantToDefinition(path: string, data: Record<string, unknown>): V
       alt,
       kind,
       deletion_length: deletionLength,
-      motifs,
     },
   };
-}
-
-function runtimeSupportsVariant(variant: VariantDefinition): { supported: boolean; reason?: string } {
-  const kind = String(variant.fields.kind ?? '').toLowerCase();
-  if (!kind || kind === 'snp') {
-    return { supported: true };
-  }
-  if (kind === 'deletion') {
-    return variant.fields.deletion_length ? { supported: true } : { supported: false, reason: 'deletions require deletion_length' };
-  }
-  if (kind === 'insertion') {
-    return { supported: false, reason: 'insertions not yet supported by bioscript runtime' };
-  }
-  if (kind === 'indel') {
-    return { supported: false, reason: 'indels not yet supported by bioscript runtime' };
-  }
-  return { supported: false, reason: `unsupported variant kind: ${kind}` };
 }
 
 function formatVariantTarget(variant: VariantDefinition): string {
@@ -234,7 +206,8 @@ function bioscriptLiteral(value: unknown): string {
   throw new Error(`unsupported bioscript literal: ${String(value)}`);
 }
 
-function buildProbeScript(variants: VariantDefinition[]): string {
+function buildProbeScript(variants: VariantDefinition[], progressFile?: string): string {
+  const lookupBatchSize = 512;
   const blocks = variants
     .map((variant) => {
       const args = Object.entries(variant.fields)
@@ -245,13 +218,30 @@ function buildProbeScript(variants: VariantDefinition[]): string {
     })
     .join('\n');
 
-  const rows = variants
-    .map(
-      (variant) => `    observed_${variant.name} = genotypes.lookup_variant(${variant.name})\n    row_status_${variant.name} = row_status(observed_${variant.name}, ${variant.name})\n    rows.append({\n        "participant_id": participant_id,\n        "gene": ${bioscriptLiteral(variant.gene ?? 'Unknown')},\n        "label": ${bioscriptLiteral(variant.label)},\n        "rsid": ${bioscriptLiteral(variant.fields.rsid ?? null)},\n        "location": ${bioscriptLiteral(variant.location ?? null)},\n        "kind": ${bioscriptLiteral(String(variant.fields.kind ?? 'snp').toUpperCase())},\n        "ref": ${bioscriptLiteral(variant.fields.ref ?? null)},\n        "alts": ${bioscriptLiteral(variant.alts ?? [])},\n        "observed": observed_${variant.name},\n        "row_status": row_status_${variant.name},\n        "summary": ${bioscriptLiteral(variant.note ?? '')},\n    })`,
-    )
-    .join('\n');
+  const totalVariants = variants.length;
+  const chunkBlocks: string[] = [];
+  for (let chunkStart = 0; chunkStart < variants.length; chunkStart += lookupBatchSize) {
+    const chunk = variants.slice(chunkStart, chunkStart + lookupBatchSize);
+    const chunkEnd = chunkStart + chunk.length;
+    const planName = `QUERY_PLAN_${chunkStart}`;
+    const resultsName = `observations_${chunkStart}`;
+    const variantRefs = chunk.map((variant) => variant.name).join(', ');
+    const rowBlocks = chunk
+      .map((variant, index) => {
+        const observationExpr = `${resultsName}[${index}]`;
+        return `    row_status_${variant.name} = row_status(${observationExpr}, ${variant.name})\n    rows.append({\n        "participant_id": participant_id,\n        "gene": ${bioscriptLiteral(variant.gene ?? 'Unknown')},\n        "label": ${bioscriptLiteral(variant.label)},\n        "rsid": ${bioscriptLiteral(variant.fields.rsid ?? null)},\n        "location": ${bioscriptLiteral(variant.location ?? null)},\n        "kind": ${bioscriptLiteral(String(variant.fields.kind ?? 'snp').toUpperCase())},\n        "ref": ${bioscriptLiteral(variant.fields.ref ?? null)},\n        "alts": ${bioscriptLiteral(variant.alts ?? [])},\n        "observed": ${observationExpr},\n        "row_status": row_status_${variant.name},\n        "summary": ${bioscriptLiteral(variant.note ?? '')},\n    })`;
+      })
+      .join('\n');
+    chunkBlocks.push(
+      `    ${planName} = bioscript.query_plan([${variantRefs}])\n` +
+        `    ${resultsName} = genotypes.lookup_variants(${planName})\n` +
+        `${rowBlocks}\n` +
+        `    write_progress("running_variants", ${chunkEnd}, ${bioscriptLiteral(`Processed ${chunkEnd} of ${totalVariants} variants`)})`
+    );
+  }
+  const rows = chunkBlocks.join('\n');
 
-  return `${blocks}\n\ndef row_status(observed, variant):\n    if observed is None or observed == "--":\n        return "missing"\n    kind = variant.kind\n    ref = variant.reference\n    alt = variant.alternate\n    if kind == "deletion":\n        if "D" in observed:\n            return "matched"\n        return "normal"\n    if alt is not None and alt in observed:\n        return "matched"\n    if ref is not None and len(observed) == 2 and observed[0] == ref and observed[1] == ref:\n        return "normal"\n    return "normal"\n\n\ndef assay_outcome(rows):\n    if len(rows) == 0:\n        return "missing"\n    statuses = []\n    for row in rows:\n        statuses.append(row["row_status"])\n    all_missing = True\n    has_missing = False\n    has_matched = False\n    for status in statuses:\n        if status != "missing":\n            all_missing = False\n        if status == "missing":\n            has_missing = True\n        if status == "matched":\n            has_matched = True\n    if all_missing:\n        return "missing"\n    if has_missing:\n        return "partial"\n    if has_matched:\n        return "matched"\n    return "normal"\n\n\ndef main():\n    genotypes = bioscript.load_genotypes(input_file)\n    rows = []\n${rows}\n    outcome = assay_outcome(rows)\n    for row in rows:\n        row[${bioscriptLiteral(ASSAY_OUTCOME_FIELD)}] = outcome\n    bioscript.write_tsv(output_file, rows)\n\n\nif __name__ == "__main__":\n    main()\n`;
+  return `${blocks}\n\nPROGRESS_FILE = ${bioscriptLiteral(progressFile ?? null)}\nTOTAL_VARIANTS = ${totalVariants}\n\n\ndef write_progress(phase, completed=None, detail=None):\n    if PROGRESS_FILE is None:\n        return\n    completed_value = "" if completed is None else str(completed)\n    detail_value = "" if detail is None else detail\n    bioscript.write_text(PROGRESS_FILE, phase + "\\t" + completed_value + "\\t" + str(TOTAL_VARIANTS) + "\\t" + detail_value)\n\n\ndef row_status(observed, variant):\n    if observed is None or observed == "--":\n        return "missing"\n    kind = variant.kind\n    ref = variant.reference\n    alt = variant.alternate\n    if kind == "deletion":\n        if "D" in observed:\n            return "matched"\n        return "normal"\n    if alt is not None and alt in observed:\n        return "matched"\n    if ref is not None and len(observed) == 2 and observed[0] == ref and observed[1] == ref:\n        return "normal"\n    return "normal"\n\n\ndef assay_outcome(rows):\n    if len(rows) == 0:\n        return "missing"\n    statuses = []\n    for row in rows:\n        statuses.append(row["row_status"])\n    all_missing = True\n    has_missing = False\n    has_matched = False\n    for status in statuses:\n        if status != "missing":\n            all_missing = False\n        if status == "missing":\n            has_missing = True\n        if status == "matched":\n            has_matched = True\n    if all_missing:\n        return "missing"\n    if has_missing:\n        return "partial"\n    if has_matched:\n        return "matched"\n    return "normal"\n\n\ndef main():\n    write_progress("loading_genotypes", 0, "Loading genotypes from input file")\n    genotypes = bioscript.load_genotypes(input_file)\n    write_progress("running_variants", 0, "Genotypes loaded; starting variant checks")\n    rows = []\n${rows}\n    outcome = assay_outcome(rows)\n    for row in rows:\n        row[${bioscriptLiteral(ASSAY_OUTCOME_FIELD)}] = outcome\n    write_progress("writing_output", TOTAL_VARIANTS, "Variant checks complete; writing output")\n    bioscript.write_tsv(output_file, rows)\n    write_progress("complete", TOTAL_VARIANTS, "Output written")\n\n\nif __name__ == "__main__":\n    main()\n`;
 }
 
 
@@ -273,47 +263,43 @@ async function loadAssayPackage(request: RunAssayRequest): Promise<LoadedAssayPa
   const assayDir = dirname(request.assayPath);
   const bundledFiles: Record<string, string> = { ...(request.fileContents ?? {}) };
   bundledFiles[request.assayPath] = assayContents;
-
-  const inputs = (manifest.inputs as Record<string, unknown> | undefined) ?? {};
-  const catalogueRef = inputs.catalogue;
-  if (typeof catalogueRef !== 'string' || !catalogueRef) {
-    throw new Error(`${request.assayPath} missing inputs.catalogue`);
-  }
-  const cataloguePath = joinPath(assayDir, catalogueRef);
-  const catalogueContents = bundledFiles[cataloguePath] ?? (await readTextSource(cataloguePath));
-  bundledFiles[cataloguePath] = catalogueContents;
-  const catalogue = readYamlMap(catalogueContents, cataloguePath);
-  if (catalogue.schema !== 'bioscript:catalogue') {
-    throw new Error(`${cataloguePath} must declare schema: bioscript:catalogue`);
-  }
-  const entries = Array.isArray(catalogue.variants) ? catalogue.variants : null;
-  if (!entries || entries.length === 0) {
-    throw new Error(`${cataloguePath} missing variants list`);
-  }
+  const compiledPath = request.compiledPath ?? joinPath(assayDir, 'assay.compiled.yaml');
+  const compiledContents =
+    request.compiledContents ?? bundledFiles[compiledPath] ?? (await readTextSource(compiledPath));
+  bundledFiles[compiledPath] = compiledContents;
+  const compiled = readYamlMap(compiledContents, compiledPath);
 
   const variants: VariantDefinition[] = [];
   const unsupportedVariants: LoadedAssayPackage['unsupportedVariants'] = [];
-  for (const [index, rawEntry] of entries.entries()) {
-    if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
-      throw new Error(`${cataloguePath} variants[${index}] must be a mapping`);
+
+  if (implementationKind === 'panel') {
+    if (compiled.schema !== 'bioscript:assay-compiled') {
+      throw new Error(`${compiledPath} must declare schema: bioscript:assay-compiled for panel assays`);
     }
-    const entry = rawEntry as Record<string, unknown>;
-    const variantRef = entry.path;
-    if (typeof variantRef !== 'string' || !variantRef) {
-      throw new Error(`${cataloguePath} variants[${index}] missing path`);
+    console.log('[expo-bioscript] assay panel load mode', {
+      assayPath: request.assayPath,
+      compiledPath,
+      mode: 'compiled',
+    });
+    const runnableEntries = Array.isArray(compiled.runnable_variants) ? compiled.runnable_variants : [];
+    const unsupportedEntries = Array.isArray(compiled.unsupported_variants) ? compiled.unsupported_variants : [];
+
+    for (const [index, rawVariant] of runnableEntries.entries()) {
+      if (!rawVariant || typeof rawVariant !== 'object' || Array.isArray(rawVariant)) {
+        throw new Error(`${compiledPath} runnable_variants[${index}] must be a mapping`);
+      }
+      variants.push(compiledVariantToDefinition(`${compiledPath}#runnable_variants[${index}]`, rawVariant as Record<string, unknown>));
     }
-    const variantPath = joinPath(dirname(cataloguePath), variantRef);
-    const variantContents = bundledFiles[variantPath] ?? (await readTextSource(variantPath));
-    bundledFiles[variantPath] = variantContents;
-    const variant = yamlVariantToDefinition(variantPath, readYamlMap(variantContents, variantPath));
-    const support = runtimeSupportsVariant(variant);
-    if (support.supported) {
-      variants.push(variant);
-    } else {
+
+    for (const [index, rawVariant] of unsupportedEntries.entries()) {
+      if (!rawVariant || typeof rawVariant !== 'object' || Array.isArray(rawVariant)) {
+        throw new Error(`${compiledPath} unsupported_variants[${index}] must be a mapping`);
+      }
+      const variant = compiledVariantToDefinition(`${compiledPath}#unsupported_variants[${index}]`, rawVariant as Record<string, unknown>);
       unsupportedVariants.push({
         variantName: variant.name,
         target: formatVariantTarget(variant),
-        reason: support.reason ?? 'unsupported variant',
+        reason: typeof (rawVariant as Record<string, unknown>).reason === 'string' ? String((rawVariant as Record<string, unknown>).reason) : 'unsupported variant',
       });
     }
   }
@@ -334,7 +320,7 @@ async function loadAssayPackage(request: RunAssayRequest): Promise<LoadedAssayPa
   }
 
   const scriptPath = joinPath(assayDir, '.generated/probe.py');
-  const scriptContents = buildProbeScript(variants);
+  const scriptContents = buildProbeScript(variants, request.progressFile);
   bundledFiles[scriptPath] = scriptContents;
   return {
     implementationKind: 'panel',
@@ -376,12 +362,35 @@ export async function runAssay(request: RunAssayRequest): Promise<RunFileResult>
     maxRecursionDepth: request.maxRecursionDepth,
   };
 
-  const result = await ExpoBioscriptModule.runFile(runRequest);
-  return {
-    ...result,
-    assay: {
-      implementationKind: loaded.implementationKind,
-      unsupportedVariants: loaded.unsupportedVariants,
-    },
-  };
+  console.log('[expo-bioscript] runFile request', {
+    scriptPath: runRequest.scriptPath,
+    inputFile: runRequest.inputFile,
+    outputFile: runRequest.outputFile,
+    maxDurationMs: runRequest.maxDurationMs,
+    fileCount: Object.keys(fileContents).length,
+  });
+
+  const runStartedAt = Date.now();
+  try {
+    const result = await ExpoBioscriptModule.runFile(runRequest);
+    console.log('[expo-bioscript] runFile complete', {
+      elapsedMs: Date.now() - runStartedAt,
+      outputFile: runRequest.outputFile,
+      scriptPath: runRequest.scriptPath,
+    });
+    return {
+      ...result,
+      assay: {
+        implementationKind: loaded.implementationKind,
+        unsupportedVariants: loaded.unsupportedVariants,
+      },
+    };
+  } catch (error) {
+    console.log('[expo-bioscript] runFile failed', {
+      elapsedMs: Date.now() - runStartedAt,
+      message: error instanceof Error ? error.message : String(error),
+      scriptPath: runRequest.scriptPath,
+    });
+    throw error;
+  }
 }

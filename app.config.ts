@@ -60,6 +60,7 @@ const config: ExpoConfig = {
 			ITSAppUsesNonExemptEncryption: false,
 			UIFileSharingEnabled: true,
 			LSSupportsOpeningDocumentsInPlace: true,
+			NSSupportsLiveActivities: true,
 		},
 		icon: {
 			light: './assets/icons/ios-dark.png', // making dark default for now
@@ -90,6 +91,7 @@ const config: ExpoConfig = {
 	},
 	plugins: [
 		'expo-asset',
+		'expo-widgets',
 		[
 			'expo-font',
 			{

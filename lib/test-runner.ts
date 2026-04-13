@@ -1,15 +1,15 @@
-import { Asset } from 'expo-asset'
-import type { AssayManifest } from '@/lib/assay-manifests'
 import { ALLOWED_ASSAY_OUTCOMES, ASSAY_OUTCOME_FIELD } from '@/lib/assay-result-schema'
+import { fetchGitHubFileText } from '@/lib/github-assay-packages'
 import { BUILT_IN_SAMPLE_DOCUMENT_ID } from '@/lib/home-import'
 import type { HomeImportedDocument } from '@/lib/home-import'
 import { prepareSampleGenomeImport } from '@/lib/genome-import'
 import { getAvailableAssayManifestById } from '@/lib/assay-registry'
-import type { StoredTestResultRow, StoredTestRun, TestResultStatus, TestRunOutcome } from '@/lib/test-results'
+import type { StoredTestResultRow, TestResultStatus, TestRunOutcome } from '@/lib/test-results'
 import { runAssay } from '@/modules/expo-bioscript'
 import { Directory, File, Paths } from 'expo-file-system'
 import { readAsStringAsync } from 'expo-file-system/legacy'
 import { Platform } from 'react-native'
+import YAML from 'yaml'
 
 function sanitizeFileName(name: string): string {
 	return name.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -30,29 +30,48 @@ function toRelativePath(rootPath: string, fileUri: string): string {
 	return nativePath.slice(normalizedRoot.length)
 }
 
-type BundledAssayDefinition = {
+type AssayDefinition = {
 	assayContents: string
 	assayPath: string
+	compiledContents?: string
+	compiledPath?: string
 	fileContents: Record<string, string>
 }
 
-async function loadBundledAssetText(assetModuleId: number): Promise<string> {
-	const asset = Asset.fromModule(assetModuleId)
-
-	if (Platform.OS === 'web') {
-		const response = await fetch(asset.uri)
-		if (!response.ok) {
-			throw new Error(`Unable to load bundled assay asset (${response.status}).`)
-		}
-		return response.text()
+function readYamlMap(text: string, label: string): Record<string, unknown> {
+	const parsed = YAML.parse(text)
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new Error(`${label} must contain a YAML mapping`)
 	}
-
-	await asset.downloadAsync()
-	const localUri = asset.localUri ?? asset.uri
-	return readAsStringAsync(localUri)
+	return parsed as Record<string, unknown>
 }
 
-async function getBundledAssayDefinition(slug: string): Promise<BundledAssayDefinition | null> {
+export type TestRunProgress = {
+	completed: number | null
+	detail: string | null
+	elapsedMs: number
+	phase: string
+	total: number | null
+}
+
+function parseProgressText(text: string, elapsedMs: number): TestRunProgress | null {
+	const [phase = '', completedRaw = '', totalRaw = '', ...detailParts] = text.trim().split('\t')
+	if (!phase) {
+		return null
+	}
+	const completed = completedRaw ? Number.parseInt(completedRaw, 10) : null
+	const total = totalRaw ? Number.parseInt(totalRaw, 10) : null
+	const detailText = detailParts.join('\t').trim()
+	return {
+		completed: Number.isFinite(completed) ? completed : null,
+		detail: detailText || null,
+		elapsedMs,
+		phase,
+		total: Number.isFinite(total) ? total : null,
+	}
+}
+
+async function getAssayDefinition(slug: string): Promise<AssayDefinition | null> {
 	const assay = await getAvailableAssayManifestById(slug)
 	const packageSource = assay?.packageSource
 	if (!packageSource) {
@@ -60,15 +79,30 @@ async function getBundledAssayDefinition(slug: string): Promise<BundledAssayDefi
 	}
 
 	const fileContents =
-		packageSource.type === 'bundled'
-			? Object.fromEntries(
-					await Promise.all(
-						Object.entries(packageSource.fileAssetModuleIds).map(async ([path, assetModuleId]) => [
-							path,
-							await loadBundledAssetText(assetModuleId),
-						])
-					)
-				)
+		packageSource.type === 'remote'
+				? await (async () => {
+						console.log('[github-assays] remote run fetch', {
+							assayPath: packageSource.assayPath,
+							compiledPath: packageSource.compiledPath,
+							artifactUrl: packageSource.artifactUrl,
+						})
+						const assayContents = await fetchGitHubFileText(packageSource.location, packageSource.assayPath)
+						const compiledContents = await fetchGitHubFileText(packageSource.location, packageSource.compiledPath)
+						const nextFiles: Record<string, string> = {
+							[packageSource.assayPath]: assayContents,
+							[packageSource.compiledPath]: compiledContents,
+						}
+						const assayManifest = readYamlMap(assayContents, packageSource.assayPath)
+						const implementation =
+							(assayManifest.implementation as Record<string, unknown> | undefined) ?? {}
+
+						if (implementation.kind === 'script' && typeof implementation.path === 'string' && implementation.path) {
+							const assayDir = packageSource.assayPath.slice(0, packageSource.assayPath.lastIndexOf('/'))
+							const scriptPath = `${assayDir}/${implementation.path}`
+							nextFiles[scriptPath] = await fetchGitHubFileText(packageSource.location, scriptPath)
+						}
+						return nextFiles
+					})()
 			: Object.fromEntries(
 					await Promise.all(
 						Object.entries(packageSource.fileUris).map(async ([path, fileUri]) => [
@@ -81,6 +115,8 @@ async function getBundledAssayDefinition(slug: string): Promise<BundledAssayDefi
 	return {
 		assayPath: packageSource.assayPath,
 		assayContents: fileContents[packageSource.assayPath] ?? '',
+		compiledContents: fileContents[packageSource.compiledPath],
+		compiledPath: packageSource.compiledPath,
 		fileContents,
 	}
 }
@@ -207,8 +243,8 @@ function normalizeBioscriptRows(rows: Array<Record<string, string>>): StoredTest
 }
 
 function normalizeOutcome(value: string | undefined): TestRunOutcome | undefined {
-	if (value && ALLOWED_ASSAY_OUTCOMES.has(value)) {
-		return value
+	if (value && ALLOWED_ASSAY_OUTCOMES.has(value as TestRunOutcome)) {
+		return value as TestRunOutcome
 	}
 	return undefined
 }
@@ -223,8 +259,12 @@ function extractOutcome(rows: Array<Record<string, string>>, normalizedRows: Sto
 	)
 }
 
-async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocument | null) {
-	const assayPackage = await getBundledAssayDefinition(slug)
+async function runBioscriptTest(
+	slug: string,
+	importedDocument: HomeImportedDocument | null,
+	onProgress?: (progress: TestRunProgress) => void
+) {
+	const assayPackage = await getAssayDefinition(slug)
 	if (!assayPackage) {
 		throw new Error('No executable assay package exists for this assay yet.')
 	}
@@ -232,16 +272,24 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 	const input = await getResolvedInput(importedDocument)
 
 	if (Platform.OS === 'web') {
+		console.log('[bioscript-run] request', {
+			assayPath: assayPackage.assayPath,
+			compiledPath: assayPackage.compiledPath,
+			maxDurationMs: 600_000,
+			platform: 'web',
+		})
 		const result = await runAssay({
 			assayPath: assayPackage.assayPath,
 			assayContents: assayPackage.assayContents,
+			compiledContents: assayPackage.compiledContents,
+			compiledPath: assayPackage.compiledPath,
 			fileContents: assayPackage.fileContents,
 			inputFile: input.inputLabel,
 			inputContents: input.contents,
 			outputFile: 'assay-output.tsv',
 			participantId: sanitizeFileName(input.inputLabel),
 			inputFormat: 'text',
-			maxDurationMs: 60_000,
+			maxDurationMs: 180_000,
 			maxMemoryBytes: 128 * 1024 * 1024,
 			maxAllocations: 1_000_000,
 			maxRecursionDepth: 512,
@@ -270,41 +318,111 @@ async function runBioscriptTest(slug: string, importedDocument: HomeImportedDocu
 	const bioscriptRoot = toNativePath(bioscriptDirectory.uri)
 	const runtimeInputFile = `inputs/${sanitizeFileName(input.inputLabel)}`
 	const outputFile = new File(bioscriptDirectory, 'assay-output.tsv')
-	const result = await runAssay({
+	const progressFile = new File(bioscriptDirectory, 'assay-progress.txt')
+	const timingReportFile = new File(bioscriptDirectory, 'assay-timings.tsv')
+	if (progressFile.exists) {
+		progressFile.delete()
+	}
+	if (timingReportFile.exists) {
+		timingReportFile.delete()
+	}
+	const startedAt = Date.now()
+	console.log('[bioscript-run] request', {
 		assayPath: assayPackage.assayPath,
-		assayContents: assayPackage.assayContents,
-		fileContents: assayPackage.fileContents,
-		root: bioscriptRoot,
-		inputFile: runtimeInputFile,
-		inputContents: input.contents,
-		outputFile: toRelativePath(bioscriptRoot, outputFile.uri),
-		participantId: sanitizeFileName(input.inputLabel),
-		autoIndex: true,
-		cacheDir: toRelativePath(bioscriptRoot, cacheDirectory.uri),
-		maxDurationMs: 60_000,
-		maxMemoryBytes: 128 * 1024 * 1024,
-		maxAllocations: 1_000_000,
-		maxRecursionDepth: 512,
+		compiledPath: assayPackage.compiledPath,
+		maxDurationMs: 600_000,
+		platform: Platform.OS,
 	})
+	onProgress?.({
+		completed: 0,
+		detail: 'Preparing assay runtime',
+		elapsedMs: 0,
+		phase: 'starting',
+		total: null,
+	})
+	const progressPollId = onProgress
+		? setInterval(async () => {
+				if (!progressFile.exists) {
+					return
+				}
+				try {
+					const text = await readAsStringAsync(progressFile.uri)
+					const parsed = parseProgressText(text, Date.now() - startedAt)
+					if (parsed) {
+						onProgress(parsed)
+					}
+				} catch {
+					// Keep polling until the assay completes.
+				}
+			}, 500)
+		: null
 
-	const output = await readAsStringAsync(outputFile.uri)
-	const parsedRows = parseDelimited(output)
-	const normalizedRows = normalizeBioscriptRows(parsedRows)
-	return {
-		inputLabel: input.inputLabel,
-		outcome: extractOutcome(parsedRows, normalizedRows),
-		rows: normalizedRows,
-		unsupportedVariants: result.assay?.unsupportedVariants ?? [],
+	try {
+		const result = await runAssay({
+			assayPath: assayPackage.assayPath,
+			assayContents: assayPackage.assayContents,
+			compiledContents: assayPackage.compiledContents,
+			compiledPath: assayPackage.compiledPath,
+			fileContents: assayPackage.fileContents,
+			progressFile: toRelativePath(bioscriptRoot, progressFile.uri),
+			root: bioscriptRoot,
+			inputFile: runtimeInputFile,
+			inputContents: input.contents,
+			outputFile: toRelativePath(bioscriptRoot, outputFile.uri),
+			participantId: sanitizeFileName(input.inputLabel),
+			autoIndex: true,
+			cacheDir: toRelativePath(bioscriptRoot, cacheDirectory.uri),
+			timingReportPath: toNativePath(timingReportFile.uri),
+			maxDurationMs: 600_000,
+			maxMemoryBytes: 128 * 1024 * 1024,
+			maxAllocations: 1_000_000,
+			maxRecursionDepth: 512,
+		})
+
+		onProgress?.({
+			completed: null,
+			detail: 'Assay run complete',
+			elapsedMs: Date.now() - startedAt,
+			phase: 'complete',
+			total: null,
+		})
+
+		if (timingReportFile.exists) {
+			try {
+				const timingReport = await readAsStringAsync(timingReportFile.uri)
+				console.log('[bioscript-run] timing report\n' + timingReport)
+			} catch (error) {
+				console.warn('[bioscript-run] failed to read timing report', error)
+			}
+		}
+
+		const output = await readAsStringAsync(outputFile.uri)
+		const parsedRows = parseDelimited(output)
+		const normalizedRows = normalizeBioscriptRows(parsedRows)
+		return {
+			inputLabel: input.inputLabel,
+			outcome: extractOutcome(parsedRows, normalizedRows),
+			rows: normalizedRows,
+			unsupportedVariants: result.assay?.unsupportedVariants ?? [],
+		}
+	} finally {
+		if (progressPollId !== null) {
+			clearInterval(progressPollId)
+		}
 	}
 }
 
-export async function runTest(slug: string, importedDocument: HomeImportedDocument | null) {
+export async function runTest(
+	slug: string,
+	importedDocument: HomeImportedDocument | null,
+	onProgress?: (progress: TestRunProgress) => void
+) {
 	const assay = await getAvailableAssayManifestById(slug)
 	if (!assay) {
 		throw new Error('Assay not found.')
 	}
 
-	const result = await runBioscriptTest(slug, importedDocument)
+	const result = await runBioscriptTest(slug, importedDocument, onProgress)
 	return {
 		inputDocumentId: importedDocument?.id ?? null,
 		slug,

@@ -2,7 +2,10 @@ import { OMText } from '@/components/ui/OMText'
 import type { AssayRunSummary, GeneGroupedResultRows } from '@/lib/assay-result-presentation'
 import type { StoredTestRun, TestResultStatus } from '@/lib/test-results'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { StyleSheet, View } from 'react-native'
+import { useState } from 'react'
+import { Pressable, StyleSheet, View } from 'react-native'
+
+const INITIAL_ROWS_PER_GROUP = 24
 
 type Props = {
 	groupedRows: GeneGroupedResultRows
@@ -17,6 +20,8 @@ export function AssayResultPanel({
 	latestRunSummary,
 	panelTitle = 'Latest result',
 }: Props) {
+	const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+
 	return (
 		<View style={styles.panel}>
 			<OMText variant="headline" style={styles.panelTitle}>
@@ -105,15 +110,20 @@ export function AssayResultPanel({
 								return null
 							}
 
+							const groupKey = `${geneGroup.gene}-${statusGroup.status}`
+							const isExpanded = expandedGroups[groupKey] ?? false
+							const visibleRows = isExpanded ? statusGroup.rows : statusGroup.rows.slice(0, INITIAL_ROWS_PER_GROUP)
+							const hiddenCount = statusGroup.rows.length - visibleRows.length
+
 							return (
-								<View key={`${geneGroup.gene}-${statusGroup.status}`} style={styles.statusGroup}>
+								<View key={groupKey} style={styles.statusGroup}>
 									<OMText variant="subtitle" style={styles.labelTitle}>
 										{statusGroup.status} ({statusGroup.rows.length})
 									</OMText>
 
-									{statusGroup.rows.map((item) => (
+									{visibleRows.map((item, index) => (
 										<View
-											key={`${statusGroup.status}-${item.gene}-${item.label}-${item.location}`}
+											key={`${statusGroup.status}-${item.gene}-${item.label}-${item.location}-${item.ref ?? ''}-${item.alts?.join('|') ?? ''}-${index}`}
 											style={styles.variantRow}
 										>
 											<View style={styles.variantHeader}>
@@ -153,6 +163,22 @@ export function AssayResultPanel({
 											</OMText>
 										</View>
 									))}
+
+									{hiddenCount > 0 ? (
+										<Pressable
+											onPress={() =>
+												setExpandedGroups((current) => ({
+													...current,
+													[groupKey]: !isExpanded,
+												}))
+											}
+											style={styles.showMoreButton}
+										>
+											<OMText variant="caption" style={styles.showMoreText}>
+												{isExpanded ? 'Show fewer rows' : `Show ${hiddenCount} more rows`}
+											</OMText>
+										</Pressable>
+									) : null}
 								</View>
 							)
 						})}
@@ -289,6 +315,18 @@ const styles = StyleSheet.create({
 	},
 	statusGroup: {
 		gap: omSpacing.s,
+	},
+	showMoreButton: {
+		paddingVertical: omSpacing.s,
+		paddingHorizontal: omSpacing.m,
+		borderRadius: omRadius.m,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		alignSelf: 'flex-start',
+	},
+	showMoreText: {
+		color: omColors.teal500,
 	},
 	variantRow: {
 		padding: omSpacing.m,
