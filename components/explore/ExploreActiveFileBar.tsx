@@ -2,7 +2,7 @@ import { OMText } from '@/components/ui/OMText'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { Asset } from 'expo-asset'
 import { Pressable, StyleSheet, View } from 'react-native'
-import { SvgUri } from 'react-native-svg'
+import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 
 type Props = {
 	fileName: string
@@ -35,7 +35,7 @@ export function ExploreActiveFileBar({
 				</OMText>
 			</View>
 			<View style={styles.chevronWrap}>
-				<SvgUri
+				<PlatformSvgUri
 					uri={chevronDirection === 'up' ? chevronUpUri : chevronDownUri}
 					width={16}
 					height={16}

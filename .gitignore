@@ -131,3 +131,9 @@ output/
 data/*
 *.a
 brand.openmined.org/
+
+# Maestro test artifacts
+.maestro/logs/
+.maestro/screenshots/
+screenshots/
+test-results/

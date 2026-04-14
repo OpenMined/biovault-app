@@ -81,3 +81,207 @@ jobs:
       - name: Run linting checks
         run: ./lint.sh
 
+  web-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web smoke test
+        run: ./test-web.sh
+
+      - name: Upload web artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-artifacts
+          path: |
+            .maestro-web/screenshots
+            test-results
+          if-no-files-found: ignore
+
+  ios-smoke:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache Rust (iOS targets)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: biovault_rust_lib
+          key: ios
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install host tools
+        run: brew install jq
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json', 'app.config.ts') }}
+          restore-keys: ${{ runner.os }}-pods-
+
+      - name: Cache Xcode DerivedData
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('package-lock.json', 'app.config.ts', 'biovault_rust_lib/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-deriveddata-
+
+      - name: Cache generated ios/ project
+        uses: actions/cache@v4
+        with:
+          path: ios
+          key: ${{ runner.os }}-ios-prebuild-${{ hashFiles('package-lock.json', 'app.config.ts') }}
+          restore-keys: ${{ runner.os }}-ios-prebuild-
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Boot iOS simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))][0].udid')
+          echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Run iOS smoke test
+        run: ./test-ios.sh
+
+      - name: Upload iOS screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: screenshots/ios
+          if-no-files-found: ignore
+
+  android-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        api-level: [36]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Cache Rust (Android targets)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: biovault_rust_lib
+          key: android
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('package-lock.json', 'app.config.ts') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Cache generated android/ project
+        uses: actions/cache@v4
+        with:
+          path: android
+          key: ${{ runner.os }}-android-prebuild-${{ hashFiles('package-lock.json', 'app.config.ts') }}
+          restore-keys: ${{ runner.os }}-android-prebuild-
+
+      - name: Cache AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.api-level }}-pixel8-google_apis
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Create AVD snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_8
+          force-avd-creation: false
+          emulator-options: -no-window -no-snapshot-save -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          disable-animations: true
+          script: echo "AVD snapshot created"
+
+      - name: Run Android smoke test on Pixel 8 / API ${{ matrix.api-level }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_8
+          force-avd-creation: false
+          emulator-options: -no-window -no-snapshot-save -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          disable-animations: true
+          script: ./test-android.sh
+
+      - name: Upload Android screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-screenshots
+          path: screenshots/android
+          if-no-files-found: ignore
+

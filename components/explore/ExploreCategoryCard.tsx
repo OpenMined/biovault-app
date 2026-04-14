@@ -4,7 +4,7 @@ import { omColors, omSpacing, omTheme } from '@/styles/brand'
 import { Asset } from 'expo-asset'
 import { Link } from 'expo-router'
 import { Pressable, StyleSheet, View } from 'react-native'
-import { SvgUri } from 'react-native-svg'
+import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { ExploreIllustration } from './ExploreIllustration'
 
 const chevronRightUri = Asset.fromModule(require('../../assets/images/chevron-right.svg')).uri
@@ -46,7 +46,7 @@ export function ExploreCategoryCard({ assayCount, category }: Props) {
 								{assayLabel}
 							</OMText>
 						</View>
-						<SvgUri uri={chevronRightUri} width={18} height={18} color={omColors.grayscale400} />
+						<PlatformSvgUri uri={chevronRightUri} width={18} height={18} color={omColors.grayscale400} />
 					</View>
 					<OMText variant="body" style={styles.description}>
 						{getCompactDescription(category)}
