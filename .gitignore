@@ -47,6 +47,11 @@ build/
 biovault_rust_lib/target/
 **/target/
 
+# Generated Android JNI libraries
+modules/expo-bioscript/android/src/main/jniLibs/
+modules/expo-monty/android/src/main/jniLibs/
+**/jniLibs/**/*.so
+
 # Build outputs
 *.ipa
 *.apk
