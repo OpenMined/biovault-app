@@ -13,6 +13,14 @@ RUST_WORKSPACES=(
   "desktop/src-tauri"
 )
 
+# tauri::generate_context! panics at compile time if frontendDist
+# (desktop/dist) is missing. Cargo tests don't need a real web bundle,
+# so stub the dir if it's absent.
+if [ ! -d "desktop/dist" ]; then
+  mkdir -p desktop/dist
+  : > desktop/dist/index.html
+fi
+
 echo "==> cargo fmt"
 for ws in "${RUST_WORKSPACES[@]}"; do
   [ -d "$ws" ] || continue

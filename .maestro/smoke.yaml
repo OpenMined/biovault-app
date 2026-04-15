@@ -1,9 +1,10 @@
 appId: org.openmined.biovault.dev
 ---
 - launchApp:
-    clearState: false
+    clearState: true
+- takeScreenshot: screenshots/00-launched
 - extendedWaitUntil:
-    visible: "I understand.*|Explore Assays|This is the developer menu.*"
+    visible: "I understand.*|Explore Assays|Your genomic files|This is the developer menu.*"
     timeout: 60000
 - takeScreenshot: screenshots/01-launch
 - runFlow:

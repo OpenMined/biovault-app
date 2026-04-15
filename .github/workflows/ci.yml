@@ -17,6 +17,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -52,6 +55,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -78,9 +84,13 @@ jobs:
 
       - name: Install root npm deps
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install desktop npm deps
         run: cd desktop && npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run ./lint.sh --check
         run: ./lint.sh --check
@@ -91,6 +101,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -99,6 +112,8 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -122,6 +137,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -170,6 +188,8 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Boot iOS simulator
         run: |
@@ -189,6 +209,14 @@ jobs:
           path: screenshots/ios
           if-no-files-found: ignore
 
+      - name: Upload iOS maestro debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-maestro-debug
+          path: ~/.maestro/tests
+          if-no-files-found: ignore
+
   android-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -198,6 +226,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable KVM
         run: |
@@ -219,7 +250,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          targets: x86_64-linux-android
 
       - name: Cache Rust (Android targets)
         uses: Swatinem/rust-cache@v2
@@ -255,6 +286,8 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create AVD snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -287,5 +320,13 @@ jobs:
         with:
           name: android-screenshots
           path: screenshots/android
+          if-no-files-found: ignore
+
+      - name: Upload Android maestro debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-maestro-debug
+          path: ~/.maestro/tests
           if-no-files-found: ignore
 
