@@ -4,6 +4,7 @@ import {
 	loadHomeImportStateSync,
 	saveHomeImportState,
 	type HomeImportedDocument,
+	type HomeImportOrigin,
 } from '@/lib/home-import'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import {
@@ -79,6 +80,12 @@ async function persistPickResult(result: PickResult, inspection?: Inspection): P
 	const inspectionJson = inspectionRecord ? JSON.stringify(inspectionRecord) : null
 
 	let newDocumentId: string | null = null
+	const origin: HomeImportOrigin =
+		primary.kind === 'handle' || primary.kind === 'path'
+			? 'linked'
+			: primary.kind === 'url'
+				? 'downloaded'
+				: 'copied'
 	if (Platform.OS === 'web') {
 		const file = await refToFileOrNull(primary)
 		const canInline =
@@ -97,6 +104,7 @@ async function persistPickResult(result: PickResult, inspection?: Inspection): P
 			uri: primary.kind === 'url' ? primary.url : '',
 			contents,
 			inspectionJson,
+			origin,
 		} as HomeImportedDocument)
 	} else if (primary.kind === 'path') {
 		const importsDirectory = new Directory(Paths.cache, 'home-imports')
@@ -114,6 +122,7 @@ async function persistPickResult(result: PickResult, inspection?: Inspection): P
 			size,
 			uri: target.uri,
 			inspectionJson,
+			origin,
 		} as HomeImportedDocument)
 	}
 

@@ -1,6 +1,6 @@
 import {
   getDefaultContext as __emnapiGetDefaultContext,
-  instantiateNapiModuleSync as __emnapiInstantiateNapiModuleSync,
+  instantiateNapiModule as __emnapiInstantiateNapiModule,
   WASI as __WASI,
 } from '@napi-rs/wasm-runtime';
 
@@ -33,7 +33,7 @@ export async function loadMontyWasmModule(options = {}) {
 
     const __wasmFile = await fetch(__wasmUrl).then((res) => res.arrayBuffer());
 
-    const { napiModule: __napiModule } = __emnapiInstantiateNapiModuleSync(__wasmFile, {
+    const { napiModule: __napiModule } = await __emnapiInstantiateNapiModule(__wasmFile, {
       context: __emnapiContext,
       asyncWorkPoolSize: 4,
       wasi: __wasi,

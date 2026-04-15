@@ -3,6 +3,8 @@ import { ensureBuiltInSampleGenomeImport } from '@/lib/genome-import'
 import { deleteAsync, getInfoAsync } from 'expo-file-system/legacy'
 import { Platform } from 'react-native'
 
+export type HomeImportOrigin = 'linked' | 'copied' | 'downloaded'
+
 export type HomeImportedDocument = {
 	contents?: string | null
 	id: string
@@ -14,6 +16,14 @@ export type HomeImportedDocument = {
 	uri: string
 	/** JSON-serialized ImportInspectionRecord produced at import time. */
 	inspectionJson?: string | null
+	/**
+	 * Where the bytes live:
+	 * - linked: the real file stays on the user's disk; we keep only a pointer
+	 *   (FileSystemFileHandle on web, path on desktop). Remove never deletes.
+	 * - copied: we copied the bytes into our own cache/DB. Remove deletes the copy.
+	 * - downloaded: we fetched from a URL into our cache. Remove deletes the copy.
+	 */
+	origin?: HomeImportOrigin | null
 }
 
 export type ImportInspectionRecord = {
@@ -49,6 +59,7 @@ type ImportedDocumentRow = {
 	size: number | null
 	uri: string
 	inspection_json: string | null
+	origin: string | null
 }
 
 const DISPLAY_NAME_EXTENSIONS = [
@@ -119,6 +130,7 @@ function normalizeImportedDocument(
 		size: document.size ?? null,
 		uri: document.uri,
 		inspectionJson: document.inspectionJson ?? null,
+		origin: document.origin ?? null,
 	}
 }
 
@@ -133,6 +145,7 @@ function rowToImportedDocument(row: ImportedDocumentRow): HomeImportedDocument {
 		size: row.size,
 		uri: row.uri,
 		inspectionJson: row.inspection_json ?? null,
+		origin: (row.origin ?? null) as HomeImportOrigin | null,
 	}
 }
 
@@ -172,8 +185,8 @@ export function saveHomeImportState(state: HomeImportState) {
 		for (const document of documentsToSave) {
 			db.runSync(
 				`INSERT INTO imported_documents
-				 (id, name, original_name, uri, mime_type, size, imported_at, contents, inspection_json)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				 (id, name, original_name, uri, mime_type, size, imported_at, contents, inspection_json, origin)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				document.id,
 				document.name,
 				document.originalName,
@@ -182,7 +195,8 @@ export function saveHomeImportState(state: HomeImportState) {
 				document.size,
 				document.importedAt,
 				document.contents ?? null,
-				document.inspectionJson ?? null
+				document.inspectionJson ?? null,
+				document.origin ?? null
 			)
 		}
 
@@ -202,7 +216,7 @@ export function loadHomeImportStateSync(): HomeImportState {
 	const importedDocuments = ensureBuiltInSampleDocument(
 		db
 		.getAllSync<ImportedDocumentRow>(
-			`SELECT id, name, original_name, uri, mime_type, size, imported_at, contents, inspection_json
+			`SELECT id, name, original_name, uri, mime_type, size, imported_at, contents, inspection_json, origin
 			 FROM imported_documents
 			 ORDER BY imported_at DESC, id DESC`
 		)

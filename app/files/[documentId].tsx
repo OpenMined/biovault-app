@@ -59,9 +59,16 @@ export default function ImportedFileScreen() {
 			return
 		}
 
+		const origin = document.origin ?? 'copied'
+		const canDeleteBytes = origin === 'copied' || origin === 'downloaded'
 		const doDelete = async () => {
 			try {
-				if (Platform.OS !== 'web' && document.uri && !document.uri.startsWith('biovault://')) {
+				if (
+					canDeleteBytes &&
+					Platform.OS !== 'web' &&
+					document.uri &&
+					!document.uri.startsWith('biovault://')
+				) {
 					await deleteAsync(document.uri, { idempotent: true })
 				}
 			} catch (error) {
@@ -80,19 +87,26 @@ export default function ImportedFileScreen() {
 			router.replace('/(tabs)/home')
 		}
 
+		const title = `Remove "${document.name}"?`
+		const message = canDeleteBytes
+			? 'This will delete the copy stored by BioVault. The original file (if any) is untouched.'
+			: origin === 'linked'
+				? 'This only removes the reference from BioVault. Your file on disk is left alone.'
+				: 'This removes the entry from BioVault.'
+
 		if (Platform.OS === 'web') {
 			// Alert.alert on react-native-web drops the action buttons, so the
 			// destructive callback never fires. Fall back to a native window.confirm.
-			if (typeof window !== 'undefined' && window.confirm(`Remove "${document.name}" from local storage?`)) {
+			if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
 				void doDelete()
 			}
 			return
 		}
 
-		Alert.alert('Delete imported file', `Remove "${document.name}" from local storage?`, [
+		Alert.alert(title, message, [
 			{ text: 'Cancel', style: 'cancel' },
 			{
-				text: 'Delete',
+				text: 'Remove',
 				style: 'destructive',
 				onPress: () => {
 					void doDelete()
@@ -155,6 +169,8 @@ export default function ImportedFileScreen() {
 						</OMText>
 					</View>
 
+					<OriginBadge origin={document.origin ?? null} />
+
 					<HeuristicsSection document={document} />
 
 					{Platform.OS === 'web' ? <LinkedFileSection documentId={document.id} /> : null}
@@ -203,12 +219,29 @@ export default function ImportedFileScreen() {
 					<View style={styles.bottomActionRow}>
 						<Pressable onPress={handleDelete} style={styles.deleteButton}>
 							<OMText variant="subtitle" style={styles.deleteButtonText}>
-								Delete File
+								Remove File
 							</OMText>
 						</Pressable>
 					</View>
 			</ScrollView>
 		</SafeAreaView>
+	)
+}
+
+function OriginBadge({ origin }: { origin: string | null }) {
+	const label = origin === 'linked'
+		? 'Linked — file stays on your disk; Remove leaves it alone.'
+		: origin === 'downloaded'
+			? 'Downloaded — BioVault owns this copy; Remove deletes it.'
+			: origin === 'copied'
+				? 'Copied into BioVault — Remove deletes this copy.'
+				: 'Unknown origin — Remove will clear the entry.'
+	return (
+		<View style={styles.originBadge}>
+			<OMText variant="caption" style={styles.originBadgeText}>
+				{label}
+			</OMText>
+		</View>
 	)
 }
 
@@ -522,6 +555,15 @@ const styles = StyleSheet.create({
 		borderColor: 'rgba(255,255,255,0.12)',
 	},
 	linkedSecondaryText: { color: omColors.grayscale300 },
+	originBadge: {
+		padding: omSpacing.s,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+		alignSelf: 'flex-start',
+	},
+	originBadgeText: { color: omColors.grayscale300 },
 	rowDivider: {
 		borderTopWidth: 1,
 		borderTopColor: 'rgba(255,255,255,0.08)',

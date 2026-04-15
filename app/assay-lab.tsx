@@ -1,4 +1,6 @@
 import { OMText } from '@/components/ui/OMText'
+import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
+import { getHandles, ensurePermission } from '@/lib/file-handle-store'
 import { isBioscriptAvailable, runFile } from '@/modules/expo-bioscript'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { unzipSync } from 'fflate'
@@ -75,9 +77,126 @@ export default function AssayLabScreen() {
 	const [runState, setRunState] = useState<RunState>({ kind: 'idle' })
 	const [dragActive, setDragActive] = useState(false)
 	const [bioscriptAvailable, setBioscriptAvailable] = useState(false)
+	const [savedDocs, setSavedDocs] = useState<HomeImportedDocument[]>([])
 
 	useEffect(() => {
 		setBioscriptAvailable(isBioscriptAvailable())
+	}, [])
+
+	useEffect(() => {
+		void loadHomeImportState()
+			.then((state) => {
+				// Exclude the built-in sample (id 'biovault-sample-data') since we can't
+				// always materialize its bytes on web.
+				setSavedDocs(state.importedDocuments.filter((d) => d.id !== 'biovault-sample-data'))
+			})
+			.catch(() => setSavedDocs([]))
+	}, [])
+
+	const loadSavedDoc = useCallback(async (doc: HomeImportedDocument) => {
+		const originalLower = (doc.originalName || doc.name).toLowerCase()
+		const isBinary =
+			originalLower.endsWith('.cram') ||
+			originalLower.endsWith('.bam') ||
+			originalLower.endsWith('.fa') ||
+			originalLower.endsWith('.fasta')
+		if (isBinary) {
+			setRunState({
+				kind: 'error',
+				message: `${doc.originalName || doc.name} is a binary alignment/reference file. This lab runs text-based assays against genotype text (.txt/.vcf) or a 23andMe .zip — pick one of those instead.`,
+			})
+			return
+		}
+		try {
+			// Prefer inline contents (small text files captured at import time).
+			if (doc.contents) {
+				setGenome({ name: doc.originalName || doc.name, contents: doc.contents })
+				setRunState({ kind: 'idle' })
+				return
+			}
+			// Fall back to the persisted FileSystemFileHandle (web).
+			if (Platform.OS === 'web') {
+				const handles = await getHandles(doc.id)
+				if (handles?.primary) {
+					const permission = await ensurePermission(handles.primary)
+					if (permission !== 'granted') {
+						setRunState({
+							kind: 'error',
+							message: `Permission ${permission} for ${doc.originalName}. Grant access from the file detail page.`,
+						})
+						return
+					}
+					const file = (await handles.primary.getFile()) as unknown as File
+					const lower = file.name.toLowerCase()
+					if (lower.endsWith('.zip')) {
+						const extracted = await extractGenomeTextFromZip(file)
+						if (extracted) {
+							setGenome({
+								name: `${file.name} · ${extracted.entryName}`,
+								contents: extracted.contents,
+							})
+							setRunState({ kind: 'idle' })
+							return
+						}
+					}
+					const contents = await readFileAsText(file)
+					setGenome({ name: file.name, contents })
+					setRunState({ kind: 'idle' })
+					return
+				}
+			}
+			// No inline contents, no persisted handle — ask the user to re-open the
+			// same file from disk. Happens for blob-kind imports (the `<input>`
+			// fallback path) and for files above the inline size limit.
+			if (Platform.OS === 'web' && typeof document !== 'undefined') {
+				window.alert(
+					`Re-open "${doc.originalName || doc.name}" from disk. BioVault kept only metadata for this file (too large to inline, no live handle stored).`,
+				)
+				await new Promise<void>((resolve) => {
+					const input = window.document.createElement('input')
+					input.type = 'file'
+					input.accept = '.txt,.tsv,.csv,.vcf,.zip'
+					input.style.display = 'none'
+					input.onchange = async () => {
+						const f = input.files?.[0]
+						window.document.body.removeChild(input)
+						if (!f) {
+							resolve()
+							return
+						}
+						const lower = f.name.toLowerCase()
+						if (lower.endsWith('.zip')) {
+							const extracted = await extractGenomeTextFromZip(f)
+							if (extracted) {
+								setGenome({
+									name: `${f.name} · ${extracted.entryName}`,
+									contents: extracted.contents,
+								})
+								setRunState({ kind: 'idle' })
+								resolve()
+								return
+							}
+						}
+						const contents = await readFileAsText(f)
+						setGenome({ name: f.name, contents })
+						setRunState({ kind: 'idle' })
+						resolve()
+					}
+					window.document.body.appendChild(input)
+					input.click()
+				})
+				return
+			}
+			setRunState({
+				kind: 'error',
+				message: `No readable contents for ${doc.originalName}. Re-import the file or pick it from disk.`,
+			})
+		} catch (err) {
+			setRunState({
+				kind: 'error',
+				message: err instanceof Error ? err.message : String(err),
+			})
+		}
 	}, [])
 
 	const ingestFile = useCallback(async (file: File) => {
@@ -337,7 +456,7 @@ export default function AssayLabScreen() {
 					) : (
 						<>
 							<OMText variant="body" style={styles.slotBody}>
-								Drop a .txt/.vcf file, or a 23andMe .zip (we'll unpack the genome text).
+								Drop a .txt/.vcf file, or a 23andMe .zip (we&apos;ll unpack the genome text).
 							</OMText>
 							<Pressable
 								onPress={() => pickFile('.txt,.tsv,.csv,.vcf,.zip')}
@@ -347,6 +466,33 @@ export default function AssayLabScreen() {
 									Choose genome file
 								</OMText>
 							</Pressable>
+							{savedDocs.length > 0 ? (
+								<View style={styles.savedDocs}>
+									<OMText variant="caption" style={styles.slotLabel}>
+										OR PICK A SAVED FILE
+									</OMText>
+									{savedDocs.map((doc) => (
+										<Pressable
+											key={doc.id}
+											onPress={() => void loadSavedDoc(doc)}
+											style={styles.savedDocRow}
+										>
+											<View style={{ flex: 1 }}>
+												<OMText variant="subtitle" style={styles.savedDocName}>
+													{doc.name}
+												</OMText>
+												<OMText variant="caption" style={styles.savedDocMeta}>
+													{doc.originalName}
+													{doc.size ? ` · ${(doc.size / 1_000_000).toFixed(1)} MB` : ''}
+												</OMText>
+											</View>
+											<OMText variant="subtitle" style={styles.savedDocAction}>
+												Use
+											</OMText>
+										</Pressable>
+									))}
+								</View>
+							) : null}
 						</>
 					)}
 				</View>
@@ -468,6 +614,7 @@ function TsvTable({ text }: { text: string }) {
 	if (lines.length === 0) return null
 	const rows = lines.map((line) => line.split('\t'))
 	const [header, ...body] = rows
+	if (!header) return null
 	return (
 		<View style={styles.tableCard}>
 			<View style={styles.tableRowHeader}>
@@ -549,7 +696,7 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
 	},
-	codeText: { color: omColors.grayscale200, fontSize: 12 },
+	codeText: { color: omColors.grayscale300, fontSize: 12 },
 	group: { gap: omSpacing.s },
 	groupLabel: { color: omColors.grayscale500, letterSpacing: 0.8 },
 	runRow: { flexDirection: 'row', justifyContent: 'flex-end' },
@@ -570,7 +717,7 @@ const styles = StyleSheet.create({
 		gap: omSpacing.s,
 	},
 	errorTitle: { color: '#ff8a8a' },
-	errorText: { color: omColors.grayscale200 },
+	errorText: { color: omColors.grayscale300 },
 	outputEmpty: {
 		padding: omSpacing.l,
 		borderRadius: omRadius.l,
@@ -601,14 +748,30 @@ const styles = StyleSheet.create({
 		borderBottomWidth: 1,
 		borderBottomColor: 'rgba(255,255,255,0.05)',
 	},
-	tableCell: { color: omColors.grayscale100, minWidth: 80, flex: 1, fontSize: 13 },
+	tableCell: { color: omColors.grayscale150, minWidth: 80, flex: 1, fontSize: 13 },
+	savedDocs: {
+		marginTop: omSpacing.s,
+		gap: omSpacing.s,
+	},
+	savedDocRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: omSpacing.m,
+		padding: omSpacing.m,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.04)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.08)',
+	},
+	savedDocName: { color: omTheme.primaryText },
+	savedDocMeta: { color: omColors.grayscale500, marginTop: omSpacing.xs },
+	savedDocAction: { color: omTheme.accent },
 	dragOverlay: {
 		position: 'absolute',
 		top: 0,
 		left: 0,
 		right: 0,
 		bottom: 0,
-		// @ts-expect-error web-only keyword
 		...(Platform.OS === 'web' ? ({ position: 'fixed' } as object) : null),
 		backgroundColor: 'rgba(5, 15, 20, 0.72)',
 		alignItems: 'center',
