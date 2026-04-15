@@ -47,9 +47,6 @@ jobs:
         run: ./test.sh
 
   lint:
-    # Temporarily disabled on PRs while file-picker WIP is finished.
-    # Trigger manually via workflow_dispatch to run it.
-    if: github.event_name == 'workflow_dispatch'
     # Runs the same ./lint.sh that developers use locally, so CI output
     # matches local output exactly. Covers Rust (bioscript/rust +
     # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
