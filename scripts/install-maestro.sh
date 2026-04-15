@@ -12,7 +12,11 @@ fi
 
 VERSION="${MAESTRO_VERSION:-}"
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(curl -fsSL https://api.github.com/repos/mobile-dev-inc/maestro/releases/latest \
+  AUTH=()
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+  fi
+  VERSION="$(curl -fsSL "${AUTH[@]}" https://api.github.com/repos/mobile-dev-inc/maestro/releases/latest \
     | grep '"tag_name"' | head -1 | cut -d '"' -f 4)"
 fi
 [[ -n "$VERSION" ]] || { echo "Could not resolve Maestro version" >&2; exit 1; }
