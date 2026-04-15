@@ -169,7 +169,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+          # macos-15 runners are Apple Silicon; the simulator needs only the
+          # sim target. Drop aarch64-apple-ios (device) and x86_64-apple-ios
+          # (Intel sim) — neither is used by the smoke test. ~66% less
+          # cross-compile work.
+          targets: aarch64-apple-ios-sim
 
       - name: Cache Rust (iOS targets)
         uses: Swatinem/rust-cache@v2
@@ -205,7 +209,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-deriveddata-${{ hashFiles('package-lock.json', 'app.config.ts', 'bioscript/rust/Cargo.lock') }}
+          # Key on JS/native deps only. Rust (Cargo.lock) changes shouldn't
+          # blow the entire Xcode cache — the Rust cache step below covers
+          # those artefacts.
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('package-lock.json', 'app.config.ts') }}
           restore-keys: ${{ runner.os }}-deriveddata-
 
       - name: Cache generated ios/ project
