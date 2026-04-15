@@ -1,0 +1,442 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native'
+
+import { OMText } from '@/components/ui/OMText'
+import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+
+import { useFilePicker } from './useFilePicker'
+import type { FileRef, Inspection, PickResult } from './types'
+import { fileRefName, fileRefSize } from './types'
+
+type FilePickerProps = {
+	onConfirm?: (result: PickResult) => void
+}
+
+export function FilePicker({ onConfirm }: FilePickerProps) {
+	const picker = useFilePicker()
+	const [urlValue, setUrlValue] = useState('')
+	const [dragActive, setDragActive] = useState(false)
+	const dropRef = useRef<View>(null)
+
+	// Web drag-drop: listen at window level so the whole page reacts to a drag
+	// (users shouldn't have to hit a small target). The drop zone itself also
+	// accepts drops directly. Document-level dragover must preventDefault or
+	// the browser navigates to the dropped file.
+	useEffect(() => {
+		if (Platform.OS !== 'web') return
+		let depth = 0
+		const hasFiles = (e: DragEvent) =>
+			Array.from(e.dataTransfer?.types ?? []).includes('Files')
+		const stop = (e: Event) => {
+			e.preventDefault()
+			e.stopPropagation()
+		}
+		const onDragEnter = (e: DragEvent) => {
+			if (!hasFiles(e)) return
+			stop(e)
+			depth += 1
+			setDragActive(true)
+		}
+		const onDragOver = (e: DragEvent) => {
+			if (!hasFiles(e)) return
+			stop(e)
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+			setDragActive(true)
+		}
+		const onDragLeave = (e: DragEvent) => {
+			if (!hasFiles(e)) return
+			stop(e)
+			depth = Math.max(0, depth - 1)
+			if (depth === 0) setDragActive(false)
+		}
+		const onDrop = async (e: DragEvent) => {
+			stop(e)
+			depth = 0
+			setDragActive(false)
+			const dt = e.dataTransfer
+			if (!dt) return
+			const items = Array.from(dt.items ?? [])
+			for (const item of items) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const getHandle = (item as any).getAsFileSystemHandle as
+					| (() => Promise<FileSystemHandle>)
+					| undefined
+				if (typeof getHandle !== 'function') continue
+				try {
+					const handle = await getHandle.call(item)
+					if (handle && handle.kind === 'file') {
+						const fh = handle as FileSystemFileHandle
+						const f = await fh.getFile()
+						await picker.setFromDrop({ kind: 'handle', handle: fh, name: f.name, size: f.size })
+						return
+					}
+				} catch {
+					// Synthetic DataTransfers (tests, some browsers) throw here.
+				}
+			}
+			const file = dt.files?.[0]
+			if (file) {
+				await picker.setFromDrop({ kind: 'blob', file })
+			}
+		}
+		window.addEventListener('dragenter', onDragEnter)
+		window.addEventListener('dragover', onDragOver)
+		window.addEventListener('dragleave', onDragLeave)
+		window.addEventListener('drop', onDrop)
+		return () => {
+			window.removeEventListener('dragenter', onDragEnter)
+			window.removeEventListener('dragover', onDragOver)
+			window.removeEventListener('dragleave', onDragLeave)
+			window.removeEventListener('drop', onDrop)
+		}
+	}, [picker])
+
+	const submitUrl = useCallback(() => {
+		const url = urlValue.trim()
+		if (!url) return
+		void picker.setFromUrl(url)
+	}, [picker, urlValue])
+
+	const confirm = useCallback(() => {
+		const result = picker.confirm()
+		if (result) onConfirm?.(result)
+	}, [onConfirm, picker])
+
+	return (
+		<View style={styles.root} testID="file-picker">
+			<View
+				ref={dropRef}
+				style={[styles.dropZone, dragActive ? styles.dropZoneActive : null]}
+				testID="file-picker-drop"
+			>
+				<OMText variant="headline" style={styles.dropTitle}>
+					Add a genomic file
+				</OMText>
+				<OMText variant="body" style={styles.dropBody}>
+					{picker.backend.supportsDragDrop
+						? 'Drop a file, or pick one below. We only read a sample to identify it.'
+						: 'Pick a file below. We only read a sample to identify it.'}
+				</OMText>
+				<Pressable
+					style={styles.pickButton}
+					onPress={() => void picker.pick()}
+					testID="file-picker-pick"
+				>
+					<OMText variant="subtitle" style={styles.pickButtonText}>
+						{picker.status === 'picking' ? 'Opening…' : 'Choose file'}
+					</OMText>
+				</Pressable>
+				{picker.backend.supportsUrlInput ? (
+					<View style={styles.urlRow}>
+						<TextInput
+							value={urlValue}
+							onChangeText={setUrlValue}
+							placeholder="or paste a URL to a file"
+							placeholderTextColor={omColors.grayscale500}
+							style={styles.urlInput}
+							autoCapitalize="none"
+							autoCorrect={false}
+							testID="file-picker-url"
+						/>
+						<Pressable onPress={submitUrl} style={styles.urlButton} testID="file-picker-url-submit">
+							<OMText variant="subtitle" style={styles.pickButtonText}>
+								Load
+							</OMText>
+						</Pressable>
+					</View>
+				) : null}
+			</View>
+
+			{picker.status === 'inspecting' ? (
+				<View style={styles.infoCard} testID="file-picker-inspecting">
+					<OMText variant="body" style={styles.infoText}>
+						Inspecting {picker.primary ? fileRefName(picker.primary) : 'file'}…
+					</OMText>
+				</View>
+			) : null}
+
+			{picker.status === 'error' ? (
+				<View style={[styles.infoCard, styles.errorCard]} testID="file-picker-error">
+					<OMText variant="headline" style={styles.errorTitle}>
+						Something went wrong
+					</OMText>
+					<OMText variant="body" style={styles.infoText}>
+						{picker.error}
+					</OMText>
+					<Pressable onPress={picker.reset} style={styles.secondaryButton}>
+						<OMText variant="subtitle" style={styles.pickButtonText}>
+							Try again
+						</OMText>
+					</Pressable>
+				</View>
+			) : null}
+
+			{picker.inspection ? (
+				<InspectionCard
+					inspection={picker.inspection}
+					primary={picker.primary}
+					reference={picker.reference}
+				/>
+			) : null}
+
+			{picker.status === 'needs_reference' ? (
+				<View style={styles.infoCard} testID="file-picker-needs-reference">
+					<OMText variant="headline" style={styles.infoTitle}>
+						Reference file required
+					</OMText>
+					<OMText variant="body" style={styles.infoText}>
+						CRAM/BAM alignments need a matching reference FASTA to be readable.
+					</OMText>
+					<Pressable
+						onPress={() => void picker.pickReference()}
+						style={styles.pickButton}
+						testID="file-picker-pick-reference"
+					>
+						<OMText variant="subtitle" style={styles.pickButtonText}>
+							{picker.status === 'picking_reference' ? 'Opening…' : 'Choose reference (.fa/.fasta)'}
+						</OMText>
+					</Pressable>
+				</View>
+			) : null}
+
+			{picker.status === 'ready' ? (
+				<View style={styles.confirmRow} testID="file-picker-ready">
+					<Pressable onPress={picker.reset} style={styles.secondaryButton}>
+						<OMText variant="subtitle" style={styles.pickButtonText}>
+							Cancel
+						</OMText>
+					</Pressable>
+					<Pressable onPress={confirm} style={styles.confirmButton} testID="file-picker-confirm">
+						<OMText variant="subtitle" style={styles.pickButtonText}>
+							{picker.backend.linksInPlace ? 'Keep reference to file' : 'Save a copy'}
+						</OMText>
+					</Pressable>
+				</View>
+			) : null}
+		</View>
+	)
+}
+
+function InspectionCard({
+	inspection,
+	primary,
+	reference,
+}: {
+	inspection: Inspection
+	primary?: FileRef
+	reference?: FileRef
+}) {
+	const size = primary ? fileRefSize(primary) : inspection.sizeBytes
+	return (
+		<View style={styles.inspectionCard} testID="file-picker-inspection">
+			<Row label="File" value={inspection.fileName} />
+			{primary ? (
+				<Row label="Storage" value={renderStorage(primary)} testID="inspection-storage" />
+			) : null}
+			{inspection.selectedEntry ? <Row label="Zip entry" value={inspection.selectedEntry} /> : null}
+			<Row label="Type" value={renderKind(inspection.detectedKind)} testID="inspection-kind" />
+			<Row
+				label="Confidence"
+				value={inspection.confidence.replace('_', ' ')}
+				testID="inspection-confidence"
+			/>
+			{inspection.source ? (
+				<Row
+					label="Vendor"
+					value={`${inspection.source.vendor}${inspection.source.platformVersion ? ` ${inspection.source.platformVersion}` : ''}`}
+					testID="inspection-vendor"
+				/>
+			) : null}
+			{inspection.assembly ? (
+				<Row label="Assembly" value={inspection.assembly.toUpperCase()} />
+			) : null}
+			{inspection.phased !== undefined ? (
+				<Row label="Phased" value={inspection.phased ? 'yes' : 'no'} />
+			) : null}
+			{size ? <Row label="Size" value={formatSize(size)} /> : null}
+			{reference ? <Row label="Reference" value={fileRefName(reference)} /> : null}
+			{inspection.evidence.length > 0 ? (
+				<Row label="Evidence" value={inspection.evidence.join(' · ')} />
+			) : null}
+			{inspection.warnings.length > 0 ? (
+				<Row label="Warnings" value={inspection.warnings.join(' · ')} />
+			) : null}
+		</View>
+	)
+}
+
+function Row({ label, value, testID }: { label: string; value: string; testID?: string }) {
+	return (
+		<View style={styles.row}>
+			<OMText variant="caption" style={styles.rowLabel}>
+				{label}
+			</OMText>
+			<OMText variant="body" style={styles.rowValue} testID={testID}>
+				{value}
+			</OMText>
+		</View>
+	)
+}
+
+function renderStorage(ref: FileRef): string {
+	switch (ref.kind) {
+		case 'handle':
+			return 'Linked in place (FileSystemFileHandle — no copy)'
+		case 'path':
+			return 'Linked in place (file path — no copy)'
+		case 'blob':
+			return 'Copied into browser memory (File)'
+		case 'url':
+			return 'Remote URL (will download on use)'
+	}
+}
+
+function renderKind(kind: Inspection['detectedKind']): string {
+	switch (kind) {
+		case 'genotype_text':
+			return 'Genotype (text)'
+		case 'vcf':
+			return 'VCF'
+		case 'alignment_cram':
+			return 'CRAM alignment'
+		case 'alignment_bam':
+			return 'BAM alignment'
+		case 'reference_fasta':
+			return 'Reference FASTA'
+		default:
+			return 'Unknown'
+	}
+}
+
+function formatSize(bytes: number): string {
+	if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(2)} GB`
+	if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(2)} MB`
+	if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(1)} KB`
+	return `${bytes} B`
+}
+
+const styles = StyleSheet.create({
+	root: {
+		gap: omSpacing.l,
+	},
+	dropZone: {
+		minHeight: 260,
+		padding: omSpacing.xxl,
+		borderRadius: omRadius.l,
+		borderWidth: 2,
+		borderStyle: 'dashed',
+		borderColor: 'rgba(255,255,255,0.22)',
+		backgroundColor: omColors.grayscale750,
+		gap: omSpacing.m,
+		justifyContent: 'center',
+		alignItems: 'flex-start',
+	},
+	dropZoneActive: {
+		borderColor: omTheme.accent,
+		borderWidth: 3,
+		backgroundColor: 'rgba(83,190,169,0.14)',
+	},
+	dropTitle: {
+		color: omTheme.primaryText,
+	},
+	dropBody: {
+		color: omColors.grayscale400,
+	},
+	pickButton: {
+		alignSelf: 'flex-start',
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(83,190,169,0.14)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.28)',
+	},
+	pickButtonText: {
+		color: omTheme.accent,
+	},
+	urlRow: {
+		flexDirection: 'row',
+		gap: omSpacing.s,
+		alignItems: 'center',
+	},
+	urlInput: {
+		flex: 1,
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.m,
+		backgroundColor: omColors.grayscale850,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.12)',
+		color: omTheme.primaryText,
+	},
+	urlButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(83,190,169,0.14)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.28)',
+	},
+	infoCard: {
+		padding: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: omColors.grayscale750,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.1)',
+		gap: omSpacing.s,
+	},
+	infoTitle: {
+		color: omTheme.primaryText,
+	},
+	infoText: {
+		color: omColors.grayscale300,
+	},
+	errorCard: {
+		borderColor: 'rgba(255,107,107,0.3)',
+	},
+	errorTitle: {
+		color: '#ff8a8a',
+	},
+	inspectionCard: {
+		padding: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: omColors.grayscale750,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.1)',
+		gap: omSpacing.s,
+	},
+	row: {
+		flexDirection: 'row',
+		gap: omSpacing.m,
+		alignItems: 'flex-start',
+	},
+	rowLabel: {
+		color: omColors.grayscale500,
+		width: 110,
+	},
+	rowValue: {
+		color: omTheme.primaryText,
+		flex: 1,
+	},
+	confirmRow: {
+		flexDirection: 'row',
+		gap: omSpacing.m,
+		justifyContent: 'flex-end',
+	},
+	secondaryButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(255,255,255,0.06)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.12)',
+	},
+	confirmButton: {
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.full,
+		backgroundColor: omTheme.accent,
+		borderWidth: 1,
+		borderColor: omTheme.accent,
+	},
+})

@@ -85,6 +85,12 @@ filter_vendor_warnings() {
 rust_one() {
   local dir="$1"
   [ -d "$dir" ] || { echo "skip: $dir (missing)"; return 0; }
+  # tauri::generate_context! fails at compile time if frontendDist
+  # (desktop/dist) is missing. Lint doesn't need a real web bundle.
+  if [ "$dir" = "desktop/src-tauri" ] && [ ! -d "desktop/dist" ]; then
+    mkdir -p desktop/dist
+    : > desktop/dist/index.html
+  fi
   pushd "$dir" >/dev/null
   local rc=0
   if [ "$CHECK" = "1" ]; then
