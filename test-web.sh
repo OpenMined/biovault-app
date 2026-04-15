@@ -50,7 +50,7 @@ SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts)
 echo "==> Running Playwright specs: ${SPECS[*]}"
 if WEB_URL="$WEB_URL" npx playwright test \
     --config=.maestro-web/playwright.config.ts \
-    "${PW_EXTRA[@]}" \
+    ${PW_EXTRA[@]+"${PW_EXTRA[@]}"} \
     "${SPECS[@]}"; then
   echo ""
   echo "✅ Web tests PASSED"

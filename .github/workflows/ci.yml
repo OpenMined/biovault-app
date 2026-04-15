@@ -118,6 +118,16 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-23andme-v1
+          restore-keys: bioscript-test-data-
+
+      - name: Fetch 23andMe test fixtures
+        run: ./bioscript/tools/fetch_test_data.sh --dataset 23andme
+
       - name: Run web smoke test
         run: ./test-web.sh
 

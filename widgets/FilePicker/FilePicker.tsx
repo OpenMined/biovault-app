@@ -104,6 +104,22 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 
 	return (
 		<View style={styles.root} testID="file-picker">
+			{Platform.OS === 'web' && dragActive ? (
+				<View
+					style={styles.dragOverlay}
+					pointerEvents="none"
+					testID="file-picker-drag-overlay"
+				>
+					<View style={styles.dragOverlayInner}>
+						<OMText variant="h2" style={styles.dragOverlayTitle}>
+							Drop anywhere to add this file
+						</OMText>
+						<OMText variant="body" style={styles.dragOverlayBody}>
+							Release to inspect it with the heuristics engine.
+						</OMText>
+					</View>
+				</View>
+			) : null}
 			<View
 				ref={dropRef}
 				style={[styles.dropZone, dragActive ? styles.dropZoneActive : null]}
@@ -240,12 +256,25 @@ function InspectionCard({
 				value={inspection.confidence.replace('_', ' ')}
 				testID="inspection-confidence"
 			/>
+			<Row label="Container" value={inspection.container} />
 			{inspection.source ? (
-				<Row
-					label="Vendor"
-					value={`${inspection.source.vendor}${inspection.source.platformVersion ? ` ${inspection.source.platformVersion}` : ''}`}
-					testID="inspection-vendor"
-				/>
+				<>
+					<Row
+						label="Vendor"
+						value={`${inspection.source.vendor}${inspection.source.platformVersion ? ` ${inspection.source.platformVersion}` : ''}`}
+						testID="inspection-vendor"
+					/>
+					<Row
+						label="Vendor confidence"
+						value={inspection.source.confidence.replace('_', ' ')}
+					/>
+					{inspection.source.evidence.length > 0 ? (
+						<Row
+							label="Vendor evidence"
+							value={inspection.source.evidence.join(' · ')}
+						/>
+					) : null}
+				</>
 			) : null}
 			{inspection.assembly ? (
 				<Row label="Assembly" value={inspection.assembly.toUpperCase()} />
@@ -254,13 +283,23 @@ function InspectionCard({
 				<Row label="Phased" value={inspection.phased ? 'yes' : 'no'} />
 			) : null}
 			{size ? <Row label="Size" value={formatSize(size)} /> : null}
+			{inspection.hasIndex !== undefined ? (
+				<Row label="Has index" value={inspection.hasIndex ? 'yes' : 'no'} />
+			) : null}
 			{reference ? <Row label="Reference" value={fileRefName(reference)} /> : null}
+			{inspection.referenceMatches !== undefined ? (
+				<Row
+					label="Reference matches"
+					value={inspection.referenceMatches ? 'yes' : 'no'}
+				/>
+			) : null}
 			{inspection.evidence.length > 0 ? (
 				<Row label="Evidence" value={inspection.evidence.join(' · ')} />
 			) : null}
 			{inspection.warnings.length > 0 ? (
 				<Row label="Warnings" value={inspection.warnings.join(' · ')} />
 			) : null}
+			<Row label="Inspected in" value={`${inspection.durationMs} ms`} />
 		</View>
 	)
 }
@@ -318,6 +357,41 @@ function formatSize(bytes: number): string {
 const styles = StyleSheet.create({
 	root: {
 		gap: omSpacing.l,
+	},
+	dragOverlay: {
+		position: 'absolute',
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		...(({ zIndex: 9999 } as any) as object),
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		// Use CSS fixed positioning on web so the overlay covers the viewport even
+		// when the page is scrolled. React Native ignores this key.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		...(Platform.OS === 'web' ? ({ position: 'fixed' } as any) : null),
+		backgroundColor: 'rgba(5, 15, 20, 0.72)',
+		alignItems: 'center',
+		justifyContent: 'center',
+		padding: omSpacing.xxl,
+	},
+	dragOverlayInner: {
+		padding: omSpacing.xxl,
+		borderRadius: omRadius.l,
+		borderWidth: 3,
+		borderStyle: 'dashed',
+		borderColor: omTheme.accent,
+		backgroundColor: 'rgba(83,190,169,0.12)',
+		gap: omSpacing.m,
+		alignItems: 'center',
+	},
+	dragOverlayTitle: {
+		color: omTheme.accent,
+		textAlign: 'center',
+	},
+	dragOverlayBody: {
+		color: '#ffffff',
+		textAlign: 'center',
 	},
 	dropZone: {
 		minHeight: 260,
