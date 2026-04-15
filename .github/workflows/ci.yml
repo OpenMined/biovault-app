@@ -152,8 +152,6 @@ jobs:
           if-no-files-found: ignore
 
   ios:
-    # Temporarily disabled on PRs while we stabilize web CI first.
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 90
     steps:
