@@ -166,11 +166,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          # macos-15 runners are Apple Silicon; the simulator needs only the
-          # sim target. Drop aarch64-apple-ios (device) and x86_64-apple-ios
-          # (Intel sim) — neither is used by the smoke test. ~66% less
-          # cross-compile work.
-          targets: aarch64-apple-ios-sim
+          # expo-bioscript's build-rust-ios.sh requires all three iOS
+          # targets to be installed (device, Intel sim, Apple Silicon sim).
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
 
       - name: Cache Rust (iOS targets)
         uses: Swatinem/rust-cache@v2
@@ -283,7 +281,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-linux-android
+          # expo-bioscript's buildRustAndroid task requires all four Android
+          # targets to be installed, even when we only build one arch.
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
       - name: Cache Rust (Android targets)
         uses: Swatinem/rust-cache@v2

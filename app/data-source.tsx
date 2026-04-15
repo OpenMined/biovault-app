@@ -6,7 +6,15 @@ import {
 	type HomeImportedDocument,
 } from '@/lib/home-import'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { FilePicker, fileRefName, fileRefSize, type FileRef, type PickResult } from '@/widgets/FilePicker'
+import {
+	FilePicker,
+	fileRefName,
+	fileRefSize,
+	type FileRef,
+	type Inspection,
+	type PickResult,
+} from '@/widgets/FilePicker'
+import { putHandles } from '@/lib/file-handle-store'
 import { router } from 'expo-router'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Linking from 'expo-linking'
@@ -21,6 +29,14 @@ function createImportedDocumentId() {
 	return `home-import-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+function closeSheet() {
+	if (router.canGoBack()) {
+		router.back()
+	} else {
+		router.replace('/')
+	}
+}
+
 async function refToFileOrNull(ref: FileRef): Promise<File | null> {
 	if (Platform.OS !== 'web') return null
 	if (ref.kind === 'blob') return ref.file as unknown as File
@@ -28,19 +44,51 @@ async function refToFileOrNull(ref: FileRef): Promise<File | null> {
 	return null
 }
 
-async function persistPickResult(result: PickResult): Promise<void> {
-	const { primary } = result
+// Files bigger than this (e.g. CRAM alignments) are never read into memory as a
+// string — we persist metadata only and reopen the handle lazily when needed.
+const INLINE_CONTENTS_LIMIT = 8 * 1024 * 1024
+const BINARY_EXTENSIONS = ['.cram', '.bam', '.fa', '.fasta']
+
+function isBinaryName(name: string): boolean {
+	const lower = name.toLowerCase()
+	return BINARY_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+async function persistPickResult(result: PickResult, inspection?: Inspection): Promise<void> {
+	const { primary, reference } = result
 	const originalName = fileRefName(primary)
 	const displayName = getDisplayNameBase(originalName) || originalName
 	const size = fileRefSize(primary) ?? null
 	const state = loadHomeImportStateSync()
 	const importedDocuments = [...state.importedDocuments]
 
+	const inspectionRecord = inspection
+		? {
+			inspection,
+			...(reference
+				? {
+					reference: {
+						name: fileRefName(reference),
+						size: fileRefSize(reference) ?? null,
+						matches: inspection.referenceMatches,
+					},
+				}
+				: null),
+		}
+		: null
+	const inspectionJson = inspectionRecord ? JSON.stringify(inspectionRecord) : null
+
+	let newDocumentId: string | null = null
 	if (Platform.OS === 'web') {
 		const file = await refToFileOrNull(primary)
-		const contents = file ? await file.text() : null
+		const canInline =
+			!!file &&
+			!isBinaryName(originalName) &&
+			(size == null || size <= INLINE_CONTENTS_LIMIT)
+		const contents = canInline && file ? await file.text() : null
+		newDocumentId = createImportedDocumentId()
 		importedDocuments.push({
-			id: createImportedDocumentId(),
+			id: newDocumentId,
 			importedAt: new Date().toISOString(),
 			mimeType: file?.type ?? null,
 			name: displayName,
@@ -48,6 +96,7 @@ async function persistPickResult(result: PickResult): Promise<void> {
 			size,
 			uri: primary.kind === 'url' ? primary.url : '',
 			contents,
+			inspectionJson,
 		} as HomeImportedDocument)
 	} else if (primary.kind === 'path') {
 		const importsDirectory = new Directory(Paths.cache, 'home-imports')
@@ -64,6 +113,7 @@ async function persistPickResult(result: PickResult): Promise<void> {
 			originalName,
 			size,
 			uri: target.uri,
+			inspectionJson,
 		} as HomeImportedDocument)
 	}
 
@@ -72,14 +122,27 @@ async function persistPickResult(result: PickResult): Promise<void> {
 		dataSource: null,
 		importedDocuments,
 	})
+
+	// Persist live FileSystemFileHandle(s) keyed by the doc id so a later reload
+	// can re-open the real file from disk — no byte copy kept in the browser.
+	if (Platform.OS === 'web' && newDocumentId) {
+		const primaryHandle = primary.kind === 'handle' ? primary.handle : undefined
+		const referenceHandle = reference && reference.kind === 'handle' ? reference.handle : undefined
+		if (primaryHandle || referenceHandle) {
+			await putHandles(newDocumentId, {
+				primary: primaryHandle,
+				reference: referenceHandle,
+			})
+		}
+	}
 }
 
 // ts-prune-ignore-next
 export default function DataSourceScreen() {
-	const handleConfirm = async (result: PickResult) => {
+	const handleConfirm = async (result: PickResult, inspection?: Inspection) => {
 		try {
-			await persistPickResult(result)
-			router.back()
+			await persistPickResult(result, inspection)
+			closeSheet()
 		} catch (error) {
 			console.error('Failed to save imported file:', error)
 			Alert.alert('Import error', 'Unable to save the imported file.')
@@ -90,7 +153,7 @@ export default function DataSourceScreen() {
 		<SafeAreaView style={styles.safeArea}>
 			<ScrollView contentContainerStyle={styles.content}>
 				<View style={styles.topBar}>
-					<Pressable onPress={() => router.back()} style={styles.closeButton}>
+					<Pressable onPress={() => closeSheet()} style={styles.closeButton}>
 						<OMText variant="subtitle" style={styles.closeButtonText}>
 							Close
 						</OMText>
@@ -102,11 +165,11 @@ export default function DataSourceScreen() {
 						Add files
 					</OMText>
 					<OMText variant="body" style={styles.body}>
-						Drop a genomic file anywhere on this page, or pick one below. We inspect it first — you'll see what we detected before saving.
+						Drop a genomic file anywhere on this page, or pick one below. We inspect it first — you&apos;ll see what we detected before saving.
 					</OMText>
 				</View>
 
-				<FilePicker onConfirm={(result) => void handleConfirm(result)} />
+				<FilePicker onConfirm={(result, inspection) => void handleConfirm(result, inspection)} />
 
 				<Pressable
 					onPress={() => void Linking.openURL('https://biovault.net')}

@@ -127,8 +127,7 @@ function selectZipEntry(entries: string[]): string | undefined {
 	return candidates[0]
 }
 
-async function inspectFileRef(ref: FileRef, _options?: InspectOptions): Promise<Inspection> {
-	void _options
+async function inspectFileRef(ref: FileRef, options?: InspectOptions): Promise<Inspection> {
 	const name = fileRefName(ref)
 	const sizeBytes = fileRefSize(ref)
 	const lower = name.toLowerCase()
@@ -140,7 +139,14 @@ async function inspectFileRef(ref: FileRef, _options?: InspectOptions): Promise<
 		lower.endsWith('.fa') ||
 		lower.endsWith('.fasta')
 	) {
-		return inspectFromSample({ name, container: 'plain', sampleLines: [], sizeBytes })
+		const insp = inspectFromSample({ name, container: 'plain', sampleLines: [], sizeBytes })
+		if (
+			options?.reference &&
+			(insp.detectedKind === 'alignment_cram' || insp.detectedKind === 'alignment_bam')
+		) {
+			insp.referenceMatches = await referencePairMatches(options.reference, insp)
+		}
+		return insp
 	}
 
 	const file = await refToFile(ref)
@@ -159,6 +165,14 @@ async function inspectFileRef(ref: FileRef, _options?: InspectOptions): Promise<
 			})
 		}
 		const entryBytes = unzipped[entryName]
+		if (!entryBytes) {
+			return inspectFromSample({
+				name,
+				container: 'zip',
+				sampleLines: [],
+				sizeBytes,
+			})
+		}
 		const slice = entryBytes.slice(0, Math.min(entryBytes.length, TEXT_SLICE_BYTES))
 		const sampleLines = sampleLinesFromText(decodeUtf8(slice))
 		return inspectFromSample({
@@ -175,6 +189,22 @@ async function inspectFileRef(ref: FileRef, _options?: InspectOptions): Promise<
 	const bytes = await readSampleBytes(file)
 	const sampleLines = sampleLinesFromText(decodeUtf8(bytes))
 	return inspectFromSample({ name, container: 'plain', sampleLines, sizeBytes })
+}
+
+async function referencePairMatches(ref: FileRef, primary: Inspection): Promise<boolean> {
+	const refName = fileRefName(ref)
+	const refLower = refName.toLowerCase()
+	const refIsFasta = refLower.endsWith('.fa') || refLower.endsWith('.fasta')
+	if (!refIsFasta) return false
+	// Quick assembly sniff from the reference filename (we don't need to open it
+	// for the common case: 1k-genomes file names embed GRCh38 / hg19 tokens).
+	const refAssembly = refLower.includes('grch38') || refLower.includes('hg38')
+		? 'grch38'
+		: refLower.includes('grch37') || refLower.includes('hg19')
+			? 'grch37'
+			: undefined
+	if (refAssembly && primary.assembly && refAssembly !== primary.assembly) return false
+	return true
 }
 
 async function pickPrimary(): Promise<FileRef | null> {

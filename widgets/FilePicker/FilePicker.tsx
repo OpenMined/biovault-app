@@ -9,7 +9,7 @@ import type { FileRef, Inspection, PickResult } from './types'
 import { fileRefName, fileRefSize } from './types'
 
 type FilePickerProps = {
-	onConfirm?: (result: PickResult) => void
+	onConfirm?: (result: PickResult, inspection?: Inspection) => void
 }
 
 export function FilePicker({ onConfirm }: FilePickerProps) {
@@ -18,12 +18,17 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 	const [dragActive, setDragActive] = useState(false)
 	const dropRef = useRef<View>(null)
 
-	// Stable ref to setFromDrop so the drag listeners don't have to re-bind on
-	// every render (each render produces a new `picker` object).
+	// Stable refs so the drag listeners don't have to re-bind on every render.
+	// We look at `status` through a ref too so the listener can route the next
+	// drop to the reference slot when the widget is waiting for one.
 	const setFromDropRef = useRef(picker.setFromDrop)
+	const setReferenceFromDropRef = useRef(picker.setReferenceFromDrop)
+	const statusRef = useRef(picker.status)
 	useEffect(() => {
 		setFromDropRef.current = picker.setFromDrop
-	}, [picker.setFromDrop])
+		setReferenceFromDropRef.current = picker.setReferenceFromDrop
+		statusRef.current = picker.status
+	}, [picker.setFromDrop, picker.setReferenceFromDrop, picker.status])
 
 	// Web drag-drop: listen at window level so the whole page reacts. Use a
 	// depth counter to distinguish entering a child element from leaving the
@@ -33,10 +38,6 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 		if (Platform.OS !== 'web') return
 		// eslint-disable-next-line no-console
 		console.log('[FilePicker] attaching window drag listeners')
-		if (typeof window !== 'undefined') {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			;(window as any).alert?.('[FilePicker] drag listeners attached — drag a file now')
-		}
 		let depth = 0
 		const hasFiles = (e: DragEvent) => {
 			const types = e.dataTransfer?.types
@@ -52,18 +53,7 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 			e.preventDefault()
 			e.stopPropagation()
 		}
-		let alertedEnter = false
 		const onDragEnter = (e: DragEvent) => {
-			const types = Array.from(e.dataTransfer?.types ?? [])
-			// eslint-disable-next-line no-console
-			console.log('[FilePicker] dragenter', { hasFiles: hasFiles(e), types })
-			if (!alertedEnter) {
-				alertedEnter = true
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				;(window as any).alert?.(
-					`[FilePicker] dragenter fired. types=${JSON.stringify(types)}`,
-				)
-			}
 			if (!hasFiles(e)) return
 			stop(e)
 			depth += 1
@@ -82,21 +72,31 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 			if (depth === 0) setDragActive(false)
 		}
 		const onDrop = async (e: DragEvent) => {
-			const types = Array.from(e.dataTransfer?.types ?? [])
-			const fileCount = e.dataTransfer?.files?.length ?? 0
+			const dt = e.dataTransfer
+			// Capture synchronously — Chrome neutralizes DataTransferItemList after
+			// the sync part of the handler returns, so any `await` must happen
+			// after we've already grabbed what we need.
+			const syncFile = dt?.files?.[0] ?? null
+			const syncItems = Array.from(dt?.items ?? [])
 			// eslint-disable-next-line no-console
-			console.log('[FilePicker] drop', { types, files: fileCount })
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			;(window as any).alert?.(
-				`[FilePicker] drop fired. types=${JSON.stringify(types)} files=${fileCount}`,
-			)
+			console.log('[FilePicker] drop', {
+				types: Array.from(dt?.types ?? []),
+				files: dt?.files?.length ?? 0,
+				firstName: syncFile?.name,
+				itemKinds: syncItems.map((i) => i.kind),
+			})
 			stop(e)
 			depth = 0
 			setDragActive(false)
-			const dt = e.dataTransfer
 			if (!dt) return
-			const items = Array.from(dt.items ?? [])
-			for (const item of items) {
+
+			// Try the FileSystemHandle path first (keeps a live reference on
+			// Chromium). If any step fails, fall back to the sync File we already
+			// captured.
+			const asReference = statusRef.current === 'needs_reference'
+			const deliver = asReference ? setReferenceFromDropRef.current : setFromDropRef.current
+
+			for (const item of syncItems) {
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				const getHandle = (item as any).getAsFileSystemHandle as
 					| (() => Promise<FileSystemHandle>)
@@ -107,22 +107,24 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 					if (handle && handle.kind === 'file') {
 						const fh = handle as FileSystemFileHandle
 						const f = await fh.getFile()
-						await setFromDropRef.current({
-							kind: 'handle',
-							handle: fh,
-							name: f.name,
-							size: f.size,
-						})
+						// eslint-disable-next-line no-console
+						console.log('[FilePicker] drop → handle path', { name: f.name, asReference })
+						await deliver({ kind: 'handle', handle: fh, name: f.name, size: f.size })
 						return
 					}
-				} catch {
-					// Synthetic DataTransfers (tests, some browsers) throw here.
+				} catch (err) {
+					// eslint-disable-next-line no-console
+					console.log('[FilePicker] getAsFileSystemHandle failed', err)
 				}
 			}
-			const file = dt.files?.[0]
-			if (file) {
-				await setFromDropRef.current({ kind: 'blob', file })
+			if (syncFile) {
+				// eslint-disable-next-line no-console
+				console.log('[FilePicker] drop → blob fallback', { name: syncFile.name, asReference })
+				await deliver({ kind: 'blob', file: syncFile })
+				return
 			}
+			// eslint-disable-next-line no-console
+			console.warn('[FilePicker] drop produced no file')
 		}
 		window.addEventListener('dragenter', onDragEnter)
 		window.addEventListener('dragover', onDragOver)
@@ -144,11 +146,18 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 
 	const confirm = useCallback(() => {
 		const result = picker.confirm()
-		if (result) onConfirm?.(result)
+		if (result) onConfirm?.(result, picker.inspection)
 	}, [onConfirm, picker])
 
 	return (
 		<View style={styles.root} testID="file-picker">
+			<View style={styles.debugBadge} testID="file-picker-status-badge">
+				<OMText variant="caption" style={styles.debugBadgeText}>
+					status: {picker.status}
+					{picker.primary ? ` · ${fileRefName(picker.primary)}` : ''}
+					{picker.error ? ` · err: ${picker.error}` : ''}
+				</OMText>
+			</View>
 			{Platform.OS === 'web' && dragActive ? (
 				<View
 					style={styles.dragOverlay}
@@ -156,11 +165,15 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 					testID="file-picker-drag-overlay"
 				>
 					<View style={styles.dragOverlayInner}>
-						<OMText variant="h2" style={styles.dragOverlayTitle}>
-							Drop anywhere to add this file
+						<OMText variant="h3" style={styles.dragOverlayTitle}>
+							{picker.status === 'needs_reference'
+								? 'Drop to add reference FASTA'
+								: 'Drop anywhere to add this file'}
 						</OMText>
 						<OMText variant="body" style={styles.dragOverlayBody}>
-							Release to inspect it with the heuristics engine.
+							{picker.status === 'needs_reference'
+								? 'We\u2019ll keep your alignment file and pair it with this reference.'
+								: 'Release to inspect it with the heuristics engine.'}
 						</OMText>
 					</View>
 				</View>
@@ -254,10 +267,35 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 						testID="file-picker-pick-reference"
 					>
 						<OMText variant="subtitle" style={styles.pickButtonText}>
-							{picker.status === 'picking_reference' ? 'Opening…' : 'Choose reference (.fa/.fasta)'}
+							Choose reference (.fa/.fasta)
 						</OMText>
 					</Pressable>
 				</View>
+			) : null}
+
+			{picker.status === 'needs_alignment' ? (
+				<View style={styles.infoCard} testID="file-picker-needs-alignment">
+					<OMText variant="headline" style={styles.infoTitle}>
+						Alignment file required
+					</OMText>
+					<OMText variant="body" style={styles.infoText}>
+						{picker.reference ? `Got reference ${fileRefName(picker.reference)}.` : ''}{' '}
+						Now drop (or choose) the matching CRAM or BAM.
+					</OMText>
+					<Pressable
+						onPress={() => void picker.pick()}
+						style={styles.pickButton}
+						testID="file-picker-pick-alignment"
+					>
+						<OMText variant="subtitle" style={styles.pickButtonText}>
+							Choose alignment (.cram/.bam)
+						</OMText>
+					</Pressable>
+				</View>
+			) : null}
+
+			{picker.referenceInspection && !picker.inspection ? (
+				<InspectionCard inspection={picker.referenceInspection} primary={picker.reference} />
 			) : null}
 
 			{picker.status === 'ready' ? (
@@ -402,6 +440,17 @@ function formatSize(bytes: number): string {
 const styles = StyleSheet.create({
 	root: {
 		gap: omSpacing.l,
+	},
+	debugBadge: {
+		padding: omSpacing.s,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,200,50,0.12)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,200,50,0.4)',
+	},
+	debugBadgeText: {
+		color: '#ffd36b',
+		fontFamily: Platform.OS === 'web' ? 'monospace' : undefined,
 	},
 	dragOverlay: {
 		position: 'absolute',

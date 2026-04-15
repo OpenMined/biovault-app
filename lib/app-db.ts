@@ -98,6 +98,14 @@ function ensureSchema(db: SQLiteDatabase) {
 		db.execSync('ALTER TABLE test_result_rows ADD COLUMN alts_json TEXT;')
 	}
 
+	const importedColumns = db
+		.getAllSync<{ name: string }>('PRAGMA table_info(imported_documents)')
+		.map((column) => column.name)
+
+	if (!importedColumns.includes('inspection_json')) {
+		db.execSync('ALTER TABLE imported_documents ADD COLUMN inspection_json TEXT;')
+	}
+
 	schemaReady = true
 }
 
@@ -134,7 +142,7 @@ type TableName =
 
 const TABLE_COLUMNS: Record<TableName, string[]> = {
 	app_preferences: ['key', 'value'],
-	imported_documents: ['id', 'name', 'original_name', 'uri', 'mime_type', 'size', 'imported_at', 'contents'],
+	imported_documents: ['id', 'name', 'original_name', 'uri', 'mime_type', 'size', 'imported_at', 'contents', 'inspection_json'],
 	installed_assays: ['id', 'manifest_json', 'installed_at', 'is_bundled', 'source', 'version'],
 	assay_preferences: ['assay_id', 'preferred_document_id', 'updated_at'],
 	test_runs: ['id', 'slug', 'input_document_id', 'input_label', 'is_preview', 'outcome', 'ran_at', 'unsupported_variants_json'],
@@ -405,7 +413,7 @@ function createWebDb(): WebDb {
 		}
 
 		// imported_documents list
-		if (/^SELECT id, name, original_name, uri, mime_type, size, imported_at, contents FROM imported_documents/i.test(sql)) {
+		if (/^SELECT id, name, original_name, uri, mime_type, size, imported_at, contents(?:, inspection_json)? FROM imported_documents/i.test(sql)) {
 			return [...tables.imported_documents].sort((left, right) => {
 				const leftAt = String(left.imported_at ?? '')
 				const rightAt = String(right.imported_at ?? '')

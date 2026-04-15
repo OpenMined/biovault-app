@@ -1,0 +1,47 @@
+name: "GLP1-nature-23andme-rs9357296-A-G"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "GLP1R"
+summary: "GLP1R locus index SNP for GLP-1 medication-related nausea in Nature (2026); associated with increased nausea risk and co-localizes with the GLP1R efficacy/side-effect signal. dbSNP places this variant in DNAH8, but it is retained here under GLP1R because the paper treats it as a GLP1R-locus index SNP."
+
+identifiers:
+  rsids:
+    - "rs9357296"
+  aliases:
+    - "rs17422185"
+
+coordinates:
+  grch37:
+    chrom: "6"
+    pos: 38979128
+  grch38:
+    chrom: "6"
+    pos: 39011352
+
+alleles:
+  kind: "snv"
+  ref: "A"
+  alts:
+    - "G"
+    - "T"
+
+findings:
+  - alt: "G"
+    notes: "GLP1R locus index SNP for nausea during GLP-1 therapy (p=2.6e-28, OR=1.36, GLP1RA cohort)"
+
+provenance:
+  sources:
+    - kind: "paper"
+      label: "Nature 2026 GLP-1 response study"
+      url: "https://www.nature.com/articles/s41586-026-10330-z"
+      fields:
+        - "summary"
+        - "findings[0]"
+    - kind: "database"
+      label: "dbSNP / NCBI variation services via exr rsid-lookup --store"
+      url: "https://www.ncbi.nlm.nih.gov/snp/rs9357296"
+      fields:
+        - "identifiers.rsids"
+        - "coordinates.grch37"
+        - "coordinates.grch38"
+        - "alleles"

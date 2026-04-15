@@ -12,6 +12,18 @@ export type HomeImportedDocument = {
 	originalName: string
 	size: number | null
 	uri: string
+	/** JSON-serialized ImportInspectionRecord produced at import time. */
+	inspectionJson?: string | null
+}
+
+export type ImportInspectionRecord = {
+	/** Full Inspection object from widgets/FilePicker/types. */
+	inspection: unknown
+	reference?: {
+		name: string
+		size: number | null
+		matches?: boolean
+	}
 }
 
 export const HOME_IMPORTED_DOCUMENT_KEY = 'home_imported_document'
@@ -36,6 +48,7 @@ type ImportedDocumentRow = {
 	original_name: string
 	size: number | null
 	uri: string
+	inspection_json: string | null
 }
 
 const DISPLAY_NAME_EXTENSIONS = [
@@ -105,6 +118,7 @@ function normalizeImportedDocument(
 		originalName: resolvedOriginalName,
 		size: document.size ?? null,
 		uri: document.uri,
+		inspectionJson: document.inspectionJson ?? null,
 	}
 }
 
@@ -118,6 +132,7 @@ function rowToImportedDocument(row: ImportedDocumentRow): HomeImportedDocument {
 		originalName: row.original_name,
 		size: row.size,
 		uri: row.uri,
+		inspectionJson: row.inspection_json ?? null,
 	}
 }
 
@@ -157,8 +172,8 @@ export function saveHomeImportState(state: HomeImportState) {
 		for (const document of documentsToSave) {
 			db.runSync(
 				`INSERT INTO imported_documents
-				 (id, name, original_name, uri, mime_type, size, imported_at, contents)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				 (id, name, original_name, uri, mime_type, size, imported_at, contents, inspection_json)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				document.id,
 				document.name,
 				document.originalName,
@@ -166,7 +181,8 @@ export function saveHomeImportState(state: HomeImportState) {
 				document.mimeType,
 				document.size,
 				document.importedAt,
-				document.contents ?? null
+				document.contents ?? null,
+				document.inspectionJson ?? null
 			)
 		}
 
@@ -186,7 +202,7 @@ export function loadHomeImportStateSync(): HomeImportState {
 	const importedDocuments = ensureBuiltInSampleDocument(
 		db
 		.getAllSync<ImportedDocumentRow>(
-			`SELECT id, name, original_name, uri, mime_type, size, imported_at, contents
+			`SELECT id, name, original_name, uri, mime_type, size, imported_at, contents, inspection_json
 			 FROM imported_documents
 			 ORDER BY imported_at DESC, id DESC`
 		)
