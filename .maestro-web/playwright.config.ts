@@ -4,6 +4,8 @@ export default defineConfig({
 	testDir: '.',
 	timeout: 120_000,
 	retries: 0,
+	workers: 1,
+	fullyParallel: false,
 	reporter: [['list']],
 	use: {
 		trace: 'on',
