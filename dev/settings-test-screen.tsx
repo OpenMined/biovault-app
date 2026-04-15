@@ -163,7 +163,7 @@ function commonPathPrefix(paths: string[]): string {
 	const prefix: string[] = []
 
 	for (let index = 0; ; index += 1) {
-		const segment = splitPaths[0][index]
+		const segment = splitPaths[0]?.[index]
 		if (!segment) {
 			break
 		}
@@ -200,8 +200,8 @@ function parseApol1Result(tsv: string): APol1Result | null {
 		return null
 	}
 
-	const headers = lines[0].split('\t')
-	const values = lines[1].split('\t')
+	const headers = (lines[0] ?? '').split('\t')
+	const values = (lines[1] ?? '').split('\t')
 	const participantIdIndex = headers.indexOf('participant_id')
 	const apol1StatusIndex = headers.indexOf('apol1_status')
 

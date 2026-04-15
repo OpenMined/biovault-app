@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# genomic test fixtures (populated by bioscript/tools/fetch_test_data.sh)
+/test-data/
+
 # Expo
 .expo/
 dist/

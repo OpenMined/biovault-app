@@ -53,6 +53,23 @@ npx expo run:android >"$LOG_DIR/build-android.log" 2>&1 || {
   exit 1
 }
 
+echo "==> Disabling expo-dev-menu onboarding + launch overlay"
+# Write expo.modules.devmenu.sharedpreferences so the menu doesn't auto-open.
+# Keys from node_modules/expo-dev-menu/android/.../DevMenuPreferences.kt.
+DEVMENU_PREFS=$(mktemp)
+cat > "$DEVMENU_PREFS" <<'XML'
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="isOnboardingFinished" value="true" />
+    <boolean name="showsAtLaunch" value="false" />
+</map>
+XML
+adb -s "$SERIAL" push "$DEVMENU_PREFS" /data/local/tmp/devmenu_prefs.xml >/dev/null || true
+adb -s "$SERIAL" shell "run-as $PACKAGE mkdir -p shared_prefs" 2>/dev/null || true
+adb -s "$SERIAL" shell "run-as $PACKAGE cp /data/local/tmp/devmenu_prefs.xml shared_prefs/expo.modules.devmenu.sharedpreferences.xml" 2>/dev/null || true
+adb -s "$SERIAL" shell am force-stop "$PACKAGE" 2>/dev/null || true
+rm -f "$DEVMENU_PREFS"
+
 echo "==> Waiting for app to finish loading"
 sleep 8
 

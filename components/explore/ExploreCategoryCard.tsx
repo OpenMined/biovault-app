@@ -22,7 +22,7 @@ function getCompactDescription(category: ExploreCategoryDefinition) {
 			return 'Lineage and population views from your genomic file'
 		case 'pgx':
 			return 'Medication response analyses linked to known variants'
-		case 'health-risk':
+		case 'risk':
 			return 'Inherited risk and prevention-oriented screening'
 	}
 }

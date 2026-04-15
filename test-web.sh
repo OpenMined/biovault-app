@@ -4,6 +4,22 @@ set -euo pipefail
 WEB_URL="${WEB_URL:-http://localhost:8081}"
 PORT="${PORT:-8081}"
 LOG_DIR=".maestro-web/logs"
+
+PW_EXTRA=()
+for arg in "$@"; do
+  case "$arg" in
+    -i|--interactive|--headed)
+      PW_EXTRA+=(--headed)
+      export PW_SLOWMO="${PW_SLOWMO:-600}"
+      ;;
+    --debug)
+      export PWDEBUG=1
+      ;;
+    *)
+      PW_EXTRA+=("$arg")
+      ;;
+  esac
+done
 mkdir -p "$LOG_DIR" ".maestro-web/screenshots"
 
 WEB_PID=""
@@ -30,15 +46,17 @@ fi
 echo "==> Ensuring Playwright browsers are installed"
 npx playwright install chromium >/dev/null 2>&1 || true
 
-echo "==> Running Playwright smoke: .maestro-web/smoke.spec.ts"
+SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/assay-lab.spec.ts)
+echo "==> Running Playwright specs: ${SPECS[*]}"
 if WEB_URL="$WEB_URL" npx playwright test \
     --config=.maestro-web/playwright.config.ts \
-    .maestro-web/smoke.spec.ts; then
+    ${PW_EXTRA[@]+"${PW_EXTRA[@]}"} \
+    "${SPECS[@]}"; then
   echo ""
-  echo "✅ Web test PASSED"
+  echo "✅ Web tests PASSED"
   exit 0
 else
   echo ""
-  echo "❌ Web test FAILED"
+  echo "❌ Web tests FAILED"
   exit 1
 fi

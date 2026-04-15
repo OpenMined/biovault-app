@@ -11,14 +11,15 @@ env:
 
 jobs:
   rust:
+    # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
+    # bioscript is a submodule with its own CI.
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-        working-directory: bioscript/rust
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -31,62 +32,78 @@ jobs:
           cargo --version
           rustfmt --version
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+
+      - name: Cache Rust (desktop/src-tauri)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('bioscript/rust/Cargo.lock') }}
+          workspaces: desktop/src-tauri
+          key: test
 
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('bioscript/rust/Cargo.lock') }}
+      - name: Run ./test.sh
+        run: ./test.sh
 
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: bioscript/rust/target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('bioscript/rust/Cargo.lock') }}
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy (all targets)
-        run: cargo clippy --all-targets --all-features --no-deps -- -D warnings
-
-      - name: Run tests
-        run: cargo test --verbose
-
-      - name: Build
-        run: cargo build --verbose
-
-  typescript:
+  lint:
+    # Runs the same ./lint.sh that developers use locally, so CI output
+    # matches local output exactly. Covers Rust (bioscript/rust +
+    # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
 
-      - name: Show Node.js version
-        run: node --version
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-      - name: Install dependencies
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+
+      - name: Cache Rust (bioscript/rust + desktop/src-tauri)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            bioscript/rust
+            desktop/src-tauri
+          key: lint
+
+      - name: Install root npm deps
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run linting checks
-        run: ./lint.sh
+      - name: Install desktop npm deps
+        run: cd desktop && npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  web-smoke:
+      - name: Run ./lint.sh --check
+        run: ./lint.sh --check
+
+  web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -95,11 +112,30 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run web smoke test
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-23andme-v1
+          restore-keys: bioscript-test-data-
+
+      - name: Fetch 23andMe test fixtures
+        run: ./bioscript/tools/fetch_test_data.sh --dataset 23andme
+
+      - name: Link fixtures into repo (tests expect ./test-data)
+        run: |
+          if [ ! -e test-data ]; then
+            ln -s "$HOME/.bioscript/cache/test-data" test-data
+          fi
+          ls -la test-data/23andme/v5/ 2>/dev/null || true
+
+      - name: Run web tests
         run: ./test-web.sh
 
       - name: Upload web artifacts
@@ -112,12 +148,15 @@ jobs:
             test-results
           if-no-files-found: ignore
 
-  ios-smoke:
-    runs-on: macos-14
+  ios:
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -127,6 +166,8 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          # expo-bioscript's build-rust-ios.sh requires all three iOS
+          # targets to be installed (device, Intel sim, Apple Silicon sim).
           targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
 
       - name: Cache Rust (iOS targets)
@@ -136,7 +177,16 @@ jobs:
           key: ios
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        # React Native 0.83 requires Xcode >= 16.1
+        run: |
+          if [ -d "/Applications/Xcode_16.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.1.app
+          elif [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app
+          else
+            sudo xcode-select -s /Applications/Xcode.app
+          fi
+          xcodebuild -version
 
       - name: Install host tools
         run: brew install jq
@@ -154,7 +204,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-deriveddata-${{ hashFiles('package-lock.json', 'app.config.ts', 'bioscript/rust/Cargo.lock') }}
+          # Key on JS/native deps only. Rust (Cargo.lock) changes shouldn't
+          # blow the entire Xcode cache — the Rust cache step below covers
+          # those artefacts.
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('package-lock.json', 'app.config.ts') }}
           restore-keys: ${{ runner.os }}-deriveddata-
 
       - name: Cache generated ios/ project
@@ -166,6 +219,8 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Boot iOS simulator
         run: |
@@ -174,7 +229,7 @@ jobs:
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
 
-      - name: Run iOS smoke test
+      - name: Run iOS tests
         run: ./test-ios.sh
 
       - name: Upload iOS screenshots
@@ -185,7 +240,15 @@ jobs:
           path: screenshots/ios
           if-no-files-found: ignore
 
-  android-smoke:
+      - name: Upload iOS maestro debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-maestro-debug
+          path: ~/.maestro/tests
+          if-no-files-found: ignore
+
+  android:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -194,6 +257,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable KVM
         run: |
@@ -215,6 +281,8 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          # expo-bioscript's buildRustAndroid task requires all four Android
+          # targets to be installed, even when we only build one arch.
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
       - name: Cache Rust (Android targets)
@@ -222,6 +290,12 @@ jobs:
         with:
           workspaces: bioscript/rust
           key: android
+
+      - name: Install cargo-ndk
+        run: |
+          if ! command -v cargo-ndk >/dev/null; then
+            cargo install cargo-ndk --locked
+          fi
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -251,6 +325,8 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create AVD snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -265,7 +341,7 @@ jobs:
           disable-animations: true
           script: echo "AVD snapshot created"
 
-      - name: Run Android smoke test on Pixel 8 / API ${{ matrix.api-level }}
+      - name: Run Android tests on Pixel 8 / API ${{ matrix.api-level }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -283,5 +359,13 @@ jobs:
         with:
           name: android-screenshots
           path: screenshots/android
+          if-no-files-found: ignore
+
+      - name: Upload Android maestro debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-maestro-debug
+          path: ~/.maestro/tests
           if-no-files-found: ignore
 

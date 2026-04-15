@@ -3,8 +3,6 @@
  * Reads metadata directly from Rust-created SQLite databases using schema detection
  */
 
-import { Directory, File, Paths } from 'expo-file-system'
-
 export interface UserGenomeDatabase {
 	dbName: string
 	fileName: string

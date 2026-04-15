@@ -4,223 +4,165 @@ import {
 	loadHomeImportStateSync,
 	saveHomeImportState,
 	type HomeImportedDocument,
+	type HomeImportOrigin,
 } from '@/lib/home-import'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import * as DocumentPicker from 'expo-document-picker'
+import {
+	FilePicker,
+	fileRefName,
+	fileRefSize,
+	type FileRef,
+	type Inspection,
+	type PickResult,
+} from '@/widgets/FilePicker'
+import { putHandles } from '@/lib/file-handle-store'
 import { router } from 'expo-router'
 import { Directory, File, Paths } from 'expo-file-system'
-import { copyAsync } from 'expo-file-system/legacy'
-import { useState } from 'react'
 import * as Linking from 'expo-linking'
-import {
-	Alert,
-	Keyboard,
-	KeyboardAvoidingView,
-	Modal,
-	Platform,
-	Pressable,
-	StyleSheet,
-	TextInput,
-	View,
-	type TextInputSubmitEditingEventData,
-	type NativeSyntheticEvent,
-} from 'react-native'
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-
-const SUPPORTED_EXTENSIONS = [
-	'.vcf',
-	'.vcf.gz',
-	'.vcf.bz2',
-	'.txt',
-	'.tsv',
-	'.tsv.bz2',
-	'.csv',
-	'.zip',
-	'.gz',
-	'.bz2',
-]
-
-const PICKER_MIME_TYPES = [
-	'text/*',
-	'text/plain',
-	'text/tab-separated-values',
-	'text/csv',
-	'application/octet-stream',
-	'application/zip',
-	'application/gzip',
-	'application/x-gzip',
-	'application/x-bzip2',
-]
-
-type QueuedImportAsset = {
-	displayName: string
-	file?: DocumentPicker.DocumentPickerAsset['file'] | null
-	mimeType: string | null
-	name: string
-	size: number | null
-	uri: string
-}
 
 function sanitizeFileName(name: string): string {
 	return name.replace(/[^a-zA-Z0-9._-]/g, '_')
-}
-
-function hasSupportedExtension(name: string): boolean {
-	const lowerName = name.toLowerCase()
-	return SUPPORTED_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
 }
 
 function createImportedDocumentId() {
 	return `home-import-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export default function DataSourceScreen() {
-	const [isImporting, setIsImporting] = useState(false)
-	const [pendingAssets, setPendingAssets] = useState<QueuedImportAsset[]>([])
-	const [reviewedAssets, setReviewedAssets] = useState<QueuedImportAsset[]>([])
-	const [displayName, setDisplayName] = useState('')
+function closeSheet() {
+	if (router.canGoBack()) {
+		router.back()
+	} else {
+		router.replace('/')
+	}
+}
 
-	const currentAsset = pendingAssets[0] ?? null
+async function refToFileOrNull(ref: FileRef): Promise<File | null> {
+	if (Platform.OS !== 'web') return null
+	if (ref.kind === 'blob') return ref.file as unknown as File
+	if (ref.kind === 'handle') return (await ref.handle.getFile()) as unknown as File
+	return null
+}
 
-	const finalizeImports = async (assets: QueuedImportAsset[]) => {
-		const currentState = loadHomeImportStateSync()
-		const importedDocuments = [...currentState.importedDocuments]
+// Files bigger than this (e.g. CRAM alignments) are never read into memory as a
+// string — we persist metadata only and reopen the handle lazily when needed.
+const INLINE_CONTENTS_LIMIT = 8 * 1024 * 1024
+const BINARY_EXTENSIONS = ['.cram', '.bam', '.fa', '.fasta']
 
-		if (Platform.OS === 'web') {
-			for (const asset of assets) {
-				const storedDocument: HomeImportedDocument = {
-					contents: asset.file ? await asset.file.text() : null,
-					id: createImportedDocumentId(),
-					importedAt: new Date().toISOString(),
-					mimeType: asset.mimeType ?? null,
-					name: asset.displayName,
-					originalName: asset.name,
-					size: asset.size ?? null,
-					uri: asset.uri,
+function isBinaryName(name: string): boolean {
+	const lower = name.toLowerCase()
+	return BINARY_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+async function persistPickResult(result: PickResult, inspection?: Inspection): Promise<void> {
+	const { primary, reference } = result
+	const originalName = fileRefName(primary)
+	const displayName = getDisplayNameBase(originalName) || originalName
+	const size = fileRefSize(primary) ?? null
+	const state = loadHomeImportStateSync()
+	const importedDocuments = [...state.importedDocuments]
+
+	const inspectionRecord = inspection
+		? {
+			inspection,
+			...(reference
+				? {
+					reference: {
+						name: fileRefName(reference),
+						size: fileRefSize(reference) ?? null,
+						matches: inspection.referenceMatches,
+					},
 				}
-
-				importedDocuments.push(storedDocument)
-			}
-
-			saveHomeImportState({
-				activeImportedDocumentId: importedDocuments[0]?.id ?? null,
-				dataSource: null,
-				importedDocuments,
-			})
-			router.back()
-			return
+				: null),
 		}
+		: null
+	const inspectionJson = inspectionRecord ? JSON.stringify(inspectionRecord) : null
 
+	let newDocumentId: string | null = null
+	const origin: HomeImportOrigin =
+		primary.kind === 'handle' || primary.kind === 'path'
+			? 'linked'
+			: primary.kind === 'url'
+				? 'downloaded'
+				: 'copied'
+	if (Platform.OS === 'web') {
+		const file = await refToFileOrNull(primary)
+		const canInline =
+			!!file &&
+			!isBinaryName(originalName) &&
+			(size == null || size <= INLINE_CONTENTS_LIMIT)
+		const contents = canInline && file ? await file.text() : null
+		newDocumentId = createImportedDocumentId()
+		importedDocuments.push({
+			id: newDocumentId,
+			importedAt: new Date().toISOString(),
+			mimeType: file?.type ?? null,
+			name: displayName,
+			originalName,
+			size,
+			uri: primary.kind === 'url' ? primary.url : '',
+			contents,
+			inspectionJson,
+			origin,
+		} as HomeImportedDocument)
+	} else if (primary.kind === 'path') {
 		const importsDirectory = new Directory(Paths.cache, 'home-imports')
 		if (!importsDirectory.exists) {
 			importsDirectory.create({ idempotent: true, intermediates: true })
 		}
-
-		for (const asset of assets) {
-			const timestamp = Date.now()
-			const targetFile = new File(importsDirectory, `${timestamp}-${sanitizeFileName(asset.name)}`)
-
-			await copyAsync({
-				from: asset.uri,
-				to: targetFile.uri,
-			})
-
-			const storedDocument: HomeImportedDocument = {
-				id: createImportedDocumentId(),
-				importedAt: new Date().toISOString(),
-				mimeType: asset.mimeType ?? null,
-				name: asset.displayName,
-				originalName: asset.name,
-				size: asset.size ?? null,
-				uri: targetFile.uri,
-			}
-
-			importedDocuments.push(storedDocument)
-		}
-
-		saveHomeImportState({
-			activeImportedDocumentId: importedDocuments[0]?.id ?? null,
-			dataSource: null,
-			importedDocuments,
-		})
-		router.back()
+		const target = new File(importsDirectory, `${Date.now()}-${sanitizeFileName(originalName)}`)
+		// Native backend isn't wired up yet (Slice 2); no-op for now.
+		importedDocuments.push({
+			id: createImportedDocumentId(),
+			importedAt: new Date().toISOString(),
+			mimeType: null,
+			name: displayName,
+			originalName,
+			size,
+			uri: target.uri,
+			inspectionJson,
+			origin,
+		} as HomeImportedDocument)
 	}
 
-	const queueImports = async () => {
+	saveHomeImportState({
+		activeImportedDocumentId: importedDocuments[importedDocuments.length - 1]?.id ?? null,
+		dataSource: null,
+		importedDocuments,
+	})
+
+	// Persist live FileSystemFileHandle(s) keyed by the doc id so a later reload
+	// can re-open the real file from disk — no byte copy kept in the browser.
+	if (Platform.OS === 'web' && newDocumentId) {
+		const primaryHandle = primary.kind === 'handle' ? primary.handle : undefined
+		const referenceHandle = reference && reference.kind === 'handle' ? reference.handle : undefined
+		if (primaryHandle || referenceHandle) {
+			await putHandles(newDocumentId, {
+				primary: primaryHandle,
+				reference: referenceHandle,
+			})
+		}
+	}
+}
+
+// ts-prune-ignore-next
+export default function DataSourceScreen() {
+	const handleConfirm = async (result: PickResult, inspection?: Inspection) => {
 		try {
-			setIsImporting(true)
-
-			const result = await DocumentPicker.getDocumentAsync({
-				copyToCacheDirectory: false,
-				multiple: true,
-				type: PICKER_MIME_TYPES,
-			})
-
-			if (result.canceled || !result.assets.length) {
-				return
-			}
-
-			const unsupportedAsset = result.assets.find((asset) => !hasSupportedExtension(asset.name))
-			if (unsupportedAsset) {
-				Alert.alert('Unsupported file', 'Choose VCF, TXT, TSV, CSV, ZIP, GZ, or BZ2 genomic data files.')
-				return
-			}
-
-			const queuedAssets = result.assets.map((asset) => ({
-				...asset,
-				displayName: getDisplayNameBase(asset.name),
-				file: asset.file ?? null,
-				mimeType: asset.mimeType ?? null,
-				size: asset.size ?? null,
-			}))
-			setReviewedAssets([])
-			setPendingAssets(queuedAssets)
-			setDisplayName(queuedAssets[0]?.displayName ?? '')
+			await persistPickResult(result, inspection)
+			closeSheet()
 		} catch (error) {
-			console.error('Failed to pick document:', error)
-			Alert.alert('Import error', 'Unable to open the document picker right now.')
-		} finally {
-			setIsImporting(false)
+			console.error('Failed to save imported file:', error)
+			Alert.alert('Import error', 'Unable to save the imported file.')
 		}
-	}
-
-	const commitCurrentAssetName = (value: string) => {
-		if (!currentAsset) {
-			return
-		}
-
-		const nextName = value.trim() || currentAsset.name
-		const completedAsset: QueuedImportAsset = { ...currentAsset, displayName: nextName }
-		const remainingAssets = pendingAssets.slice(1)
-		const nextReviewedAssets = [...reviewedAssets, completedAsset]
-
-		if (!remainingAssets.length) {
-			setPendingAssets([])
-			setReviewedAssets([])
-			setDisplayName('')
-			void finalizeImports(nextReviewedAssets).catch((error) => {
-				console.error('Failed to save imported files:', error)
-				Alert.alert('Import error', 'Unable to save the imported files.')
-			})
-			return
-		}
-
-		setReviewedAssets(nextReviewedAssets)
-		setPendingAssets(remainingAssets)
-		setDisplayName(remainingAssets[0]?.displayName ?? getDisplayNameBase(remainingAssets[0]?.name ?? ''))
-	}
-
-	const handleRenameSubmit = (
-		event?: NativeSyntheticEvent<TextInputSubmitEditingEventData>
-	) => {
-		commitCurrentAssetName(event?.nativeEvent.text ?? displayName)
 	}
 
 	return (
 		<SafeAreaView style={styles.safeArea}>
-			<View style={styles.content}>
+			<ScrollView contentContainerStyle={styles.content}>
 				<View style={styles.topBar}>
-					<Pressable onPress={() => router.back()} style={styles.closeButton}>
+					<Pressable onPress={() => closeSheet()} style={styles.closeButton}>
 						<OMText variant="subtitle" style={styles.closeButtonText}>
 							Close
 						</OMText>
@@ -231,18 +173,12 @@ export default function DataSourceScreen() {
 					<OMText variant="h4" style={styles.title}>
 						Add files
 					</OMText>
+					<OMText variant="body" style={styles.body}>
+						Drop a genomic file anywhere on this page, or pick one below. We inspect it first — you&apos;ll see what we detected before saving.
+					</OMText>
 				</View>
 
-				<View style={styles.actionStack}>
-					<Pressable onPress={() => void queueImports()} style={styles.importButton}>
-						<OMText variant="headline" style={styles.importButtonTitle}>
-							Import from device
-						</OMText>
-						<OMText variant="caption" style={styles.importButtonMeta}>
-							{isImporting ? 'Opening file picker...' : 'VCF, TXT, TSV, CSV, ZIP, GZ, BZ2'}
-						</OMText>
-					</Pressable>
-				</View>
+				<FilePicker onConfirm={(result, inspection) => void handleConfirm(result, inspection)} />
 
 				<Pressable
 					onPress={() => void Linking.openURL('https://biovault.net')}
@@ -253,81 +189,15 @@ export default function DataSourceScreen() {
 						Where can I get my genomic data?
 					</OMText>
 				</Pressable>
-			</View>
-
-			<Modal
-				visible={!!currentAsset}
-				transparent
-				animationType="fade"
-				onRequestClose={() => {
-					Keyboard.dismiss()
-					setPendingAssets([])
-					setReviewedAssets([])
-					setDisplayName('')
-				}}
-			>
-				<KeyboardAvoidingView
-					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-					style={styles.modalRoot}
-				>
-					<Pressable style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-						<Pressable style={styles.modalCard} onPress={(event) => event.stopPropagation()}>
-							<OMText variant="h4" style={styles.modalTitle}>
-								Name this file
-							</OMText>
-							<OMText variant="body" style={styles.modalBody}>
-								Choose a display name for {currentAsset?.name}. You can keep the existing name if it
-								is already clear.
-							</OMText>
-							<TextInput
-								value={displayName}
-								onChangeText={setDisplayName}
-								onSubmitEditing={handleRenameSubmit}
-								placeholder={currentAsset?.name}
-								placeholderTextColor={omColors.grayscale500}
-								autoCapitalize="none"
-								autoCorrect={false}
-								autoFocus
-								blurOnSubmit
-								returnKeyType="done"
-								style={styles.nameInput}
-							/>
-							<View style={styles.modalActions}>
-								<Pressable
-									onPress={() => commitCurrentAssetName(currentAsset?.name ?? displayName)}
-									style={styles.secondaryAction}
-								>
-									<OMText variant="subtitle" style={styles.secondaryActionText}>
-										Keep As Is
-									</OMText>
-								</Pressable>
-								<Pressable onPress={() => commitCurrentAssetName(displayName)} style={styles.primaryAction}>
-									<OMText variant="subtitle" style={styles.primaryActionText}>
-										Save Name
-									</OMText>
-								</Pressable>
-							</View>
-						</Pressable>
-					</Pressable>
-				</KeyboardAvoidingView>
-			</Modal>
+			</ScrollView>
 		</SafeAreaView>
 	)
 }
 
 const styles = StyleSheet.create({
-	safeArea: {
-		flex: 1,
-		backgroundColor: omColors.grayscale850,
-	},
-	content: {
-		flex: 1,
-		padding: omSpacing.xl,
-		gap: omSpacing.xxxl,
-	},
-	topBar: {
-		alignItems: 'flex-start',
-	},
+	safeArea: { flex: 1, backgroundColor: omColors.grayscale850 },
+	content: { padding: omSpacing.xl, gap: omSpacing.xl, paddingBottom: omSpacing.xxxl },
+	topBar: { alignItems: 'flex-start' },
 	closeButton: {
 		paddingHorizontal: omSpacing.m,
 		paddingVertical: omSpacing.s,
@@ -336,104 +206,10 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.12)',
 	},
-	closeButtonText: {
-		color: omColors.grayscale300,
-	},
-	header: {
-		gap: omSpacing.m,
-	},
-	actionStack: {
-		gap: omSpacing.m,
-	},
-	title: {
-		color: omTheme.primaryText,
-	},
-	helpLinkButton: {
-		alignSelf: 'center',
-		paddingVertical: omSpacing.xs,
-	},
-	helpLink: {
-		color: omTheme.accent,
-		fontSize: 14,
-		lineHeight: 20,
-	},
-	body: {
-		color: omColors.grayscale400,
-		maxWidth: 340,
-	},
-	importButton: {
-		padding: omSpacing.xl,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-	},
-	importButtonTitle: {
-		color: omTheme.primaryText,
-	},
-	importButtonMeta: {
-		marginTop: omSpacing.s,
-		color: omColors.grayscale500,
-	},
-	modalBackdrop: {
-		flex: 1,
-		backgroundColor: 'rgba(23,22,29,0.72)',
-		padding: omSpacing.xl,
-		justifyContent: 'center',
-	},
-	modalRoot: {
-		flex: 1,
-	},
-	modalCard: {
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-		padding: omSpacing.xl,
-	},
-	modalTitle: {
-		color: omTheme.primaryText,
-	},
-	modalBody: {
-		marginTop: omSpacing.m,
-		color: omColors.grayscale400,
-	},
-	nameInput: {
-		marginTop: omSpacing.xl,
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.m,
-		borderRadius: omRadius.m,
-		backgroundColor: omColors.grayscale850,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.1)',
-		color: omTheme.primaryText,
-		fontSize: 16,
-		lineHeight: 24,
-	},
-	modalActions: {
-		marginTop: omSpacing.xl,
-		flexDirection: 'row',
-		justifyContent: 'flex-end',
-		gap: omSpacing.s,
-	},
-	secondaryAction: {
-		paddingHorizontal: omSpacing.m,
-		paddingVertical: omSpacing.s,
-		borderRadius: omRadius.full,
-		backgroundColor: 'rgba(255,255,255,0.08)',
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.12)',
-	},
-	secondaryActionText: {
-		color: omColors.grayscale300,
-	},
-	primaryAction: {
-		paddingHorizontal: omSpacing.m,
-		paddingVertical: omSpacing.s,
-		borderRadius: omRadius.full,
-		backgroundColor: omTheme.accent,
-	},
-	primaryActionText: {
-		color: omTheme.primaryText,
-	},
+	closeButtonText: { color: omColors.grayscale300 },
+	header: { gap: omSpacing.s },
+	title: { color: omTheme.primaryText },
+	body: { color: omColors.grayscale300, maxWidth: 540 },
+	helpLinkButton: { alignSelf: 'center', paddingVertical: omSpacing.xs },
+	helpLink: { color: omTheme.accent, fontSize: 14, lineHeight: 20 },
 })

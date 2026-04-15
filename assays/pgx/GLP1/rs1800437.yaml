@@ -1,0 +1,49 @@
+name: "GLP1-nature-23andme-rs1800437-G-C"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "GIPR"
+summary: "GIPR missense variant p.Glu354Gln reported as the probable causal variant for increased GLP-1 medication-related vomiting and nausea risk, with the effect restricted to tirzepatide-treated individuals in Nature (2026)."
+
+identifiers:
+  rsids:
+    - "rs1800437"
+  aliases:
+    - "rs3745801"
+    - "rs52793261"
+    - "rs57928589"
+
+coordinates:
+  grch37:
+    chrom: "19"
+    pos: 46181392
+  grch38:
+    chrom: "19"
+    pos: 45678134
+
+alleles:
+  kind: "snv"
+  ref: "G"
+  alts:
+    - "A"
+    - "C"
+
+findings:
+  - alt: "C"
+    notes: "p.Glu354Gln missense — probable causal variant for vomiting/nausea in tirzepatide-treated individuals (p=5.1e-9, OR=1.83)"
+
+provenance:
+  sources:
+    - kind: "database"
+      label: "dbSNP / NCBI variation services via exr rsid-lookup --store"
+      url: "https://www.ncbi.nlm.nih.gov/snp/rs1800437"
+      fields:
+        - "identifiers.rsids"
+        - "coordinates.grch37"
+        - "coordinates.grch38"
+        - "alleles"
+    - kind: "paper"
+      label: "Nature 2026 GLP-1 response study"
+      url: "https://www.nature.com/articles/s41586-026-10330-z"
+      fields:
+        - "summary"
+        - "findings[0].notes"

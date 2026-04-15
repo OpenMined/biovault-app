@@ -214,6 +214,7 @@ export default function TestDetailScreen() {
 			} finally {
 				await endAssayRunLiveActivity(assay.title, {
 					completed: latestProgress.completed,
+					detail: latestProgress.detail,
 					elapsedMs: Math.max(latestProgress.elapsedMs, runStartedAt ? Date.now() - runStartedAt : 0),
 					phase: 'complete',
 					total: latestProgress.total,

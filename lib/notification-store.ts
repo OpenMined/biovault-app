@@ -66,9 +66,13 @@ function extractNotificationUrl(notification: Notifications.Notification): strin
 
 function extractNotificationTimestamp(notification: Notifications.Notification): string {
 	const trigger = notification.request.trigger
-	const pushTrigger = trigger && trigger.type === 'push' ? trigger : null
-	const remoteMessage = pushTrigger?.remoteMessage
-	const payload = pushTrigger?.payload
+	const pushTrigger =
+		trigger && typeof trigger === 'object' && 'type' in trigger && trigger.type === 'push' ? trigger : null
+	const remoteMessage =
+		pushTrigger && 'remoteMessage' in pushTrigger
+			? (pushTrigger as { remoteMessage?: { sentTime?: string; notification?: { eventTime?: string } } }).remoteMessage
+			: undefined
+	const payload = pushTrigger && 'payload' in pushTrigger ? (pushTrigger as { payload?: unknown }).payload : undefined
 	const data = notification.request.content.data
 
 	const payloadRecord =

@@ -98,6 +98,18 @@ function ensureSchema(db: SQLiteDatabase) {
 		db.execSync('ALTER TABLE test_result_rows ADD COLUMN alts_json TEXT;')
 	}
 
+	const importedColumns = db
+		.getAllSync<{ name: string }>('PRAGMA table_info(imported_documents)')
+		.map((column) => column.name)
+
+	if (!importedColumns.includes('inspection_json')) {
+		db.execSync('ALTER TABLE imported_documents ADD COLUMN inspection_json TEXT;')
+	}
+
+	if (!importedColumns.includes('origin')) {
+		db.execSync('ALTER TABLE imported_documents ADD COLUMN origin TEXT;')
+	}
+
 	schemaReady = true
 }
 
@@ -134,7 +146,7 @@ type TableName =
 
 const TABLE_COLUMNS: Record<TableName, string[]> = {
 	app_preferences: ['key', 'value'],
-	imported_documents: ['id', 'name', 'original_name', 'uri', 'mime_type', 'size', 'imported_at', 'contents'],
+	imported_documents: ['id', 'name', 'original_name', 'uri', 'mime_type', 'size', 'imported_at', 'contents', 'inspection_json', 'origin'],
 	installed_assays: ['id', 'manifest_json', 'installed_at', 'is_bundled', 'source', 'version'],
 	assay_preferences: ['assay_id', 'preferred_document_id', 'updated_at'],
 	test_runs: ['id', 'slug', 'input_document_id', 'input_label', 'is_preview', 'outcome', 'ran_at', 'unsupported_variants_json'],
@@ -277,7 +289,7 @@ function createWebDb(): WebDb {
 			return { lastInsertRowId: 0, changes }
 		}
 		if (/^INSERT INTO imported_documents/i.test(sql)) {
-			const [id, name, originalName, uri, mimeType, size, importedAt, contents] = args
+			const [id, name, originalName, uri, mimeType, size, importedAt, contents, inspectionJson, origin] = args
 			tables.imported_documents.push({
 				id,
 				name,
@@ -287,6 +299,8 @@ function createWebDb(): WebDb {
 				size,
 				imported_at: importedAt,
 				contents,
+				inspection_json: inspectionJson ?? null,
+				origin: origin ?? null,
 			})
 			persist('imported_documents')
 			return { lastInsertRowId: 0, changes: 1 }
@@ -405,7 +419,7 @@ function createWebDb(): WebDb {
 		}
 
 		// imported_documents list
-		if (/^SELECT id, name, original_name, uri, mime_type, size, imported_at, contents FROM imported_documents/i.test(sql)) {
+		if (/^SELECT id, name, original_name, uri, mime_type, size, imported_at, contents(?:, inspection_json(?:, origin)?)? FROM imported_documents/i.test(sql)) {
 			return [...tables.imported_documents].sort((left, right) => {
 				const leftAt = String(left.imported_at ?? '')
 				const rightAt = String(right.imported_at ?? '')

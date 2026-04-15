@@ -1,6 +1,6 @@
 import { Text, VStack } from '@expo/ui/swift-ui'
 import { font, padding } from '@expo/ui/swift-ui/modifiers'
-import { createLiveActivity, type LiveActivityEnvironment } from 'expo-widgets'
+import { createLiveActivity } from 'expo-widgets'
 
 export type AssayRunActivityProps = {
 	assayTitle: string
@@ -10,7 +10,9 @@ export type AssayRunActivityProps = {
 	statusLabel: string
 }
 
-const AssayRunActivity = (props: AssayRunActivityProps, _environment: LiveActivityEnvironment) => {
+// The 2nd arg type (`LiveActivityEnvironment`) is internal to expo-widgets and not exported.
+// Use `any` so the signature matches what `createLiveActivity` expects without depending on the private type.
+const AssayRunActivity = (props: AssayRunActivityProps, _environment: any) => {
 	'widget'
 
 	const compactTime = `${props.elapsedSeconds}s`

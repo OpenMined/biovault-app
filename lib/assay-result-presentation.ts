@@ -1,5 +1,5 @@
 import type { AssayManifest } from '@/lib/assay-manifests'
-import type { StoredTestRun, TestResultStatus, TestRunOutcome } from '@/lib/test-results'
+import type { StoredTestRun, TestResultStatus } from '@/lib/test-results'
 
 export type AssayRunSummary = {
 	body: string
@@ -22,7 +22,6 @@ export function describeLatestRun(assay: AssayManifest, latestRun: StoredTestRun
 	}
 
 	const outcome = latestRun.outcome
-	const matchedRows = latestRun.rows.filter((row) => row.status === 'matched')
 	const missingRows = latestRun.rows.filter((row) => row.status === 'missing')
 
 	if (outcome === 'matched') {

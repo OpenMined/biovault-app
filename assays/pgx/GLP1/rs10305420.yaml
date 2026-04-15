@@ -1,0 +1,47 @@
+name: "GLP1-nature-23andme-rs10305420-C-T"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "GLP1R"
+summary: "GLP1R missense variant p.Pro7Leu associated in Nature (2026) with increased GLP-1 receptor agonist weight-loss efficacy, with approximately 0.76 kg additional weight loss per effect allele; also linked to nausea/vomiting signal at the GLP1R locus."
+
+identifiers:
+  rsids:
+    - "rs10305420"
+  aliases: []
+
+coordinates:
+  grch37:
+    chrom: "6"
+    pos: 39016636
+  grch38:
+    chrom: "6"
+    pos: 39048860
+
+alleles:
+  kind: "snv"
+  ref: "C"
+  alts:
+    - "G"
+    - "T"
+
+findings:
+  - alt: "T"
+    notes: "p.Pro7Leu missense — associated with increased GLP-1 receptor agonist weight-loss efficacy (~0.76 kg per allele, p=2.9e-10, GLP1RA cohort)"
+
+provenance:
+  sources:
+    - kind: "paper"
+      label: "Nature 2026 GLP-1 response study"
+      url: "https://www.nature.com/articles/s41586-026-10330-z"
+      fields:
+        - "summary"
+        - "clinical.pgx.variant_page_url"
+        - "findings[0]"
+    - kind: "database"
+      label: "dbSNP / NCBI variation services via exr rsid-lookup --store"
+      url: "https://www.ncbi.nlm.nih.gov/snp/rs10305420"
+      fields:
+        - "identifiers.rsids"
+        - "coordinates.grch37"
+        - "coordinates.grch38"
+        - "alleles"

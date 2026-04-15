@@ -1,4 +1,6 @@
 import { OMText } from '@/components/ui/OMText'
+import type { AssayManifest } from '@/lib/assay-manifests'
+import { listAvailableAssayManifests } from '@/lib/assay-registry'
 import {
 	getAssaysForExploreCategory,
 	getExploreCategory,
@@ -7,16 +9,29 @@ import {
 import { loadHomeImportState, type HomeImportedDocument } from '@/lib/home-import'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { Link, router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function FileCategoryAnalysisScreen() {
 	const params = useLocalSearchParams<{ category?: string; documentId?: string }>()
 	const [document, setDocument] = useState<HomeImportedDocument | null>(null)
+	const [allAssays, setAllAssays] = useState<AssayManifest[]>([])
 
 	const category = params.category ? getExploreCategory(params.category) : null
-	const assays = category ? getAssaysForExploreCategory(category.slug as ExploreCategorySlug) : []
+	const assays = useMemo(
+		() => (category ? getAssaysForExploreCategory(allAssays, category.slug as ExploreCategorySlug) : []),
+		[allAssays, category]
+	)
+
+	useEffect(() => {
+		void listAvailableAssayManifests()
+			.then(setAllAssays)
+			.catch((error) => {
+				console.error('Failed to load assays:', error)
+				setAllAssays([])
+			})
+	}, [])
 
 	useEffect(() => {
 		if (!params.documentId) {

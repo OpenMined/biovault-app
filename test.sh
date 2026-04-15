@@ -1,24 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Tests for this app repo. bioscript is a submodule with its own test suite —
+# run `./test.sh` inside bioscript/ to exercise that.
+
 MODE=${1:---fast}
 
-cd bioscript/rust
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+RUST_WORKSPACES=(
+  "desktop/src-tauri"
+)
+
+# tauri::generate_context! panics at compile time if frontendDist
+# (desktop/dist) is missing. Cargo tests don't need a real web bundle,
+# so stub the dir if it's absent.
+if [ ! -d "desktop/dist" ]; then
+  mkdir -p desktop/dist
+  : > desktop/dist/index.html
+fi
 
 echo "==> cargo fmt"
-cargo fmt --all
+for ws in "${RUST_WORKSPACES[@]}"; do
+  [ -d "$ws" ] || continue
+  (cd "$ws" && cargo fmt --all)
+done
 
 echo "==> cargo clippy"
-cargo clippy --workspace --all-targets --all-features -q || true
+for ws in "${RUST_WORKSPACES[@]}"; do
+  [ -d "$ws" ] || continue
+  (cd "$ws" && cargo clippy --workspace --all-targets --all-features --no-deps -q) || true
+done
 
 run_fast() {
   echo "==> Running fast tests"
-  cargo test --workspace
+  for ws in "${RUST_WORKSPACES[@]}"; do
+    [ -d "$ws" ] || continue
+    (cd "$ws" && cargo test --workspace)
+  done
 }
 
 run_slow() {
   echo "==> Running slow tests (ignored only)"
-  cargo test --workspace -- --ignored
+  for ws in "${RUST_WORKSPACES[@]}"; do
+    [ -d "$ws" ] || continue
+    (cd "$ws" && cargo test --workspace -- --ignored)
+  done
 }
 
 case "$MODE" in
