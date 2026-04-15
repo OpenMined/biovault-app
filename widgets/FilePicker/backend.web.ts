@@ -7,28 +7,29 @@ import { fileRefName, fileRefSize } from './types'
 const TEXT_SLICE_BYTES = 128 * 1024
 
 // Accept anything genomic-ish. Individual heuristics take over from here.
+// Rules Chrome enforces on showOpenFilePicker acceptTypes:
+//   * each extension must start with '.' and contain no further dots
+//     (so `.fa.gz` is invalid — gotta pick one);
+//   * the same extension cannot appear more than once across the whole config.
+// We flatten everything into one group so the user doesn't have to hunt for a
+// filter dropdown to see their CRAM. "All files" remains available via
+// excludeAcceptAllOption: false.
 const ACCEPT_TYPES: FilePickerAcceptType[] = [
 	{
-		description: 'Genotype / VCF (text)',
+		description: 'Genomic files',
 		accept: {
-			'text/plain': ['.txt', '.tsv', '.csv', '.vcf'],
-			'application/zip': ['.zip'],
-			'application/gzip': ['.gz'],
-		},
-	},
-	{
-		description: 'Alignment (BAM / CRAM)',
-		accept: {
-			'application/octet-stream': ['.bam', '.cram'],
-			'application/x-bam': ['.bam'],
-			'application/x-cram': ['.cram'],
-		},
-	},
-	{
-		description: 'Reference FASTA',
-		accept: {
-			'application/octet-stream': ['.fa', '.fasta', '.fa.gz', '.fasta.gz'],
-			'text/x-fasta': ['.fa', '.fasta'],
+			'application/octet-stream': [
+				'.txt',
+				'.tsv',
+				'.csv',
+				'.vcf',
+				'.zip',
+				'.gz',
+				'.bam',
+				'.cram',
+				'.fa',
+				'.fasta',
+			],
 		},
 	},
 ]

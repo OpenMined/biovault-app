@@ -98,7 +98,7 @@ jobs:
       - name: Run ./lint.sh --check
         run: ./lint.sh --check
 
-  web-smoke:
+  web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -138,7 +138,7 @@ jobs:
           fi
           ls -la test-data/23andme/v5/ 2>/dev/null || true
 
-      - name: Run web smoke test
+      - name: Run web tests
         run: ./test-web.sh
 
       - name: Upload web artifacts
@@ -151,7 +151,7 @@ jobs:
             test-results
           if-no-files-found: ignore
 
-  ios-smoke:
+  ios:
     # Temporarily disabled on PRs while we stabilize web CI first.
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
@@ -229,7 +229,7 @@ jobs:
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
 
-      - name: Run iOS smoke test
+      - name: Run iOS tests
         run: ./test-ios.sh
 
       - name: Upload iOS screenshots
@@ -248,7 +248,7 @@ jobs:
           path: ~/.maestro/tests
           if-no-files-found: ignore
 
-  android-smoke:
+  android:
     # Temporarily disabled on PRs while we stabilize web CI first.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -341,7 +341,7 @@ jobs:
           disable-animations: true
           script: echo "AVD snapshot created"
 
-      - name: Run Android smoke test on Pixel 8 / API ${{ matrix.api-level }}
+      - name: Run Android tests on Pixel 8 / API ${{ matrix.api-level }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}

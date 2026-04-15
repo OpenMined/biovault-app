@@ -18,20 +18,52 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 	const [dragActive, setDragActive] = useState(false)
 	const dropRef = useRef<View>(null)
 
-	// Web drag-drop: listen at window level so the whole page reacts to a drag
-	// (users shouldn't have to hit a small target). The drop zone itself also
-	// accepts drops directly. Document-level dragover must preventDefault or
-	// the browser navigates to the dropped file.
+	// Stable ref to setFromDrop so the drag listeners don't have to re-bind on
+	// every render (each render produces a new `picker` object).
+	const setFromDropRef = useRef(picker.setFromDrop)
+	useEffect(() => {
+		setFromDropRef.current = picker.setFromDrop
+	}, [picker.setFromDrop])
+
+	// Web drag-drop: listen at window level so the whole page reacts. Use a
+	// depth counter to distinguish entering a child element from leaving the
+	// window entirely. preventDefault on dragover is mandatory or the browser
+	// navigates to the dropped file instead of delivering the drop event.
 	useEffect(() => {
 		if (Platform.OS !== 'web') return
+		// eslint-disable-next-line no-console
+		console.log('[FilePicker] attaching window drag listeners')
+		if (typeof window !== 'undefined') {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			;(window as any).alert?.('[FilePicker] drag listeners attached — drag a file now')
+		}
 		let depth = 0
-		const hasFiles = (e: DragEvent) =>
-			Array.from(e.dataTransfer?.types ?? []).includes('Files')
+		const hasFiles = (e: DragEvent) => {
+			const types = e.dataTransfer?.types
+			if (!types) return false
+			// DataTransferItemList / DOMStringList — both are array-like. Some
+			// browsers expose `contains`, others only numeric indexing.
+			for (let i = 0; i < types.length; i += 1) {
+				if (types[i] === 'Files') return true
+			}
+			return false
+		}
 		const stop = (e: Event) => {
 			e.preventDefault()
 			e.stopPropagation()
 		}
+		let alertedEnter = false
 		const onDragEnter = (e: DragEvent) => {
+			const types = Array.from(e.dataTransfer?.types ?? [])
+			// eslint-disable-next-line no-console
+			console.log('[FilePicker] dragenter', { hasFiles: hasFiles(e), types })
+			if (!alertedEnter) {
+				alertedEnter = true
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				;(window as any).alert?.(
+					`[FilePicker] dragenter fired. types=${JSON.stringify(types)}`,
+				)
+			}
 			if (!hasFiles(e)) return
 			stop(e)
 			depth += 1
@@ -50,6 +82,14 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 			if (depth === 0) setDragActive(false)
 		}
 		const onDrop = async (e: DragEvent) => {
+			const types = Array.from(e.dataTransfer?.types ?? [])
+			const fileCount = e.dataTransfer?.files?.length ?? 0
+			// eslint-disable-next-line no-console
+			console.log('[FilePicker] drop', { types, files: fileCount })
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			;(window as any).alert?.(
+				`[FilePicker] drop fired. types=${JSON.stringify(types)} files=${fileCount}`,
+			)
 			stop(e)
 			depth = 0
 			setDragActive(false)
@@ -67,7 +107,12 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 					if (handle && handle.kind === 'file') {
 						const fh = handle as FileSystemFileHandle
 						const f = await fh.getFile()
-						await picker.setFromDrop({ kind: 'handle', handle: fh, name: f.name, size: f.size })
+						await setFromDropRef.current({
+							kind: 'handle',
+							handle: fh,
+							name: f.name,
+							size: f.size,
+						})
 						return
 					}
 				} catch {
@@ -76,7 +121,7 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 			}
 			const file = dt.files?.[0]
 			if (file) {
-				await picker.setFromDrop({ kind: 'blob', file })
+				await setFromDropRef.current({ kind: 'blob', file })
 			}
 		}
 		window.addEventListener('dragenter', onDragEnter)
@@ -89,7 +134,7 @@ export function FilePicker({ onConfirm }: FilePickerProps) {
 			window.removeEventListener('dragleave', onDragLeave)
 			window.removeEventListener('drop', onDrop)
 		}
-	}, [picker])
+	}, [])
 
 	const submitUrl = useCallback(() => {
 		const url = urlValue.trim()

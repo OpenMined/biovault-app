@@ -14,7 +14,12 @@ export default function FilePickerScreen() {
 		<SafeAreaView style={styles.safeArea} edges={['top']}>
 			<ScrollView contentContainerStyle={styles.content}>
 				<View style={styles.header}>
-					<Pressable onPress={() => router.back()}>
+					<Pressable
+						onPress={() => {
+							if (router.canGoBack()) router.back()
+							else router.replace('/')
+						}}
+					>
 						<OMText variant="subtitle" style={styles.back}>
 							← Back
 						</OMText>

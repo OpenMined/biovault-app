@@ -43,6 +43,10 @@ npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
   exit 1
 }
 
+echo "==> Disabling expo-dev-menu onboarding (tests shouldn't see the sheet)"
+xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
+xcrun simctl spawn "$UDID" defaults write host.exp.Exponent EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
+
 echo "==> Waiting for app to finish loading from Metro"
 sleep 8
 

@@ -3,29 +3,45 @@ appId: org.openmined.biovault.dev
 - launchApp:
     clearState: true
 - takeScreenshot: screenshots/00-launched
+
+# Stage 1 — any of: Expo dev-launcher list, dev-menu sheet, app onboarding,
+# or the app home (first run after onboarding was completed previously).
 - extendedWaitUntil:
-    visible: "I understand.*|Explore Assays|Your genomic files|This is the developer menu.*"
+    visible: "DEVELOPMENT SERVERS|This is the developer menu.*|I understand.*|Explore Assays|Your genomic files"
     timeout: 60000
 - takeScreenshot: screenshots/01-launch
+
+# Dev launcher: tap the server row (URL is unique vs the app title).
+- runFlow:
+    when:
+      visible: "DEVELOPMENT SERVERS"
+    commands:
+      - tapOn:
+          text: "http://.*:8081"
+
+# Stage 2 — after dev launcher, expo-dev-client may show its onboarding sheet.
+- extendedWaitUntil:
+    visible: "This is the developer menu.*|I understand.*|Explore Assays|Your genomic files"
+    timeout: 90000
 - runFlow:
     when:
       visible: "This is the developer menu.*"
     commands:
       - tapOn: "Continue"
-- runFlow:
-    when:
-      visible: "Reload"
-    commands:
-      - swipe:
-          start: "50%,60%"
-          end: "50%,100%"
+
+# Stage 3 — our app's onboarding (privacy consent).
+- extendedWaitUntil:
+    visible: "I understand.*|Explore Assays|Your genomic files"
+    timeout: 60000
 - runFlow:
     when:
       visible: "I understand.*"
     commands:
       - tapOn: "I understand.*"
       - tapOn: "Continue"
+
+# Stage 4 — home.
 - extendedWaitUntil:
-    visible: "Explore Assays"
-    timeout: 30000
+    visible: "Explore Assays|Your genomic files"
+    timeout: 60000
 - takeScreenshot: screenshots/02-home
