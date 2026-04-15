@@ -94,6 +94,7 @@ function getStoredRecord(row: InstalledAssayRow): InstalledAssayManifestRecord |
 		if (
 			typeof record.rootUri !== 'string' ||
 			typeof record.assayPath !== 'string' ||
+			typeof record.compiledPath !== 'string' ||
 			!record.fileUris ||
 			typeof record.fileUris !== 'object' ||
 			Array.isArray(record.fileUris)
@@ -103,7 +104,8 @@ function getStoredRecord(row: InstalledAssayRow): InstalledAssayManifestRecord |
 
 		const fileUris = Object.fromEntries(
 			Object.entries(record.fileUris).filter(
-				([relativePath, uri]): uri is string => typeof relativePath === 'string' && typeof uri === 'string'
+				(entry): entry is [string, string] =>
+					typeof entry[0] === 'string' && typeof entry[1] === 'string'
 			)
 		)
 

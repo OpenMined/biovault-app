@@ -61,8 +61,12 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-  typescript:
+  lint:
+    # Runs the same ./lint.sh that developers use locally, so CI output
+    # matches local output exactly. Covers Rust (bioscript/rust +
+    # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,14 +76,32 @@ jobs:
         with:
           node-version-file: '.nvmrc'
 
-      - name: Show Node.js version
-        run: node --version
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-      - name: Install dependencies
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+
+      - name: Cache Rust (bioscript/rust + desktop/src-tauri)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            bioscript/rust
+            desktop/src-tauri
+          key: lint
+
+      - name: Install root npm deps
         run: npm install
 
-      - name: Run linting checks
-        run: ./lint.sh
+      - name: Install desktop npm deps
+        run: cd desktop && npm install
+
+      - name: Run ./lint.sh --check
+        run: ./lint.sh --check
 
   web-smoke:
     runs-on: ubuntu-latest

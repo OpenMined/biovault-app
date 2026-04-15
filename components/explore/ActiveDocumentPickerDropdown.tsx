@@ -89,6 +89,7 @@ const styles = StyleSheet.create({
 		shadowOffset: { width: 0, height: 10 },
 		elevation: 8,
 	},
+	dropdownShell: {},
 	stack: {
 		gap: omSpacing.xs,
 	},
