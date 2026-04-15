@@ -20,14 +20,21 @@ appId: org.openmined.biovault.dev
           text: "http://.*:8081"
 
 # Stage 2 — after dev launcher, expo-dev-client may show its onboarding sheet.
+# iOS uses the text "This is the developer menu…". Android's dev menu shows
+# an overlay with "Reload" / "Go home" / "Tools"; press Back to dismiss it.
 - extendedWaitUntil:
-    visible: "This is the developer menu.*|I understand.*|Explore Assays|Your genomic files"
+    visible: "This is the developer menu.*|Reload|I understand.*|Explore Assays|Your genomic files"
     timeout: 90000
 - runFlow:
     when:
       visible: "This is the developer menu.*"
     commands:
       - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Go home"
+    commands:
+      - pressKey: Back
 
 # Stage 3 — our app's onboarding (privacy consent).
 - extendedWaitUntil:

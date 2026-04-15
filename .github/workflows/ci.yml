@@ -247,8 +247,6 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    # Temporarily disabled on PRs while we stabilize web CI first.
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
