@@ -505,6 +505,7 @@ export default function AssayLabScreen() {
 							(!assay || !genome || runState.kind === 'running') && styles.runButtonDisabled,
 						]}
 						disabled={!assay || !genome || runState.kind === 'running'}
+						testID="assay-lab-run"
 					>
 						<OMText variant="subtitle" style={styles.runButtonText}>
 							{runState.kind === 'running' ? 'Running…' : 'Run assay'}
