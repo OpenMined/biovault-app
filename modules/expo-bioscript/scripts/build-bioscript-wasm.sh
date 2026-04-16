@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 CRATE_DIR="${APP_ROOT}/bioscript/rust/bioscript-wasm"
-DEST="${SCRIPT_DIR}/../web-runtime/bioscript-wasm"
+DEST="${SCRIPT_DIR}/../src/bioscript-wasm"
 
 if ! command -v wasm-pack >/dev/null 2>&1; then
   echo "[build-bioscript-wasm] wasm-pack not found — install via 'cargo install wasm-pack'" >&2
@@ -32,5 +32,17 @@ for name in bioscript_wasm.js bioscript_wasm.d.ts bioscript_wasm_bg.wasm; do
   cp "${src}" "${DEST}/"
   echo "[build-bioscript-wasm] copied ${name}"
 done
+
+# Metro (used by Expo web) can't parse `import.meta.url`, which wasm-pack
+# emits as a fallback for when the caller doesn't pass `module_or_path`. We
+# always pass it explicitly from BioscriptWasm.ts, so that branch is dead —
+# rewrite it to something Metro can parse.
+JS_TARGET="${DEST}/bioscript_wasm.js"
+if sed --version >/dev/null 2>&1; then
+  sed -i "s|import.meta.url|''|g" "${JS_TARGET}"
+else
+  sed -i '' "s|import.meta.url|''|g" "${JS_TARGET}"
+fi
+echo "[build-bioscript-wasm] stripped import.meta.url for Metro compatibility"
 
 echo "[build-bioscript-wasm] done — artifacts live in ${DEST}"
