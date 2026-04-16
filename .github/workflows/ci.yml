@@ -149,9 +149,9 @@ jobs:
           if-no-files-found: ignore
 
   ios:
-    # namespace-profile-mac-medium has Xcode 16.4 which hits expo-modules-core
-    # Swift-6 concurrency errors; keep on GitHub macos-15 (Xcode 16.2) for now.
-    runs-on: macos-15
+    # Namespace default is now Tahoe 26.3.1 + Xcode 26.3 — matches local
+    # dev (Xcode 26.x). Should handle expo-modules-core's Swift concurrency.
+    runs-on: namespace-profile-mac-medium
     timeout-minutes: 90
     steps:
       - name: Checkout code
@@ -277,10 +277,10 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    # Namespace linux runners don't permit the KVM udev setup required by
-    # reactivecircus/android-emulator-runner — keep Android on GitHub's
-    # ubuntu-latest where KVM just works.
-    runs-on: ubuntu-latest
+    # Namespace arm64 linux matches the real phone arch and skips x86
+    # translation overhead. reactivecircus/android-emulator-runner@v2
+    # supports aarch64 hosts; emulator arch below is arm64-v8a.
+    runs-on: namespace-profile-linux-arm64-medium
     timeout-minutes: 90
     strategy:
       matrix:
@@ -365,7 +365,7 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
-          arch: x86_64
+          arch: arm64-v8a
           profile: pixel_7
           force-avd-creation: false
           emulator-options: -no-window -no-snapshot-save -no-boot-anim -camera-back none -gpu swiftshader_indirect
@@ -377,7 +377,7 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
-          arch: x86_64
+          arch: arm64-v8a
           profile: pixel_7
           force-avd-creation: false
           emulator-options: -no-window -no-snapshot-save -no-boot-anim -camera-back none -gpu swiftshader_indirect
