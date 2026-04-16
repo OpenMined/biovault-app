@@ -149,7 +149,9 @@ jobs:
           if-no-files-found: ignore
 
   ios:
-    runs-on: namespace-profile-mac-medium
+    # namespace-profile-mac-medium has Xcode 16.4 which hits expo-modules-core
+    # Swift-6 concurrency errors; keep on GitHub macos-15 (Xcode 16.2) for now.
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - name: Checkout code
@@ -278,7 +280,10 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    runs-on: namespace-profile-linux-medium
+    # Namespace linux runners don't permit the KVM udev setup required by
+    # reactivecircus/android-emulator-runner — keep Android on GitHub's
+    # ubuntu-latest where KVM just works.
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       matrix:
