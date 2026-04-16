@@ -13,7 +13,7 @@ jobs:
   rust:
     # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
     # bioscript is a submodule with its own CI.
-    runs-on: namespace-profile-linux-medium
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
     # Runs the same ./lint.sh that developers use locally, so CI output
     # matches local output exactly. Covers Rust (bioscript/rust +
     # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
-    runs-on: namespace-profile-linux-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -96,7 +96,7 @@ jobs:
         run: ./lint.sh --check
 
   web:
-    runs-on: namespace-profile-linux-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout code
