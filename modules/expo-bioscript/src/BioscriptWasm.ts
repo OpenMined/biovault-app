@@ -1,35 +1,33 @@
 // Single entrypoint to the bioscript-wasm bundle on web. The actual loader and
 // bindings are emitted by wasm-pack at build time (see
-// modules/expo-bioscript/scripts/build-bioscript-wasm.sh). This file wraps the
-// lazy-load + type surface so the rest of the app doesn't need to know the
-// package layout.
+// modules/expo-bioscript/scripts/build-bioscript-wasm.sh), and live inside
+// src/bioscript-wasm/ so Metro resolves the relative imports against the module
+// tree rather than node_modules/.
 //
 // All file-format, assay, and lookup logic lives in bioscript — the JS side
 // just marshals bytes in and JSON out. See
 // docs/architecture/bioscript-is-source-of-truth.md.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WasmModule = any
+import { Asset } from 'expo-asset'
 
-let wasmPromise: Promise<WasmModule> | null = null
+// Static imports so Metro bundles these. The wasm-pack "web" template emits
+// ESM; Metro's ESM-to-CJS transform keeps the named exports intact.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
+	default: (input?: { module_or_path: string | URL | Request }) => Promise<unknown>
+	inspectBytes: (name: string, bytes: Uint8Array, optionsJson: string | null) => string
+}
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const wasmAsset = require('./bioscript-wasm/bioscript_wasm_bg.wasm')
 
-async function loadBioscriptWasm(): Promise<WasmModule> {
+let wasmPromise: Promise<typeof wasmJsModule> | null = null
+
+async function loadBioscriptWasm(): Promise<typeof wasmJsModule> {
 	if (wasmPromise) return wasmPromise
 	wasmPromise = (async () => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports
-		const wasmAsset = require('../web-runtime/bioscript-wasm/bioscript_wasm_bg.wasm') as any
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const { Asset } = require('expo-asset') as typeof import('expo-asset')
 		const wasmUrl = Asset.fromModule(wasmAsset).uri
-		// The wasm-pack "web" template exports `init(input)` as default. The
-		// generated JS lives alongside the .wasm in the web-runtime folder.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const mod: any = await import(
-			/* webpackIgnore: true */
-			'../web-runtime/bioscript-wasm/bioscript_wasm.js'
-		)
-		await mod.default({ module_or_path: wasmUrl })
-		return mod
+		await wasmJsModule.default({ module_or_path: wasmUrl })
+		return wasmJsModule
 	})()
 	return wasmPromise
 }
@@ -50,7 +48,7 @@ export type BioscriptInspection = {
 	source?: {
 		vendor: string
 		platformVersion?: string
-		confidence: string
+		confidence: 'authoritative' | 'strong_heuristic' | 'weak_heuristic' | 'unknown'
 		evidence: string[]
 	}
 	selectedEntry?: string
@@ -81,6 +79,6 @@ export async function inspectBytes(
 			reference_index: options.referenceIndex ?? null,
 		})
 		: ''
-	const json = mod.inspectBytes(name, bytes, optionsJson)
+	const json = mod.inspectBytes(name, bytes, optionsJson || null)
 	return JSON.parse(json) as BioscriptInspection
 }
