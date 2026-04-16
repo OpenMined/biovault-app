@@ -10,11 +10,19 @@ mkdir -p "$LOG_DIR"
 export PATH="$PWD/node_modules/.maestro/bin:$HOME/.maestro/bin:$PATH"
 command -v maestro >/dev/null || { echo "maestro not found; run npm run install-maestro" >&2; exit 1; }
 
-echo "==> Booting simulator: $SIM_NAME"
-UDID=$(xcrun simctl list devices available | grep -E "^\s*$SIM_NAME \(" | head -1 | grep -oE "[0-9A-F-]{36}")
-if [ -z "$UDID" ]; then
-  echo "Simulator '$SIM_NAME' not found" >&2
-  exit 1
+# Allow CI to pin a specific UDID (chosen to match Xcode's iOS SDK) instead
+# of looking up by $SIM_NAME, which picks the first match across runtimes
+# and can land on an iOS runtime whose platform SDK isn't in Xcode.
+if [ -n "${IOS_SIMULATOR_UDID:-}" ]; then
+  UDID="$IOS_SIMULATOR_UDID"
+  echo "==> Using simulator UDID: $UDID"
+else
+  echo "==> Booting simulator: $SIM_NAME"
+  UDID=$(xcrun simctl list devices available | grep -E "^\s*$SIM_NAME \(" | head -1 | grep -oE "[0-9A-F-]{36}")
+  if [ -z "$UDID" ]; then
+    echo "Simulator '$SIM_NAME' not found" >&2
+    exit 1
+  fi
 fi
 xcrun simctl boot "$UDID" 2>/dev/null || true
 open -a Simulator --args -CurrentDeviceUDID "$UDID"

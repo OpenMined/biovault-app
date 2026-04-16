@@ -177,16 +177,19 @@ jobs:
           key: ios
 
       - name: Select Xcode
-        # React Native 0.83 requires Xcode >= 16.1
+        # React Native 0.83 requires Xcode >= 16.1. Prefer 16.2 (ships iOS
+        # 18.2 platform) — Xcode 16.1 on macos-15 is missing the iOS 18.1
+        # platform SDK that matches the default simulator runtime, which
+        # causes: "iOS 18.1 is not installed".
         run: |
-          if [ -d "/Applications/Xcode_16.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.app
-          elif [ -d "/Applications/Xcode_16.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app
-          else
-            sudo xcode-select -s /Applications/Xcode.app
-          fi
+          for xc in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_16.1 Xcode; do
+            if [ -d "/Applications/${xc}.app" ]; then
+              sudo xcode-select -s "/Applications/${xc}.app"
+              break
+            fi
+          done
           xcodebuild -version
+          xcodebuild -showsdks | grep -E "iOS|watchOS" || true
 
       - name: Install host tools
         run: brew install jq
@@ -224,8 +227,26 @@ jobs:
 
       - name: Boot iOS simulator
         run: |
-          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))][0].udid')
+          # Match sim runtime to the active Xcode's iOS platform SDK, else
+          # xcodebuild fails with "iOS X.Y is not installed". Pick the
+          # highest iOS runtime that Xcode actually ships platform SDK for.
+          SDK_VER=$(xcodebuild -showsdks 2>/dev/null | awk '/iphoneos/{print $NF; exit}' | sed 's/iphoneos//')
+          echo "Active Xcode iOS SDK: $SDK_VER"
+          UDID=$(xcrun simctl list devices available -j \
+            | jq -r --arg sdk "$SDK_VER" '
+                [ .devices | to_entries[]
+                  | . as $kv
+                  | select(($kv.key | test("iOS-" + ($sdk | gsub("\\."; "-")) + "$")))
+                  | $kv.value[]
+                  | select(.isAvailable and (.name | startswith("iPhone")))
+                ] | .[0].udid // empty')
+          # Fallback: any available iPhone if no runtime matches.
+          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+            UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].udid')
+          fi
+          echo "Using simulator: $UDID"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          echo "SIM_NAME=$(xcrun simctl list devices -j | jq -r --arg id "$UDID" '.devices | to_entries[] | .value[] | select(.udid==$id) | .name')" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
 

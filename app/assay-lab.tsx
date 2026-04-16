@@ -4,6 +4,7 @@ import { getHandles, ensurePermission } from '@/lib/file-handle-store'
 import { isBioscriptAvailable, runFile } from '@/modules/expo-bioscript'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import { unzipSync } from 'fflate'
+import YAML from 'yaml'
 import { router } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
@@ -50,6 +51,85 @@ function looksLikeGenomeText(name: string): boolean {
 
 async function readFileAsText(file: File): Promise<string> {
 	return await file.text()
+}
+
+// Compile a bioscript:variant:1.0 YAML into the minimal Python script the Monty
+// web runtime can execute. Mirrors the runtime API used by hand-written assays
+// (bioscript.variant / query_plan / load_genotypes / lookup_variants / write_tsv).
+function compileVariantYamlToPython(yamlText: string): string {
+	const doc = YAML.parse(yamlText)
+	if (!doc || typeof doc !== 'object') throw new Error('empty YAML document')
+	const schema = String(doc.schema ?? '')
+	if (!schema.startsWith('bioscript:variant:')) {
+		throw new Error(`unsupported schema "${schema}" — expected bioscript:variant:1.0`)
+	}
+	const name = String(doc.name ?? 'variant')
+	const gene = String(doc.gene ?? '')
+	const rsids: string[] = Array.isArray(doc.identifiers?.rsids)
+		? (doc.identifiers.rsids as unknown[]).map((v) => String(v))
+		: []
+	if (rsids.length === 0) throw new Error('no identifiers.rsids found')
+	const alleles = doc.alleles ?? {}
+	const kind = String(alleles.kind ?? 'snv').toLowerCase()
+	const ref = String(alleles.ref ?? '')
+	const alts: string[] = Array.isArray(alleles.alts)
+		? (alleles.alts as unknown[]).map((v) => String(v))
+		: []
+	const alt = alts[0] ?? ''
+
+	const coords37 = doc.coordinates?.grch37
+	const coords38 = doc.coordinates?.grch38
+	const fmtCoord = (c: { chrom?: unknown; pos?: unknown } | undefined): string | null => {
+		if (!c) return null
+		const chrom = String(c.chrom ?? '').trim()
+		const pos = typeof c.pos === 'number' ? c.pos : Number.parseInt(String(c.pos ?? ''), 10)
+		if (!chrom || !Number.isFinite(pos)) return null
+		return `${chrom}:${pos}-${pos}`
+	}
+	const grch37 = fmtCoord(coords37)
+	const grch38 = fmtCoord(coords38)
+
+	const pyKind = kind === 'snv' ? 'snp' : kind === 'indel' ? 'indel' : kind
+
+	const variantKwargs: string[] = [
+		`rsid=${JSON.stringify(rsids.length === 1 ? rsids[0] : rsids)}`,
+		`kind=${JSON.stringify(pyKind)}`,
+	]
+	if (grch37) variantKwargs.push(`grch37=${JSON.stringify(grch37)}`)
+	if (grch38) variantKwargs.push(`grch38=${JSON.stringify(grch38)}`)
+	if (ref) variantKwargs.push(`ref=${JSON.stringify(ref)}`)
+	if (alt) variantKwargs.push(`alt=${JSON.stringify(alt)}`)
+
+	const headerComment = [
+		`# Auto-generated from a bioscript:variant:1.0 YAML assay by the web assay lab.`,
+		`# Source: ${name}${gene ? ` · ${gene}` : ''}`,
+	].join('\n')
+
+	return `${headerComment}
+VARIANT = bioscript.variant(
+    ${variantKwargs.join(',\n    ')},
+)
+
+PLAN = bioscript.query_plan([VARIANT])
+
+def main():
+    store = bioscript.load_genotypes(input_file)
+    calls = store.lookup_variants(PLAN)
+    genotype = calls[0] if calls else None
+    row = {
+        "rsid": ${JSON.stringify(rsids[0])},
+        "gene": ${JSON.stringify(gene)},
+        "assay": ${JSON.stringify(name)},
+        "grch37": ${JSON.stringify(grch37 ?? '')},
+        "grch38": ${JSON.stringify(grch38 ?? '')},
+        "ref": ${JSON.stringify(ref)},
+        "alt": ${JSON.stringify(alt)},
+        "genotype": genotype if genotype else "not found",
+    }
+    bioscript.write_tsv(output_file, [row])
+
+main()
+`
 }
 
 // A 23andMe-style .zip usually contains a single .txt. Unzip in-browser and use
@@ -292,19 +372,32 @@ export default function AssayLabScreen() {
 
 	const run = useCallback(async () => {
 		if (!assay || !genome) return
-		if (assay.language !== 'python') {
+		setRunState({ kind: 'running' })
+		let scriptPath = assay.name
+		let scriptContents = assay.contents
+		if (assay.language === 'yaml') {
+			try {
+				const py = compileVariantYamlToPython(assay.contents)
+				scriptPath = assay.name.replace(/\.ya?ml$/i, '.py')
+				scriptContents = py
+			} catch (err) {
+				setRunState({
+					kind: 'error',
+					message: `Could not compile ${assay.name}: ${err instanceof Error ? err.message : String(err)}`,
+				})
+				return
+			}
+		} else if (assay.language !== 'python') {
 			setRunState({
 				kind: 'error',
-				message:
-					'Only .py assay scripts run in this lab right now. YAML variants need a compile step that is not yet wired in.',
+				message: `Unsupported assay language for ${assay.name}.`,
 			})
 			return
 		}
-		setRunState({ kind: 'running' })
 		try {
 			const result = await runFile({
-				scriptPath: assay.name,
-				scriptContents: assay.contents,
+				scriptPath,
+				scriptContents,
 				inputFile: genome.name,
 				inputContents: genome.contents,
 				outputFile: 'assay-output.tsv',
