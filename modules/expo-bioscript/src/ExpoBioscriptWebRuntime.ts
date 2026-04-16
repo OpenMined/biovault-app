@@ -360,6 +360,21 @@ async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, p
   const storeId = `genotypes:${context.nextStoreId}`;
   context.nextStoreId += 1;
   context.genotypeStores.set(storeId, store);
+  // Serialize to a single string — Playwright's `console.text()` returns
+  // `JSHandle@object` for structured args, which makes assertions brittle.
+  // eslint-disable-next-line no-console
+  console.log(
+    '[bioscript-web] load_genotypes ' +
+      JSON.stringify({
+        path,
+        format,
+        contentLength: content.length,
+        rsidCount: store.values.size,
+        sampleRsids: Array.from(store.values.keys()).slice(0, 5),
+        hasRs1800437: store.values.has('rs1800437'),
+        rs1800437: store.values.get('rs1800437') ?? null,
+      }),
+  );
   return storeId;
 }
 
@@ -369,9 +384,16 @@ function lookupVariant(context: RuntimeContext, storeHandle: unknown, variant: u
   for (const rsid of spec.rsids) {
     const genotype = store.values.get(rsid);
     if (genotype) {
+      // eslint-disable-next-line no-console
+      console.log('[bioscript-web] lookup hit ' + JSON.stringify({ rsid, genotype }));
       return genotype;
     }
   }
+  // eslint-disable-next-line no-console
+  console.log(
+    '[bioscript-web] lookup miss ' +
+      JSON.stringify({ rsids: spec.rsids, storeSize: store.values.size }),
+  );
   return null;
 }
 

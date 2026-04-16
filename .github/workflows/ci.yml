@@ -179,26 +179,25 @@ jobs:
           key: ios
 
       - name: Select Xcode
-        # React Native 0.83 requires Xcode >= 16.1. Prefer 16.2 (ships iOS
-        # 18.2 platform) — Xcode 16.1 on macos-15 is missing the iOS 18.1
-        # platform SDK that matches the default simulator runtime, which
-        # causes: "iOS 18.1 is not installed".
+        # Prefer the runner's default Xcode (has its matching iOS platform
+        # and sim runtime already installed). Only fall back to a pinned
+        # version if the default is older than what RN 0.83 requires (16.1).
         run: |
-          for xc in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_16.1 Xcode; do
-            if [ -d "/Applications/${xc}.app" ]; then
-              sudo xcode-select -s "/Applications/${xc}.app"
-              break
-            fi
-          done
+          DEFAULT_VER=$(xcodebuild -version 2>/dev/null | awk '/^Xcode/{print $2}')
+          echo "Default Xcode: $DEFAULT_VER"
+          MIN="16.1"
+          if [ "$(printf '%s\n%s\n' "$MIN" "$DEFAULT_VER" | sort -V | head -1)" = "$MIN" ]; then
+            echo "Using runner default ($DEFAULT_VER)."
+          else
+            for xc in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_16.1; do
+              if [ -d "/Applications/${xc}.app" ]; then
+                sudo xcode-select -s "/Applications/${xc}.app"
+                break
+              fi
+            done
+          fi
           xcodebuild -version
           xcodebuild -showsdks | grep -E "iOS|watchOS" || true
-
-      - name: Ensure iOS platform is installed
-        # Fixes "iOS X.Y is not installed. To use with Xcode, first
-        # download and install the platform" on runners where Xcode has
-        # the SDK but not the matching platform package.
-        run: |
-          xcodebuild -downloadPlatform iOS || true
           xcrun simctl list runtimes | grep iOS || true
 
       - name: Install host tools
@@ -237,26 +236,24 @@ jobs:
 
       - name: Boot iOS simulator
         run: |
-          # Match sim runtime to the active Xcode's iOS platform SDK, else
-          # xcodebuild fails with "iOS X.Y is not installed". Pick the
-          # highest iOS runtime that Xcode actually ships platform SDK for.
-          SDK_VER=$(xcodebuild -showsdks 2>/dev/null | awk '/iphoneos/{print $NF; exit}' | sed 's/iphoneos//')
-          echo "Active Xcode iOS SDK: $SDK_VER"
+          # Pick a sim whose runtime is actually fully installed (i.e. the
+          # platform package was downloaded, not just the SDK). The iOS
+          # platform we installed via `xcodebuild -downloadPlatform` is
+          # whichever iOS version Xcode picked as its default.
+          INSTALLED_IOS=$(xcrun simctl list runtimes -j | jq -r '.runtimes[] | select(.isAvailable and (.name | startswith("iOS"))) | .identifier' | tail -1)
+          echo "Using runtime: $INSTALLED_IOS"
           UDID=$(xcrun simctl list devices available -j \
-            | jq -r --arg sdk "$SDK_VER" '
+            | jq -r --arg rt "$INSTALLED_IOS" '
                 [ .devices | to_entries[]
-                  | . as $kv
-                  | select(($kv.key | test("iOS-" + ($sdk | gsub("\\."; "-")) + "$")))
-                  | $kv.value[]
+                  | select(.key == $rt)
+                  | .value[]
                   | select(.isAvailable and (.name | startswith("iPhone")))
                 ] | .[0].udid // empty')
-          # Fallback: any available iPhone if no runtime matches.
           if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
             UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].udid')
           fi
           echo "Using simulator: $UDID"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
-          echo "SIM_NAME=$(xcrun simctl list devices -j | jq -r --arg id "$UDID" '.devices | to_entries[] | .value[] | select(.udid==$id) | .name')" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
 

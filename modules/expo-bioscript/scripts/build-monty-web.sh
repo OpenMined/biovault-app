@@ -33,4 +33,10 @@ for name in monty.wasm32-wasi.wasm wasi-worker-browser.mjs wasi-worker.mjs monty
   fi
 done
 
+
+# Record a source-hash marker so the stale-artifact guardrail knows the WASM
+# in DEST matches the current monty source. The guardrail reads this on every
+# start/test run.
+node "${APP_ROOT}/scripts/check-monty-artifacts.mjs" --write
+
 echo "[build-monty-web] done — artifacts live in ${DEST}"
