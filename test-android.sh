@@ -71,8 +71,9 @@ adb -s "$SERIAL" shell "run-as $PACKAGE cp /data/local/tmp/devmenu_prefs.xml sha
 adb -s "$SERIAL" shell am force-stop "$PACKAGE" 2>/dev/null || true
 rm -f "$DEVMENU_PREFS"
 
-echo "==> Waiting for app to finish loading"
-sleep 8
+# No hardcoded wait: we just force-stopped the app to pick up the dev-menu
+# prefs, and Maestro's first extendedWaitUntil (60s) handles launch.
+echo "==> App force-stopped; Maestro will relaunch + wait"
 
 echo "==> Running Maestro flow: $FLOW"
 if maestro --device "$SERIAL" test "$FLOW"; then

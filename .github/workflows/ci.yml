@@ -13,7 +13,7 @@ jobs:
   rust:
     # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
     # bioscript is a submodule with its own CI.
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-medium
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
     # Runs the same ./lint.sh that developers use locally, so CI output
     # matches local output exactly. Covers Rust (bioscript/rust +
     # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-medium
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -96,7 +96,7 @@ jobs:
         run: ./lint.sh --check
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-medium
     timeout-minutes: 20
     steps:
       - name: Checkout code
@@ -149,7 +149,7 @@ jobs:
           if-no-files-found: ignore
 
   ios:
-    runs-on: macos-15
+    runs-on: namespace-profile-mac-medium
     timeout-minutes: 90
     steps:
       - name: Checkout code
@@ -190,6 +190,14 @@ jobs:
           done
           xcodebuild -version
           xcodebuild -showsdks | grep -E "iOS|watchOS" || true
+
+      - name: Ensure iOS platform is installed
+        # Fixes "iOS X.Y is not installed. To use with Xcode, first
+        # download and install the platform" on runners where Xcode has
+        # the SDK but not the matching platform package.
+        run: |
+          xcodebuild -downloadPlatform iOS || true
+          xcrun simctl list runtimes | grep iOS || true
 
       - name: Install host tools
         run: brew install jq
@@ -270,7 +278,7 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-medium
     timeout-minutes: 90
     strategy:
       matrix:
