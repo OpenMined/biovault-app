@@ -10,7 +10,19 @@ mkdir -p "$LOG_DIR"
 export PATH="$PWD/node_modules/.maestro/bin:$HOME/.maestro/bin:$PATH"
 command -v maestro >/dev/null || { echo "maestro not found; run npm run install-maestro" >&2; exit 1; }
 
-ANDROID_SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+if [ -z "$ANDROID_SDK" ]; then
+  for candidate in "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
+    if [ -d "$candidate" ]; then
+      ANDROID_SDK="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "$ANDROID_SDK" ] || [ ! -d "$ANDROID_SDK" ]; then
+  echo "Android SDK not found; set ANDROID_HOME or ANDROID_SDK_ROOT" >&2
+  exit 1
+fi
 export PATH="$ANDROID_SDK/platform-tools:$ANDROID_SDK/emulator:$PATH"
 
 echo "==> Ensuring emulator $AVD is running"
