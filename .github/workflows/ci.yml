@@ -165,6 +165,12 @@ jobs:
         with:
           node-version-file: '.nvmrc'
 
+      - name: Setup Java (Maestro JVM)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
