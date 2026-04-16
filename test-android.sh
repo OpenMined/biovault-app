@@ -37,7 +37,8 @@ trap cleanup EXIT
 
 if ! curl -sf http://localhost:8081/status >/dev/null 2>&1; then
   echo "==> Starting Metro (logs: $LOG_DIR/metro.log)"
-  (npx expo start --dev-client >"$LOG_DIR/metro.log" 2>&1) &
+  # --no-dev --minify: production-mode JS for faster smoke runs.
+  (npx expo start --dev-client --no-dev --minify >"$LOG_DIR/metro.log" 2>&1) &
   METRO_PID=$!
   for i in {1..60}; do
     curl -sf http://localhost:8081/status >/dev/null 2>&1 && break
