@@ -277,10 +277,11 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    # Namespace arm64 linux matches the real phone arch and skips x86
-    # translation overhead. reactivecircus/android-emulator-runner@v2
-    # supports aarch64 hosts; emulator arch below is arm64-v8a.
-    runs-on: namespace-profile-linux-arm64-medium
+    # Namespace linux-arm64 doesn't ship the x86 Android SDK that
+    # reactivecircus/android-emulator-runner expects, and it can't run
+    # the x86 adb binary. Fall back to GitHub ubuntu-latest where the
+    # SDK + KVM are both pre-wired.
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       matrix:
@@ -372,7 +373,7 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
-          arch: arm64-v8a
+          arch: x86_64
           profile: pixel_7
           force-avd-creation: false
           emulator-options: -no-window -no-snapshot-save -no-boot-anim -camera-back none -gpu swiftshader_indirect
@@ -384,7 +385,7 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
-          arch: arm64-v8a
+          arch: x86_64
           profile: pixel_7
           force-avd-creation: false
           emulator-options: -no-window -no-snapshot-save -no-boot-anim -camera-back none -gpu swiftshader_indirect

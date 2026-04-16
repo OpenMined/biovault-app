@@ -4,6 +4,12 @@
 
 One project, multiple platforms, minimal duplication. Each platform gets a UI shell that feels native to it; the state, protocol, and compute logic are shared.
 
+**Invariant:** all file-format, assay, and variant-lookup logic lives in the
+`bioscript` Rust crates. Every platform consumes bioscript through a binding
+appropriate to that platform — see
+[`architecture/bioscript-is-source-of-truth.md`](architecture/bioscript-is-source-of-truth.md).
+No TS/JS reimplementations of bioscript functionality are permitted.
+
 ## Supported platforms
 
 | Platform | Shell | UI primitives | Transport to state bus | Status |
