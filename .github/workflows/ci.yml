@@ -277,9 +277,10 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    # Namespace linux-arm64: fast aarch64 host, no x86 emulator translation.
-    # SDK isn't pre-installed here, so android-actions/setup-android handles it.
-    runs-on: namespace-profile-linux-arm64-medium
+    # Must run on x86_64 Linux: Google ships the Android emulator host
+    # binary only for x86_64 Linux (no aarch64 Linux build). The arm64-v8a
+    # guest image works fine — the *host* emulator is what forces x86_64.
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
       ANDROID_API_LEVEL: "36"
@@ -313,12 +314,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-
-      - name: Setup Android SDK
-        # Namespace arm64 containers don't ship the Android SDK.
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools platforms;android-${{ env.ANDROID_API_LEVEL }} system-images;android-${{ env.ANDROID_API_LEVEL }};google_apis;arm64-v8a emulator'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
