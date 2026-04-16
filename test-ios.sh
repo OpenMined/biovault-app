@@ -25,7 +25,11 @@ else
   fi
 fi
 xcrun simctl boot "$UDID" 2>/dev/null || true
-open -a Simulator --args -CurrentDeviceUDID "$UDID"
+# Only open the GUI Simulator.app outside CI — on CI it's headless and the
+# extra launch is pure overhead.
+if [ -z "${CI:-}" ]; then
+  open -a Simulator --args -CurrentDeviceUDID "$UDID"
+fi
 xcrun simctl bootstatus "$UDID" -b
 
 METRO_PID=""
@@ -44,6 +48,17 @@ if ! curl -sf http://localhost:8081/status >/dev/null 2>&1; then
   done
 fi
 
+# Warm pod install (no --repo-update) so `npx expo run:ios` skips its own
+# pod install when Manifest.lock already matches Podfile.lock. Saves a
+# 30–60s specs-refresh each run.
+if [ -d ios ] && [ -f ios/Podfile ]; then
+  echo "==> Warming CocoaPods (no repo-update)"
+  (cd ios && pod install >"../$LOG_DIR/pods.log" 2>&1) || {
+    echo "pod install failed, falling back to expo run:ios defaults"
+    tail -30 "$LOG_DIR/pods.log" >&2 || true
+  }
+fi
+
 echo "==> Building & installing app on $UDID (logs: $LOG_DIR/build.log)"
 npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
   echo "Build failed. Last 50 lines:" >&2
@@ -55,8 +70,9 @@ echo "==> Disabling expo-dev-menu onboarding (tests shouldn't see the sheet)"
 xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
 xcrun simctl spawn "$UDID" defaults write host.exp.Exponent EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
 
-echo "==> Waiting for app to finish loading from Metro"
-sleep 8
+# No artificial wait: Maestro's first `extendedWaitUntil` in smoke.yaml
+# already has a 60s timeout for the launch screen, which handles any
+# remaining bundle-load latency.
 
 echo "==> Running Maestro flow: $FLOW"
 if maestro --device "$UDID" test "$FLOW"; then

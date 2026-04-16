@@ -117,17 +117,68 @@ export async function runFileOnWeb(request: RunFileRequest): Promise<RunFileResu
   };
 }
 
+// Hand-written loader for the monty WASM bundle. Previously we shipped the
+// napi-rs-generated `monty.wasi-browser.mjs` and patched it post-build because
+// it used `instantiateNapiModuleSync` — which Chrome refuses for WASM >8 MB on
+// the main thread. Now we just call the async variant directly; no generated
+// file, no patch script. If napi-rs's import contract ever changes this
+// loader has to track the new shape. In exchange the monty submodule stays
+// upstream-clean and we own the code path end-to-end.
 async function loadMontyModule(): Promise<MontyBrowserModule> {
-  montyModulePromise ??= import('../web-runtime/monty-wasm32-wasi/monty.wasi-browser.mjs').then((module) => {
+  montyModulePromise ??= (async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getDefaultContext, instantiateNapiModule, WASI } = require('@napi-rs/wasm-runtime') as typeof import('@napi-rs/wasm-runtime')
+
     const wasmUrl = Asset.fromModule(
       require('../web-runtime/monty-wasm32-wasi/monty.wasm32-wasi.wasm'),
-    ).uri;
-    return module.loadMontyWasmModule({
-      wasmUrl,
-      workerUrl: '/modules/expo-bioscript/web-runtime/monty-wasm32-wasi/wasi-worker-browser.mjs',
-    });
-  }) as Promise<MontyBrowserModule>;
-  return montyModulePromise;
+    ).uri
+    const workerUrl = '/modules/expo-bioscript/web-runtime/monty-wasm32-wasi/wasi-worker-browser.mjs'
+
+    const wasi = new WASI({ version: 'preview1' })
+    const context = getDefaultContext()
+    const sharedMemory = new WebAssembly.Memory({
+      initial: 4000,
+      maximum: 65536,
+      shared: true,
+    })
+
+    const res = await fetch(wasmUrl)
+    if (!res.ok) {
+      throw new Error(`Failed to fetch monty wasm at ${wasmUrl}: ${res.status}`)
+    }
+    const bytes = await res.arrayBuffer()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { napiModule } = await instantiateNapiModule(bytes as any, {
+      context,
+      asyncWorkPoolSize: 4,
+      wasi,
+      onCreateWorker() {
+        return new Worker(workerUrl, { type: 'module' })
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      overwriteImports(importObject: any) {
+        importObject.env = {
+          ...importObject.env,
+          ...importObject.napi,
+          ...importObject.emnapi,
+          memory: sharedMemory,
+        }
+        return importObject
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      beforeInit({ instance }: { instance: any }) {
+        for (const name of Object.keys(instance.exports)) {
+          if (name.startsWith('__napi_register__')) {
+            instance.exports[name]()
+          }
+        }
+      },
+    })
+
+    return napiModule.exports as unknown as MontyBrowserModule
+  })()
+  return montyModulePromise
 }
 
 function createMontyRunner(
