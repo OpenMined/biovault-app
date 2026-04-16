@@ -17,13 +17,16 @@ type AssayLanguage = 'python' | 'yaml'
 type CatalogItem = {
 	id: string
 	name: string
-	kind: 'assay' | 'genome' | 'unknown'
+	kind: 'assay' | 'genome' | 'alignment' | 'reference' | 'unknown'
 	language?: AssayLanguage
+	/** Text for assays/genomes. For alignment/reference we keep the File alive via handle. */
 	contents: string
 	sizeBytes: number
 	addedAt: number
 	/** For zip-derived genomes, the original archive name. */
 	sourceName?: string
+	/** Live File handle — set for alignment/reference so we can hand bytes to a future WASM parser without re-reading. */
+	file?: File
 }
 
 type RunRecord = {
@@ -44,6 +47,8 @@ type RunRecord = {
 
 const ASSAY_EXTS = ['.py', '.yaml', '.yml']
 const GENOME_TEXT_EXTS = ['.txt', '.tsv', '.csv', '.vcf']
+const ALIGNMENT_EXTS = ['.cram', '.bam']
+const REFERENCE_EXTS = ['.fa', '.fasta']
 
 function detectLanguage(name: string): AssayLanguage | undefined {
 	const lower = name.toLowerCase()
@@ -62,11 +67,28 @@ function isGenomeText(name: string): boolean {
 	return GENOME_TEXT_EXTS.some((ext) => lower.endsWith(ext))
 }
 
+function isAlignment(name: string): boolean {
+	const lower = name.toLowerCase()
+	return ALIGNMENT_EXTS.some((ext) => lower.endsWith(ext))
+}
+
+function isReference(name: string): boolean {
+	const lower = name.toLowerCase()
+	return REFERENCE_EXTS.some((ext) => lower.endsWith(ext))
+}
+
 async function extractGenomeTextFromZip(
 	file: File,
 ): Promise<{ entryName: string; contents: string } | null> {
 	const buf = new Uint8Array(await file.arrayBuffer())
-	const unzipped = unzipSync(buf)
+	let unzipped: Record<string, Uint8Array>
+	try {
+		unzipped = unzipSync(buf)
+	} catch (err) {
+		// eslint-disable-next-line no-console
+		console.warn('[assay-lab] unzipSync failed', { name: file.name, size: buf.length, err })
+		return null
+	}
 	const entries = Object.keys(unzipped).filter(
 		(n) => !n.endsWith('/') && !n.startsWith('__MACOSX/'),
 	)
@@ -160,6 +182,7 @@ export default function AssayLabScreen() {
 	const [catalog, setCatalog] = useState<CatalogItem[]>([])
 	const [selectedAssayId, setSelectedAssayId] = useState<string | null>(null)
 	const [selectedGenomeId, setSelectedGenomeId] = useState<string | null>(null)
+	const [selectedReferenceId, setSelectedReferenceId] = useState<string | null>(null)
 	const [runs, setRuns] = useState<RunRecord[]>([])
 	const [dragActive, setDragActive] = useState(false)
 	const [bioscriptAvailable, setBioscriptAvailable] = useState(false)
@@ -167,6 +190,8 @@ export default function AssayLabScreen() {
 
 	const assays = useMemo(() => catalog.filter((c) => c.kind === 'assay'), [catalog])
 	const genomes = useMemo(() => catalog.filter((c) => c.kind === 'genome'), [catalog])
+	const alignments = useMemo(() => catalog.filter((c) => c.kind === 'alignment'), [catalog])
+	const references = useMemo(() => catalog.filter((c) => c.kind === 'reference'), [catalog])
 	const unknowns = useMemo(() => catalog.filter((c) => c.kind === 'unknown'), [catalog])
 
 	const selectedAssay = useMemo(
@@ -177,6 +202,11 @@ export default function AssayLabScreen() {
 		() => catalog.find((c) => c.id === selectedGenomeId) ?? null,
 		[catalog, selectedGenomeId],
 	)
+	const selectedReference = useMemo(
+		() => catalog.find((c) => c.id === selectedReferenceId) ?? null,
+		[catalog, selectedReferenceId],
+	)
+	const selectedIsAlignment = selectedGenome?.kind === 'alignment'
 
 	useEffect(() => {
 		setBioscriptAvailable(isBioscriptAvailable())
@@ -224,6 +254,35 @@ export default function AssayLabScreen() {
 				}
 				setCatalog((prev) => [...prev, item])
 				setSelectedGenomeId((current) => current ?? item.id)
+				return item
+			}
+			if (isAlignment(file.name)) {
+				const item: CatalogItem = {
+					id: makeId('alignment'),
+					name: file.name,
+					kind: 'alignment',
+					contents: '',
+					sizeBytes: file.size,
+					addedAt: Date.now(),
+					sourceName: opts.sourceName,
+					file,
+				}
+				setCatalog((prev) => [...prev, item])
+				setSelectedGenomeId((current) => current ?? item.id)
+				return item
+			}
+			if (isReference(file.name)) {
+				const item: CatalogItem = {
+					id: makeId('reference'),
+					name: file.name,
+					kind: 'reference',
+					contents: '',
+					sizeBytes: file.size,
+					addedAt: Date.now(),
+					sourceName: opts.sourceName,
+					file,
+				}
+				setCatalog((prev) => [...prev, item])
 				return item
 			}
 			if (lower.endsWith('.zip')) {
@@ -331,20 +390,53 @@ export default function AssayLabScreen() {
 
 	const addFromSaved = useCallback(
 		async (doc: HomeImportedDocument) => {
-			// Prefer inline bytes; fall back to the persisted FileSystemFileHandle.
-			if (doc.contents) {
-				const file = new File([doc.contents], doc.originalName || doc.name)
-				await addFile(file, { sourceName: doc.originalName })
-				return
-			}
-			if (Platform.OS === 'web') {
-				const handles = await getHandles(doc.id)
-				if (handles?.primary) {
+			const originalName = doc.originalName || doc.name
+			const lower = originalName.toLowerCase()
+			const isContainerLike =
+				lower.endsWith('.zip') || lower.endsWith('.gz') || lower.endsWith('.bz2')
+			try {
+				// Non-text / zip-like files must use the live FileSystemFileHandle so we
+				// read the real bytes from disk. Inline contents at import time might
+				// have been stashed for small-text files only — rebuilding a File from
+				// a string for a zip would make fflate see utf-8 garbage.
+				if (Platform.OS === 'web' && isContainerLike) {
+					const handles = await getHandles(doc.id)
+					if (!handles?.primary) {
+						// eslint-disable-next-line no-console
+						console.warn('[assay-lab] no handle for saved container', { id: doc.id, originalName })
+						return
+					}
 					const state = await ensurePermission(handles.primary)
-					if (state !== 'granted') return
+					if (state !== 'granted') {
+						// eslint-disable-next-line no-console
+						console.warn('[assay-lab] handle permission not granted', { state, originalName })
+						return
+					}
 					const file = (await handles.primary.getFile()) as unknown as File
 					await addFile(file, { sourceName: doc.originalName })
+					return
 				}
+				// Inline-text path: fine for .py/.yaml/.txt/.vcf that got inlined.
+				if (doc.contents) {
+					const file = new File([doc.contents], originalName)
+					await addFile(file, { sourceName: doc.originalName })
+					return
+				}
+				// No inline contents AND not a container — fall back to handle if any.
+				if (Platform.OS === 'web') {
+					const handles = await getHandles(doc.id)
+					if (handles?.primary) {
+						const state = await ensurePermission(handles.primary)
+						if (state === 'granted') {
+							const file = (await handles.primary.getFile()) as unknown as File
+							await addFile(file, { sourceName: doc.originalName })
+							return
+						}
+					}
+				}
+			} catch (err) {
+				// eslint-disable-next-line no-console
+				console.warn('[assay-lab] addFromSaved failed', { originalName, err })
 			}
 		},
 		[addFile],
@@ -355,12 +447,31 @@ export default function AssayLabScreen() {
 			setCatalog((prev) => prev.filter((c) => c.id !== id))
 			setSelectedAssayId((curr) => (curr === id ? null : curr))
 			setSelectedGenomeId((curr) => (curr === id ? null : curr))
+			setSelectedReferenceId((curr) => (curr === id ? null : curr))
 		},
 		[],
 	)
 
 	const run = useCallback(async () => {
 		if (!selectedAssay || !selectedGenome) return
+		if (selectedGenome.kind === 'alignment') {
+			setRuns((prev) => [
+				{
+					id: makeId('run'),
+					ranAt: Date.now(),
+					assayId: selectedAssay.id,
+					assayName: selectedAssay.name,
+					genomeId: selectedGenome.id,
+					genomeName: selectedGenome.name,
+					status: 'error',
+					error:
+						'CRAM/BAM runs aren\'t wired to the web lab yet. The Rust parser (bioscript-formats + noodles) needs to be compiled to WASM alongside Monty and loaded from ExpoBioscriptWebRuntime.ts. For now this works on native/desktop only.',
+					durationMs: 0,
+				},
+				...prev,
+			])
+			return
+		}
 		const runId = makeId('run')
 		const startedAt = Date.now()
 		setRuns((prev) => [
@@ -435,7 +546,7 @@ export default function AssayLabScreen() {
 							Drop anywhere to add
 						</OMText>
 						<OMText variant="body" style={styles.dragOverlayBody}>
-							We'll sort it into assays or genomes — your existing picks stay put.
+							We&rsquo;ll sort it into assays or genomes — your existing picks stay put.
 						</OMText>
 					</View>
 				</View>
@@ -511,7 +622,7 @@ export default function AssayLabScreen() {
 						testID="catalog-assays"
 					/>
 					<CatalogColumn
-						title="Genomes"
+						title="Genotype text"
 						emptyText="No genomes yet — drop a .txt, .vcf, or .zip"
 						items={genomes}
 						selectedId={selectedGenomeId}
@@ -520,6 +631,44 @@ export default function AssayLabScreen() {
 						testID="catalog-genomes"
 					/>
 				</View>
+
+				{(alignments.length > 0 || references.length > 0) ? (
+					<View style={styles.columns}>
+						<CatalogColumn
+							title="Alignments"
+							emptyText="No BAM/CRAM alignments"
+							items={alignments}
+							selectedId={selectedGenomeId}
+							onSelect={(id) => {
+								setSelectedGenomeId(id)
+							}}
+							onRemove={removeItem}
+							testID="catalog-alignments"
+						/>
+						<CatalogColumn
+							title="References"
+							emptyText="No FASTA references"
+							items={references}
+							selectedId={selectedReferenceId}
+							onSelect={setSelectedReferenceId}
+							onRemove={removeItem}
+							testID="catalog-references"
+						/>
+					</View>
+				) : null}
+
+				{selectedIsAlignment ? (
+					<View style={styles.warningCard}>
+						<OMText variant="body" style={styles.warningText}>
+							Alignment selected. On web this will fail with a clear error — the Rust
+							CRAM/BAM parser (bioscript-formats + noodles) isn&rsquo;t compiled to WASM yet.
+							Native/desktop builds already run these.
+							{selectedReference
+								? `\nReference paired: ${selectedReference.name}`
+								: '\nDrop a matching .fa/.fasta so we can pair it when WASM lands.'}
+						</OMText>
+					</View>
+				) : null}
 
 				{unknowns.length > 0 ? (
 					<View style={styles.unknownCard}>
@@ -741,6 +890,7 @@ function TsvTable({ text }: { text: string }) {
 	if (lines.length === 0) return null
 	const rows = lines.map((line) => line.split('\t'))
 	const [header, ...body] = rows
+	if (!header) return null
 	return (
 		<View style={styles.tableCard}>
 			<View style={styles.tableRowHeader}>
@@ -895,7 +1045,7 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
 	},
-	codeText: { color: omColors.grayscale200, fontSize: 12 },
+	codeText: { color: omColors.grayscale300, fontSize: 12 },
 	runRow: { flexDirection: 'row', alignItems: 'center', gap: omSpacing.m, justifyContent: 'flex-end', flexWrap: 'wrap' },
 	runHint: { color: omColors.grayscale400, flex: 1, minWidth: 180 },
 	runButton: {
@@ -943,14 +1093,13 @@ const styles = StyleSheet.create({
 		borderBottomWidth: 1,
 		borderBottomColor: 'rgba(255,255,255,0.05)',
 	},
-	tableCell: { color: omColors.grayscale100, minWidth: 80, flex: 1, fontSize: 13 },
+	tableCell: { color: omColors.grayscale00, minWidth: 80, flex: 1, fontSize: 13 },
 	dragOverlay: {
 		position: 'absolute',
 		top: 0,
 		left: 0,
 		right: 0,
 		bottom: 0,
-		// @ts-expect-error web-only keyword
 		...(Platform.OS === 'web' ? ({ position: 'fixed' } as object) : null),
 		backgroundColor: 'rgba(5, 15, 20, 0.72)',
 		alignItems: 'center',

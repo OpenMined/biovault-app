@@ -293,10 +293,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable KVM
+        # No-op on arm64 containers: host arch already matches the emulator
+        # arch (arm64-v8a), so KVM is unnecessary. udev also isn't available
+        # inside Namespace's containerized runners.
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          if [ -e /dev/kvm ] && [ -d /etc/udev/rules.d ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          else
+            echo "KVM not applicable on this runner; skipping."
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
