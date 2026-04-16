@@ -10,7 +10,19 @@ mkdir -p "$LOG_DIR"
 export PATH="$PWD/node_modules/.maestro/bin:$HOME/.maestro/bin:$PATH"
 command -v maestro >/dev/null || { echo "maestro not found; run npm run install-maestro" >&2; exit 1; }
 
-ANDROID_SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+if [ -z "$ANDROID_SDK" ]; then
+  for candidate in "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
+    if [ -d "$candidate" ]; then
+      ANDROID_SDK="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "$ANDROID_SDK" ] || [ ! -d "$ANDROID_SDK" ]; then
+  echo "Android SDK not found; set ANDROID_HOME or ANDROID_SDK_ROOT" >&2
+  exit 1
+fi
 export PATH="$ANDROID_SDK/platform-tools:$ANDROID_SDK/emulator:$PATH"
 
 echo "==> Ensuring emulator $AVD is running"
@@ -37,7 +49,8 @@ trap cleanup EXIT
 
 if ! curl -sf http://localhost:8081/status >/dev/null 2>&1; then
   echo "==> Starting Metro (logs: $LOG_DIR/metro.log)"
-  (npx expo start --dev-client >"$LOG_DIR/metro.log" 2>&1) &
+  # --no-dev --minify: production-mode JS for faster smoke runs.
+  (npx expo start --dev-client --no-dev --minify >"$LOG_DIR/metro.log" 2>&1) &
   METRO_PID=$!
   for i in {1..60}; do
     curl -sf http://localhost:8081/status >/dev/null 2>&1 && break
@@ -70,8 +83,9 @@ adb -s "$SERIAL" shell "run-as $PACKAGE cp /data/local/tmp/devmenu_prefs.xml sha
 adb -s "$SERIAL" shell am force-stop "$PACKAGE" 2>/dev/null || true
 rm -f "$DEVMENU_PREFS"
 
-echo "==> Waiting for app to finish loading"
-sleep 8
+# No hardcoded wait: we just force-stopped the app to pick up the dev-menu
+# prefs, and Maestro's first extendedWaitUntil (60s) handles launch.
+echo "==> App force-stopped; Maestro will relaunch + wait"
 
 echo "==> Running Maestro flow: $FLOW"
 if maestro --device "$SERIAL" test "$FLOW"; then

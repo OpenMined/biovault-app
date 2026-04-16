@@ -5,19 +5,37 @@ BUNDLE_ID="org.openmined.biovault.dev"
 SIM_NAME="${SIM_NAME:-iPhone 16}"
 FLOW="${FLOW:-.maestro/smoke.yaml}"
 LOG_DIR=".maestro/logs"
+REPO_ROOT="${REPO_ROOT:-$PWD}"
+IOS_SCHEME="${IOS_SCHEME:-BioVaultDev}"
+IOS_WORKSPACE_REL="${IOS_WORKSPACE_REL:-ios/BioVaultDev.xcworkspace}"
+IOS_DERIVED_DATA_REL="${IOS_DERIVED_DATA_REL:-ios/build}"
+IOS_WORKSPACE="$REPO_ROOT/$IOS_WORKSPACE_REL"
+IOS_DERIVED_DATA="$REPO_ROOT/$IOS_DERIVED_DATA_REL"
 mkdir -p "$LOG_DIR"
 
 export PATH="$PWD/node_modules/.maestro/bin:$HOME/.maestro/bin:$PATH"
 command -v maestro >/dev/null || { echo "maestro not found; run npm run install-maestro" >&2; exit 1; }
 
-echo "==> Booting simulator: $SIM_NAME"
-UDID=$(xcrun simctl list devices available | grep -E "^\s*$SIM_NAME \(" | head -1 | grep -oE "[0-9A-F-]{36}")
-if [ -z "$UDID" ]; then
-  echo "Simulator '$SIM_NAME' not found" >&2
-  exit 1
+# Allow CI to pin a specific UDID (chosen to match Xcode's iOS SDK) instead
+# of looking up by $SIM_NAME, which picks the first match across runtimes
+# and can land on an iOS runtime whose platform SDK isn't in Xcode.
+if [ -n "${IOS_SIMULATOR_UDID:-}" ]; then
+  UDID="$IOS_SIMULATOR_UDID"
+  echo "==> Using simulator UDID: $UDID"
+else
+  echo "==> Booting simulator: $SIM_NAME"
+  UDID=$(xcrun simctl list devices available | grep -E "^\s*$SIM_NAME \(" | head -1 | grep -oE "[0-9A-F-]{36}")
+  if [ -z "$UDID" ]; then
+    echo "Simulator '$SIM_NAME' not found" >&2
+    exit 1
+  fi
 fi
 xcrun simctl boot "$UDID" 2>/dev/null || true
-open -a Simulator --args -CurrentDeviceUDID "$UDID"
+# Only open the GUI Simulator.app outside CI — on CI it's headless and the
+# extra launch is pure overhead.
+if [ -z "${CI:-}" ]; then
+  open -a Simulator --args -CurrentDeviceUDID "$UDID"
+fi
 xcrun simctl bootstatus "$UDID" -b
 
 METRO_PID=""
@@ -28,7 +46,10 @@ trap cleanup EXIT
 
 if ! curl -sf http://localhost:8081/status >/dev/null 2>&1; then
   echo "==> Starting Metro (logs: $LOG_DIR/metro.log)"
-  (npx expo start --dev-client >"$LOG_DIR/metro.log" 2>&1) &
+  # --no-dev --minify: production-mode JS. Removes dev-only invariants/
+  # warnings/unminified chunks and cuts JS startup noticeably. Expo docs
+  # recommend this for performance/smoke testing.
+  (npx expo start --dev-client --no-dev --minify >"$LOG_DIR/metro.log" 2>&1) &
   METRO_PID=$!
   for i in {1..60}; do
     curl -sf http://localhost:8081/status >/dev/null 2>&1 && break
@@ -36,19 +57,60 @@ if ! curl -sf http://localhost:8081/status >/dev/null 2>&1; then
   done
 fi
 
+# Warm pod install (no --repo-update) so `npx expo run:ios` skips its own
+# pod install when Manifest.lock already matches Podfile.lock. Saves a
+# 30–60s specs-refresh each run.
+if [ -d ios ] && [ -f ios/Podfile ]; then
+  echo "==> Warming CocoaPods (no repo-update)"
+  (cd ios && pod install >"../$LOG_DIR/pods.log" 2>&1) || {
+    echo "pod install failed, falling back to expo run:ios defaults"
+    tail -30 "$LOG_DIR/pods.log" >&2 || true
+  }
+fi
+
 echo "==> Building & installing app on $UDID (logs: $LOG_DIR/build.log)"
-npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
-  echo "Build failed. Last 50 lines:" >&2
-  tail -50 "$LOG_DIR/build.log" >&2
-  exit 1
-}
+if [ -n "${CI:-}" ]; then
+  # Expo's simulator launch path reaches for Simulator.app via AppleScript,
+  # which fails on headless CI despite the sim itself being booted. Build
+  # and launch the app explicitly with xcodebuild + simctl instead.
+  APP_PATH="$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/${IOS_SCHEME}.app"
+  xcodebuild \
+    -workspace "$IOS_WORKSPACE" \
+    -scheme "$IOS_SCHEME" \
+    -configuration Debug \
+    -destination "id=$UDID" \
+    -derivedDataPath "$IOS_DERIVED_DATA" \
+    build >"$LOG_DIR/build.log" 2>&1 || {
+      echo "Build failed. Last 50 lines:" >&2
+      tail -50 "$LOG_DIR/build.log" >&2
+      exit 1
+    }
+
+  if [ ! -d "$APP_PATH" ]; then
+    echo "Built app not found at $APP_PATH" >&2
+    tail -50 "$LOG_DIR/build.log" >&2 || true
+    exit 1
+  fi
+
+  echo "==> Installing app with simctl"
+  xcrun simctl install "$UDID" "$APP_PATH" >>"$LOG_DIR/build.log" 2>&1
+  echo "==> Launching app with simctl"
+  xcrun simctl launch "$UDID" "$BUNDLE_ID" >>"$LOG_DIR/build.log" 2>&1
+else
+  npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
+    echo "Build failed. Last 50 lines:" >&2
+    tail -50 "$LOG_DIR/build.log" >&2
+    exit 1
+  }
+fi
 
 echo "==> Disabling expo-dev-menu onboarding (tests shouldn't see the sheet)"
 xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
 xcrun simctl spawn "$UDID" defaults write host.exp.Exponent EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
 
-echo "==> Waiting for app to finish loading from Metro"
-sleep 8
+# No artificial wait: Maestro's first `extendedWaitUntil` in smoke.yaml
+# already has a 60s timeout for the launch screen, which handles any
+# remaining bundle-load latency.
 
 echo "==> Running Maestro flow: $FLOW"
 if maestro --device "$UDID" test "$FLOW"; then

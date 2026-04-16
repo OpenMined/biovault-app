@@ -9,6 +9,7 @@ const GENOME_FIXTURE = path.join(
 	'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
 )
 const ASSAY_FIXTURE = path.join(REPO_ROOT, 'assays/risk/APOL1/apol1.py')
+const YAML_ASSAY_FIXTURE = path.join(REPO_ROOT, 'assays/pgx/GLP1/rs1800437.yaml')
 
 async function dropFile(target: Locator, absPath: string, opts: { type: string }) {
 	const base64 = fs.readFileSync(absPath).toString('base64')
@@ -48,13 +49,13 @@ test('assay lab runs APOL1 on a 23andMe v5 zip', async ({ page }) => {
 
 	// Drop genome (23andMe .zip) — lab's window-level handler ingests by extension.
 	await dropFile(page.locator('body'), GENOME_FIXTURE, { type: 'application/zip' })
-	await expect(page.getByText('genome_hu50B3F5_v5_Full.zip', { exact: false })).toBeVisible({
+	await expect(page.getByText('genome_hu50B3F5_v5_Full.zip', { exact: false }).first()).toBeVisible({
 		timeout: 30_000,
 	})
 
 	// Drop the APOL1 assay.
 	await dropFile(page.locator('body'), ASSAY_FIXTURE, { type: 'text/x-python' })
-	await expect(page.getByText('apol1.py', { exact: false })).toBeVisible({ timeout: 10_000 })
+	await expect(page.getByText('apol1.py', { exact: false }).first()).toBeVisible({ timeout: 10_000 })
 	await page.screenshot({
 		path: '.maestro-web/screenshots/assay-lab-02-loaded.png',
 		fullPage: true,
@@ -68,19 +69,18 @@ test('assay lab runs APOL1 on a 23andMe v5 zip', async ({ page }) => {
 	// catch a no-op.
 	await runButton.click()
 
-	// Either the result section or an error card should appear.
-	const resultSection = page.getByText('RESULT · assay-output.tsv')
-	const errorCard = page.getByText('Run failed', { exact: false })
-	await expect(resultSection.or(errorCard)).toBeVisible({ timeout: 120_000 })
+	// A run card appears once the run finishes — `done` or `error` testID.
+	const okCard = page.getByTestId('run-card-done').first()
+	const errCard = page.getByTestId('run-card-error').first()
+	await expect(okCard.or(errCard)).toBeVisible({ timeout: 120_000 })
 
 	await page.screenshot({
 		path: '.maestro-web/screenshots/assay-lab-03-done.png',
 		fullPage: true,
 	})
 
-	// Only fail the test on error card if we also didn't get results.
-	if (!(await resultSection.isVisible())) {
-		const details = await errorCard.locator('..').innerText()
+	if (!(await okCard.isVisible())) {
+		const details = await errCard.innerText()
 		throw new Error(`Assay run failed:\n${details}`)
 	}
 
@@ -92,4 +92,64 @@ test('assay lab runs APOL1 on a 23andMe v5 zip', async ({ page }) => {
 			!msg.includes('Failed to load resource'),
 	)
 	expect(fatal, `console/page errors:\n${fatal.join('\n')}`).toEqual([])
+})
+
+test('assay lab runs rs1800437.yaml and finds GG', async ({ page }) => {
+	test.setTimeout(180_000)
+
+	// Capture [bioscript-web] diagnostic logs so we can assert that the store
+	// actually loaded rs1800437 and the variant lookup returned GG.
+	const bioscriptLogs: string[] = []
+	page.on('console', (msg) => {
+		const text = msg.text()
+		if (text.includes('[bioscript-web]')) bioscriptLogs.push(text)
+	})
+
+	await page.goto(`${BASE_URL}/assay-lab`, { waitUntil: 'domcontentloaded' })
+	await expect(page.getByText('Assay lab', { exact: false })).toBeVisible({ timeout: 30_000 })
+
+	await dropFile(page.locator('body'), GENOME_FIXTURE, { type: 'application/zip' })
+	await expect(page.getByText('genome_hu50B3F5_v5_Full.zip', { exact: false }).first()).toBeVisible({
+		timeout: 30_000,
+	})
+
+	await dropFile(page.locator('body'), YAML_ASSAY_FIXTURE, { type: 'text/yaml' })
+	await expect(page.getByText('rs1800437.yaml', { exact: false }).first()).toBeVisible({ timeout: 10_000 })
+	await page.screenshot({
+		path: '.maestro-web/screenshots/assay-lab-yaml-01-loaded.png',
+		fullPage: true,
+	})
+
+	await page.getByTestId('assay-lab-run').click()
+
+	const okCard = page.getByTestId('run-card-done').first()
+	const errCard = page.getByTestId('run-card-error').first()
+	await expect(okCard.or(errCard)).toBeVisible({ timeout: 120_000 })
+
+	await page.screenshot({
+		path: '.maestro-web/screenshots/assay-lab-yaml-02-done.png',
+		fullPage: true,
+	})
+
+	if (!(await okCard.isVisible())) {
+		const details = await errCard.innerText()
+		throw new Error(`YAML assay run failed:\n${details}`)
+	}
+
+	// Result card renders the genotype as its own cell — assert 'GG' is on the page.
+	await expect(page.getByText(/\bGG\b/).first()).toBeVisible({ timeout: 10_000 })
+
+	// Diagnostic logs from ExpoBioscriptWebRuntime.ts must include both:
+	//   * load_genotypes reporting hasRs1800437: true / rs1800437: GG
+	//   * a matching lookup hit on rs1800437
+	const loadLog = bioscriptLogs.find((line) => line.includes('load_genotypes'))
+	expect(loadLog, `no load_genotypes log:\n${bioscriptLogs.join('\n')}`).toBeTruthy()
+	expect(loadLog, loadLog ?? '').toMatch(/hasRs1800437.*true/)
+	expect(loadLog, loadLog ?? '').toMatch(/rs1800437.*GG/)
+
+	const hitLog = bioscriptLogs.find(
+		(line) => line.includes('lookup hit') && line.includes('rs1800437'),
+	)
+	expect(hitLog, `no lookup hit log:\n${bioscriptLogs.join('\n')}`).toBeTruthy()
+	expect(hitLog, hitLog ?? '').toMatch(/genotype.*GG/)
 })

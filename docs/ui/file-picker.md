@@ -98,9 +98,16 @@ For the inspect step we only need the first ~128 KB for textual heuristics (the 
 
 ## Heuristics engine
 
-For Slice 1 (web-first) the heuristics live in `widgets/FilePicker/heuristics.ts` — a line-for-line TypeScript port of `bioscript-formats/src/inspect.rs`. This avoids a WASM toolchain lift for the first delivery and keeps the exact same detection behavior across platforms. When native/desktop backends come online they'll call through FFI to the Rust version; the TS port either stays as the web path (swap for WASM later) or becomes the authoritative single source if we decide to collapse them.
+All detection, parsing, and variant lookup logic lives in `bioscript` (see
+[`docs/architecture/bioscript-is-source-of-truth.md`](../architecture/bioscript-is-source-of-truth.md)).
+The widget hands bytes to bioscript via its platform binding:
 
-Invariant to preserve: both implementations take a file name + up to 64 sampled lines and produce the same `Inspection`.
+- **Web** — `bioscript-wasm` (wasm-bindgen module loaded alongside Monty).
+- **iOS / Android** — `bioscript-ffi` through `expo-bioscript`.
+- **Desktop** — `bioscript-ffi` linked into Tauri.
+
+There is no TS/JS reimplementation. The widget is a thin UI around the same
+Rust functions that the CLI uses.
 
 ## Rust additions (in `bioscript/rust/bioscript-formats`)
 

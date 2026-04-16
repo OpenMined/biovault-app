@@ -43,6 +43,9 @@ if ! curl -sf "$WEB_URL" >/dev/null 2>&1; then
   }
 fi
 
+echo "==> Checking monty artifact freshness"
+node ./scripts/check-monty-artifacts.mjs
+
 echo "==> Ensuring Playwright browsers are installed"
 npx playwright install chromium >/dev/null 2>&1 || true
 

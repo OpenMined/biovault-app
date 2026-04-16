@@ -1,19 +1,19 @@
-import { unzipSync } from 'fflate'
+import { inspectBytes, type BioscriptInspection } from '@/modules/expo-bioscript/src/BioscriptWasm'
 
-import { inspectFromSample, sampleLinesFromText } from './heuristics'
 import type { Backend, FileRef, InspectOptions, Inspection } from './types'
 import { fileRefName, fileRefSize } from './types'
 
-const TEXT_SLICE_BYTES = 128 * 1024
+// Web FilePicker backend. All classification/parsing goes through bioscript-wasm
+// (see docs/architecture/bioscript-is-source-of-truth.md). This file only
+// handles the DOM bits: showOpenFilePicker / <input> fallback / drag-drop and
+// marshalling bytes into Rust.
 
-// Accept anything genomic-ish. Individual heuristics take over from here.
 // Rules Chrome enforces on showOpenFilePicker acceptTypes:
 //   * each extension must start with '.' and contain no further dots
 //     (so `.fa.gz` is invalid — gotta pick one);
 //   * the same extension cannot appear more than once across the whole config.
-// We flatten everything into one group so the user doesn't have to hunt for a
-// filter dropdown to see their CRAM. "All files" remains available via
-// excludeAcceptAllOption: false.
+// One flat group with "All files" toggle available covers every case without
+// hunting for a filter.
 const ACCEPT_TYPES: FilePickerAcceptType[] = [
 	{
 		description: 'Genomic files',
@@ -64,7 +64,6 @@ async function pickViaFileSystemAccess(): Promise<FileRef | null> {
 		const file = await handle.getFile()
 		return { kind: 'handle', handle, name: file.name, size: file.size }
 	} catch (err) {
-		// User cancel throws AbortError; treat as null.
 		if ((err as DOMException)?.name === 'AbortError') return null
 		throw err
 	}
@@ -107,24 +106,16 @@ async function refToFile(ref: FileRef): Promise<File> {
 	}
 }
 
-async function readSampleBytes(file: File): Promise<Uint8Array> {
-	const slice = file.slice(0, Math.min(file.size, TEXT_SLICE_BYTES))
-	const buf = await slice.arrayBuffer()
-	return new Uint8Array(buf)
-}
+// Cap how many bytes we ship into wasm for non-container files. Heuristics
+// only need the first ~128 KB; streaming the whole 3 GB reference is pointless.
+const MAX_TEXT_SAMPLE_BYTES = 128 * 1024
 
-function decodeUtf8(bytes: Uint8Array): string {
-	return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
-}
-
-function selectZipEntry(entries: string[]): string | undefined {
-	const candidates = entries.filter((name) => !name.endsWith('/') && !name.startsWith('__MACOSX/'))
-	const preferred = ['.vcf', '.vcf.gz', '.txt', '.tsv', '.csv']
-	for (const ext of preferred) {
-		const hit = candidates.find((n) => n.toLowerCase().endsWith(ext))
-		if (hit) return hit
-	}
-	return candidates[0]
+async function readInspectionBytes(file: File, name: string): Promise<Uint8Array> {
+	const lower = name.toLowerCase()
+	const needsFull =
+		lower.endsWith('.zip') || lower.endsWith('.vcf.gz') || lower.endsWith('.gz')
+	const slice = needsFull ? file : file.slice(0, Math.min(file.size, MAX_TEXT_SAMPLE_BYTES))
+	return new Uint8Array(await slice.arrayBuffer())
 }
 
 async function inspectFileRef(ref: FileRef, options?: InspectOptions): Promise<Inspection> {
@@ -132,63 +123,30 @@ async function inspectFileRef(ref: FileRef, options?: InspectOptions): Promise<I
 	const sizeBytes = fileRefSize(ref)
 	const lower = name.toLowerCase()
 
-	// Binary formats: detected from extension, no bytes needed.
+	// Binary alignment / reference formats — extension-only classification.
+	// Still go through wasm so the heuristics rules stay in one place.
 	if (
 		lower.endsWith('.cram') ||
 		lower.endsWith('.bam') ||
 		lower.endsWith('.fa') ||
 		lower.endsWith('.fasta')
 	) {
-		const insp = inspectFromSample({ name, container: 'plain', sampleLines: [], sizeBytes })
+		const rust = await inspectBytes(name, new Uint8Array(0))
+		const inspection: Inspection = { ...rust, sizeBytes }
 		if (
 			options?.reference &&
-			(insp.detectedKind === 'alignment_cram' || insp.detectedKind === 'alignment_bam')
+			(inspection.detectedKind === 'alignment_cram' ||
+				inspection.detectedKind === 'alignment_bam')
 		) {
-			insp.referenceMatches = await referencePairMatches(options.reference, insp)
+			inspection.referenceMatches = await referencePairMatches(options.reference, inspection)
 		}
-		return insp
+		return inspection
 	}
 
 	const file = await refToFile(ref)
-
-	if (lower.endsWith('.zip')) {
-		// fflate needs the full buffer; zip central directory lives at EOF.
-		const buf = new Uint8Array(await file.arrayBuffer())
-		const unzipped = unzipSync(buf)
-		const entryName = selectZipEntry(Object.keys(unzipped))
-		if (!entryName) {
-			return inspectFromSample({
-				name,
-				container: 'zip',
-				sampleLines: [],
-				sizeBytes,
-			})
-		}
-		const entryBytes = unzipped[entryName]
-		if (!entryBytes) {
-			return inspectFromSample({
-				name,
-				container: 'zip',
-				sampleLines: [],
-				sizeBytes,
-			})
-		}
-		const slice = entryBytes.slice(0, Math.min(entryBytes.length, TEXT_SLICE_BYTES))
-		const sampleLines = sampleLinesFromText(decodeUtf8(slice))
-		return inspectFromSample({
-			name,
-			container: 'zip',
-			selectedEntry: entryName,
-			sampleLines,
-			sizeBytes,
-		})
-	}
-
-	// Plain text (or .vcf.gz — TODO: bgzf decode; for now sample the gz prefix unchanged,
-	// which will fall through to "unknown" but still report size/name).
-	const bytes = await readSampleBytes(file)
-	const sampleLines = sampleLinesFromText(decodeUtf8(bytes))
-	return inspectFromSample({ name, container: 'plain', sampleLines, sizeBytes })
+	const bytes = await readInspectionBytes(file, name)
+	const rust: BioscriptInspection = await inspectBytes(name, bytes)
+	return { ...rust, sizeBytes }
 }
 
 async function referencePairMatches(ref: FileRef, primary: Inspection): Promise<boolean> {
@@ -196,8 +154,6 @@ async function referencePairMatches(ref: FileRef, primary: Inspection): Promise<
 	const refLower = refName.toLowerCase()
 	const refIsFasta = refLower.endsWith('.fa') || refLower.endsWith('.fasta')
 	if (!refIsFasta) return false
-	// Quick assembly sniff from the reference filename (we don't need to open it
-	// for the common case: 1k-genomes file names embed GRCh38 / hg19 tokens).
 	const refAssembly = refLower.includes('grch38') || refLower.includes('hg38')
 		? 'grch38'
 		: refLower.includes('grch37') || refLower.includes('hg19')
