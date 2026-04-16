@@ -277,15 +277,12 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    # Namespace linux-arm64 doesn't ship the x86 Android SDK that
-    # reactivecircus/android-emulator-runner expects, and it can't run
-    # the x86 adb binary. Fall back to GitHub ubuntu-latest where the
-    # SDK + KVM are both pre-wired.
-    runs-on: ubuntu-latest
+    # Namespace linux-arm64: fast aarch64 host, no x86 emulator translation.
+    # SDK isn't pre-installed here, so android-actions/setup-android handles it.
+    runs-on: namespace-profile-linux-arm64-medium
     timeout-minutes: 90
-    strategy:
-      matrix:
-        api-level: [36]
+    env:
+      ANDROID_API_LEVEL: "36"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -321,7 +318,7 @@ jobs:
         # Namespace arm64 containers don't ship the Android SDK.
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-${{ matrix.api-level }} system-images;android-${{ matrix.api-level }};google_apis;arm64-v8a emulator'
+          packages: 'platform-tools platforms;android-${{ env.ANDROID_API_LEVEL }} system-images;android-${{ env.ANDROID_API_LEVEL }};google_apis;arm64-v8a emulator'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -366,7 +363,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ matrix.api-level }}-pixel8-google_apis
+          key: avd-${{ env.ANDROID_API_LEVEL }}-pixel8-google_apis
 
       - name: Install npm dependencies
         run: npm install
@@ -377,7 +374,7 @@ jobs:
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ matrix.api-level }}
+          api-level: ${{ env.ANDROID_API_LEVEL }}
           target: google_apis
           arch: x86_64
           profile: pixel_7
@@ -386,10 +383,10 @@ jobs:
           disable-animations: true
           script: echo "AVD snapshot created"
 
-      - name: Run Android tests on Pixel 8 / API ${{ matrix.api-level }}
+      - name: Run Android tests on Pixel 8 / API ${{ env.ANDROID_API_LEVEL }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ matrix.api-level }}
+          api-level: ${{ env.ANDROID_API_LEVEL }}
           target: google_apis
           arch: x86_64
           profile: pixel_7
