@@ -277,15 +277,7 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: linux
-            runner: namespace-profile-linux-medium
-          - label: mac
-            runner: namespace-profile-mac-medium
-    runs-on: ${{ matrix.runner }}
+    runs-on: namespace-profile-linux-medium
     timeout-minutes: 90
     env:
       ANDROID_API_LEVEL: "36"
@@ -297,7 +289,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable KVM
-        if: matrix.label == 'linux'
         run: |
           if [ -e /dev/kvm ] && [ -d /etc/udev/rules.d ]; then
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -344,8 +335,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: android
-          key: ${{ runner.os }}-${{ matrix.label }}-android-prebuild-${{ hashFiles('package-lock.json', 'app.config.ts') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.label }}-android-prebuild-
+          key: ${{ runner.os }}-android-prebuild-${{ hashFiles('package-lock.json', 'app.config.ts') }}
+          restore-keys: ${{ runner.os }}-android-prebuild-
 
       - name: Cache AVD
         uses: actions/cache@v4
@@ -354,7 +345,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ matrix.label }}-${{ env.ANDROID_API_LEVEL }}-pixel7-google_apis
+          key: avd-${{ env.ANDROID_API_LEVEL }}-pixel7-google_apis
 
       - name: Install npm dependencies
         run: npm install
@@ -374,7 +365,7 @@ jobs:
           disable-animations: false
           script: echo "AVD snapshot created"
 
-      - name: Run Android tests on ${{ matrix.label }} / API ${{ env.ANDROID_API_LEVEL }}
+      - name: Run Android tests on linux / API ${{ env.ANDROID_API_LEVEL }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.ANDROID_API_LEVEL }}
@@ -390,7 +381,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-screenshots-${{ matrix.label }}
+          name: android-screenshots
           path: screenshots/android
           if-no-files-found: ignore
 
@@ -398,6 +389,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-maestro-debug-${{ matrix.label }}
+          name: android-maestro-debug
           path: ~/.maestro/tests
           if-no-files-found: ignore

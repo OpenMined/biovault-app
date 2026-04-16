@@ -5,6 +5,9 @@ BUNDLE_ID="org.openmined.biovault.dev"
 SIM_NAME="${SIM_NAME:-iPhone 16}"
 FLOW="${FLOW:-.maestro/smoke.yaml}"
 LOG_DIR=".maestro/logs"
+IOS_SCHEME="${IOS_SCHEME:-BioVaultDev}"
+IOS_WORKSPACE="${IOS_WORKSPACE:-ios/BioVaultDev.xcworkspace}"
+IOS_DERIVED_DATA="${IOS_DERIVED_DATA:-ios/build}"
 mkdir -p "$LOG_DIR"
 
 export PATH="$PWD/node_modules/.maestro/bin:$HOME/.maestro/bin:$PATH"
@@ -63,11 +66,40 @@ if [ -d ios ] && [ -f ios/Podfile ]; then
 fi
 
 echo "==> Building & installing app on $UDID (logs: $LOG_DIR/build.log)"
-npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
-  echo "Build failed. Last 50 lines:" >&2
-  tail -50 "$LOG_DIR/build.log" >&2
-  exit 1
-}
+if [ -n "${CI:-}" ]; then
+  # Expo's simulator launch path reaches for Simulator.app via AppleScript,
+  # which fails on headless CI despite the sim itself being booted. Build
+  # and launch the app explicitly with xcodebuild + simctl instead.
+  APP_PATH="$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/${IOS_SCHEME}.app"
+  xcodebuild \
+    -workspace "$IOS_WORKSPACE" \
+    -scheme "$IOS_SCHEME" \
+    -configuration Debug \
+    -destination "id=$UDID" \
+    -derivedDataPath "$IOS_DERIVED_DATA" \
+    build >"$LOG_DIR/build.log" 2>&1 || {
+      echo "Build failed. Last 50 lines:" >&2
+      tail -50 "$LOG_DIR/build.log" >&2
+      exit 1
+    }
+
+  if [ ! -d "$APP_PATH" ]; then
+    echo "Built app not found at $APP_PATH" >&2
+    tail -50 "$LOG_DIR/build.log" >&2 || true
+    exit 1
+  fi
+
+  echo "==> Installing app with simctl"
+  xcrun simctl install "$UDID" "$APP_PATH" >>"$LOG_DIR/build.log" 2>&1
+  echo "==> Launching app with simctl"
+  xcrun simctl launch "$UDID" "$BUNDLE_ID" >>"$LOG_DIR/build.log" 2>&1
+else
+  npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
+    echo "Build failed. Last 50 lines:" >&2
+    tail -50 "$LOG_DIR/build.log" >&2
+    exit 1
+  }
+fi
 
 echo "==> Disabling expo-dev-menu onboarding (tests shouldn't see the sheet)"
 xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" EXDevMenuIsOnboardingFinished -bool YES 2>/dev/null || true
