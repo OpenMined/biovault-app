@@ -103,6 +103,7 @@ yarn-error.log*
 *.a
 
 # Repo-specific files not needed for remote builds
+/test-data/
 app-example
 notebooks/.ipynb_checkpoints/
 notebooks/downloads/

@@ -65,7 +65,7 @@ const REMOTE_ASSAY_REPO = {
 	baseUrl: 'https://github.com',
 	owner: 'keelancj',
 	path: 'assays',
-	ref: 'madhava/updating-format',
+	ref: 'main',
 	repo: 'exvitae',
 } as const
 
