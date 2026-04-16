@@ -1,207 +1,270 @@
-# iOS + Android smoke testing — what works, what breaks, and why
+# iOS + Android smoke testing — current state, what works, what breaks, and why
 
-A running log of everything I learned getting `./test-ios.sh`,
-`./test-android.sh`, and their CI counterparts stable on PR #32. Scope:
-this repo's mobile smoke tests only — web/rust/lint notes only where they
-intersect.
+A running log of everything learned stabilising `./test-ios.sh`,
+`./test-android.sh`, and their CI counterparts. Scope: this repo's mobile
+smoke tests only. Web/rust/lint notes are mentioned only where they intersect.
 
 ## TL;DR matrix
 
-| Job | Runner | Why that runner |
-|---|---|---|
-| rust | `ubuntu-latest` | Cheap + fast for a small Tauri workspace |
-| lint | `ubuntu-latest` | tsc + eslint; no special hardware needed |
-| web | `ubuntu-latest` | Playwright + Expo web; commodity |
-| ios | `namespace-profile-mac-medium` | Tahoe 26.3 / Xcode 26.3 — matches local dev |
-| android | `ubuntu-latest` | Only supported host for `reactivecircus/android-emulator-runner` + Google's emulator binary (see §Android) |
+| Job | Runner | Current state | Why that runner |
+|---|---|---|---|
+| rust | `ubuntu-latest` | working | Cheap + fast for a small Tauri workspace |
+| lint | `ubuntu-latest` | working | tsc + eslint; no special hardware needed |
+| web | `ubuntu-latest` | flaky / failing independently | Playwright + Expo web; commodity |
+| ios | `namespace-profile-mac-medium` | not green yet | Matches local Xcode 26.x better than GitHub macOS images |
+| android | `namespace-profile-linux-medium` | working | x86_64 Linux with KVM works with `reactivecircus/android-emulator-runner` |
 
-## Local wall-clock (warm caches)
+## Latest verified CI status
 
-| Test | Original | After fixes |
-|---|---|---|
-| `./test-ios.sh` | ~10 min | 2:01 |
-| `./test-android.sh` | ~10 min | 1:40 |
+From run `24496995024` on April 16, 2026:
 
-## Shared infrastructure
+- `android` on `namespace-profile-linux-medium`: passed
+- `ios` on `namespace-profile-mac-medium`: failed
+- `web`: failed, but unrelated to the mobile runner work
 
-### Submodules
-All `actions/checkout@v4` steps use:
+## Current local / CI script state
+
+### Shared infrastructure
+
+- All `actions/checkout@v4` steps use:
+
 ```yaml
 with:
   submodules: recursive
   token: ${{ secrets.GITHUB_TOKEN }}
 ```
-`bioscript` and `biovault-data` are the submodules — without them web-smoke
-fails resolving `../bioscript/assay_result_schema.json`, the rust job can't
-find `bioscript/rust`, and ios/android can't build the native bioscript lib.
 
-### Maestro install
-`scripts/install-maestro.sh` hits the GitHub API for the latest release.
-Unauthenticated requests are rate-limited on shared CI runners → 403.
+- `bioscript` and `biovault-data` are required submodules. Without them:
+  - web-smoke fails resolving `../bioscript/assay_result_schema.json`
+  - rust jobs can't find `bioscript/rust`
+  - iOS / Android can't build the native bioscript lib
 
-- Pass `GITHUB_TOKEN` as an env on every `npm install` step.
-- Script branches on `${GITHUB_TOKEN:-}` instead of expanding an array
-  (bash 3 on macOS doesn't tolerate empty array expansion under `set -u`).
+- `scripts/install-maestro.sh` hits the GitHub API for the latest release.
+  Unauthenticated CI requests get rate-limited, so every `npm install` step
+  must pass `GITHUB_TOKEN`.
 
 ### Metro for smoke tests
+
 Both `test-ios.sh` and `test-android.sh` launch Metro with:
-```
+
+```bash
 npx expo start --dev-client --no-dev --minify
 ```
-Expo's docs recommend this for perf: skips dev-only invariants / warnings
-and minifies the bundle. Shaved ~27s off iOS locally (2:28 → 2:01).
 
-### Dropped artificial waits
-Both scripts used to `sleep 8` before invoking Maestro. Maestro's first
-`extendedWaitUntil` already polls with a 60s timeout, so the sleep was pure
-overhead. Dropped.
+That remains the right tradeoff for smoke tests:
+- skips dev-only invariants / warnings
+- minifies the bundle
+- removes unnecessary startup overhead
 
-## The Expo dev menu / launcher — mute it, don't script around it
+### Expo dev-menu / launcher
 
-Fresh installs of an Expo dev-client app show two different sheets:
+Fresh installs of an Expo dev-client app can show either:
 
-1. **Expo Dev Launcher**: "DEVELOPMENT SERVERS" list with the Metro URL.
-2. **Dev menu onboarding**: "This is the developer menu…" sheet (iOS) or a
-   "Reload / Go home / Tools" overlay (Android).
+1. Expo Dev Launcher: "DEVELOPMENT SERVERS" list with the Metro URL
+2. Dev menu onboarding sheet / overlay
 
-`.maestro/smoke.yaml` tolerates both, but the robust approach is to
-pre-set the preference so the onboarding sheet never shows:
+`.maestro/smoke.yaml` still contains fallback dismiss flows, but the robust
+approach is still to pre-seed prefs so the onboarding UI never appears.
 
-### iOS
+#### iOS
 
-In `test-ios.sh`, after `expo run:ios`:
+`test-ios.sh` writes:
+
 ```bash
 xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" EXDevMenuIsOnboardingFinished -bool YES
 xcrun simctl spawn "$UDID" defaults write host.exp.Exponent EXDevMenuIsOnboardingFinished -bool YES
 ```
 
-### Android
+#### Android
 
-Shared prefs equivalent. From
-`node_modules/expo-dev-menu/android/src/.../DevMenuPreferences.kt`:
-- File: `expo.modules.devmenu.sharedpreferences`
-- Keys: `isOnboardingFinished`, `showsAtLaunch`
+`test-android.sh` writes
+`shared_prefs/expo.modules.devmenu.sharedpreferences.xml` via `adb run-as`
+with:
 
-`test-android.sh` pushes a prepared XML via `adb run-as`:
-```bash
-adb push $TMP /data/local/tmp/devmenu_prefs.xml
-adb shell "run-as $PACKAGE mkdir -p shared_prefs"
-adb shell "run-as $PACKAGE cp /data/local/tmp/devmenu_prefs.xml shared_prefs/expo.modules.devmenu.sharedpreferences.xml"
-adb shell am force-stop $PACKAGE
-```
-`force-stop` forces the prefs to be re-read on next launch.
+- `isOnboardingFinished=true`
+- `showsAtLaunch=false`
 
-### smoke.yaml fallback flow
-
-If the sheets somehow still appear, the Maestro flow has run-flow blocks
-that dismiss them. Stages:
-1. launcher list → tap the `http://…:8081` row (URL is unique to the
-   server cell; "BioVault Dev" label matches the app title too, so avoid it)
-2. dev-menu onboarding → tap "Continue"
-3. "Go home" overlay (Android) → `pressKey: Back`
-4. app onboarding ("I understand") → tap + Continue
-5. home → accept either "Explore Assays" or "Your genomic files" as the
-   landing assert (post-onboarding screen has changed before)
+and then force-stops the app so prefs are re-read on next launch.
 
 ## iOS specifics
 
 ### Xcode version / iOS platform SDK
-RN 0.83 requires Xcode ≥ 16.1. **But** pinning a specific Xcode by name
-bit us: on GitHub's `macos-15` runner image, Xcode 16.1 ships with iOS 18.1
-SDK but not the matching 18.1 *platform package*, so xcodebuild fails with:
 
-> iOS 18.1 is not installed. To use with Xcode, first download and install
-> the platform.
+RN 0.83 requires Xcode `>= 16.1`. Pinning named Xcode versions on GitHub's
+`macos-15` image caused SDK/platform mismatches, so the workflow now prefers
+the runner's default Xcode when it already satisfies the minimum version.
 
-The same happened when pinning 16.2 (reported 18.5 platform installed but
-the SDK was 18.2). Lesson: **use the runner's default Xcode** when it's
-≥ 16.1 — it's the only combination where SDK and platform reliably match.
-Current `Select Xcode` step:
-```bash
-DEFAULT_VER=$(xcodebuild -version | awk '/^Xcode/{print $2}')
-MIN="16.1"
-if [ "$(printf '%s\n%s\n' "$MIN" "$DEFAULT_VER" | sort -V | head -1)" = "$MIN" ]; then
-  echo "Using runner default ($DEFAULT_VER)."
-else
-  # fallback: try named Xcodes
-  ...
-fi
-```
+That logic is still correct.
 
-### Pick a simulator that matches the installed iOS platform
+### Simulator selection
 
-The CI step iterates `xcrun simctl list runtimes` (available only) and
-picks a runtime the runner actually has, then finds an iPhone on it.
-Passes the UDID as `IOS_SIMULATOR_UDID` env var; `test-ios.sh` honours it
-and skips the name-based lookup (which would re-pick across *all* runtimes).
+The workflow enumerates installed runtimes and picks an available iPhone on a
+runtime that actually exists on the runner, then passes the UDID via
+`IOS_SIMULATOR_UDID`. `test-ios.sh` honours that and skips name-based lookup.
+
+That also remains correct.
 
 ### Rust iOS targets
-`expo-bioscript/scripts/build-rust-ios.sh` installs all three, and the
-cocoapods build path triggers it — so we install them all in CI even
-though only the sim target is strictly needed for the smoke flow:
-```
-aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim
-```
-Trimming broke pod install with `Missing Rust target: aarch64-apple-ios`.
 
-### iOS speedups applied
+All three iOS Rust targets are still required:
 
-- Skip `open -a Simulator` when `$CI` is set (saves ~5–10s of GUI launch).
-- Warm `pod install` (no `--repo-update`) before `expo run:ios` so expo
-  skips its own pod install when Manifest.lock ≡ Podfile.lock. Saves
-  ~30–60s of cocoapods specs refresh.
-- DerivedData cache key drops `Cargo.lock` — Rust changes no longer blow
-  the 6–8min Xcode cache.
-- `namespace-profile-mac-medium` (Tahoe 26.3 + Xcode 26.3) as the runner.
-  Matches local dev (Xcode 26.x); no platform mismatch.
+```text
+aarch64-apple-ios
+x86_64-apple-ios
+aarch64-apple-ios-sim
+```
+
+Trimming these still breaks pod install / native builds because the
+`expo-bioscript` scripts assume all of them exist.
+
+### iOS speedups and stability fixes already applied
+
+- Skip `open -a Simulator` when `$CI` is set.
+- Warm `pod install` without `--repo-update` before the build.
+- Keep `DerivedData` cached independently of `Cargo.lock`.
+- Pass the selected simulator UDID into the script.
+- Keep Metro on `--no-dev --minify`.
+- Drop artificial `sleep` delays before Maestro.
+
+### New iOS CI work after the original notes
+
+The original failure mode on Namespace mac was:
+
+- Expo built successfully
+- Expo then tried to activate / talk to `Simulator.app` via AppleScript
+- CI failed in `osascript` / `System Events`
+
+That was not an app build failure. It was a headless-CI launch failure.
+
+To avoid that, `test-ios.sh` now has a CI-only path that:
+
+1. uses `xcodebuild`
+2. installs the built `.app` with `xcrun simctl install`
+3. launches it with `xcrun simctl launch`
+
+instead of relying on Expo's GUI-oriented simulator activation path.
+
+### Current iOS blocker
+
+After switching to the headless path, the old AppleScript problem went away.
+The current failure is simpler:
+
+```text
+xcodebuild: error: 'ios/BioVaultDev.xcworkspace' does not exist.
+```
+
+This means:
+
+- the new headless `xcodebuild + simctl` approach is the right direction
+- the remaining failure is path resolution inside `test-ios.sh`
+- it is not currently blocked on Xcode version, simulator availability, or
+  Expo's AppleScript path anymore
 
 ### Known iOS gotchas
 
-- **expo-modules-core + Xcode 16.4**: on Namespace's older mac image we
-  saw `unknown attribute 'MainActor'` building expo-modules-core. Xcode
-  16.2 and 26.3 both work; 16.4 was the outlier.
-- **`ios/Pods` stale state**: if a previous run died mid-build, xcodeproj
-  post-install hook can fail with `Consistency issue: no parent for
-  object 'index.swift'`. Fix: `rm -rf ios` and let `expo prebuild`
-  regenerate.
-- **Simulator data migration**: 2+ min on first boot of a fresh sim image
-  on CI. Unavoidable per runner.
+- **expo-modules-core + Xcode 16.4**: older Namespace mac images showed
+  `unknown attribute 'MainActor'`; Xcode 16.2 and 26.x worked better.
+- **`ios/Pods` stale state**: a broken prior run can leave Xcode project state
+  inconsistent. `rm -rf ios` and regenerating via Expo still fixes that.
+- **Simulator data migration**: first boot on a fresh runner still costs
+  a couple of minutes and is unavoidable.
 
 ## Android specifics
 
-### Host must be x86_64 Linux
+### What definitively works now
 
-Tried `namespace-profile-linux-arm64-medium` — doesn't work:
-- Container has no `/dev/kvm` and no `udev`, so the standard KVM-enable
-  udev rule fails (we gate that step now: no-op on arm64 containers).
-- Namespace's bare arm64 image has no Android SDK pre-installed.
-- `android-actions/setup-android@v3` tries to install `emulator` — but
-  Google's emulator host binary is **x86_64-only on Linux** (no aarch64
-  Linux build). sdkmanager errors with "Dependant package with key
-  emulator not found".
-- `reactivecircus/android-emulator-runner`'s own README says the action
-  only supports Linux and macOS (x86_64) VMs. `arm64-v8a` is a guest
-  image option, capped to ~API 30.
+Android no longer needs GitHub `ubuntu-latest` for this repo. The verified
+working path is:
 
-Bottom line: Android stays on `ubuntu-latest` with `x86_64` guest arch.
-GitHub's ubuntu-latest has the SDK + KVM + cmdline-tools pre-wired.
+- runner: `namespace-profile-linux-medium`
+- emulator host arch: `x86_64`
+- action: `reactivecircus/android-emulator-runner@v2`
 
-### Android speedups applied
+This passed in CI on April 16, 2026.
 
-- Trim the Rust cross-compile targets — all four are required because
-  `expo-bioscript`'s `buildRustAndroid` task installs them all:
-  ```
-  aarch64-linux-android, armv7-linux-androideabi,
-  x86_64-linux-android, i686-linux-android
-  ```
-  (Same lesson as iOS: don't over-trim.)
-- `cargo install cargo-ndk --locked` before the gradle build (not
-  pre-installed on ubuntu-latest).
-- AVD cache, Gradle cache, prebuilt `android/` cache.
-- Drop `sleep 8`; use `--no-dev --minify` on Metro.
-- Dropped the `matrix: api-level: [36]` strategy — the job name used to
-  be `android (36)`, now it's just `android`. API level lives in
-  `env.ANDROID_API_LEVEL`.
+### Why Namespace Linux works but Namespace mac didn't
+
+#### Working path
+
+`namespace-profile-linux-medium` passed all of:
+
+- KVM setup
+- Android SDK / Java / Rust setup
+- AVD snapshot creation
+- full Android smoke test run
+
+#### Failed experiment: Namespace mac
+
+`namespace-profile-mac-medium` was tried for Android and failed during AVD
+snapshot creation. The log repeatedly showed:
+
+```text
+adb: device 'emulator-5554' not found
+The process 'undefined/platform-tools/adb' failed with exit code 1
+Timeout waiting for emulator to boot.
+```
+
+So the Android mac path was dropped. It is not worth keeping in the workflow.
+
+#### Failed experiment: Namespace Linux arm64
+
+`namespace-profile-linux-arm64-medium` was also a dead end:
+
+- no useful `/dev/kvm` / `udev` path for the expected setup
+- Android SDK not preinstalled
+- Google's Linux emulator host binary is x86_64-only
+
+### Android speedups and stability fixes applied
+
+- Keep all four Android Rust targets installed:
+
+```text
+aarch64-linux-android
+armv7-linux-androideabi
+x86_64-linux-android
+i686-linux-android
+```
+
+- Install `cargo-ndk --locked` before Gradle.
+- Cache Gradle state.
+- Cache generated `android/`.
+- Cache the AVD snapshot.
+- Keep Metro on `--no-dev --minify`.
+- Drop hardcoded sleep delays before Maestro.
+- Use `pixel_7` consistently for both the profile and cache key.
+- Make `test-android.sh` find the Android SDK on either Linux or macOS via
+  `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `$HOME/Android/Sdk`, or
+  `$HOME/Library/Android/sdk`.
+
+## Timing breakdowns worth remembering
+
+From CI run `24496464188`:
+
+### Android
+
+- Total job time: about `11m31s`
+- `Run Android tests`: about `8m47s`
+- `Create AVD snapshot`: about `1m17s`
+- `Install npm dependencies`: about `23s`
+
+### iOS
+
+- Total job time before failure: about `9m05s`
+- `Run iOS tests`: about `7m27s`
+- `Boot iOS simulator`: about `29s`
+- `Install npm dependencies`: about `24s`
+
+Interpretation:
+
+- Most of the mobile time is still inside the monolithic test steps, not the
+  top-level setup steps.
+- If we want meaningful further optimisation, the scripts should emit
+  sub-timings for:
+  - Metro startup
+  - native build
+  - install
+  - launch
+  - Maestro
 
 ## Simulator / emulator dev-menu setup recap
 
@@ -213,7 +276,7 @@ GitHub's ubuntu-latest has the SDK + KVM + cmdline-tools pre-wired.
 ## Helpful commands
 
 ```bash
-# Cancel a stale CI run (saves minutes):
+# Cancel a stale CI run:
 gh run cancel <run-id> --repo OpenMined/biovault-app
 
 # Watch live:
@@ -223,28 +286,26 @@ gh pr checks 32 --repo OpenMined/biovault-app --watch
 gh run view <run-id> --repo OpenMined/biovault-app \
   --json jobs -q '.jobs[] | {name, status, conclusion}'
 
-# Reset local iOS state after onboarding runs:
+# Reset local iOS simulator app state:
 xcrun simctl uninstall booted org.openmined.biovault.dev
 
-# Regenerate ios/ from scratch if cocoapods gets stuck:
+# Regenerate ios/ if CocoaPods / Xcode project state gets wedged:
 rm -rf ios && ./test-ios.sh
 ```
 
 ## Things that wasted time (don't re-try)
 
-- Pinning `Xcode_16.1`/`16.2` on macos-15 → platform SDK mismatch.
-- `runs-on: namespace-profile-linux-arm64-medium` for android → no Linux
-  aarch64 emulator binary exists.
-- Trimming iOS / Android Rust targets — expo-bioscript scripts assume all
-  archs are installed, even if only one is built.
-- Adding `sleep` to wait for the app; Maestro's `extendedWaitUntil` does
-  this correctly.
-- `--repo-update` on pod install every run — expo-cli doesn't need it if
-  Pods are warm.
+- Pinning named Xcode versions on GitHub macOS images when the runner default
+  already satisfies the minimum version.
+- `namespace-profile-linux-arm64-medium` for Android.
+- `namespace-profile-mac-medium` for Android.
+- Trimming iOS / Android Rust target lists.
+- Adding arbitrary `sleep` before Maestro.
+- Running `pod install --repo-update` every time.
 
 ## Open items
 
-- iOS full cold-cache run on Namespace mac still takes several minutes;
-  sim data migration (~2min) is the unavoidable floor.
-- CI doesn't auto-trigger on some pushes (GitHub coalescing behaviour?).
-  Fallback is `gh workflow run CI --ref <branch>`.
+- Fix the `xcodebuild` workspace path in the CI-only iOS build path.
+- Once iOS is green, add sub-phase timing output to both test scripts so we
+  can see where the remaining 7-9 minutes actually go.
+- Web is failing independently and should be treated as separate work.

@@ -7,6 +7,17 @@
  */
 export function inspectBytes(name: string, bytes: Uint8Array, options_json?: string | null): string;
 
+/**
+ * Observe a list of SNP variants against an indexed CRAM + reference FASTA,
+ * with the bulk bytes pulled on demand via JS-supplied `readAt(offset, len)`
+ * callbacks. The small index payloads (`.crai`, `.fai`) are passed inline.
+ *
+ * Both callbacks must return a `Uint8Array` synchronously (or via a Node
+ * sync read) — wasm's `Read + Seek` contract is synchronous. Async reads are
+ * a follow-up that needs buffered pre-fetch on the JS side.
+ */
+export function lookupCramVariants(cram_read_at: Function, cram_len: number, crai_bytes: Uint8Array, fasta_read_at: Function, fasta_len: number, fai_bytes: Uint8Array, variants_json: string): string;
+
 export function start(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -14,11 +25,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly start: () => void;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
