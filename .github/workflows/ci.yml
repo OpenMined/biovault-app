@@ -317,6 +317,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK
+        # Namespace arm64 containers don't ship the Android SDK.
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-${{ matrix.api-level }} system-images;android-${{ matrix.api-level }};google_apis;arm64-v8a emulator'
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
