@@ -234,7 +234,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Boot iOS simulator
+      - name: Pick iOS simulator UDID
         run: |
           # Pick a sim whose runtime is actually fully installed (i.e. the
           # platform package was downloaded, not just the SDK). The iOS
@@ -254,11 +254,30 @@ jobs:
           fi
           echo "Using simulator: $UDID"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl boot "$UDID" || true
-          xcrun simctl bootstatus "$UDID" -b
 
-      - name: Run iOS tests
-        run: ./test-ios.sh
+      - name: iOS / boot simulator
+        run: ./test-ios.sh boot-sim
+
+      - name: iOS / expo prebuild
+        run: ./test-ios.sh prebuild
+
+      - name: iOS / pod install
+        run: ./test-ios.sh pods
+
+      - name: iOS / xcodebuild
+        run: ./test-ios.sh build
+
+      - name: iOS / start Metro (background)
+        run: ./test-ios.sh metro-start
+
+      - name: iOS / install + launch app
+        run: ./test-ios.sh install-launch
+
+      - name: iOS / disable dev-menu onboarding
+        run: ./test-ios.sh devmenu
+
+      - name: iOS / Maestro flow
+        run: ./test-ios.sh maestro
 
       - name: Upload iOS screenshots
         if: always()
