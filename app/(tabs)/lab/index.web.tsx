@@ -1,7 +1,8 @@
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
+import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
-import { cycleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
+import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import { isBioscriptAvailable, warmupBioscriptRuntime } from '@/modules/expo-bioscript'
 import {
 	ASSAY_CATEGORY_LABELS,
@@ -38,6 +39,7 @@ import { BrandFonts } from '@/lib/brand-typography'
 import type { VariantObservation } from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
 import { labPalettes, type LabPalette } from '@/styles/lab-theme'
+import { Asset } from 'expo-asset'
 import { useLocalSearchParams } from 'expo-router'
 import {
 	createContext,
@@ -65,6 +67,7 @@ type Styles = ReturnType<typeof makeStyles>
 type ThemeValue = { palette: LabPalette; styles: Styles; mutedIconTone: 'muted' | 'inverse' }
 
 const ThemeCtx = createContext<ThemeValue | null>(null)
+const microscopeIconUri = Asset.fromModule(require('../../../assets/images/microscope.svg')).uri
 
 function useTheme(): ThemeValue {
 	const v = useContext(ThemeCtx)
@@ -382,7 +385,7 @@ export default function LabScreen() {
 						<OMText variant="caption" style={styles.brandMark}>
 							BIOVAULT LAB
 						</OMText>
-						<WebThemeToggle />
+						<WebThemeToggle scheme={scheme} />
 					</View>
 
 					<DropZone
@@ -466,7 +469,7 @@ function DropZone({
 	dragActive: boolean
 	onChoose: () => void
 }) {
-	const { styles } = useTheme()
+	const { styles, palette } = useTheme()
 	if (compact) {
 		return (
 			<Pressable
@@ -488,7 +491,7 @@ function DropZone({
 			onPress={onChoose}
 			style={[styles.dropZone, dragActive ? styles.dropZoneActive : null]}
 		>
-			<OMIcon name="cloud-upload-outline" tone="accent" size={40} />
+			<PlatformSvgUri uri={microscopeIconUri} width={40} height={40} color={palette.accentStrong} />
 			<OMText variant="h3" style={styles.dropZoneTitle}>
 				Drop a genome
 			</OMText>
@@ -982,9 +985,8 @@ function DragOverlay() {
 	)
 }
 
-function WebThemeToggle() {
+function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 	const { styles } = useTheme()
-	const scheme = useColorScheme()
 	const { icon, label } =
 		scheme === 'light'
 			? { icon: 'sunny-outline' as const, label: 'Light' }
@@ -992,20 +994,26 @@ function WebThemeToggle() {
 
 	return (
 		<Pressable
-			onPress={() => cycleColorSchemePreferenceSync()}
+			onPress={() => toggleColorSchemePreferenceSync(scheme)}
+			hitSlop={8}
 			style={[styles.webThemeButton, scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark]}
-			accessibilityLabel={`Color theme: ${label}. Tap to cycle.`}
+			accessibilityRole="button"
+			accessibilityLabel={`Color theme: ${label}. Tap to toggle.`}
 		>
-			<OMIcon name={icon} size={16} tone="accent" />
-			<OMText
-				variant="caption"
-				style={[
-					styles.webThemeButtonText,
-					scheme === 'light' ? styles.webThemeButtonTextLight : styles.webThemeButtonTextDark,
-				]}
-			>
-				{label}
-			</OMText>
+			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
+				<OMIcon name={icon} size={16} tone="accent" />
+			</View>
+			<View pointerEvents="none">
+				<OMText
+					variant="caption"
+					style={[
+						styles.webThemeButtonText,
+						scheme === 'light' ? styles.webThemeButtonTextLight : styles.webThemeButtonTextDark,
+					]}
+				>
+					{label}
+				</OMText>
+			</View>
 		</Pressable>
 	)
 }
@@ -1046,7 +1054,11 @@ function makeStyles(p: LabPalette) {
 			paddingHorizontal: 14,
 			borderRadius: omRadius.full,
 			borderWidth: 1,
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
 		},
+		webThemeButtonIcon: { justifyContent: 'center' },
 		webThemeButtonLight: {
 			backgroundColor: 'rgba(252,252,253,0.92)',
 			borderColor: 'rgba(83,190,169,0.32)',

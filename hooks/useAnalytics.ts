@@ -1,6 +1,6 @@
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAnalytics } from '@/lib/analytics';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 
 interface UseAnalyticsOptions {
@@ -10,27 +10,33 @@ interface UseAnalyticsOptions {
   includeRouteParams?: boolean;
 }
 
+const EMPTY_SCREEN_PROPERTIES: Record<string, any> = {};
+
 export const useAnalytics = (options: UseAnalyticsOptions = {}) => {
   const {
     trackScreenView = true,
     trackAppState = true,
-    screenProperties = {},
+    screenProperties = EMPTY_SCREEN_PROPERTIES,
     includeRouteParams = true,
   } = options;
 
   const route = useRoute();
   const appStateRef = useRef(AppState.currentState);
   const analytics = getAnalytics();
+  const mergedScreenProperties = useMemo(
+    () => ({
+      ...screenProperties,
+      ...(includeRouteParams ? { params: route.params } : {}),
+    }),
+    [screenProperties, includeRouteParams, route.params]
+  );
 
   useFocusEffect(
     React.useCallback(() => {
       if (trackScreenView && route.name && analytics) {
-        analytics.trackScreen(route.name, {
-          ...screenProperties,
-          ...(includeRouteParams ? { params: route.params } : {}),
-        });
+        analytics.trackScreen(route.name, mergedScreenProperties);
       }
-    }, [trackScreenView, route.name, route.params, includeRouteParams, screenProperties, analytics])
+    }, [trackScreenView, route.name, analytics, mergedScreenProperties])
   );
 
   useEffect(() => {
