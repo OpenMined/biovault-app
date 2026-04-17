@@ -28,7 +28,7 @@ export function getLabRunDisabledReasonFor(
 		selectedGenome.kind === 'text' ||
 		selectedGenome.kind === 'zip'
 	if (needsMonty && !isBioscriptAvailable()) {
-		return 'This assay needs the threaded web runtime. Phone web browsers usually block it; use desktop web or a native app build.'
+		return 'This assay needs the threaded web runtime. Some browsers, including Safari, do not support the required SharedArrayBuffer + cross-origin isolation setup for this web runtime.'
 	}
 	return null
 }
