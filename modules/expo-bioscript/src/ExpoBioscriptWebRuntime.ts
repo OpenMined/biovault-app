@@ -1,4 +1,3 @@
-import { Asset } from 'expo-asset';
 import type { GenomeDescriptor, RunFileRequest, RunFileResult } from './ExpoBioscript.types';
 import {
   lookupCramVariants,
@@ -6,6 +5,7 @@ import {
   type VariantObservation,
   type VariantSpec,
 } from './BioscriptWasm';
+import { getMontyWasmUrl } from './webRuntimeAssets';
 
 type MontyBrowserModule = {
   Monty: {
@@ -149,10 +149,7 @@ async function loadMontyModule(): Promise<MontyBrowserModule> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getDefaultContext, instantiateNapiModule, WASI } = require('@napi-rs/wasm-runtime') as typeof import('@napi-rs/wasm-runtime')
 
-    const wasmUrl = Asset.fromModule(
-      require('../web-runtime/monty-wasm32-wasi/monty.wasm32-wasi.wasm'),
-    ).uri
-    const workerUrl = '/modules/expo-bioscript/web-runtime/monty-wasm32-wasi/wasi-worker-browser.mjs'
+    const wasmUrl = getMontyWasmUrl()
 
     const wasi = new WASI({ version: 'preview1' })
     const context = getDefaultContext()
@@ -168,15 +165,17 @@ async function loadMontyModule(): Promise<MontyBrowserModule> {
     }
     const bytes = await res.arrayBuffer()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { napiModule } = await instantiateNapiModule(bytes as any, {
       context,
       asyncWorkPoolSize: 4,
       wasi,
       onCreateWorker() {
-        return new Worker(workerUrl, { type: 'module' })
+        return new Worker(new URL('./workers/montyWasiThreadWorker', window.location.href), {
+          type: 'module',
+        })
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       overwriteImports(importObject: any) {
         importObject.env = {
           ...importObject.env,
@@ -186,7 +185,7 @@ async function loadMontyModule(): Promise<MontyBrowserModule> {
         }
         return importObject
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       beforeInit({ instance }: { instance: any }) {
         for (const name of Object.keys(instance.exports)) {
           if (name.startsWith('__napi_register__')) {
@@ -267,7 +266,7 @@ async function runMontyAsync(
       // "Invalid exception type: 'Error'", which masks the real message.
       // Map anything unknown to RuntimeError so the root cause surfaces.
       const pythonExcType = mapJsErrorToPythonException(err);
-      // eslint-disable-next-line no-console
+       
       console.error(
         `[bioscript-web] external function '${snapshot.functionName}' threw ${err.name || 'Error'}: ${err.message}`,
         err.stack,
@@ -453,7 +452,7 @@ async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, p
   const storeId = `genotypes:${context.nextStoreId}`;
   context.nextStoreId += 1;
   context.genotypeStores.set(storeId, { kind: 'text', store: textStore });
-  // eslint-disable-next-line no-console
+   
   console.log(
     '[bioscript-web] load_genotypes ' +
       JSON.stringify({
@@ -485,21 +484,21 @@ async function loadGenome(
     // Text-shaped descriptors share the same rsid-map backend as load_genotypes.
     const textStore = parseDelimitedGenotypes(descriptor.text);
     context.genotypeStores.set(storeId, { kind: 'text', store: textStore });
-    // eslint-disable-next-line no-console
+     
     console.log(`[bioscript-web] load_genome text ${handle} (${textStore.values.size} rsids)`);
     return storeId;
   }
 
   if (descriptor.kind === 'vcf') {
     context.genotypeStores.set(storeId, { kind: 'vcf', descriptor });
-    // eslint-disable-next-line no-console
+     
     console.log(`[bioscript-web] load_genome vcf ${handle} (${descriptor.vcfFile.name})`);
     return storeId;
   }
 
   if (descriptor.kind === 'cram') {
     context.genotypeStores.set(storeId, { kind: 'cram', descriptor });
-    // eslint-disable-next-line no-console
+     
     console.log(`[bioscript-web] load_genome cram ${handle} (${descriptor.cramFile.name})`);
     return storeId;
   }
@@ -530,7 +529,7 @@ async function lookupVariantsDispatch(
   context: RuntimeContext,
   storeHandle: unknown,
   plan: unknown,
-): Promise<Array<string | null>> {
+): Promise<(string | null)[]> {
   const store = getStore(context, storeHandle);
   const variants = extractVariantsFromPlan(plan);
 
@@ -567,7 +566,7 @@ async function lookupVariantsDispatch(
           variants: wasmVariants,
         });
 
-  // eslint-disable-next-line no-console
+   
   console.log(
     `[bioscript-web] lookup_variants ${store.kind} · ${variants.length} variants · ${result.durationMs}ms`,
   );
@@ -886,7 +885,7 @@ function toVariantSpec(value: unknown): { rsids: string[] } {
   };
 }
 
-function normalizeRows(rows: unknown): Array<Record<string, unknown>> {
+function normalizeRows(rows: unknown): Record<string, unknown>[] {
   if (!Array.isArray(rows)) {
     throw new Error('write_tsv expects a list of rows');
   }

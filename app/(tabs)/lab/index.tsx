@@ -1,275 +1,47 @@
+import { OMText } from '@/components/ui/OMText'
+import { useAnalytics } from '@/hooks/useAnalytics'
+import {
+	appendAssay,
+	classifyLabFile,
+	createAssayFromFile,
+	createGenomeFromPrimaryFile,
+	createUnknownEntry,
+	genomeBytesTotal,
+	genomeDisplayName,
+	genomeKindLabel,
+	humanLabSize,
+	isGenomeComplete,
+	missingGenomeSlots,
+	pairCompanionFile,
+	sortFilesForIngestion,
+} from '@/lib/lab/file-model'
+import {
+	getRemoteAssaySourceHost,
+	loadRemoteAssayFile,
+	normalizeLabSearchParam,
+} from '@/lib/lab/assay-loader'
+import { getLabRunDisabledReason, runLabAssay } from '@/lib/lab/runner'
+import type {
+	Assay,
+	Genome,
+	RunResult,
+	UnknownEntry,
+} from '@/lib/lab/types'
+import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import type { VariantObservation } from '@/modules/expo-bioscript'
+import { useLocalSearchParams } from 'expo-router'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 // Unified Bioscript lab — drop any mix of genomic files + assay scripts, pick
 // a genome and an assay, and run. Heavy parsing happens inside the
 // bioscript-wasm Web Worker (CRAM / VCF variant lookups) or Monty's
 // WASI runtime (genotype-text + Python/YAML assays).
 
-import { OMText } from '@/components/ui/OMText'
-import {
-	isBioscriptAvailable,
-	lookupCramVariants,
-	lookupVcfVariants,
-	runFile,
-	type GenomeDescriptor,
-	type VariantObservation,
-	type VariantSpec,
-} from '@/modules/expo-bioscript'
-import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
-import { unzipSync } from 'fflate'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import YAML from 'yaml'
-
-// === File classification ====================================================
-
-type FileKind =
-	| 'cram'
-	| 'crai'
-	| 'fasta'
-	| 'fai'
-	| 'vcf_gz'
-	| 'tbi'
-	| 'genotype_text'
-	| 'zip'
-	| 'assay_python'
-	| 'assay_yaml'
-	| 'unknown'
-
-function classify(name: string): FileKind {
-	const lower = name.toLowerCase()
-	if (lower.endsWith('.cram.crai') || lower.endsWith('.crai')) return 'crai'
-	if (lower.endsWith('.cram')) return 'cram'
-	if (lower.endsWith('.vcf.gz.tbi') || lower.endsWith('.tbi')) return 'tbi'
-	if (lower.endsWith('.vcf.gz') || lower.endsWith('.vcf.bgz')) return 'vcf_gz'
-	if (lower.endsWith('.fa.fai') || lower.endsWith('.fasta.fai')) return 'fai'
-	if (lower.endsWith('.fa') || lower.endsWith('.fasta')) return 'fasta'
-	if (lower.endsWith('.py')) return 'assay_python'
-	if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'assay_yaml'
-	if (lower.endsWith('.zip')) return 'zip'
-	if (
-		lower.endsWith('.txt') ||
-		lower.endsWith('.tsv') ||
-		lower.endsWith('.csv') ||
-		lower.endsWith('.vcf')
-	) {
-		return 'genotype_text'
-	}
-	return 'unknown'
-}
-
-function stripGenomeSuffix(name: string): string {
-	// Used for pairing: NA06985.final.cram ↔ NA06985.final.cram.crai should share
-	// the same stem. Strip the companion-index suffix so the stems line up.
-	const lower = name.toLowerCase()
-	if (lower.endsWith('.cram.crai')) return name.slice(0, -5) // keep .cram
-	if (lower.endsWith('.crai')) return name.slice(0, -5)
-	if (lower.endsWith('.vcf.gz.tbi')) return name.slice(0, -4) // keep .vcf.gz
-	if (lower.endsWith('.tbi')) return name.slice(0, -4)
-	if (lower.endsWith('.fa.fai')) return name.slice(0, -4) // keep .fa
-	if (lower.endsWith('.fasta.fai')) return name.slice(0, -4) // keep .fasta
-	if (lower.endsWith('.fai')) return name.slice(0, -4)
-	return name
-}
-
-// === Data model =============================================================
-
-type CramGenome = {
-	id: string
-	kind: 'cram'
-	primary: File // the .cram
-	crai?: File
-	fasta?: File
-	fai?: File
-}
-
-type VcfGenome = {
-	id: string
-	kind: 'vcf'
-	primary: File // the .vcf.gz
-	tbi?: File
-}
-
-type TextGenome = {
-	id: string
-	kind: 'text'
-	primary: File
-}
-
-type ZipGenome = {
-	id: string
-	kind: 'zip'
-	primary: File
-}
-
-type Genome = CramGenome | VcfGenome | TextGenome | ZipGenome
-
-type AssayLang = 'python' | 'yaml'
-type Assay = {
-	id: string
-	name: string
-	file: File
-	language: AssayLang
-}
-
-type UnknownEntry = { id: string; file: File }
-
-function genomeDisplayName(g: Genome): string {
-	return g.primary.name
-}
-
-function genomeKindLabel(g: Genome): string {
-	switch (g.kind) {
-		case 'cram': return 'CRAM alignment'
-		case 'vcf': return 'VCF (bgzipped, tabix-indexed)'
-		case 'text': return 'Genotype text'
-		case 'zip': return 'Zipped genotype (23andMe etc.)'
-	}
-}
-
-function missingSlots(g: Genome): string[] {
-	if (g.kind === 'cram') {
-		const missing: string[] = []
-		if (!g.crai) missing.push('.cram.crai index')
-		if (!g.fasta) missing.push('reference .fa')
-		if (!g.fai) missing.push('.fa.fai index')
-		return missing
-	}
-	if (g.kind === 'vcf') {
-		return g.tbi ? [] : ['.vcf.gz.tbi index']
-	}
-	return []
-}
-
-function isGenomeComplete(g: Genome): boolean {
-	return missingSlots(g).length === 0
-}
-
-function genomeBytesTotal(g: Genome): number {
-	if (g.kind === 'cram') {
-		return (
-			g.primary.size +
-			(g.crai?.size ?? 0) +
-			(g.fasta?.size ?? 0) +
-			(g.fai?.size ?? 0)
-		)
-	}
-	if (g.kind === 'vcf') {
-		return g.primary.size + (g.tbi?.size ?? 0)
-	}
-	return g.primary.size
-}
-
-function humanSize(bytes: number): string {
-	if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(2)} GB`
-	if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-	if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(1)} KB`
-	return `${bytes} B`
-}
-
-function makeId(prefix: string) {
-	return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-// === YAML variant compile (JS side for now; a Rust-native wasm export is
-// on the migration backlog). Produces a VariantSpec[] from a
-// bioscript:variant:1.0 YAML document.
-
-function compileVariantYamlToSpecs(yamlText: string): VariantSpec[] {
-	const doc = YAML.parse(yamlText) as Record<string, unknown> | null
-	if (!doc) throw new Error('empty YAML document')
-	const schema = String(doc.schema ?? '')
-	if (!schema.startsWith('bioscript:variant:')) {
-		throw new Error(`unsupported YAML schema "${schema}" — expected bioscript:variant:1.0`)
-	}
-	const name = String(doc.name ?? 'variant')
-	const rsids: string[] = Array.isArray((doc.identifiers as { rsids?: unknown })?.rsids)
-		? ((doc.identifiers as { rsids: unknown[] }).rsids as unknown[]).map((v) => String(v))
-		: []
-	const alleles = (doc.alleles ?? {}) as Record<string, unknown>
-	const ref = String(alleles.ref ?? '')
-	const alts = Array.isArray(alleles.alts) ? (alleles.alts as unknown[]).map((v) => String(v)) : []
-	const alt = alts[0] ?? ''
-	if (!ref || !alt) {
-		throw new Error(`YAML assay "${name}" missing alleles.ref or alleles.alts`)
-	}
-	const coords = (doc.coordinates ?? {}) as Record<string, { chrom?: unknown; pos?: unknown }>
-	const pickCoord = (c: { chrom?: unknown; pos?: unknown } | undefined) => {
-		if (!c) return null
-		const chrom = String(c.chrom ?? '').trim()
-		const pos =
-			typeof c.pos === 'number' ? c.pos : Number.parseInt(String(c.pos ?? ''), 10)
-		if (!chrom || !Number.isFinite(pos)) return null
-		return { chrom, pos }
-	}
-	const grch38 = pickCoord(coords.grch38)
-	const grch37 = pickCoord(coords.grch37)
-	const specs: VariantSpec[] = []
-	if (grch38) {
-		specs.push({
-			name,
-			chrom: grch38.chrom,
-			pos: grch38.pos,
-			ref,
-			alt,
-			rsid: rsids[0],
-			assembly: 'grch38',
-		})
-	}
-	if (grch37) {
-		specs.push({
-			name: grch38 ? `${name}_grch37` : name,
-			chrom: grch37.chrom,
-			pos: grch37.pos,
-			ref,
-			alt,
-			rsid: rsids[0],
-			assembly: 'grch37',
-		})
-	}
-	if (specs.length === 0) {
-		throw new Error(`YAML assay "${name}" has no usable coordinates.grch37/grch38`)
-	}
-	return specs
-}
-
-async function extractTextFromZip(
-	file: File,
-): Promise<{ entryName: string; contents: string } | null> {
-	const buf = new Uint8Array(await file.arrayBuffer())
-	let unzipped: Record<string, Uint8Array>
-	try {
-		unzipped = unzipSync(buf)
-	} catch {
-		return null
-	}
-	const entries = Object.keys(unzipped).filter(
-		(n) => !n.endsWith('/') && !n.startsWith('__MACOSX/'),
-	)
-	const preferred = ['.vcf', '.txt', '.tsv', '.csv']
-	const entryName = preferred
-		.map((ext) => entries.find((n) => n.toLowerCase().endsWith(ext)))
-		.find(Boolean)
-	if (!entryName) return null
-	const bytes = unzipped[entryName]
-	if (!bytes) return null
-	return { entryName, contents: new TextDecoder('utf-8').decode(bytes) }
-}
-
-// === Run record =============================================================
-
-type RunStatus = 'idle' | 'running' | 'done' | 'error'
-type RunResult = {
-	status: RunStatus
-	error?: string
-	durationMs?: number
-	observations?: VariantObservation[]
-	textOutput?: string
-}
-
-// === Screen =================================================================
-
 // ts-prune-ignore-next
 export default function LabScreen() {
+	const params = useLocalSearchParams<{ assay?: string | string[] }>()
+	const { trackEvent } = useAnalytics()
 	const [genomes, setGenomes] = useState<Genome[]>([])
 	const [assays, setAssays] = useState<Assay[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
@@ -277,126 +49,85 @@ export default function LabScreen() {
 	const [selectedAssayId, setSelectedAssayId] = useState<string | null>(null)
 	const [run, setRun] = useState<RunResult>({ status: 'idle' })
 	const [dragActive, setDragActive] = useState(false)
-	const [bioscriptAvailable, setBioscriptAvailable] = useState(false)
+	const [dismissedAssayUrl, setDismissedAssayUrl] = useState<string | null>(null)
+	const [remoteAssayLoadError, setRemoteAssayLoadError] = useState<string | null>(null)
+	const [remoteAssayLoading, setRemoteAssayLoading] = useState(false)
 
-	useEffect(() => {
-		setBioscriptAvailable(isBioscriptAvailable())
-	}, [])
+	const requestedAssayUrl = normalizeLabSearchParam(params.assay)
+	const hasRequestedAssayLoaded = useMemo(
+		() => assays.some((assay) => assay.source === requestedAssayUrl),
+		[assays, requestedAssayUrl],
+	)
+	const showRemoteAssayPrompt =
+		Boolean(requestedAssayUrl) &&
+		requestedAssayUrl !== dismissedAssayUrl &&
+		!hasRequestedAssayLoaded
+
+	const addAssay = useCallback(
+		(file: File, language: Assay['language'], source?: string) => {
+			const assay = createAssayFromFile(file, language, source)
+			setAssays((prev) => appendAssay(prev, assay))
+			setSelectedAssayId(assay.id)
+			return assay
+		},
+		[],
+	)
 
 	const ingest = useCallback((file: File) => {
-		const kind = classify(file.name)
+		const kind = classifyLabFile(file.name)
 		if (kind === 'unknown') {
-			setUnknowns((prev) => [...prev, { id: makeId('unk'), file }])
+			setUnknowns((prev) => [...prev, createUnknownEntry(file)])
 			return
 		}
 		if (kind === 'assay_python' || kind === 'assay_yaml') {
-			const assay: Assay = {
-				id: makeId('assay'),
-				name: file.name,
-				file,
-				language: kind === 'assay_python' ? 'python' : 'yaml',
-			}
-			setAssays((prev) => [...prev, assay])
-			setSelectedAssayId((current) => current ?? assay.id)
+			addAssay(file, kind === 'assay_python' ? 'python' : 'yaml')
 			return
 		}
-		if (kind === 'cram') {
-			const g: CramGenome = { id: makeId('cram'), kind: 'cram', primary: file }
-			setGenomes((prev) => [...prev, g])
-			setSelectedGenomeId((current) => current ?? g.id)
+		if (kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip') {
+			const genome = createGenomeFromPrimaryFile(file, kind)
+			setGenomes((prev) => [...prev, genome])
+			setSelectedGenomeId((current) => current ?? genome.id)
 			return
 		}
-		if (kind === 'vcf_gz') {
-			const g: VcfGenome = { id: makeId('vcf'), kind: 'vcf', primary: file }
-			setGenomes((prev) => [...prev, g])
-			setSelectedGenomeId((current) => current ?? g.id)
-			return
-		}
-		if (kind === 'genotype_text') {
-			const g: TextGenome = { id: makeId('text'), kind: 'text', primary: file }
-			setGenomes((prev) => [...prev, g])
-			setSelectedGenomeId((current) => current ?? g.id)
-			return
-		}
-		if (kind === 'zip') {
-			const g: ZipGenome = { id: makeId('zip'), kind: 'zip', primary: file }
-			setGenomes((prev) => [...prev, g])
-			setSelectedGenomeId((current) => current ?? g.id)
-			return
-		}
-		// Companion indices / reference files — try to pair with existing genomes.
-		setGenomes((prev) => {
-			const stem = stripGenomeSuffix(file.name).toLowerCase()
-			const next = prev.map((g) => ({ ...g }))
-			// 1) Try a name-stem match first for tight companion pairs.
-			if (kind === 'crai') {
-				const target =
-					next.find(
-						(g) => g.kind === 'cram' && g.primary.name.toLowerCase() === stem,
-					) ?? next.find((g) => g.kind === 'cram' && !(g as CramGenome).crai)
-				if (target && target.kind === 'cram') (target as CramGenome).crai = file
-				return next
-			}
-			if (kind === 'tbi') {
-				const target =
-					next.find(
-						(g) => g.kind === 'vcf' && g.primary.name.toLowerCase() === stem,
-					) ?? next.find((g) => g.kind === 'vcf' && !(g as VcfGenome).tbi)
-				if (target && target.kind === 'vcf') (target as VcfGenome).tbi = file
-				return next
-			}
-			if (kind === 'fai') {
-				// Match fai against whichever fasta it names; else fill the first
-				// CRAM whose fai slot is still empty.
-				const named = next.find(
-					(g) =>
-						g.kind === 'cram' &&
-						(g as CramGenome).fasta?.name.toLowerCase() === stem,
-				) as CramGenome | undefined
-				if (named) {
-					named.fai = file
-					return next
-				}
-				for (const g of next) {
-					if (g.kind === 'cram' && !(g as CramGenome).fai) {
-						(g as CramGenome).fai = file
-						return next
-					}
-				}
-				return next
-			}
-			if (kind === 'fasta') {
-				// A single .fa usually pairs with every CRAM in this session —
-				// fill every CRAM that doesn't yet have a reference. That way
-				// `foo.cram + bar.cram + ref.fa + ref.fa.fai` Just Works.
-				for (const g of next) {
-					if (g.kind === 'cram' && !(g as CramGenome).fasta) {
-						(g as CramGenome).fasta = file
-					}
-				}
-				return next
-			}
-			return next
-		})
-	}, [])
+		setGenomes((prev) => pairCompanionFile(prev, file, kind))
+	}, [addAssay])
 
 	const ingestMany = useCallback(
 		(files: File[]) => {
-			// Two passes — primaries first, indexes/ref second — so companion
-			// pairing always finds its host genome regardless of drop order.
-			const primaryFirst = [...files].sort((a, b) => {
-				const ka = classify(a.name)
-				const kb = classify(b.name)
-				const primary = (k: FileKind) =>
-					k === 'cram' || k === 'vcf_gz' || k === 'genotype_text' || k === 'zip'
-				if (primary(ka) && !primary(kb)) return -1
-				if (primary(kb) && !primary(ka)) return 1
-				return 0
+			const ordered = sortFilesForIngestion(files)
+			trackEvent('lab_files_added', {
+				fileKinds: ordered.map((file) => classifyLabFile(file.name)),
+				totalFiles: ordered.length,
 			})
-			for (const f of primaryFirst) ingest(f)
+			for (const file of ordered) ingest(file)
 		},
-		[ingest],
+		[ingest, trackEvent],
 	)
+
+	const loadRequestedAssay = useCallback(async () => {
+		if (!requestedAssayUrl) return
+		setRemoteAssayLoading(true)
+		setRemoteAssayLoadError(null)
+		trackEvent('lab_remote_assay_load_requested', {
+			sourceHost: getRemoteAssaySourceHost(requestedAssayUrl),
+		})
+		try {
+			const remote = await loadRemoteAssayFile(requestedAssayUrl)
+			addAssay(remote.file, remote.language, remote.source)
+			trackEvent('lab_remote_assay_loaded', {
+				language: remote.language,
+				sourceHost: getRemoteAssaySourceHost(remote.source),
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			setRemoteAssayLoadError(message)
+			trackEvent('lab_remote_assay_load_failed', {
+				error: message,
+			})
+		} finally {
+			setRemoteAssayLoading(false)
+		}
+	}, [addAssay, requestedAssayUrl, trackEvent])
 
 	useEffect(() => {
 		if (Platform.OS !== 'web') return
@@ -490,130 +221,42 @@ export default function LabScreen() {
 		[assays, selectedAssayId],
 	)
 
-	const runDisabledReason = useMemo<string | null>(() => {
-		if (!selectedGenome) return 'Pick a genome above.'
-		if (!selectedAssay) return 'Pick an assay above.'
-		if (!isGenomeComplete(selectedGenome)) {
-			return `Genome is missing: ${missingSlots(selectedGenome).join(', ')}`
-		}
-		// Python assays always need Monty (web runtime). YAML + CRAM/VCF uses
-		// the wasm worker directly and doesn't need Monty at all.
-		const needsMonty =
-			selectedAssay.language === 'python' ||
-			selectedGenome.kind === 'text' ||
-			selectedGenome.kind === 'zip'
-		if (needsMonty && !bioscriptAvailable) {
-			return 'Bioscript web runtime unavailable (needs SharedArrayBuffer + cross-origin isolation).'
-		}
-		return null
-	}, [bioscriptAvailable, selectedAssay, selectedGenome])
+	const runDisabledReason = useMemo(
+		() => getLabRunDisabledReason(selectedGenome, selectedAssay),
+		[selectedAssay, selectedGenome],
+	)
 
 	const runBlocked = runDisabledReason !== null || run.status === 'running'
 
 	const executeRun = useCallback(async () => {
 		if (!selectedGenome || !selectedAssay) return
 		setRun({ status: 'running' })
-		const startedAt = Date.now()
+		trackEvent('lab_run_started', {
+			assayLanguage: selectedAssay.language,
+			assaySource: selectedAssay.source ? 'remote' : 'local',
+			genomeKind: selectedGenome.kind,
+		})
 		try {
-			// --- YAML assay path ----------------------------------------------
-			if (selectedAssay.language === 'yaml') {
-				const yamlText = await selectedAssay.file.text()
-				if (selectedGenome.kind === 'cram') {
-					const g = selectedGenome
-					if (!g.crai || !g.fasta || !g.fai) throw new Error('CRAM genome incomplete')
-					const variants = compileVariantYamlToSpecs(yamlText)
-					const craiBytes = new Uint8Array(await g.crai.arrayBuffer())
-					const faiBytes = new Uint8Array(await g.fai.arrayBuffer())
-					const result = await lookupCramVariants({
-						cramFile: g.primary,
-						craiBytes,
-						fastaFile: g.fasta,
-						faiBytes,
-						variants,
-					})
-					setRun({
-						status: 'done',
-						durationMs: result.durationMs,
-						observations: result.observations,
-					})
-					return
-				}
-				if (selectedGenome.kind === 'vcf') {
-					const g = selectedGenome
-					if (!g.tbi) throw new Error('VCF genome missing tabix index')
-					const variants = compileVariantYamlToSpecs(yamlText)
-					const tbiBytes = new Uint8Array(await g.tbi.arrayBuffer())
-					const result = await lookupVcfVariants({
-						vcfFile: g.primary,
-						tbiBytes,
-						variants,
-					})
-					setRun({
-						status: 'done',
-						durationMs: result.durationMs,
-						observations: result.observations,
-					})
-					return
-				}
-				// Text / zip + YAML — run through Monty by compiling YAML to Python.
-				const scriptName = selectedAssay.file.name.replace(/\.ya?ml$/i, '.py')
-				const scriptContents = compileVariantYamlToPython(yamlText)
-				const inputContents = await readGenomeText(selectedGenome)
-				const result = await runFile({
-					scriptPath: scriptName,
-					scriptContents,
-					inputFile: selectedGenome.primary.name,
-					inputContents,
-					outputFile: 'assay-output.tsv',
-					inputFormat: 'text',
-					maxDurationMs: 180_000,
-					maxMemoryBytes: 128 * 1024 * 1024,
-					maxAllocations: 1_000_000,
-					maxRecursionDepth: 512,
-				})
-				const textOutput =
-					result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? ''
-				setRun({ status: 'done', durationMs: Date.now() - startedAt, textOutput })
-				return
-			}
-
-			// --- Python assay path — works for text/zip (in-memory parser) AND
-			// for VCF/CRAM via the Monty ↔ wasm-worker bridge. The Python
-			// script sees a uniform `bioscript.load_genotypes(input_file)`
-			// regardless of backend; the runtime dispatches based on the
-			// genome descriptor we register under `input_file`.
-			const scriptContents = await selectedAssay.file.text()
-			const descriptor = await buildGenomeDescriptor(selectedGenome)
-			const genomeKey = selectedGenome.primary.name
-
-			const runRequest = {
-				scriptPath: selectedAssay.file.name,
-				scriptContents,
-				inputFile: genomeKey,
-				// Text/zip need legacy inputContents for read-path compatibility.
-				inputContents:
-					descriptor.kind === 'text' || descriptor.kind === 'zip'
-						? descriptor.text
-						: undefined,
-				outputFile: 'assay-output.tsv',
-				inputFormat: 'text' as const,
-				genomes: { [genomeKey]: descriptor },
-				maxDurationMs: 180_000,
-				maxMemoryBytes: 128 * 1024 * 1024,
-				maxAllocations: 1_000_000,
-				maxRecursionDepth: 512,
-			}
-			const result = await runFile(runRequest)
-			const textOutput = result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? ''
-			setRun({ status: 'done', durationMs: Date.now() - startedAt, textOutput })
+			const success = await runLabAssay(selectedGenome, selectedAssay)
+			setRun(success.result)
+			trackEvent('lab_run_completed', {
+				assayLanguage: selectedAssay.language,
+				genomeKind: selectedGenome.kind,
+				resultKind: success.kind,
+			})
 		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err)
 			setRun({
 				status: 'error',
-				error: err instanceof Error ? err.message : String(err),
-				durationMs: Date.now() - startedAt,
+				error: message,
+			})
+			trackEvent('lab_run_failed', {
+				assayLanguage: selectedAssay.language,
+				genomeKind: selectedGenome.kind,
+				error: message,
 			})
 		}
-	}, [selectedAssay, selectedGenome])
+	}, [selectedAssay, selectedGenome, trackEvent])
 
 	// === Render ==============================================================
 
@@ -631,6 +274,16 @@ export default function LabScreen() {
 			) : null}
 
 			<ScrollView contentContainerStyle={styles.content}>
+				{showRemoteAssayPrompt && requestedAssayUrl ? (
+					<RemoteAssayPrompt
+						error={remoteAssayLoadError}
+						loading={remoteAssayLoading}
+						url={requestedAssayUrl}
+						onDismiss={() => setDismissedAssayUrl(requestedAssayUrl)}
+						onLoad={() => void loadRequestedAssay()}
+					/>
+				) : null}
+
 				<HeroDrop
 					onClick={openPicker}
 					active={dragActive}
@@ -756,122 +409,6 @@ export default function LabScreen() {
 	)
 }
 
-async function readGenomeText(g: Genome): Promise<string> {
-	if (g.kind === 'text') return g.primary.text()
-	if (g.kind === 'zip') {
-		const extracted = await extractTextFromZip(g.primary)
-		if (!extracted) throw new Error(`could not extract text from ${g.primary.name}`)
-		return extracted.contents
-	}
-	throw new Error(`cannot read ${g.kind} as text`)
-}
-
-// Build a GenomeDescriptor that the Monty runtime can dispatch to the right
-// backend (text parser / VCF wasm / CRAM wasm). CRAM/VCF descriptors carry
-// the raw File refs (worker uses FileReaderSync for random access) plus the
-// small index bytes inline.
-async function buildGenomeDescriptor(g: Genome): Promise<GenomeDescriptor> {
-	if (g.kind === 'text') {
-		return { kind: 'text', name: g.primary.name, text: await g.primary.text() }
-	}
-	if (g.kind === 'zip') {
-		const extracted = await extractTextFromZip(g.primary)
-		if (!extracted) throw new Error(`could not extract text from ${g.primary.name}`)
-		return { kind: 'zip', name: g.primary.name, text: extracted.contents }
-	}
-	if (g.kind === 'vcf') {
-		if (!g.tbi) throw new Error('VCF genome is missing its .tbi index')
-		const tbiBytes = new Uint8Array(await g.tbi.arrayBuffer())
-		return { kind: 'vcf', name: g.primary.name, vcfFile: g.primary, tbiBytes }
-	}
-	if (g.kind === 'cram') {
-		if (!g.crai || !g.fasta || !g.fai) {
-			throw new Error('CRAM genome needs .cram.crai + reference .fa + .fa.fai')
-		}
-		const craiBytes = new Uint8Array(await g.crai.arrayBuffer())
-		const faiBytes = new Uint8Array(await g.fai.arrayBuffer())
-		return {
-			kind: 'cram',
-			name: g.primary.name,
-			cramFile: g.primary,
-			craiBytes,
-			fastaFile: g.fasta,
-			faiBytes,
-		}
-	}
-	throw new Error(`unknown genome kind`)
-}
-
-// YAML → Python compile for the Monty runtime path (text genomes). The
-// wasm path uses `compileVariantYamlToSpecs` above; this one emits a
-// bioscript.variant(...) Python script that Monty can execute end-to-end
-// with read_tsv/write_tsv.
-function compileVariantYamlToPython(yamlText: string): string {
-	const doc = YAML.parse(yamlText) as Record<string, unknown> | null
-	if (!doc) throw new Error('empty YAML document')
-	const schema = String(doc.schema ?? '')
-	if (!schema.startsWith('bioscript:variant:')) {
-		throw new Error(`unsupported schema "${schema}" — expected bioscript:variant:1.0`)
-	}
-	const name = String(doc.name ?? 'variant')
-	const gene = String(doc.gene ?? '')
-	const rsids: string[] = Array.isArray((doc.identifiers as { rsids?: unknown })?.rsids)
-		? ((doc.identifiers as { rsids: unknown[] }).rsids as unknown[]).map((v) => String(v))
-		: []
-	if (rsids.length === 0) throw new Error('no identifiers.rsids found')
-	const alleles = (doc.alleles ?? {}) as Record<string, unknown>
-	const kind = String(alleles.kind ?? 'snv').toLowerCase()
-	const ref = String(alleles.ref ?? '')
-	const alts = Array.isArray(alleles.alts) ? (alleles.alts as unknown[]).map((v) => String(v)) : []
-	const alt = alts[0] ?? ''
-	const coords = (doc.coordinates ?? {}) as Record<string, { chrom?: unknown; pos?: unknown }>
-	const fmtCoord = (c: { chrom?: unknown; pos?: unknown } | undefined): string | null => {
-		if (!c) return null
-		const chrom = String(c.chrom ?? '').trim()
-		const pos = typeof c.pos === 'number' ? c.pos : Number.parseInt(String(c.pos ?? ''), 10)
-		if (!chrom || !Number.isFinite(pos)) return null
-		return `${chrom}:${pos}-${pos}`
-	}
-	const grch37 = fmtCoord(coords.grch37)
-	const grch38 = fmtCoord(coords.grch38)
-	const pyKind = kind === 'snv' ? 'snp' : kind === 'indel' ? 'indel' : kind
-	const variantKwargs: string[] = [
-		`rsid=${JSON.stringify(rsids.length === 1 ? rsids[0] : rsids)}`,
-		`kind=${JSON.stringify(pyKind)}`,
-	]
-	if (grch37) variantKwargs.push(`grch37=${JSON.stringify(grch37)}`)
-	if (grch38) variantKwargs.push(`grch38=${JSON.stringify(grch38)}`)
-	if (ref) variantKwargs.push(`ref=${JSON.stringify(ref)}`)
-	if (alt) variantKwargs.push(`alt=${JSON.stringify(alt)}`)
-
-	return `# Auto-generated from a bioscript:variant:1.0 YAML assay by the lab.
-# Source: ${name}${gene ? ` · ${gene}` : ''}
-VARIANT = bioscript.variant(
-    ${variantKwargs.join(',\n    ')},
-)
-
-PLAN = bioscript.query_plan([VARIANT])
-
-def main():
-    store = bioscript.load_genotypes(input_file)
-    calls = store.lookup_variants(PLAN)
-    genotype = calls[0] if calls else None
-    row = {
-        "rsid": ${JSON.stringify(rsids[0])},
-        "gene": ${JSON.stringify(gene)},
-        "assay": ${JSON.stringify(name)},
-        "grch37": ${JSON.stringify(grch37 ?? '')},
-        "grch38": ${JSON.stringify(grch38 ?? '')},
-        "ref": ${JSON.stringify(ref)},
-        "alt": ${JSON.stringify(alt)},
-        "genotype": genotype if genotype else "not found",
-    }
-    bioscript.write_tsv(output_file, [row])
-
-main()
-`
-}
-
 // === Sub-components =========================================================
 
 function HeroDrop({
@@ -914,6 +451,66 @@ function HeroDrop({
 	)
 }
 
+function RemoteAssayPrompt({
+	error,
+	loading,
+	url,
+	onDismiss,
+	onLoad,
+}: {
+	error: string | null
+	loading: boolean
+	url: string
+	onDismiss: () => void
+	onLoad: () => void
+}) {
+	let host = url
+	try {
+		const parsed = new URL(url)
+		host = `${parsed.hostname}${parsed.pathname}`
+	} catch {}
+
+	return (
+		<View style={styles.remoteAssayCard}>
+			<View style={{ flex: 1, gap: omSpacing.xs }}>
+				<OMText variant="caption" style={styles.sectionLabel}>
+					LINKED ASSAY
+				</OMText>
+				<OMText variant="subtitle" style={styles.remoteAssayTitle}>
+					Load assay from URL?
+				</OMText>
+				<OMText variant="body" style={styles.remoteAssayBody}>
+					This link requested a remote assay. Load it into the lab, then drop genome files to run it.
+				</OMText>
+				<OMText variant="caption" style={styles.remoteAssayUrl}>
+					{host}
+				</OMText>
+				{error ? (
+					<OMText variant="caption" style={styles.remoteAssayError}>
+						{error}
+					</OMText>
+				) : null}
+			</View>
+			<View style={styles.remoteAssayActions}>
+				<Pressable onPress={onDismiss} style={styles.secondaryButton}>
+					<OMText variant="subtitle" style={styles.secondaryText}>
+						Not now
+					</OMText>
+				</Pressable>
+				<Pressable
+					onPress={onLoad}
+					disabled={loading}
+					style={[styles.runButton, loading ? styles.runButtonDisabled : null]}
+				>
+					<OMText variant="subtitle" style={styles.runButtonText}>
+						{loading ? 'Loading…' : 'Load assay'}
+					</OMText>
+				</Pressable>
+			</View>
+		</View>
+	)
+}
+
 function SectionHeader({ label, count }: { label: string; count: number }) {
 	return (
 		<View style={styles.sectionHeader}>
@@ -939,7 +536,7 @@ function GenomeCard({
 	onRemove: () => void
 }) {
 	const complete = isGenomeComplete(genome)
-	const missing = missingSlots(genome)
+	const missing = missingGenomeSlots(genome)
 	return (
 		<Pressable
 			onPress={onSelect}
@@ -960,7 +557,7 @@ function GenomeCard({
 				</Pressable>
 			</View>
 			<OMText variant="caption" style={styles.cardKind}>
-				{genomeKindLabel(genome)} · {humanSize(genomeBytesTotal(genome))}
+				{genomeKindLabel(genome)} · {humanLabSize(genomeBytesTotal(genome))}
 			</OMText>
 
 			{genome.kind === 'cram' ? (
@@ -1015,7 +612,7 @@ function SlotRow({
 					{label}
 				</OMText>
 				<OMText variant="caption" style={styles.slotName}>
-					{file ? `${file.name} · ${humanSize(file.size)}` : 'drop it here'}
+					{file ? `${file.name} · ${humanLabSize(file.size)}` : 'drop it here'}
 				</OMText>
 			</View>
 		</View>
@@ -1061,7 +658,7 @@ function AssayCard({
 			</View>
 			<OMText variant="caption" style={styles.cardKind}>
 				{assay.language === 'python' ? 'Python assay' : 'YAML variant assay'} ·{' '}
-				{humanSize(assay.file.size)}
+				{humanLabSize(assay.file.size)}
 			</OMText>
 		</Pressable>
 	)
@@ -1170,6 +767,23 @@ const styles = StyleSheet.create({
 	heroFill: { color: omTheme.accent },
 
 	section: { gap: omSpacing.m },
+	remoteAssayCard: {
+		padding: omSpacing.l,
+		borderRadius: omRadius.l,
+		backgroundColor: 'rgba(83,190,169,0.08)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.3)',
+		gap: omSpacing.m,
+	},
+	remoteAssayTitle: { color: omTheme.primaryText },
+	remoteAssayBody: { color: omColors.grayscale300 },
+	remoteAssayUrl: { color: omTheme.accent },
+	remoteAssayError: { color: '#ffb2b2' },
+	remoteAssayActions: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: omSpacing.s,
+	},
 	sectionHeader: { flexDirection: 'row', alignItems: 'baseline', gap: omSpacing.s },
 	sectionTitle: { color: omTheme.primaryText },
 	sectionCount: { color: omColors.grayscale500 },
