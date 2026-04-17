@@ -33,7 +33,11 @@ import {
 	pairCompanionFile,
 	sortFilesForIngestion,
 } from '@/lib/lab/file-model'
-import { runLabAssay } from '@/lib/lab/runner'
+import {
+	getLabRunDisabledReason,
+	getLabRunDisabledReasonFor,
+	runLabAssay,
+} from '@/lib/lab/runner'
 import type { Genome, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
 import type { VariantObservation } from '@/modules/expo-bioscript'
@@ -290,21 +294,26 @@ export default function LabScreen() {
 			if (runningAssayId) return
 			if (!isAssayCompatible(catalogAssay, activeGenome)) return
 
-			setRunningAssayId(catalogAssay.id)
-			const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
-			setRuns((prev) => [
-				{ id: runId, assay: catalogAssay, startedAt: Date.now(), result: { status: 'running' } },
-				...prev,
-			])
-			trackEvent('lab_run_started', {
-				assayId: catalogAssay.id,
-				assayLanguage: catalogAssay.language,
-				genomeKind: activeGenome.kind,
-			})
-
 			try {
 				const file = await loadAssayFile(catalogAssay)
 				const loaded = createAssayFromFile(file, catalogAssay.language, catalogAssay.url)
+				const disabledReason = getLabRunDisabledReason(activeGenome, loaded)
+				if (disabledReason) {
+					throw new Error(disabledReason)
+				}
+
+				setRunningAssayId(catalogAssay.id)
+				const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+				setRuns((prev) => [
+					{ id: runId, assay: catalogAssay, startedAt: Date.now(), result: { status: 'running' } },
+					...prev,
+				])
+				trackEvent('lab_run_started', {
+					assayId: catalogAssay.id,
+					assayLanguage: catalogAssay.language,
+					genomeKind: activeGenome.kind,
+				})
+
 				const success = await runLabAssay(activeGenome, loaded)
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
@@ -316,9 +325,13 @@ export default function LabScreen() {
 				})
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
-				setRuns((prev) =>
-					prev.map((r) => (r.id === runId ? { ...r, result: { status: 'error', error: msg } } : r)),
-				)
+				setRuns((prev) => {
+					const existingRunning = prev.find((r) => r.assay.id === catalogAssay.id && r.result.status === 'running')
+					if (!existingRunning) return prev
+					return prev.map((r) =>
+						r.id === existingRunning.id ? { ...r, result: { status: 'error', error: msg } } : r,
+					)
+				})
 				trackEvent('lab_run_failed', {
 					assayId: catalogAssay.id,
 					genomeKind: activeGenome.kind,
@@ -730,8 +743,11 @@ function AssayPicker({
 				<View style={styles.pickerList}>
 					{results.map((assay) => {
 						const compatible = isAssayCompatible(assay, genome)
+						const disabledReason = compatible
+							? getLabRunDisabledReasonFor(genome, assay.language)
+							: 'Assay is not compatible with this genome format.'
 						const isRunning = runningAssayId === assay.id
-						const disabled = anyRunning || !compatible
+						const disabled = anyRunning || !compatible || Boolean(disabledReason)
 						return (
 							<Pressable
 								key={assay.id}
@@ -753,7 +769,7 @@ function AssayPicker({
 									<OMText variant="caption" style={styles.pickerMeta} numberOfLines={1}>
 										{ASSAY_CATEGORY_LABELS[assay.category]} ·{' '}
 										{assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')}
-										{!compatible ? ' · not compatible with this genome format' : ''}
+										{disabledReason ? ` · ${disabledReason}` : ''}
 									</OMText>
 								</View>
 								{isRunning ? (
@@ -769,7 +785,7 @@ function AssayPicker({
 											variant="subtitle"
 											style={compatible ? styles.pickerActionText : styles.pickerActionMutedText}
 										>
-											{compatible ? 'Run assay' : 'Unavailable'}
+											{disabledReason ? 'Unavailable' : 'Run assay'}
 										</OMText>
 									</View>
 								)}

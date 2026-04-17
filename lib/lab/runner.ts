@@ -11,26 +11,33 @@ import {
 	compileVariantYamlToSpecs,
 	extractTextFromZip,
 } from '@/lib/lab/yaml-compile'
-import type { Assay, BuildGenomeDescriptorResult, Genome, LabRunSuccess } from '@/lib/lab/types'
+import type { Assay, AssayLang, BuildGenomeDescriptorResult, Genome, LabRunSuccess } from '@/lib/lab/types'
 import { isGenomeComplete, missingGenomeSlots } from '@/lib/lab/file-model'
+
+export function getLabRunDisabledReasonFor(
+	selectedGenome: Genome | null,
+	assayLanguage: AssayLang | null,
+): string | null {
+	if (!selectedGenome) return 'Pick a genome above.'
+	if (!assayLanguage) return 'Pick an assay above.'
+	if (!isGenomeComplete(selectedGenome)) {
+		return `Genome is missing: ${missingGenomeSlots(selectedGenome).join(', ')}`
+	}
+	const needsMonty =
+		assayLanguage === 'python' ||
+		selectedGenome.kind === 'text' ||
+		selectedGenome.kind === 'zip'
+	if (needsMonty && !isBioscriptAvailable()) {
+		return 'This assay needs the threaded web runtime. Phone web browsers usually block it; use desktop web or a native app build.'
+	}
+	return null
+}
 
 export function getLabRunDisabledReason(
 	selectedGenome: Genome | null,
 	selectedAssay: Assay | null,
 ): string | null {
-	if (!selectedGenome) return 'Pick a genome above.'
-	if (!selectedAssay) return 'Pick an assay above.'
-	if (!isGenomeComplete(selectedGenome)) {
-		return `Genome is missing: ${missingGenomeSlots(selectedGenome).join(', ')}`
-	}
-	const needsMonty =
-		selectedAssay.language === 'python' ||
-		selectedGenome.kind === 'text' ||
-		selectedGenome.kind === 'zip'
-	if (needsMonty && !isBioscriptAvailable()) {
-		return 'Bioscript web runtime unavailable (needs SharedArrayBuffer + cross-origin isolation).'
-	}
-	return null
+	return getLabRunDisabledReasonFor(selectedGenome, selectedAssay?.language ?? null)
 }
 
 async function readGenomeText(genome: Genome): Promise<string> {
