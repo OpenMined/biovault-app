@@ -2,7 +2,7 @@ import { ActiveDocumentProvider, useActiveDocument } from '@/components/explore/
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { cycleColorSchemePreferenceSync, useColorSchemePreference } from '@/lib/color-theme'
-import { Slot, Link } from 'expo-router'
+import { Slot } from 'expo-router'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { omColors, omRadius, omTheme } from '@/styles/brand'
 import { useFocusEffect } from '@react-navigation/native'
@@ -111,11 +111,6 @@ export default function TabLayout() {
 					<Slot />
 					<View style={styles.webTopActions}>
 						<WebThemeToggle />
-						<Link href="/(tabs)/settings" asChild>
-							<Pressable style={styles.webSettingsButton}>
-								<OMIcon name="settings-outline" size={18} tone="accent" />
-							</Pressable>
-						</Link>
 					</View>
 				</View>
 			) : <TabChrome />}
@@ -149,15 +144,5 @@ const styles = StyleSheet.create({
 	},
 	webThemeButtonText: {
 		color: omTheme.primaryText,
-	},
-	webSettingsButton: {
-		width: 40,
-		height: 40,
-		borderRadius: omRadius.full,
-		alignItems: 'center',
-		justifyContent: 'center',
-		backgroundColor: 'rgba(23,22,29,0.78)',
-		borderWidth: 1,
-		borderColor: 'rgba(83,190,169,0.24)',
 	},
 })

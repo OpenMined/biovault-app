@@ -4,7 +4,7 @@ import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { omColors } from '@/styles/brand'
 import { useFonts } from 'expo-font'
-import { Stack } from 'expo-router'
+import { Stack, usePathname, useRouter } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect, useState } from 'react'
@@ -22,6 +22,8 @@ applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})
 
 function RootNavigator() {
+	const pathname = usePathname()
+	const router = useRouter()
 	const [completedOnboarding, setCompletedOnboarding] = useState(
 		() => getAppPreferenceSync('hasCompletedOnboarding') === 'true'
 	)
@@ -43,6 +45,17 @@ function RootNavigator() {
 			unsubscribeDisclaimer()
 		}
 	}, [])
+
+	useEffect(() => {
+		if (!canAccessApp && pathname !== '/onboarding') {
+			router.replace('/onboarding')
+			return
+		}
+
+		if (canAccessApp && (pathname === '/' || pathname === '/onboarding')) {
+			router.replace('/(tabs)')
+		}
+	}, [canAccessApp, pathname, router])
 
 	return (
 		<Stack

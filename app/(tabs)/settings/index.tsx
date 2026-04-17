@@ -10,12 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 function openResetConfirmation(onConfirm: () => void) {
 	if (Platform.OS === 'web') {
-		const confirmed = window.confirm(
-			'This will reset the onboarding flow and show it again on next app launch. Continue?'
-		)
-		if (confirmed) {
-			onConfirm()
-		}
+		// Browser modal dialogs are unreliable in some embedded/web runtimes.
+		// Execute immediately on web so the reset action always works.
+		onConfirm()
 		return
 	}
 
@@ -31,7 +28,6 @@ function openResetConfirmation(onConfirm: () => void) {
 
 function showResetSuccess() {
 	if (Platform.OS === 'web') {
-		window.alert('Onboarding has been reset.')
 		router.replace('/onboarding')
 		return
 	}

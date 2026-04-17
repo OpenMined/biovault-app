@@ -2,19 +2,38 @@ import { OMButton } from '@/components/ui/OMButton'
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
+import { useColorScheme } from '@/lib/color-theme'
 import { setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
-import { omColors, omGradients, omRadius, omSpacing, omTheme } from '@/styles/brand'
+import { omGradients, omRadius, omSpacing } from '@/styles/brand'
+import { labPalettes, type LabPalette } from '@/styles/lab-theme'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
-import { useEffect, useRef, useState } from 'react'
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+	Animated,
+	Easing,
+	Platform,
+	Pressable,
+	StyleSheet,
+	View,
+	useWindowDimensions,
+} from 'react-native'
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function OnboardingScreen() {
+	const scheme = useColorScheme()
+	const palette = labPalettes[scheme]
+	const { width } = useWindowDimensions()
+	const isWebWide = Platform.OS === 'web' && width >= 720
+	const styles = useMemo(
+		() => makeStyles(palette, { isWebWide }),
+		[palette, isWebWide],
+	)
+
 	const [hasAgreed, setHasAgreed] = useState(
-		getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+		getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true',
 	)
 	const stackOpacity = useRef(new Animated.Value(0)).current
 	const stackTranslateY = useRef(new Animated.Value(10)).current
@@ -53,10 +72,7 @@ export default function OnboardingScreen() {
 	}, [infoCardOpacity, infoCardTranslateY, stackOpacity, stackTranslateY])
 
 	const handleContinue = () => {
-		if (!hasAgreed) {
-			return
-		}
-
+		if (!hasAgreed) return
 		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
 		setAppPreferenceSync('hasCompletedOnboarding', 'true')
 		setExploreDemoModeEnabledSync(true)
@@ -78,11 +94,12 @@ export default function OnboardingScreen() {
 					>
 						<View style={styles.mainSection}>
 							<View style={styles.heroSection}>
-								<View style={styles.titleRow}>
-									<OMText variant="h3" style={styles.title}>
-										Private genomic analysis on your device.
-									</OMText>
-								</View>
+								<OMText variant="caption" style={styles.heroKicker}>
+									BIOVAULT
+								</OMText>
+								<OMText variant="h3" style={styles.title}>
+									Private genomic analysis on your device.
+								</OMText>
 								<OMText variant="body" style={styles.heroSupport}>
 									Review the privacy and research notes below before continuing.
 								</OMText>
@@ -108,21 +125,24 @@ export default function OnboardingScreen() {
 								>
 									<View style={styles.infoCard}>
 										<View style={styles.signalList}>
-											<OMText variant="body" style={styles.signalText}>
-												&rarr; Your files are never uploaded.
-											</OMText>
-											<OMText variant="body" style={styles.signalText}>
-												&rarr; Analysis runs locally.
-											</OMText>
-											<OMText variant="body" style={styles.signalText}>
-												&rarr; Results are visible only to you.
-											</OMText>
+											<SignalRow palette={palette}>
+												Your files are never uploaded.
+											</SignalRow>
+											<SignalRow palette={palette}>
+												Analysis runs locally.
+											</SignalRow>
+											<SignalRow palette={palette}>
+												Results are visible only to you.
+											</SignalRow>
 										</View>
 									</View>
 								</LinearGradient>
 							</Animated.View>
 
 							<View style={styles.disclaimerPanel}>
+								<OMText variant="caption" style={styles.disclaimerKicker}>
+									RESEARCH USE ONLY
+								</OMText>
 								<OMText variant="body" style={styles.disclaimerBody}>
 									BioVault is a research tool, not a medical product. Do not use it for
 									diagnosis or treatment.
@@ -156,7 +176,7 @@ export default function OnboardingScreen() {
 							>
 								<OMText variant="caption" style={styles.footerCredit}>
 									Built by{' '}
-									<OMText variant="caption" tone="accent" style={styles.footerCreditLink}>
+									<OMText variant="caption" style={styles.footerCreditLink}>
 										OpenMined
 									</OMText>
 								</OMText>
@@ -170,171 +190,200 @@ export default function OnboardingScreen() {
 	)
 }
 
-const styles = StyleSheet.create({
-	screen: {
-		flex: 1,
-		backgroundColor: omColors.grayscale850,
-	},
-	safeArea: {
-		flex: 1,
-	},
-	content: {
-		flex: 1,
-		paddingHorizontal: omSpacing.xl,
-		paddingVertical: omSpacing.xl,
-		maxWidth: 420,
-		width: '100%',
-		alignSelf: 'center',
-		justifyContent: 'center',
-	},
-	stack: {
-		gap: omSpacing.xl,
-	},
-	mainSection: {
-		gap: omSpacing.m,
-	},
-	heroSection: {
-		paddingHorizontal: omSpacing.xs,
-		paddingTop: 0,
-		paddingBottom: omSpacing.m,
-	},
-	titleRow: {
-		maxWidth: 320,
-	},
-	title: {
-		color: omTheme.primaryText,
-		letterSpacing: -1,
-		fontSize: 42,
-		lineHeight: 45,
-		maxWidth: 320,
-	},
-	heroSupport: {
-		marginTop: omSpacing.m,
-		maxWidth: 320,
-		color: omColors.grayscale400,
-		fontSize: 16,
-		lineHeight: 22,
-	},
-	infoSection: {
-		paddingVertical: omSpacing.m,
-	},
-	infoCardBorder: {
-		borderRadius: omRadius.l,
-		padding: 1.5,
-		shadowColor: '#000000',
-		shadowOffset: { width: 0, height: 8 },
-		shadowOpacity: 0.18,
-		shadowRadius: 18,
-		elevation: 2,
-	},
-	infoCard: {
-		margin: 2,
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.l,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale750,
-	},
-	disclaimerPanel: {
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.l,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale950,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.12)',
-	},
-	disclaimerBody: {
-		color: omTheme.primaryText,
-		fontSize: 17,
-		lineHeight: 24,
-	},
-	signalList: {
-		gap: omSpacing.l,
-	},
-	signalText: {
-		color: omTheme.primaryText,
-		fontSize: 17,
-		lineHeight: 24,
-	},
-	footer: {
-		gap: omSpacing.m,
-		alignItems: 'stretch',
-	},
-	footerCreditRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'center',
-		gap: omSpacing.xs,
-		marginTop: omSpacing.xs,
-	},
-	checkboxRow: {
+function SignalRow({
+	children,
+	palette,
+}: {
+	children: string
+	palette: LabPalette
+}) {
+	return (
+		<View style={rowStyles.row}>
+			<View
+				style={[
+					rowStyles.bullet,
+					{ backgroundColor: palette.accentSoft, borderColor: palette.accentBorder },
+				]}
+			>
+				<OMIcon name="checkmark" size={12} tone="accent" />
+			</View>
+			<OMText variant="body" style={[rowStyles.text, { color: palette.text }]}>
+				{children}
+			</OMText>
+		</View>
+	)
+}
+
+const rowStyles = StyleSheet.create({
+	row: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: omSpacing.m,
-		paddingHorizontal: omSpacing.l,
-		paddingVertical: omSpacing.m,
-		borderRadius: omRadius.l,
-		backgroundColor: omColors.grayscale850,
-		borderWidth: 1,
-		borderColor: 'rgba(255,255,255,0.12)',
-		shadowColor: '#000000',
-		shadowOffset: { width: 0, height: 6 },
-		shadowOpacity: 0,
-		shadowRadius: 0,
-		elevation: 0,
 	},
-	checkboxRowChecked: {
-		borderColor: 'rgba(82,168,197,0.34)',
-	},
-	checkboxBox: {
+	bullet: {
 		width: 22,
 		height: 22,
-		borderRadius: omRadius.s,
-		borderWidth: 1.5,
-		borderColor: 'rgba(207,205,214,0.56)',
-		backgroundColor: omColors.grayscale950,
+		borderRadius: 11,
 		alignItems: 'center',
 		justifyContent: 'center',
-		flexShrink: 0,
+		borderWidth: 1,
 	},
-	checkboxBoxChecked: {
-		borderColor: 'rgba(82,168,197,0.7)',
-		backgroundColor: 'rgba(82,168,197,0.18)',
-	},
-	checkboxText: {
+	text: {
 		flex: 1,
-		color: omTheme.primaryText,
 		fontSize: 16,
 		lineHeight: 22,
-		includeFontPadding: false,
-	},
-	continueButton: {
-		minHeight: 54,
-		borderRadius: omRadius.l,
-		backgroundColor: 'rgba(83,190,169,0.18)',
-		borderWidth: 1,
-		borderColor: 'rgba(83,190,169,0.22)',
-	},
-	continueButtonEnabled: {
-		backgroundColor: omTheme.accent,
-		borderColor: omTheme.accent,
-		shadowColor: '#000000',
-		shadowOffset: { width: 0, height: 12 },
-		shadowOpacity: 0.28,
-		shadowRadius: 24,
-		elevation: 4,
-	},
-	footerCredit: {
-		color: omColors.grayscale500,
-		textAlign: 'center',
-		fontSize: 14,
-		lineHeight: 20,
-	},
-	footerCreditLink: {
-		fontSize: 14,
-		lineHeight: 20,
-		textDecorationLine: 'underline',
 	},
 })
+
+function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
+	return StyleSheet.create({
+		screen: {
+			flex: 1,
+			backgroundColor: p.pageBg,
+		},
+		safeArea: {
+			flex: 1,
+		},
+		content: {
+			flex: 1,
+			paddingHorizontal: omSpacing.xl,
+			paddingVertical: omSpacing.xl,
+			maxWidth: opts.isWebWide ? 520 : 420,
+			width: '100%',
+			alignSelf: 'center',
+			justifyContent: 'center',
+		},
+		stack: {
+			gap: omSpacing.xl,
+		},
+		mainSection: {
+			gap: omSpacing.l,
+		},
+		heroSection: {
+			gap: omSpacing.s,
+			paddingBottom: omSpacing.s,
+		},
+		heroKicker: {
+			color: p.accentStrong,
+			letterSpacing: 1.6,
+		},
+		title: {
+			color: p.text,
+			letterSpacing: -0.6,
+			fontSize: opts.isWebWide ? 44 : 38,
+			lineHeight: opts.isWebWide ? 48 : 42,
+		},
+		heroSupport: {
+			color: p.textMuted,
+			fontSize: 16,
+			lineHeight: 22,
+			marginTop: omSpacing.xs,
+		},
+		infoCardBorder: {
+			borderRadius: omRadius.l,
+			padding: 1.5,
+		},
+		infoCard: {
+			margin: 1.5,
+			paddingHorizontal: omSpacing.xl,
+			paddingVertical: omSpacing.xl,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surfaceSolid,
+		},
+		signalList: {
+			gap: omSpacing.l,
+		},
+		disclaimerPanel: {
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.l,
+			borderRadius: omRadius.l,
+			backgroundColor: p.warningBg,
+			borderWidth: 1,
+			borderColor: p.warningBorder,
+		},
+		disclaimerKicker: {
+			color: p.warningText,
+			letterSpacing: 1.4,
+		},
+		disclaimerBody: {
+			color: p.warningText,
+			fontSize: 15,
+			lineHeight: 22,
+		},
+		footer: {
+			gap: omSpacing.m,
+			alignItems: 'stretch',
+		},
+		footerCreditRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: omSpacing.xs,
+			marginTop: omSpacing.xs,
+		},
+		checkboxRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.m,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.m,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		checkboxRowChecked: {
+			borderColor: p.accentBorder,
+			backgroundColor: p.accentSoft,
+		},
+		checkboxBox: {
+			width: 22,
+			height: 22,
+			borderRadius: omRadius.s,
+			borderWidth: 1.5,
+			borderColor: p.borderStrong,
+			backgroundColor: p.pageBg,
+			alignItems: 'center',
+			justifyContent: 'center',
+			flexShrink: 0,
+		},
+		checkboxBoxChecked: {
+			borderColor: p.accent,
+			backgroundColor: p.accentSoft,
+		},
+		checkboxText: {
+			flex: 1,
+			color: p.text,
+			fontSize: 16,
+			lineHeight: 22,
+			includeFontPadding: false,
+		},
+		continueButton: {
+			minHeight: 54,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		continueButtonEnabled: {
+			backgroundColor: p.accent,
+			borderColor: p.accent,
+		},
+		footerCredit: {
+			color: p.textFaint,
+			textAlign: 'center',
+			fontSize: 14,
+			lineHeight: 20,
+		},
+		footerCreditLink: {
+			color: p.accentStrong,
+			fontSize: 14,
+			lineHeight: 20,
+			textDecorationLine: 'underline',
+		},
+	})
+}
 
 function OpenMinedLogoMark() {
 	return (

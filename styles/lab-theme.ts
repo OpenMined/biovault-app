@@ -5,6 +5,7 @@ export type LabPalette = {
 	surface: string
 	surfaceRaised: string
 	surfaceSunken: string
+	surfaceSolid: string
 	border: string
 	borderStrong: string
 	text: string
@@ -34,6 +35,7 @@ export const labPalettes: Record<ColorScheme, LabPalette> = {
 		surface: '#fafafb',
 		surfaceRaised: '#ffffff',
 		surfaceSunken: '#f4f3f6',
+		surfaceSolid: '#ffffff',
 		border: '#ecebef',
 		borderStrong: '#cfcdd6',
 		text: '#17161d',
@@ -61,6 +63,7 @@ export const labPalettes: Record<ColorScheme, LabPalette> = {
 		surface: 'rgba(255,255,255,0.035)',
 		surfaceRaised: 'rgba(255,255,255,0.06)',
 		surfaceSunken: '#0e0d12',
+		surfaceSolid: '#272532',
 		border: 'rgba(255,255,255,0.08)',
 		borderStrong: 'rgba(255,255,255,0.14)',
 		text: '#ffffff',

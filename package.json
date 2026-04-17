@@ -30,6 +30,7 @@
     "cargo-ios": "sh ./modules/expo-bioscript/scripts/build-rust-ios.sh",
     "monty-web": "bash ./modules/expo-bioscript/scripts/build-monty-web.sh",
     "check-monty": "node ./scripts/check-monty-artifacts.mjs",
+    "sync:exvitae-assays": "node ./scripts/sync-exvitae-simple-assays.mjs",
     "prestart": "node ./scripts/check-monty-artifacts.mjs",
     "preweb": "node ./scripts/check-monty-artifacts.mjs",
     "device": "npx expo run:ios --device",

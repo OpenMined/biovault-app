@@ -1,0 +1,51 @@
+name: "GLP1-nature-23andme-rs71338792-INDEL"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "GIPR"
+summary: "GIPR-locus index variant reported in Nature (2026) for GLP-1 medication-related side effects and described as being in high linkage disequilibrium with the missense variant rs1800437 (p.Glu354Gln), which the paper prioritizes as the more likely causal signal. This variant is included to preserve completeness of the paper-derived rsID set and to represent the association/tagging signal at the locus."
+
+identifiers:
+  rsids:
+    - "rs71338792"
+  aliases:
+    - "rs199740336"
+    - "rs370685634"
+
+coordinates:
+  grch37:
+    chrom: "19"
+    start: 46183032
+    end: 46183044
+  grch38:
+    chrom: "19"
+    start: 45679774
+    end: 45679786
+
+alleles:
+  kind: "indel"
+  ref: "TTTTTTTTTTTTT"
+  alts:
+    - "TTTTTTTTTTTT"
+    - "TTTTTTTTTTTTTT"
+    - "TTTTTTTTTTTTTTT"
+
+findings:
+  - alt: "*"
+    notes: "GIPR locus index/tagging variant rs71338792 (shown as rs71338792:AT in the paper figure) is a multiallelic indel in dbSNP and is in high LD with rs1800437 (p.Glu354Gln). Associated with vomiting in tirzepatide-treated individuals; paper prioritizes rs1800437 as the probable causal variant."
+
+provenance:
+  sources:
+    - kind: "paper"
+      label: "Nature 2026 GLP-1 response study"
+      url: "https://www.nature.com/articles/s41586-026-10330-z"
+      fields:
+        - "summary"
+        - "findings[0]"
+    - kind: "database"
+      label: "dbSNP / NCBI variation services via exr rsid-lookup --store"
+      url: "https://www.ncbi.nlm.nih.gov/snp/rs71338792"
+      fields:
+        - "identifiers.rsids"
+        - "coordinates.grch37"
+        - "coordinates.grch38"
+        - "alleles"

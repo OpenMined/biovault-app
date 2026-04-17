@@ -1,0 +1,45 @@
+name: "GLP1-nature-23andme-rs11760106-G-T"
+version: "1.0"
+schema: "bioscript:variant:1.0"
+gene: "GLP1R"
+summary: "GLP1R locus index SNP for GLP-1 medication-related vomiting in Nature (2026); associated with increased vomiting risk and co-localizes with the GLP1R efficacy/side-effect signal."
+
+identifiers:
+  rsids:
+    - "rs11760106"
+  aliases: []
+
+coordinates:
+  grch37:
+    chrom: "6"
+    pos: 39019674
+  grch38:
+    chrom: "6"
+    pos: 39051898
+
+alleles:
+  kind: "snv"
+  ref: "G"
+  alts:
+    - "T"
+
+findings:
+  - alt: "T"
+    notes: "GLP1R locus index SNP for moderate-to-severe vomiting during GLP-1 therapy (p=2.5e-27, OR=1.57, GLP1RA cohort)"
+
+provenance:
+  sources:
+    - kind: "paper"
+      label: "Nature 2026 GLP-1 response study"
+      url: "https://www.nature.com/articles/s41586-026-10330-z"
+      fields:
+        - "summary"
+        - "findings[0]"
+    - kind: "database"
+      label: "dbSNP / NCBI variation services via exr rsid-lookup --store"
+      url: "https://www.ncbi.nlm.nih.gov/snp/rs11760106"
+      fields:
+        - "identifiers.rsids"
+        - "coordinates.grch37"
+        - "coordinates.grch38"
+        - "alleles"

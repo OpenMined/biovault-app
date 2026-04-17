@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-04-17T18:24:59.388Z",
+  "sourceRoot": "/Users/kj/Documents/projects/exvitae/exvitae/assays",
+  "totalAssays": 5,
+  "assays": [
+    {
+      "name": "GLP1-nature-23andme-rs10305420-C-T",
+      "gene": "GLP1R",
+      "rsids": [
+        "rs10305420"
+      ],
+      "schema": "bioscript:variant:1.0",
+      "summary": "GLP1R missense variant p.Pro7Leu associated in Nature (2026) with increased GLP-1 receptor agonist weight-loss efficacy, with approximately 0.76 kg additional weight loss per effect allele; also linked to nausea/vomiting signal at the GLP1R locus.",
+      "relativePath": "pgx/GLP1/rs10305420.yaml",
+      "coordinates": {
+        "grch37": {
+          "chrom": "6",
+          "pos": 39016636
+        },
+        "grch38": {
+          "chrom": "6",
+          "pos": 39048860
+        }
+      }
+    },
+    {
+      "name": "GLP1-nature-23andme-rs11760106-G-T",
+      "gene": "GLP1R",
+      "rsids": [
+        "rs11760106"
+      ],
+      "schema": "bioscript:variant:1.0",
+      "summary": "GLP1R locus index SNP for GLP-1 medication-related vomiting in Nature (2026); associated with increased vomiting risk and co-localizes with the GLP1R efficacy/side-effect signal.",
+      "relativePath": "pgx/GLP1/rs11760106.yaml",
+      "coordinates": {
+        "grch37": {
+          "chrom": "6",
+          "pos": 39019674
+        },
+        "grch38": {
+          "chrom": "6",
+          "pos": 39051898
+        }
+      }
+    },
+    {
+      "name": "GLP1-nature-23andme-rs1800437-G-C",
+      "gene": "GIPR",
+      "rsids": [
+        "rs1800437"
+      ],
+      "schema": "bioscript:variant:1.0",
+      "summary": "GIPR missense variant p.Glu354Gln reported as the probable causal variant for increased GLP-1 medication-related vomiting and nausea risk, with the effect restricted to tirzepatide-treated individuals in Nature (2026).",
+      "relativePath": "pgx/GLP1/rs1800437.yaml",
+      "coordinates": {
+        "grch37": {
+          "chrom": "19",
+          "pos": 46181392
+        },
+        "grch38": {
+          "chrom": "19",
+          "pos": 45678134
+        }
+      }
+    },
+    {
+      "name": "GLP1-nature-23andme-rs71338792-INDEL",
+      "gene": "GIPR",
+      "rsids": [
+        "rs71338792"
+      ],
+      "schema": "bioscript:variant:1.0",
+      "summary": "GIPR-locus index variant reported in Nature (2026) for GLP-1 medication-related side effects and described as being in high linkage disequilibrium with the missense variant rs1800437 (p.Glu354Gln), which the paper prioritizes as the more likely causal signal. This variant is included to preserve completeness of the paper-derived rsID set and to represent the association/tagging signal at the locus.",
+      "relativePath": "pgx/GLP1/rs71338792.yaml",
+      "coordinates": {
+        "grch37": {
+          "chrom": "19",
+          "start": 46183032,
+          "end": 46183044
+        },
+        "grch38": {
+          "chrom": "19",
+          "start": 45679774,
+          "end": 45679786
+        }
+      }
+    },
+    {
+      "name": "GLP1-nature-23andme-rs9357296-A-G",
+      "gene": "GLP1R",
+      "rsids": [
+        "rs9357296"
+      ],
+      "schema": "bioscript:variant:1.0",
+      "summary": "GLP1R locus index SNP for GLP-1 medication-related nausea in Nature (2026); associated with increased nausea risk and co-localizes with the GLP1R efficacy/side-effect signal. dbSNP places this variant in DNAH8, but it is retained here under GLP1R because the paper treats it as a GLP1R-locus index SNP.",
+      "relativePath": "pgx/GLP1/rs9357296.yaml",
+      "coordinates": {
+        "grch37": {
+          "chrom": "6",
+          "pos": 38979128
+        },
+        "grch38": {
+          "chrom": "6",
+          "pos": 39011352
+        }
+      }
+    }
+  ]
+}

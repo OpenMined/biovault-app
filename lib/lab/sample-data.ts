@@ -91,9 +91,9 @@ function guessMimeType(name: string): string {
 	return 'application/octet-stream'
 }
 
-export async function loadLabSamplePresetFiles(preset: LabSamplePreset): Promise<File[]> {
-	const files = await Promise.all(
-		preset.files.map(async (entry) => {
+async function fetchEntries(entries: LabSampleFile[]): Promise<File[]> {
+	return Promise.all(
+		entries.map(async (entry) => {
 			if (!entry.url) {
 				throw new Error(`Sample file ${entry.name} has no source.`)
 			}
@@ -107,7 +107,16 @@ export async function loadLabSamplePresetFiles(preset: LabSamplePreset): Promise
 			})
 		}),
 	)
-	return files
+}
+
+export async function loadLabSamplePresetFiles(preset: LabSamplePreset): Promise<File[]> {
+	return fetchEntries(preset.files)
+}
+
+export async function loadLabSamplePresetAssayOnly(preset: LabSamplePreset): Promise<File[]> {
+	return fetchEntries(
+		preset.files.filter((f) => f.kind === 'assay_python' || f.kind === 'assay_yaml'),
+	)
 }
 
 export function getLabSamplePresetById(id: string | null | undefined): LabSamplePreset | null {
