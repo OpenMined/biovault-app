@@ -3,11 +3,10 @@
 // apol1.py assay into /lab and verifies apol1_status resolves without
 // "Invalid exception type" or other runtime errors.
 //
-// CI note: this spec needs the 20 GB NA06985 CRAM + 3 GB GRCh38 FASTA from
-// `bioscript/tools/fetch_test_data.sh`, which we don't materialize in CI.
-// Guarded with `test.skip(...)` on file existence so it runs locally when
-// the fixtures are present and is silently skipped everywhere else. Not in
-// test-web.sh's default SPECS list.
+// Uses the 124 KB embed_ref CRAM slice co-located with the assay at
+// `assays/risk/APOL1/test-data/`. The top-level `test-data/` dir is
+// gitignored (holds multi-GB CRAMs / FASTAs); per-assay fixtures live next
+// to their Python so they're committable and easy to find.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -16,17 +15,13 @@ import { test, expect, type Page } from '@playwright/test'
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:8081'
 const REPO_ROOT = path.resolve(__dirname, '..')
 
-const CRAM = path.join(REPO_ROOT, 'test-data/1k-genomes/aligned/NA06985.final.cram')
-const CRAI = path.join(REPO_ROOT, 'test-data/1k-genomes/aligned/NA06985.final.cram.crai')
-const FASTA = path.join(
-	REPO_ROOT,
-	'test-data/1k-genomes/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa',
-)
-const FAI = path.join(
-	REPO_ROOT,
-	'test-data/1k-genomes/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai',
-)
-const APOL1 = path.join(REPO_ROOT, 'test-data/assays/apol1.py')
+const ASSAY_DIR = path.join(REPO_ROOT, 'assays/risk/APOL1')
+const FIXTURE_DIR = path.join(ASSAY_DIR, 'test-data')
+const CRAM = path.join(FIXTURE_DIR, 'apol1.cram')
+const CRAI = path.join(FIXTURE_DIR, 'apol1.cram.crai')
+const FASTA = path.join(FIXTURE_DIR, 'stub.fa')
+const FAI = path.join(FIXTURE_DIR, 'stub.fa.fai')
+const APOL1 = path.join(ASSAY_DIR, 'apol1.py')
 
 async function dismissDisclaimer(page: Page) {
 	// The app gates with a "I understand and want to continue" screen on first
