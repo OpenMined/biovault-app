@@ -118,11 +118,23 @@ phase_rust_ios() {
     if [ -f "$xcf/$slice/libbioscript_ffi.a" ]; then
       echo "-- $slice/libbioscript_ffi.a:"
       ls -la "$xcf/$slice/libbioscript_ffi.a"
-      nm "$xcf/$slice/libbioscript_ffi.a" 2>/dev/null | grep -E "bioscript_(run_file_json|free_string)" || echo "  (symbols not found via nm)"
+      nm "$xcf/$slice/libbioscript_ffi.a" 2>/dev/null | grep -E " T _bioscript_(run_file_json|free_string)" || echo "  (symbols not found via nm)"
     else
       echo "-- $slice/libbioscript_ffi.a MISSING"
     fi
   done
+  # Force xcodebuild to re-copy the xcframework and re-link the app. With
+  # ios/ (and therefore ios/build) cached across runs, Xcode's build manifest
+  # treats XCFrameworkIntermediates/ExpoBioscript as up-to-date and skips
+  # "[CP] Copy XCFrameworks" — even after we just rebuilt the xcframework.
+  # That leaves the linker reading stale/empty content (undefined symbols).
+  # Nuking Products + the build manifest costs a re-link (~10s) but keeps
+  # compile intermediates cached (sqlite3.c, React-Core, etc.) so xcodebuild
+  # stays fast.
+  if [ -d "$IOS_DERIVED_DATA" ]; then
+    echo "==> Invalidating Products + XCBuildData to force re-link"
+    rm -rf "$IOS_DERIVED_DATA/Build/Products" "$IOS_DERIVED_DATA/XCBuildData" || true
+  fi
 }
 
 phase_build() {
