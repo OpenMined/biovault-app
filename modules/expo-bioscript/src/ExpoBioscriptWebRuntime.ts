@@ -262,11 +262,21 @@ async function runMontyAsync(
       progress = wrapProgress(monty, snapshot.resume({ returnValue: result }));
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+      // Monty only accepts Python-exception names here (RuntimeError,
+      // ValueError, …) — a JS default `Error` is rejected with
+      // "Invalid exception type: 'Error'", which masks the real message.
+      // Map anything unknown to RuntimeError so the root cause surfaces.
+      const pythonExcType = mapJsErrorToPythonException(err);
+      // eslint-disable-next-line no-console
+      console.error(
+        `[bioscript-web] external function '${snapshot.functionName}' threw ${err.name || 'Error'}: ${err.message}`,
+        err.stack,
+      );
       progress = wrapProgress(
         monty,
         snapshot.resume({
           exception: {
-            type: err.name || 'RuntimeError',
+            type: pythonExcType,
             message: err.message,
           },
         }),
@@ -275,6 +285,56 @@ async function runMontyAsync(
   }
 
   return progress.output;
+}
+
+const PYTHON_EXCEPTION_NAMES = new Set([
+  'Exception',
+  'BaseException',
+  'ArithmeticError',
+  'OverflowError',
+  'ZeroDivisionError',
+  'LookupError',
+  'IndexError',
+  'KeyError',
+  'RuntimeError',
+  'NotImplementedError',
+  'RecursionError',
+  'AttributeError',
+  'FrozenInstanceError',
+  'NameError',
+  'UnboundLocalError',
+  'ValueError',
+  'UnicodeDecodeError',
+  'ImportError',
+  'ModuleNotFoundError',
+  'OSError',
+  'FileNotFoundError',
+  'FileExistsError',
+  'IsADirectoryError',
+  'NotADirectoryError',
+  'PermissionError',
+  'AssertionError',
+  'MemoryError',
+  'StopIteration',
+  'SyntaxError',
+  'TimeoutError',
+  'TypeError',
+]);
+
+function mapJsErrorToPythonException(err: Error): string {
+  const name = err.name;
+  if (name && PYTHON_EXCEPTION_NAMES.has(name)) return name;
+  switch (name) {
+    case 'RangeError':
+      return 'ValueError';
+    case 'URIError':
+    case 'SyntaxError':
+      return 'SyntaxError';
+    case 'ReferenceError':
+      return 'NameError';
+    default:
+      return 'RuntimeError';
+  }
 }
 
 function wrapProgress(monty: MontyBrowserModule, value: unknown): unknown {

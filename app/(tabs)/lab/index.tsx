@@ -496,13 +496,13 @@ export default function LabScreen() {
 		if (!isGenomeComplete(selectedGenome)) {
 			return `Genome is missing: ${missingSlots(selectedGenome).join(', ')}`
 		}
-		if (
-			(selectedGenome.kind === 'cram' || selectedGenome.kind === 'vcf') &&
-			selectedAssay.language === 'python'
-		) {
-			return 'CRAM/VCF runs need a YAML variant assay (Python path is text-only today).'
-		}
-		if ((selectedGenome.kind === 'text' || selectedGenome.kind === 'zip') && !bioscriptAvailable) {
+		// Python assays always need Monty (web runtime). YAML + CRAM/VCF uses
+		// the wasm worker directly and doesn't need Monty at all.
+		const needsMonty =
+			selectedAssay.language === 'python' ||
+			selectedGenome.kind === 'text' ||
+			selectedGenome.kind === 'zip'
+		if (needsMonty && !bioscriptAvailable) {
 			return 'Bioscript web runtime unavailable (needs SharedArrayBuffer + cross-origin isolation).'
 		}
 		return null
@@ -577,29 +577,35 @@ export default function LabScreen() {
 				return
 			}
 
-			// --- Python assay path (text / zip only) -------------------------
-			if (selectedGenome.kind === 'text' || selectedGenome.kind === 'zip') {
-				const scriptContents = await selectedAssay.file.text()
-				const inputContents = await readGenomeText(selectedGenome)
-				const result = await runFile({
-					scriptPath: selectedAssay.file.name,
-					scriptContents,
-					inputFile: selectedGenome.primary.name,
-					inputContents,
-					outputFile: 'assay-output.tsv',
-					inputFormat: 'text',
-					maxDurationMs: 180_000,
-					maxMemoryBytes: 128 * 1024 * 1024,
-					maxAllocations: 1_000_000,
-					maxRecursionDepth: 512,
-				})
-				const textOutput =
-					result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? ''
-				setRun({ status: 'done', durationMs: Date.now() - startedAt, textOutput })
-				return
-			}
+			// --- Python assay path — works for text/zip (in-memory parser) AND
+			// for VCF/CRAM via the Monty ↔ wasm-worker bridge. The Python
+			// script sees a uniform `bioscript.load_genotypes(input_file)`
+			// regardless of backend; the runtime dispatches based on the
+			// genome descriptor we register under `input_file`.
+			const scriptContents = await selectedAssay.file.text()
+			const descriptor = await buildGenomeDescriptor(selectedGenome)
+			const genomeKey = selectedGenome.primary.name
 
-			throw new Error('unsupported genome + assay combination')
+			const runRequest = {
+				scriptPath: selectedAssay.file.name,
+				scriptContents,
+				inputFile: genomeKey,
+				// Text/zip need legacy inputContents for read-path compatibility.
+				inputContents:
+					descriptor.kind === 'text' || descriptor.kind === 'zip'
+						? descriptor.text
+						: undefined,
+				outputFile: 'assay-output.tsv',
+				inputFormat: 'text' as const,
+				genomes: { [genomeKey]: descriptor },
+				maxDurationMs: 180_000,
+				maxMemoryBytes: 128 * 1024 * 1024,
+				maxAllocations: 1_000_000,
+				maxRecursionDepth: 512,
+			}
+			const result = await runFile(runRequest)
+			const textOutput = result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? ''
+			setRun({ status: 'done', durationMs: Date.now() - startedAt, textOutput })
 		} catch (err) {
 			setRun({
 				status: 'error',
@@ -758,6 +764,42 @@ async function readGenomeText(g: Genome): Promise<string> {
 		return extracted.contents
 	}
 	throw new Error(`cannot read ${g.kind} as text`)
+}
+
+// Build a GenomeDescriptor that the Monty runtime can dispatch to the right
+// backend (text parser / VCF wasm / CRAM wasm). CRAM/VCF descriptors carry
+// the raw File refs (worker uses FileReaderSync for random access) plus the
+// small index bytes inline.
+async function buildGenomeDescriptor(g: Genome): Promise<GenomeDescriptor> {
+	if (g.kind === 'text') {
+		return { kind: 'text', name: g.primary.name, text: await g.primary.text() }
+	}
+	if (g.kind === 'zip') {
+		const extracted = await extractTextFromZip(g.primary)
+		if (!extracted) throw new Error(`could not extract text from ${g.primary.name}`)
+		return { kind: 'zip', name: g.primary.name, text: extracted.contents }
+	}
+	if (g.kind === 'vcf') {
+		if (!g.tbi) throw new Error('VCF genome is missing its .tbi index')
+		const tbiBytes = new Uint8Array(await g.tbi.arrayBuffer())
+		return { kind: 'vcf', name: g.primary.name, vcfFile: g.primary, tbiBytes }
+	}
+	if (g.kind === 'cram') {
+		if (!g.crai || !g.fasta || !g.fai) {
+			throw new Error('CRAM genome needs .cram.crai + reference .fa + .fa.fai')
+		}
+		const craiBytes = new Uint8Array(await g.crai.arrayBuffer())
+		const faiBytes = new Uint8Array(await g.fai.arrayBuffer())
+		return {
+			kind: 'cram',
+			name: g.primary.name,
+			cramFile: g.primary,
+			craiBytes,
+			fastaFile: g.fasta,
+			faiBytes,
+		}
+	}
+	throw new Error(`unknown genome kind`)
 }
 
 // YAML → Python compile for the Monty runtime path (text genomes). The
@@ -1094,6 +1136,10 @@ const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: omColors.grayscale850 },
 	content: {
 		padding: omSpacing.xl,
+		// Extra top padding clears the NativeTabs pill which overlays the top
+		// of the viewport on web (~60 px tall + its own margin). Without this
+		// the dashed hero card tucks underneath the chrome on first load.
+		paddingTop: 80,
 		gap: omSpacing.xl,
 		paddingBottom: omSpacing.xxxl,
 		maxWidth: 960,
