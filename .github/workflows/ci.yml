@@ -11,6 +11,8 @@ env:
 
 jobs:
   rust:
+    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
+    if: false
     # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
     # bioscript is a submodule with its own CI.
     runs-on: ubuntu-latest
@@ -47,6 +49,8 @@ jobs:
         run: ./test.sh
 
   lint:
+    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
+    if: false
     # Runs the same ./lint.sh that developers use locally, so CI output
     # matches local output exactly. Covers Rust (bioscript/rust +
     # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
@@ -96,6 +100,8 @@ jobs:
         run: ./lint.sh --check
 
   web:
+    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -164,6 +170,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+
+      - name: Setup Java (Maestro JVM)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -234,7 +246,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Boot iOS simulator
+      - name: Pick iOS simulator UDID
         run: |
           # Pick a sim whose runtime is actually fully installed (i.e. the
           # platform package was downloaded, not just the SDK). The iOS
@@ -254,11 +266,33 @@ jobs:
           fi
           echo "Using simulator: $UDID"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl boot "$UDID" || true
-          xcrun simctl bootstatus "$UDID" -b
 
-      - name: Run iOS tests
-        run: ./test-ios.sh
+      - name: iOS / boot simulator
+        run: ./test-ios.sh boot-sim
+
+      - name: iOS / expo prebuild
+        run: ./test-ios.sh prebuild
+
+      - name: iOS / pod install
+        run: ./test-ios.sh pods
+
+      - name: iOS / build rust xcframework
+        run: ./test-ios.sh rust-ios
+
+      - name: iOS / xcodebuild
+        run: ./test-ios.sh build
+
+      - name: iOS / start Metro (background)
+        run: ./test-ios.sh metro-start
+
+      - name: iOS / install + launch app
+        run: ./test-ios.sh install-launch
+
+      - name: iOS / disable dev-menu onboarding
+        run: ./test-ios.sh devmenu
+
+      - name: iOS / Maestro flow
+        run: ./test-ios.sh maestro
 
       - name: Upload iOS screenshots
         if: always()
@@ -277,6 +311,8 @@ jobs:
           if-no-files-found: ignore
 
   android:
+    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
+    if: false
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 90
     env:

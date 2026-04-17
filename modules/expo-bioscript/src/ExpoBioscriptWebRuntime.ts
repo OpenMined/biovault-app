@@ -1,5 +1,11 @@
 import { Asset } from 'expo-asset';
-import type { RunFileRequest, RunFileResult } from './ExpoBioscript.types';
+import type { GenomeDescriptor, RunFileRequest, RunFileResult } from './ExpoBioscript.types';
+import {
+  lookupCramVariants,
+  lookupVcfVariants,
+  type VariantObservation,
+  type VariantSpec,
+} from './BioscriptWasm';
 
 type MontyBrowserModule = {
   Monty: {
@@ -30,13 +36,23 @@ type MontyBrowserModule = {
 
 type ExternalFunction = (...args: unknown[]) => unknown | Promise<unknown>;
 
-type GenotypeStore = {
+type InMemoryGenotypeStore = {
   values: Map<string, string>;
 };
 
+/** What we track per `load_genome` / `load_genotypes` handle. Text/zip use the
+ * existing in-memory rsid map; vcf/cram retain the descriptor so
+ * `lookup_variants` can batch-dispatch to the bioscript-wasm worker.
+ */
+type GenomeStore =
+  | { kind: 'text'; store: InMemoryGenotypeStore }
+  | { kind: 'vcf'; descriptor: Extract<GenomeDescriptor, { kind: 'vcf' }> }
+  | { kind: 'cram'; descriptor: Extract<GenomeDescriptor, { kind: 'cram' }> };
+
 type RuntimeContext = {
   files: Map<string, string>;
-  genotypeStores: Map<string, GenotypeStore>;
+  genotypeStores: Map<string, GenomeStore>;
+  genomes: Map<string, GenomeDescriptor>;
   nextStoreId: number;
 };
 
@@ -77,8 +93,12 @@ export async function runFileOnWeb(request: RunFileRequest): Promise<RunFileResu
     throw new Error(WEB_SUPPORT_ERROR);
   }
 
-  if (request.inputFormat === 'zip' || request.inputFormat === 'cram') {
-    throw new Error('expo-bioscript web currently supports text and plain VCF inputs, not zip/cram.');
+  // Web runs through the bioscript-wasm Web Worker for CRAM/VCF; for text it
+  // uses the in-memory TS parser. `genomes[name]` descriptors from the UI
+  // carry the real File handles + indexes, so a CRAM genome no longer needs
+  // `inputFormat: cram` + paths (that path is native-only).
+  if (request.inputFormat === 'zip') {
+    throw new Error('expo-bioscript web currently supports text / VCF / CRAM inputs, not zip (yet).');
   }
   if (request.autoIndex || request.inputIndex || request.referenceFile || request.referenceIndex || request.cacheDir) {
     throw new Error('expo-bioscript web does not support index/reference-driven native loading paths.');
@@ -242,11 +262,21 @@ async function runMontyAsync(
       progress = wrapProgress(monty, snapshot.resume({ returnValue: result }));
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+      // Monty only accepts Python-exception names here (RuntimeError,
+      // ValueError, …) — a JS default `Error` is rejected with
+      // "Invalid exception type: 'Error'", which masks the real message.
+      // Map anything unknown to RuntimeError so the root cause surfaces.
+      const pythonExcType = mapJsErrorToPythonException(err);
+      // eslint-disable-next-line no-console
+      console.error(
+        `[bioscript-web] external function '${snapshot.functionName}' threw ${err.name || 'Error'}: ${err.message}`,
+        err.stack,
+      );
       progress = wrapProgress(
         monty,
         snapshot.resume({
           exception: {
-            type: err.name || 'RuntimeError',
+            type: pythonExcType,
             message: err.message,
           },
         }),
@@ -255,6 +285,56 @@ async function runMontyAsync(
   }
 
   return progress.output;
+}
+
+const PYTHON_EXCEPTION_NAMES = new Set([
+  'Exception',
+  'BaseException',
+  'ArithmeticError',
+  'OverflowError',
+  'ZeroDivisionError',
+  'LookupError',
+  'IndexError',
+  'KeyError',
+  'RuntimeError',
+  'NotImplementedError',
+  'RecursionError',
+  'AttributeError',
+  'FrozenInstanceError',
+  'NameError',
+  'UnboundLocalError',
+  'ValueError',
+  'UnicodeDecodeError',
+  'ImportError',
+  'ModuleNotFoundError',
+  'OSError',
+  'FileNotFoundError',
+  'FileExistsError',
+  'IsADirectoryError',
+  'NotADirectoryError',
+  'PermissionError',
+  'AssertionError',
+  'MemoryError',
+  'StopIteration',
+  'SyntaxError',
+  'TimeoutError',
+  'TypeError',
+]);
+
+function mapJsErrorToPythonException(err: Error): string {
+  const name = err.name;
+  if (name && PYTHON_EXCEPTION_NAMES.has(name)) return name;
+  switch (name) {
+    case 'RangeError':
+      return 'ValueError';
+    case 'URIError':
+    case 'SyntaxError':
+      return 'SyntaxError';
+    case 'ReferenceError':
+      return 'NameError';
+    default:
+      return 'RuntimeError';
+  }
 }
 
 function wrapProgress(monty: MontyBrowserModule, value: unknown): unknown {
@@ -286,9 +366,14 @@ function createRuntimeContext(request: RunFileRequest): RuntimeContext {
   if (request.scriptContents !== undefined) {
     files.set(request.scriptPath, request.scriptContents);
   }
+  const genomes = new Map<string, GenomeDescriptor>();
+  for (const [name, descriptor] of Object.entries(request.genomes ?? {})) {
+    genomes.set(name, descriptor);
+  }
   return {
     files,
     genotypeStores: new Map(),
+    genomes,
     nextStoreId: 1,
   };
 }
@@ -312,8 +397,9 @@ function createExternalFunctions(
     __bioscript_variant__: (...args) => createVariantSpec(args),
     __bioscript_query_plan__: (variants) => new Map([['variants', variants]]),
     __bioscript_load_genotypes__: async (path) => loadGenotypes(context, request, expectString(path, 'load_genotypes')),
-    __bioscript_lookup_variant__: (storeId, variant) => lookupVariant(context, storeId, variant),
-    __bioscript_lookup_variants__: (storeId, plan) => lookupVariants(context, storeId, plan),
+    __bioscript_load_genome__: async (handle) => loadGenome(context, request, expectString(handle, 'load_genome')),
+    __bioscript_lookup_variant__: async (storeId, variant) => lookupVariant(context, storeId, variant),
+    __bioscript_lookup_variants__: async (storeId, plan) => lookupVariantsDispatch(context, storeId, plan),
     __bioscript_get__: (storeId, rsid) => getGenotype(context, storeId, expectString(rsid, 'get')),
     __bioscript_write_tsv__: (path, rows) => writeTsv(context, expectString(path, 'write_tsv'), rows),
     __bioscript_read_text__: async (path) => readTextFile(context, expectString(path, 'read_text')),
@@ -326,6 +412,7 @@ function rewriteBioscriptSource(code: string): string {
     .replace(/\bbioscript\.variant\s*\(/g, '__bioscript_variant__(')
     .replace(/\bbioscript\.query_plan\s*\(/g, '__bioscript_query_plan__(')
     .replace(/\bbioscript\.load_genotypes\s*\(/g, '__bioscript_load_genotypes__(')
+    .replace(/\bbioscript\.load_genome\s*\(/g, '__bioscript_load_genome__(')
     .replace(/\bbioscript\.write_tsv\s*\(/g, '__bioscript_write_tsv__(')
     .replace(/\bbioscript\.read_text\s*\(/g, '__bioscript_read_text__(')
     .replace(/\bbioscript\.write_text\s*\(/g, '__bioscript_write_text__(')
@@ -350,18 +437,22 @@ function createVariantSpec(args: unknown[]): Map<string, unknown> {
 }
 
 async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, path: string): Promise<string> {
+  // If the UI registered a rich descriptor under this name, dispatch to the
+  // new-style handle path. `bioscript.load_genotypes` stays supported for
+  // back-compat with older scripts.
+  if (context.genomes.has(path)) {
+    return loadGenome(context, request, path);
+  }
   const format = detectInputFormat(path, request.inputFormat);
   if (format === 'zip' || format === 'cram') {
-    throw new Error(`web genotype loading does not support ${format} inputs`);
+    throw new Error(`web genotype loading does not support ${format} inputs without a genome descriptor`);
   }
 
   const content = await readTextFile(context, path);
-  const store = format === 'vcf' ? parseVcfGenotypes(content) : parseDelimitedGenotypes(content);
+  const textStore = format === 'vcf' ? parseVcfGenotypes(content) : parseDelimitedGenotypes(content);
   const storeId = `genotypes:${context.nextStoreId}`;
   context.nextStoreId += 1;
-  context.genotypeStores.set(storeId, store);
-  // Serialize to a single string — Playwright's `console.text()` returns
-  // `JSHandle@object` for structured args, which makes assertions brittle.
+  context.genotypeStores.set(storeId, { kind: 'text', store: textStore });
   // eslint-disable-next-line no-console
   console.log(
     '[bioscript-web] load_genotypes ' +
@@ -369,42 +460,186 @@ async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, p
         path,
         format,
         contentLength: content.length,
-        rsidCount: store.values.size,
-        sampleRsids: Array.from(store.values.keys()).slice(0, 5),
-        hasRs1800437: store.values.has('rs1800437'),
-        rs1800437: store.values.get('rs1800437') ?? null,
+        rsidCount: textStore.values.size,
+        sampleRsids: Array.from(textStore.values.keys()).slice(0, 5),
       }),
   );
   return storeId;
 }
 
-function lookupVariant(context: RuntimeContext, storeHandle: unknown, variant: unknown): string | null {
-  const store = getStore(context, storeHandle);
-  const spec = toVariantSpec(variant);
-  for (const rsid of spec.rsids) {
-    const genotype = store.values.get(rsid);
-    if (genotype) {
-      // eslint-disable-next-line no-console
-      console.log('[bioscript-web] lookup hit ' + JSON.stringify({ rsid, genotype }));
-      return genotype;
-    }
+async function loadGenome(
+  context: RuntimeContext,
+  _request: RunFileRequest,
+  handle: string,
+): Promise<string> {
+  const descriptor = context.genomes.get(handle);
+  if (!descriptor) {
+    throw new Error(
+      `bioscript.load_genome('${handle}'): no such genome was registered — did the UI forget to pass it?`,
+    );
   }
-  // eslint-disable-next-line no-console
-  console.log(
-    '[bioscript-web] lookup miss ' +
-      JSON.stringify({ rsids: spec.rsids, storeSize: store.values.size }),
-  );
-  return null;
+  const storeId = `genome:${context.nextStoreId}`;
+  context.nextStoreId += 1;
+
+  if (descriptor.kind === 'text' || descriptor.kind === 'zip') {
+    // Text-shaped descriptors share the same rsid-map backend as load_genotypes.
+    const textStore = parseDelimitedGenotypes(descriptor.text);
+    context.genotypeStores.set(storeId, { kind: 'text', store: textStore });
+    // eslint-disable-next-line no-console
+    console.log(`[bioscript-web] load_genome text ${handle} (${textStore.values.size} rsids)`);
+    return storeId;
+  }
+
+  if (descriptor.kind === 'vcf') {
+    context.genotypeStores.set(storeId, { kind: 'vcf', descriptor });
+    // eslint-disable-next-line no-console
+    console.log(`[bioscript-web] load_genome vcf ${handle} (${descriptor.vcfFile.name})`);
+    return storeId;
+  }
+
+  if (descriptor.kind === 'cram') {
+    context.genotypeStores.set(storeId, { kind: 'cram', descriptor });
+    // eslint-disable-next-line no-console
+    console.log(`[bioscript-web] load_genome cram ${handle} (${descriptor.cramFile.name})`);
+    return storeId;
+  }
+
+  throw new Error(`unknown genome descriptor kind`);
 }
 
-function lookupVariants(context: RuntimeContext, storeHandle: unknown, plan: unknown): Array<string | null> {
+async function lookupVariant(
+  context: RuntimeContext,
+  storeHandle: unknown,
+  variant: unknown,
+): Promise<string | null> {
+  const store = getStore(context, storeHandle);
+  if (store.kind === 'text') {
+    const spec = toVariantSpec(variant);
+    for (const rsid of spec.rsids) {
+      const genotype = store.store.values.get(rsid);
+      if (genotype) return genotype;
+    }
+    return null;
+  }
+  // VCF / CRAM: single-variant lookup uses the same wasm path as batch.
+  const results = await lookupVariantsDispatch(context, storeHandle, [variant]);
+  return results[0] ?? null;
+}
+
+async function lookupVariantsDispatch(
+  context: RuntimeContext,
+  storeHandle: unknown,
+  plan: unknown,
+): Promise<Array<string | null>> {
+  const store = getStore(context, storeHandle);
   const variants = extractVariantsFromPlan(plan);
-  return variants.map((variant) => lookupVariant(context, storeHandle, variant));
+
+  if (store.kind === 'text') {
+    return variants.map((variant) => {
+      const spec = toVariantSpec(variant);
+      for (const rsid of spec.rsids) {
+        const genotype = store.store.values.get(rsid);
+        if (genotype) return genotype;
+      }
+      return null;
+    });
+  }
+
+  // VCF / CRAM: translate every Monty-side VariantSpec into a wasm VariantSpec
+  // and batch through the Web Worker. Preserve plan order — apol1 depends on
+  // destructuring `site1, site2, g2 = lookup_variants(PLAN)`.
+  const wasmVariants: VariantSpec[] = variants.map((raw, index) =>
+    wasmVariantFromMontySpec(raw, index, store),
+  );
+
+  const result =
+    store.kind === 'vcf'
+      ? await lookupVcfVariants({
+          vcfFile: store.descriptor.vcfFile,
+          tbiBytes: store.descriptor.tbiBytes,
+          variants: wasmVariants,
+        })
+      : await lookupCramVariants({
+          cramFile: store.descriptor.cramFile,
+          craiBytes: store.descriptor.craiBytes,
+          fastaFile: store.descriptor.fastaFile,
+          faiBytes: store.descriptor.faiBytes,
+          variants: wasmVariants,
+        });
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[bioscript-web] lookup_variants ${store.kind} · ${variants.length} variants · ${result.durationMs}ms`,
+  );
+
+  return result.observations.map((obs) => observationToGenotype(obs));
+}
+
+function wasmVariantFromMontySpec(raw: unknown, index: number, store: GenomeStore): VariantSpec {
+  const rec = toRecord(raw);
+  const rsids = normalizeStringList(rec.rsids);
+  const rsid = rsids[0];
+
+  // Prefer the assembly the descriptor's file is on, but we don't know that
+  // without inspecting; try grch38 first, fall back to grch37. The wasm
+  // resolver is chrom-name-agnostic (handles chr22 vs 22).
+  const grch38 = parseLocusString(rec.grch38);
+  const grch37 = parseLocusString(rec.grch37);
+  const preferred = grch38 ?? grch37;
+  if (!preferred) {
+    throw new Error(
+      `lookup_variants: variant #${index}${rsid ? ` (${rsid})` : ''} has no grch37/grch38 coordinate`,
+    );
+  }
+  const assembly = grch38 ? 'grch38' : 'grch37';
+  const ref = normalizeOptionalString(rec.reference);
+  const alt = normalizeOptionalString(rec.alternate);
+  if (!ref || !alt) {
+    throw new Error(
+      `lookup_variants: variant #${index}${rsid ? ` (${rsid})` : ''} is missing ref/alt — CRAM/VCF lookup requires explicit alleles`,
+    );
+  }
+  return {
+    name: rsid ?? `variant_${index}`,
+    chrom: preferred.chrom,
+    pos: preferred.pos,
+    ref,
+    alt,
+    rsid,
+    assembly,
+    // Store kind is informational only; worker picks backend from caller.
+    // (store parameter retained for symmetry / future per-genome assembly hint.)
+    ...(store.kind === 'cram' ? {} : {}),
+  };
+}
+
+function parseLocusString(value: unknown): { chrom: string; pos: number } | null {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = String(value);
+  // Accept "22:36661906" or "22:36661906-36661906" — use the start position.
+  const match = raw.match(/^([^:]+):(\d+)(?:-(\d+))?$/);
+  if (!match) return null;
+  const chrom = match[1]!.trim();
+  const pos = Number.parseInt(match[2]!, 10);
+  if (!chrom || !Number.isFinite(pos)) return null;
+  return { chrom, pos };
+}
+
+function observationToGenotype(obs: VariantObservation): string | null {
+  // The Python contract (apol1.py etc.) is `(string | null)[]` — string for
+  // "we observed a genotype", null for "nothing found or unsupported". Emit
+  // the genotype directly; callers like apol1 inspect char-by-char.
+  return obs.genotype ?? null;
 }
 
 function getGenotype(context: RuntimeContext, storeHandle: unknown, rsid: string): string | null {
   const store = getStore(context, storeHandle);
-  return store.values.get(rsid) ?? null;
+  if (store.kind !== 'text') {
+    throw new Error(
+      `bioscript.get(rsid) is only supported on text genotype stores — use lookup_variant(s) with a query plan for VCF/CRAM instead`,
+    );
+  }
+  return store.store.values.get(rsid) ?? null;
 }
 
 function writeTsv(context: RuntimeContext, path: string, rows: unknown): null {
@@ -480,7 +715,7 @@ function detectInputFormat(path: string, requested?: string): 'text' | 'vcf' | '
   return 'text';
 }
 
-function parseDelimitedGenotypes(content: string): GenotypeStore {
+function parseDelimitedGenotypes(content: string): InMemoryGenotypeStore {
   const values = new Map<string, string>();
   const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
   const dataLines = lines.filter((line) => !COMMENT_PREFIXES.some((prefix) => line.trimStart().startsWith(prefix)));
@@ -523,7 +758,7 @@ function parseDelimitedGenotypes(content: string): GenotypeStore {
   return { values };
 }
 
-function parseVcfGenotypes(content: string): GenotypeStore {
+function parseVcfGenotypes(content: string): InMemoryGenotypeStore {
   const values = new Map<string, string>();
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -626,7 +861,7 @@ function joinAlleles(first: string | null, second: string | null): string | null
   return `${first}${second}`;
 }
 
-function getStore(context: RuntimeContext, storeHandle: unknown): GenotypeStore {
+function getStore(context: RuntimeContext, storeHandle: unknown): GenomeStore {
   const key = expectString(storeHandle, 'genotype store');
   const store = context.genotypeStores.get(key);
   if (!store) {

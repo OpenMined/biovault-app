@@ -14,6 +14,10 @@
 //         small and passed inline. See wasm.md for the larger migration
 //         context.
 //
+//   vcf --vcf <x.vcf.gz> --tbi <x.vcf.gz.tbi> --variants '<json>'
+//       → tabix-indexed SNP lookup over a bgzipped VCF. Same readAt shape
+//         as cram, but with just one reader + tbi index inline.
+//
 // wasm-pack is invoked with --target nodejs into pkg-node/ on every run;
 // cargo handles the incremental caching so this is near-free when nothing
 // changed. Pass RUN_BIOSCRIPT_WASM_NO_BUILD=1 to skip the rebuild.
@@ -146,6 +150,36 @@ function runCram(mod, args) {
   }
 }
 
+function runVcf(mod, args) {
+  const flags = parseFlags(args);
+  const vcfPath = resolve(requireFlag(flags, 'vcf'));
+  const tbiPath = resolve(requireFlag(flags, 'tbi'));
+  const variantsJson = requireFlag(flags, 'variants');
+
+  const tbiBytes = readFileSync(tbiPath);
+
+  const vcfFd = openSync(vcfPath, 'r');
+  try {
+    const vcfLen = fstatSync(vcfFd).size;
+    console.error(
+      `[run-bioscript-wasm] vcf=${vcfPath} (${vcfLen} bytes), tbi=${tbiBytes.length} bytes`,
+    );
+
+    const vcfReadAt = makeReadAt(vcfFd, vcfPath);
+
+    const startedAt = Date.now();
+    const resultJson = mod.lookupVcfVariants(vcfReadAt, vcfLen, tbiBytes, variantsJson);
+    console.error(`[run-bioscript-wasm] lookupVcfVariants took ${Date.now() - startedAt}ms`);
+    console.log(JSON.stringify(JSON.parse(resultJson), null, 2));
+  } catch (err) {
+    console.error('[run-bioscript-wasm] lookupVcfVariants threw:');
+    console.error(err);
+    process.exitCode = 3;
+  } finally {
+    closeSync(vcfFd);
+  }
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
@@ -155,6 +189,9 @@ function main() {
       '  run-bioscript-wasm.cjs cram --cram <x.cram> --crai <x.cram.crai> \\',
     );
     console.error("      --fasta <ref.fa> --fai <ref.fa.fai> --variants '<json>'");
+    console.error(
+      "  run-bioscript-wasm.cjs vcf --vcf <x.vcf.gz> --tbi <x.vcf.gz.tbi> --variants '<json>'",
+    );
     process.exit(1);
   }
 
@@ -168,6 +205,9 @@ function main() {
       break;
     case 'cram':
       runCram(mod, rest);
+      break;
+    case 'vcf':
+      runVcf(mod, rest);
       break;
     default:
       // Back-compat: if the first arg looks like a path, treat the whole

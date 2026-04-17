@@ -59,7 +59,7 @@ if ! npx playwright install chromium; then
   exit 1
 fi
 
-SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/assay-lab.spec.ts)
+SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-apol1.spec.ts)
 echo "==> Running Playwright specs: ${SPECS[*]}"
 if WEB_URL="$WEB_URL" npx playwright test \
     --config=.maestro-web/playwright.config.ts \

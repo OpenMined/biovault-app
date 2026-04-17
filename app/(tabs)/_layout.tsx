@@ -32,6 +32,14 @@ function TabChrome() {
 						md="folder"
 					/>
 				</NativeTabs.Trigger>
+				<NativeTabs.Trigger name="lab">
+					<NativeTabs.Trigger.Label>Lab</NativeTabs.Trigger.Label>
+					<NativeTabs.Trigger.Icon
+						selectedColor={selectedIconColor}
+						sf={{ default: 'flask', selected: 'flask.fill' }}
+						md="science"
+					/>
+				</NativeTabs.Trigger>
 				<NativeTabs.Trigger name="explore">
 					<NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
 					<NativeTabs.Trigger.Icon
