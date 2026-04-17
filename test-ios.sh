@@ -95,6 +95,30 @@ phase_pods() {
   }
 }
 
+phase_rust_ios() {
+  # The BioscriptFFI.xcframework is normally built by expo-bioscript's pod
+  # prepare_command during `pod install`. When we skip pod install (fast
+  # path), the xcframework may be missing from the cached ios/ directory
+  # because it lives outside ios/ (modules/expo-bioscript/ios/Artifacts/).
+  # Rebuild if missing; cargo's incremental + Rust cache make it fast.
+  local script="modules/expo-bioscript/scripts/build-rust-ios.sh"
+  local xcf="modules/expo-bioscript/ios/Artifacts/BioscriptFFI.xcframework"
+  if [ ! -f "$script" ]; then
+    echo "==> build-rust-ios.sh not found, skipping rust-ios phase"
+    return 0
+  fi
+  if [ -d "$xcf/ios-arm64-simulator" ] && [ -d "$xcf/ios-arm64" ]; then
+    echo "==> BioscriptFFI.xcframework slices present, skipping rust-ios build"
+    return 0
+  fi
+  echo "==> build-rust-ios.sh (logs: $LOG_DIR/rust-ios.log)"
+  sh "$script" >"$LOG_DIR/rust-ios.log" 2>&1 || {
+    echo "build-rust-ios.sh failed. Last 50 lines:" >&2
+    tail -50 "$LOG_DIR/rust-ios.log" >&2
+    exit 1
+  }
+}
+
 phase_build() {
   if [ ! -d "$IOS_WORKSPACE" ]; then
     echo "Workspace missing at $IOS_WORKSPACE — run pods first" >&2
@@ -199,6 +223,7 @@ phase_all() {
   phase_boot_sim
   phase_prebuild
   phase_pods
+  phase_rust_ios
   phase_metro_start
   if [ -n "${CI:-}" ]; then
     phase_build
@@ -224,6 +249,7 @@ case "$cmd" in
   boot-sim) phase_boot_sim ;;
   prebuild) phase_prebuild ;;
   pods) phase_pods ;;
+  rust-ios) phase_rust_ios ;;
   build) phase_build ;;
   metro-start) phase_metro_start ;;
   metro-stop) phase_metro_stop ;;
@@ -231,5 +257,5 @@ case "$cmd" in
   devmenu) phase_devmenu ;;
   maestro) phase_maestro ;;
   all) phase_all ;;
-  *) echo "Usage: $0 [force-clean|boot-sim|prebuild|pods|build|metro-start|metro-stop|install-launch|devmenu|maestro|all]" >&2; exit 2 ;;
+  *) echo "Usage: $0 [force-clean|boot-sim|prebuild|pods|rust-ios|build|metro-start|metro-stop|install-launch|devmenu|maestro|all]" >&2; exit 2 ;;
 esac

@@ -270,6 +270,9 @@ jobs:
       - name: iOS / pod install
         run: ./test-ios.sh pods
 
+      - name: iOS / build rust xcframework
+        run: ./test-ios.sh rust-ios
+
       - name: iOS / xcodebuild
         run: ./test-ios.sh build
 
