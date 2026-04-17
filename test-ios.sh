@@ -103,12 +103,19 @@ phase_build() {
   local UDID
   UDID=$(resolve_udid) || exit 1
   echo "==> xcodebuild (logs: $LOG_DIR/build.log)"
-  xcodebuild \
+  # CI speed flags:
+  # - COMPILER_INDEX_STORE_ENABLE=NO: skip source indexing (only for IDE)
+  # - -skipPackagePluginValidation / -skipMacroValidation: skip SPM prompts
+  # - NSUnbufferedIO=YES: don't buffer xcodebuild output line-by-line
+  env NSUnbufferedIO=YES xcodebuild \
     -workspace "$IOS_WORKSPACE" \
     -scheme "$IOS_SCHEME" \
     -configuration Debug \
     -destination "id=$UDID" \
     -derivedDataPath "$IOS_DERIVED_DATA" \
+    -skipPackagePluginValidation \
+    -skipMacroValidation \
+    COMPILER_INDEX_STORE_ENABLE=NO \
     build >"$LOG_DIR/build.log" 2>&1 || {
       echo "Build failed. Last 50 lines:" >&2
       tail -50 "$LOG_DIR/build.log" >&2
