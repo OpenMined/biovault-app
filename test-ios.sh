@@ -125,11 +125,13 @@ phase_build() {
   fi
   local UDID
   UDID=$(resolve_udid) || exit 1
-  echo "==> xcodebuild (logs: $LOG_DIR/build.log)"
+  echo "==> xcodebuild (streaming + tee to $LOG_DIR/build.log)"
   # CI speed flags:
   # - COMPILER_INDEX_STORE_ENABLE=NO: skip source indexing (only for IDE)
   # - -skipPackagePluginValidation / -skipMacroValidation: skip SPM prompts
   # - NSUnbufferedIO=YES: don't buffer xcodebuild output line-by-line
+  # Stream full output so the actual error (e.g. linker failure) is visible in
+  # CI logs — redirecting to a file + tailing 50 lines was hiding real errors.
   env NSUnbufferedIO=YES xcodebuild \
     -workspace "$IOS_WORKSPACE" \
     -scheme "$IOS_SCHEME" \
@@ -139,11 +141,7 @@ phase_build() {
     -skipPackagePluginValidation \
     -skipMacroValidation \
     COMPILER_INDEX_STORE_ENABLE=NO \
-    build >"$LOG_DIR/build.log" 2>&1 || {
-      echo "Build failed. Last 50 lines:" >&2
-      tail -50 "$LOG_DIR/build.log" >&2
-      exit 1
-    }
+    build 2>&1 | tee "$LOG_DIR/build.log"
   if [ ! -d "$APP_PATH" ]; then
     echo "Built app not found at $APP_PATH" >&2
     tail -50 "$LOG_DIR/build.log" >&2 || true
