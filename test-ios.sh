@@ -80,6 +80,13 @@ phase_pods() {
     echo "ios/Podfile missing — run prebuild first" >&2
     exit 1
   fi
+  # Fast path: if cached Pods/Manifest.lock already matches Podfile.lock,
+  # CocoaPods itself would be a no-op — skip the whole Ruby process and save
+  # ~2m on cache hits.
+  if [ -f ios/Pods/Manifest.lock ] && cmp -s ios/Podfile.lock ios/Pods/Manifest.lock; then
+    echo "==> Manifest.lock matches Podfile.lock — skipping pod install"
+    return 0
+  fi
   echo "==> pod install (no repo-update, logs: $LOG_DIR/pods.log)"
   (cd ios && pod install >"../$LOG_DIR/pods.log" 2>&1) || {
     echo "pod install failed. Last 50 lines:" >&2
