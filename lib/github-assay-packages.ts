@@ -59,6 +59,13 @@ type GitHubAssayIndex = {
 	version?: string
 }
 
+export type RemoteAssayFile = {
+	contents: string
+	language: 'python' | 'yaml'
+	name: string
+	source: string
+}
+
 function trimTrailingSlash(value: string) {
 	return value.endsWith('/') ? value.slice(0, -1) : value
 }
@@ -85,6 +92,19 @@ function getGitHubHeaders(accept: string): HeadersInit {
 
 function buildGitHubTreeUrl(location: GitHubPackageLocation) {
 	return `${location.baseUrl}/${location.owner}/${location.repo}/tree/${location.ref}/${location.path}`
+}
+
+function fileNameFromPath(path: string) {
+	const trimmed = path.trim().replace(/\/+$/, '')
+	const slashIndex = trimmed.lastIndexOf('/')
+	return slashIndex >= 0 ? trimmed.slice(slashIndex + 1) : trimmed
+}
+
+function assayLanguageFromName(name: string): 'python' | 'yaml' | null {
+	const lower = name.toLowerCase()
+	if (lower.endsWith('.py')) return 'python'
+	if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'yaml'
+	return null
 }
 
 function parseGitHubPathUrl(input: string): GitHubPackageLocation {
@@ -176,12 +196,59 @@ async function fetchGitHubText(url: string): Promise<string> {
 	return response.text()
 }
 
+async function fetchRemoteText(url: string): Promise<string> {
+	const response = await fetch(url)
+	if (!response.ok) {
+		throw new Error(`Unable to download assay file (${response.status}).`)
+	}
+	return response.text()
+}
+
 export async function fetchGitHubFileText(
 	location: GitHubPackageLocation,
 	path: string
 ): Promise<string> {
 	const endpoint = `https://api.github.com/repos/${location.owner}/${location.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(location.ref)}`
 	return fetchGitHubText(endpoint)
+}
+
+export async function fetchRemoteAssayFileFromUrl(input: string): Promise<RemoteAssayFile> {
+	const trimmed = input.trim()
+	let url: URL
+	try {
+		url = new URL(trimmed)
+	} catch {
+		throw new Error('Enter a valid assay URL.')
+	}
+
+	if (url.hostname === 'github.com') {
+		const location = parseGitHubPathUrl(trimmed)
+		const name = fileNameFromPath(location.path)
+		const language = assayLanguageFromName(name)
+		if (!language) {
+			throw new Error('GitHub assay URL must point directly to a .py, .yaml, or .yml file.')
+		}
+		const contents = await fetchGitHubFileText(location, location.path)
+		return {
+			contents,
+			language,
+			name,
+			source: trimmed,
+		}
+	}
+
+	const name = fileNameFromPath(url.pathname)
+	const language = assayLanguageFromName(name)
+	if (!language) {
+		throw new Error('Assay URL must end in .py, .yaml, or .yml.')
+	}
+
+	return {
+		contents: await fetchRemoteText(trimmed),
+		language,
+		name,
+		source: trimmed,
+	}
 }
 
 async function fetchDirectoryEntries(
