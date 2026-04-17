@@ -1,0 +1,9 @@
+# BioVault sample genome data
+# This is a small 23andMe-style demo file for onboarding and lab examples.
+rsid	chromosome	position	genotype
+rs12913832	15	28365618	CC
+rs1801260	4	56411998	CT
+rs671	12	112241766	AG
+rs1229984	4	100239319	AG
+rs762551	15	75041917	AC
+rs4988235	2	136608646	AA

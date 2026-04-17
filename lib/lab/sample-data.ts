@@ -71,7 +71,7 @@ export const LAB_SAMPLE_PRESETS: LabSamplePreset[] = [
 		files: [
 			{
 				name: 'biovault_sample_23andme.txt',
-				url: rawGitHubUrl('/test-data/examples/biovault_sample_23andme.txt'),
+				url: rawGitHubUrl('/assets/examples/biovault_sample_23andme.txt'),
 				kind: 'genotype_text',
 			},
 			{
