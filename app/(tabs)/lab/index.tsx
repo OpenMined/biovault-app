@@ -42,7 +42,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 // ts-prune-ignore-next
 export default function LabScreen() {
 	const params = useLocalSearchParams<{ assay?: string | string[] }>()
-	const { trackEvent } = useAnalytics()
+	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const [genomes, setGenomes] = useState<Genome[]>([])
 	const [assays, setAssays] = useState<Assay[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])

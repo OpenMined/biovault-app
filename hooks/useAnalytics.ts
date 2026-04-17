@@ -7,13 +7,15 @@ interface UseAnalyticsOptions {
   trackScreenView?: boolean;
   trackAppState?: boolean;
   screenProperties?: Record<string, any>;
+  includeRouteParams?: boolean;
 }
 
 export const useAnalytics = (options: UseAnalyticsOptions = {}) => {
   const {
     trackScreenView = true,
     trackAppState = true,
-    screenProperties = {}
+    screenProperties = {},
+    includeRouteParams = true,
   } = options;
 
   const route = useRoute();
@@ -25,10 +27,10 @@ export const useAnalytics = (options: UseAnalyticsOptions = {}) => {
       if (trackScreenView && route.name && analytics) {
         analytics.trackScreen(route.name, {
           ...screenProperties,
-          params: route.params
+          ...(includeRouteParams ? { params: route.params } : {}),
         });
       }
-    }, [trackScreenView, route.name])
+    }, [trackScreenView, route.name, route.params, includeRouteParams, screenProperties, analytics])
   );
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export const useAnalytics = (options: UseAnalyticsOptions = {}) => {
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
-  }, [trackAppState]);
+  }, [trackAppState, analytics]);
 
   return {
     trackEvent: (eventName: string, properties?: Record<string, any>) => {
