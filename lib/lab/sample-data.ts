@@ -6,11 +6,18 @@ export type LabSamplePreset = {
 	description: string
 	assayLabel: string
 	genomeLabel: string
-	files: {
+	inputKindLabel: string
+	files: LabSampleFile[]
+}
+
+type LabSampleFile = {
 		name: string
-		url: string
 		kind: Exclude<FileKind, 'unknown'>
-	}[]
+		url?: string
+}
+
+function rawGitHubUrl(path: string) {
+	return `${REPO_RAW_BASE}${path}`
 }
 
 const REPO_RAW_BASE =
@@ -24,30 +31,52 @@ export const LAB_SAMPLE_PRESETS: LabSamplePreset[] = [
 			'Try the APOL1 assay with sample genome files so you can see the lab flow before using your own data.',
 		assayLabel: 'apol1.py',
 		genomeLabel: 'apol1.cram',
+		inputKindLabel: 'CRAM',
 		files: [
 			{
 				name: 'apol1.cram',
-				url: `${REPO_RAW_BASE}/assays/risk/APOL1/test-data/apol1.cram`,
+				url: rawGitHubUrl('/assays/risk/APOL1/test-data/apol1.cram'),
 				kind: 'cram',
 			},
 			{
 				name: 'apol1.cram.crai',
-				url: `${REPO_RAW_BASE}/assays/risk/APOL1/test-data/apol1.cram.crai`,
+				url: rawGitHubUrl('/assays/risk/APOL1/test-data/apol1.cram.crai'),
 				kind: 'crai',
 			},
 			{
 				name: 'stub.fa',
-				url: `${REPO_RAW_BASE}/assays/risk/APOL1/test-data/stub.fa`,
+				url: rawGitHubUrl('/assays/risk/APOL1/test-data/stub.fa'),
 				kind: 'fasta',
 			},
 			{
 				name: 'stub.fa.fai',
-				url: `${REPO_RAW_BASE}/assays/risk/APOL1/test-data/stub.fa.fai`,
+				url: rawGitHubUrl('/assays/risk/APOL1/test-data/stub.fa.fai'),
 				kind: 'fai',
 			},
 			{
 				name: 'apol1.py',
-				url: `${REPO_RAW_BASE}/assays/risk/APOL1/apol1.py`,
+				url: rawGitHubUrl('/assays/risk/APOL1/apol1.py'),
+				kind: 'assay_python',
+			},
+		],
+	},
+	{
+		id: 'text-demo-apol1',
+		title: '23andMe-style text demo',
+		description:
+			'Load a tiny text genome plus the APOL1 assay to test the lab with a simple chip-style input.',
+		assayLabel: 'apol1.py',
+		genomeLabel: 'biovault_sample_23andme.txt',
+		inputKindLabel: '23andMe-style text',
+		files: [
+			{
+				name: 'biovault_sample_23andme.txt',
+				url: rawGitHubUrl('/test-data/examples/biovault_sample_23andme.txt'),
+				kind: 'genotype_text',
+			},
+			{
+				name: 'apol1.py',
+				url: rawGitHubUrl('/assays/risk/APOL1/apol1.py'),
 				kind: 'assay_python',
 			},
 		],
@@ -65,6 +94,9 @@ function guessMimeType(name: string): string {
 export async function loadLabSamplePresetFiles(preset: LabSamplePreset): Promise<File[]> {
 	const files = await Promise.all(
 		preset.files.map(async (entry) => {
+			if (!entry.url) {
+				throw new Error(`Sample file ${entry.name} has no source.`)
+			}
 			const response = await fetch(entry.url)
 			if (!response.ok) {
 				throw new Error(`Failed to fetch ${entry.name}: ${response.status}`)
@@ -76,4 +108,9 @@ export async function loadLabSamplePresetFiles(preset: LabSamplePreset): Promise
 		}),
 	)
 	return files
+}
+
+export function getLabSamplePresetById(id: string | null | undefined): LabSamplePreset | null {
+	if (!id) return null
+	return LAB_SAMPLE_PRESETS.find((preset) => preset.id === id) ?? null
 }

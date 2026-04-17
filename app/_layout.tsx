@@ -53,6 +53,7 @@ function RootNavigator() {
 					name="data-source"
 					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
 				/>
+				<Stack.Screen name="examples" />
 				<Stack.Screen
 					name="files/[documentId]/rename"
 					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}

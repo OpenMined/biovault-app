@@ -20,7 +20,12 @@ import {
 	loadRemoteAssayFile,
 	normalizeLabSearchParam,
 } from '@/lib/lab/assay-loader'
-import { LAB_SAMPLE_PRESETS, loadLabSamplePresetFiles, type LabSamplePreset } from '@/lib/lab/sample-data'
+import {
+	getLabSamplePresetById,
+	LAB_SAMPLE_PRESETS,
+	loadLabSamplePresetFiles,
+	type LabSamplePreset,
+} from '@/lib/lab/sample-data'
 import { getLabRunDisabledReason, runLabAssay } from '@/lib/lab/runner'
 import type {
 	Assay,
@@ -30,7 +35,7 @@ import type {
 } from '@/lib/lab/types'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import type { VariantObservation } from '@/modules/expo-bioscript'
-import { useLocalSearchParams } from 'expo-router'
+import { Link, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -41,7 +46,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 // ts-prune-ignore-next
 export default function LabScreen() {
-	const params = useLocalSearchParams<{ assay?: string | string[] }>()
+	const params = useLocalSearchParams<{ assay?: string | string[]; example?: string | string[] }>()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const [genomes, setGenomes] = useState<Genome[]>([])
 	const [assays, setAssays] = useState<Assay[]>([])
@@ -55,16 +60,31 @@ export default function LabScreen() {
 	const [remoteAssayLoading, setRemoteAssayLoading] = useState(false)
 	const [samplePresetLoadingId, setSamplePresetLoadingId] = useState<string | null>(null)
 	const [samplePresetError, setSamplePresetError] = useState<string | null>(null)
+	const [dismissedExampleId, setDismissedExampleId] = useState<string | null>(null)
 
 	const requestedAssayUrl = normalizeLabSearchParam(params.assay)
+	const requestedExampleId = normalizeLabSearchParam(params.example)
+	const requestedExample = useMemo(
+		() => getLabSamplePresetById(requestedExampleId),
+		[requestedExampleId],
+	)
 	const hasRequestedAssayLoaded = useMemo(
 		() => assays.some((assay) => assay.source === requestedAssayUrl),
 		[assays, requestedAssayUrl],
 	)
+	const hasRequestedExampleLoaded = useMemo(() => {
+		if (!requestedExample) return false
+		return assays.some((assay) => assay.name === requestedExample.assayLabel)
+			&& genomes.some((genome) => genome.primary.name === requestedExample.genomeLabel)
+	}, [assays, genomes, requestedExample])
 	const showRemoteAssayPrompt =
 		Boolean(requestedAssayUrl) &&
 		requestedAssayUrl !== dismissedAssayUrl &&
 		!hasRequestedAssayLoaded
+	const showExamplePrompt =
+		Boolean(requestedExample) &&
+		requestedExample?.id !== dismissedExampleId &&
+		!hasRequestedExampleLoaded
 
 	const addAssay = useCallback(
 		(file: File, language: Assay['language'], source?: string) => {
@@ -310,6 +330,16 @@ export default function LabScreen() {
 					/>
 				) : null}
 
+				{showExamplePrompt && requestedExample ? (
+					<ExamplePrompt
+						error={samplePresetError}
+						loading={samplePresetLoadingId === requestedExample.id}
+						preset={requestedExample}
+						onDismiss={() => setDismissedExampleId(requestedExample.id)}
+						onLoad={() => void loadSamplePreset(requestedExample)}
+					/>
+				) : null}
+
 				<HeroDrop
 					onClick={openPicker}
 					active={dragActive}
@@ -318,7 +348,7 @@ export default function LabScreen() {
 				/>
 
 				<View style={styles.section}>
-					<SectionHeader label="Try sample data" count={LAB_SAMPLE_PRESETS.length} />
+					<SectionHeader label="Try examples" count={LAB_SAMPLE_PRESETS.length} />
 					<View style={styles.cardGrid}>
 						{LAB_SAMPLE_PRESETS.map((preset) => (
 							<SamplePresetCard
@@ -478,6 +508,13 @@ function HeroDrop({
 				We&rsquo;ll auto-pair indexes (.crai, .tbi) and references (.fa/.fa.fai). Drop .py
 				or .yaml assays to use as the variant plan. Click here to pick files too.
 			</OMText>
+			<Link href="/examples" asChild>
+				<Pressable style={styles.secondaryButton}>
+					<OMText variant="subtitle" style={styles.secondaryText}>
+						Browse examples
+					</OMText>
+				</Pressable>
+			</Link>
 			{genomeCount === 0 && assayCount === 0 ? (
 				<OMText variant="caption" style={styles.heroEmpty}>
 					Nothing loaded yet.
@@ -489,6 +526,60 @@ function HeroDrop({
 				</OMText>
 			)}
 		</Pressable>
+	)
+}
+
+function ExamplePrompt({
+	error,
+	loading,
+	onDismiss,
+	onLoad,
+	preset,
+}: {
+	error: string | null
+	loading: boolean
+	onDismiss: () => void
+	onLoad: () => void
+	preset: LabSamplePreset
+}) {
+	return (
+		<View style={styles.remoteAssayCard}>
+			<View style={{ flex: 1, gap: omSpacing.xs }}>
+				<OMText variant="caption" style={styles.sectionLabel}>
+					LINKED EXAMPLE
+				</OMText>
+				<OMText variant="subtitle" style={styles.remoteAssayTitle}>
+					Load example into the lab?
+				</OMText>
+				<OMText variant="body" style={styles.remoteAssayBody}>
+					{preset.description}
+				</OMText>
+				<OMText variant="caption" style={styles.remoteAssayUrl}>
+					{preset.inputKindLabel} · {preset.genomeLabel} · {preset.assayLabel}
+				</OMText>
+				{error ? (
+					<OMText variant="caption" style={styles.remoteAssayError}>
+						{error}
+					</OMText>
+				) : null}
+			</View>
+			<View style={styles.remoteAssayActions}>
+				<Pressable onPress={onDismiss} style={styles.secondaryButton}>
+					<OMText variant="subtitle" style={styles.secondaryText}>
+						Not now
+					</OMText>
+				</Pressable>
+				<Pressable
+					onPress={onLoad}
+					disabled={loading}
+					style={[styles.runButton, loading ? styles.runButtonDisabled : null]}
+				>
+					<OMText variant="subtitle" style={styles.runButtonText}>
+						{loading ? 'Loading…' : 'Load example'}
+					</OMText>
+				</Pressable>
+			</View>
+		</View>
 	)
 }
 
