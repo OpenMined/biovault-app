@@ -34,7 +34,7 @@ export default function FileAnalysisScreen() {
 					<OMText variant="h4" style={styles.emptyTitle}>
 						File not found
 					</OMText>
-					<Pressable onPress={() => router.replace('/(tabs)/home')} style={styles.backButton}>
+					<Pressable onPress={() => router.replace('/(tabs)/files')} style={styles.backButton}>
 						<OMText variant="subtitle" style={styles.backButtonText}>
 							Back to files
 						</OMText>

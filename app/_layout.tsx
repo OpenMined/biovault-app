@@ -1,4 +1,5 @@
 import { initAnalytics } from '@/lib/analytics'
+import { getAppPreferenceSync } from '@/lib/app-preferences'
 import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { omColors } from '@/styles/brand'
@@ -7,7 +8,7 @@ import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
-import { View } from 'react-native'
+import { Platform, View } from 'react-native'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import 'react-native-reanimated'
 
@@ -16,10 +17,54 @@ import { requireOptionalNativeModule } from 'expo';
 const DevMenuPreferences = requireOptionalNativeModule('DevMenuPreferences');
 DevMenuPreferences?.setPreferencesAsync({ showFloatingActionButton: false });
 
-
 const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.biovault.net')
 applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})
+
+function RootNavigator() {
+	const completedOnboarding = getAppPreferenceSync('hasCompletedOnboarding') === 'true'
+	const acceptedDisclaimer = getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+	const canAccessApp = completedOnboarding && acceptedDisclaimer
+
+	return (
+		<Stack
+			screenOptions={{
+				headerShown: false,
+				contentStyle: { backgroundColor: omColors.grayscale850 },
+			}}
+		>
+			<Stack.Protected guard={!canAccessApp}>
+				<Stack.Screen
+					name="onboarding"
+					options={{ presentation: 'card', animation: 'none' }}
+				/>
+			</Stack.Protected>
+
+			<Stack.Protected guard={canAccessApp}>
+				<Stack.Screen
+					name="index"
+					options={{ animation: 'none' }}
+				/>
+				<Stack.Screen
+					name="(tabs)"
+					options={{ animation: 'none' }}
+				/>
+				<Stack.Screen
+					name="data-source"
+					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
+				/>
+				<Stack.Screen
+					name="files/[documentId]/rename"
+					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
+				/>
+				<Stack.Screen name="gene/[geneName]" />
+				<Stack.Screen name="tests/[slug]" options={{ presentation: 'card' }} />
+			</Stack.Protected>
+
+			<Stack.Screen name="+not-found" />
+		</Stack>
+	)
+}
 
 // ts-prune-ignore-next
 export default function RootLayout() {
@@ -27,6 +72,7 @@ export default function RootLayout() {
 		Inter: require('@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf'),
 		Rubik: require('@expo-google-fonts/rubik/400Regular/Rubik_400Regular.ttf'),
 	})
+	const fontsReady = Platform.OS === 'web' ? (fontsLoaded || !!fontError) : true
 
 	usePushNotifications()
 
@@ -38,43 +84,19 @@ export default function RootLayout() {
 	}, [])
 
 	useEffect(() => {
-		if (fontsLoaded || fontError) {
+		if (fontsReady) {
 			SplashScreen.hideAsync().catch(() => {})
 		}
-	}, [fontsLoaded, fontError])
+	}, [fontsReady])
 
-	if (!fontsLoaded && !fontError) {
+	if (!fontsReady) {
 		return null
 	}
 
 	return (
 		<KeyboardProvider>
 			<View style={{ flex: 1, backgroundColor: omColors.grayscale850 }}>
-				<Stack
-					screenOptions={{
-						headerShown: false,
-						contentStyle: { backgroundColor: omColors.grayscale850 },
-					}}
-				>
-				<Stack.Screen
-					name="(tabs)"
-				/>
-				<Stack.Screen
-					name="onboarding"
-					options={{ presentation: 'card', animation: 'none' }}
-				/>
-				<Stack.Screen
-					name="data-source"
-					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
-				/>
-				<Stack.Screen
-					name="files/[documentId]/rename"
-					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
-				/>
-				<Stack.Screen name="+not-found" />
-				<Stack.Screen name="gene/[geneName]" />
-				<Stack.Screen name="tests/[slug]" options={{ presentation: 'card' }} />
-				</Stack>
+				<RootNavigator />
 			</View>
 			<StatusBar style="light" />
 		</KeyboardProvider>

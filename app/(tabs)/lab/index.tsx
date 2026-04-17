@@ -20,6 +20,7 @@ import {
 	loadRemoteAssayFile,
 	normalizeLabSearchParam,
 } from '@/lib/lab/assay-loader'
+import { LAB_SAMPLE_PRESETS, loadLabSamplePresetFiles, type LabSamplePreset } from '@/lib/lab/sample-data'
 import { getLabRunDisabledReason, runLabAssay } from '@/lib/lab/runner'
 import type {
 	Assay,
@@ -52,6 +53,8 @@ export default function LabScreen() {
 	const [dismissedAssayUrl, setDismissedAssayUrl] = useState<string | null>(null)
 	const [remoteAssayLoadError, setRemoteAssayLoadError] = useState<string | null>(null)
 	const [remoteAssayLoading, setRemoteAssayLoading] = useState(false)
+	const [samplePresetLoadingId, setSamplePresetLoadingId] = useState<string | null>(null)
+	const [samplePresetError, setSamplePresetError] = useState<string | null>(null)
 
 	const requestedAssayUrl = normalizeLabSearchParam(params.assay)
 	const hasRequestedAssayLoaded = useMemo(
@@ -128,6 +131,29 @@ export default function LabScreen() {
 			setRemoteAssayLoading(false)
 		}
 	}, [addAssay, requestedAssayUrl, trackEvent])
+
+	const loadSamplePreset = useCallback(async (preset: LabSamplePreset) => {
+		setSamplePresetLoadingId(preset.id)
+		setSamplePresetError(null)
+		trackEvent('lab_sample_preset_requested', { presetId: preset.id })
+		try {
+			const files = await loadLabSamplePresetFiles(preset)
+			ingestMany(files)
+			trackEvent('lab_sample_preset_loaded', {
+				presetId: preset.id,
+				totalFiles: files.length,
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			setSamplePresetError(message)
+			trackEvent('lab_sample_preset_failed', {
+				presetId: preset.id,
+				error: message,
+			})
+		} finally {
+			setSamplePresetLoadingId(null)
+		}
+	}, [ingestMany, trackEvent])
 
 	useEffect(() => {
 		if (Platform.OS !== 'web') return
@@ -290,6 +316,21 @@ export default function LabScreen() {
 					genomeCount={genomes.length}
 					assayCount={assays.length}
 				/>
+
+				<View style={styles.section}>
+					<SectionHeader label="Try sample data" count={LAB_SAMPLE_PRESETS.length} />
+					<View style={styles.cardGrid}>
+						{LAB_SAMPLE_PRESETS.map((preset) => (
+							<SamplePresetCard
+								key={preset.id}
+								preset={preset}
+								error={samplePresetError}
+								loading={samplePresetLoadingId === preset.id}
+								onLoad={() => void loadSamplePreset(preset)}
+							/>
+						))}
+					</View>
+				</View>
 
 				{genomes.length > 0 ? (
 					<View style={styles.section}>
@@ -507,6 +548,53 @@ function RemoteAssayPrompt({
 					</OMText>
 				</Pressable>
 			</View>
+		</View>
+	)
+}
+
+function SamplePresetCard({
+	error,
+	loading,
+	onLoad,
+	preset,
+}: {
+	error: string | null
+	loading: boolean
+	onLoad: () => void
+	preset: LabSamplePreset
+}) {
+	return (
+		<View style={styles.card}>
+			<View style={styles.sampleHeader}>
+				<View style={{ flex: 1, gap: omSpacing.xs }}>
+					<OMText variant="caption" style={styles.sectionLabel}>
+						SAMPLE DATA
+					</OMText>
+					<OMText variant="subtitle" style={styles.cardTitle}>
+						{preset.title}
+					</OMText>
+				</View>
+			</View>
+			<OMText variant="body" style={styles.sampleBody}>
+				{preset.description}
+			</OMText>
+			<OMText variant="caption" style={styles.sampleMeta}>
+				Genome: {preset.genomeLabel} · Assay: {preset.assayLabel}
+			</OMText>
+			{error ? (
+				<OMText variant="caption" style={styles.remoteAssayError}>
+					{error}
+				</OMText>
+			) : null}
+			<Pressable
+				onPress={onLoad}
+				disabled={loading}
+				style={[styles.runButton, loading ? styles.runButtonDisabled : null, styles.sampleButton]}
+			>
+				<OMText variant="subtitle" style={styles.runButtonText}>
+					{loading ? 'Loading…' : 'Load sample'}
+				</OMText>
+			</Pressable>
 		</View>
 	)
 }
@@ -784,6 +872,14 @@ const styles = StyleSheet.create({
 		flexWrap: 'wrap',
 		gap: omSpacing.s,
 	},
+	sampleHeader: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		justifyContent: 'space-between',
+	},
+	sampleBody: { color: omColors.grayscale300 },
+	sampleMeta: { color: omColors.grayscale500, marginTop: omSpacing.xs },
+	sampleButton: { alignSelf: 'flex-start', marginTop: omSpacing.s },
 	sectionHeader: { flexDirection: 'row', alignItems: 'baseline', gap: omSpacing.s },
 	sectionTitle: { color: omTheme.primaryText },
 	sectionCount: { color: omColors.grayscale500 },

@@ -84,7 +84,7 @@ export default function ImportedFileScreen() {
 			if (Platform.OS === 'web') {
 				void deleteHandles(document.id)
 			}
-			router.replace('/(tabs)/home')
+			router.replace('/(tabs)/files')
 		}
 
 		const title = `Remove "${document.name}"?`
@@ -122,7 +122,7 @@ export default function ImportedFileScreen() {
 					<OMText variant="h4" style={styles.missingTitle}>
 						File not found
 					</OMText>
-					<Pressable onPress={() => router.replace('/(tabs)/home')} style={styles.backButton}>
+					<Pressable onPress={() => router.replace('/(tabs)/files')} style={styles.backButton}>
 						<OMText variant="subtitle" style={styles.backButtonText}>
 							Back to files
 						</OMText>
