@@ -35,6 +35,7 @@ VARIANTS='[
 for f in "$CRAM" "$CRAI" "$FASTA" "$FAI"; do
   if [ ! -e "$f" ]; then
     echo "[wasm.sh] missing input: $f" >&2
+    echo "[wasm.sh] run ./tools/fetch_test_data.sh to download the required fixtures" >&2
     exit 1
   fi
 done

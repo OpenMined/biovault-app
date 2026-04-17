@@ -4,6 +4,7 @@ set -euo pipefail
 WEB_URL="${WEB_URL:-http://localhost:8081}"
 PORT="${PORT:-8081}"
 LOG_DIR=".maestro-web/logs"
+FIXTURE_23ANDME="test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip"
 
 PW_EXTRA=()
 for arg in "$@"; do
@@ -21,6 +22,12 @@ for arg in "$@"; do
   esac
 done
 mkdir -p "$LOG_DIR" ".maestro-web/screenshots"
+
+if [ ! -f "$FIXTURE_23ANDME" ]; then
+  echo "Missing required web test fixture: $FIXTURE_23ANDME" >&2
+  echo "Run ./tools/fetch_test_data.sh to download repo test fixtures, then rerun ./test-web.sh." >&2
+  exit 1
+fi
 
 WEB_PID=""
 cleanup() {
@@ -47,7 +54,10 @@ echo "==> Checking monty artifact freshness"
 node ./scripts/check-monty-artifacts.mjs
 
 echo "==> Ensuring Playwright browsers are installed"
-npx playwright install chromium >/dev/null 2>&1 || true
+if ! npx playwright install chromium; then
+  echo "Playwright Chromium install failed. Fix Playwright/browser setup and rerun." >&2
+  exit 1
+fi
 
 SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-apol1.spec.ts)
 echo "==> Running Playwright specs: ${SPECS[*]}"

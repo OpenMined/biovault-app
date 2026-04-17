@@ -110,7 +110,10 @@ else
 fi
 
 echo "==> Ensuring Playwright browsers are installed"
-npx playwright install chromium >/dev/null 2>&1 || true
+if ! npx playwright install chromium; then
+  echo "Playwright Chromium install failed. Fix Playwright/browser setup and rerun." >&2
+  exit 1
+fi
 
 PW_ARGS=()
 [ "$INTERACTIVE" = "1" ] && PW_ARGS+=(--headed)

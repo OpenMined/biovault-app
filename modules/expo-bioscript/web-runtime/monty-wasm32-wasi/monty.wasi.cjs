@@ -116,4 +116,4 @@ module.exports.MontyNameLookup = __napiModule.exports.MontyNameLookup
 module.exports.MontyRepl = __napiModule.exports.MontyRepl
 module.exports.MontySnapshot = __napiModule.exports.MontySnapshot
 module.exports.MontyTypingError = __napiModule.exports.MontyTypingError
-module.exports.MountDirectory = __napiModule.exports.MountDirectory
+module.exports.MountDir = __napiModule.exports.MountDir

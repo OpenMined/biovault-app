@@ -10,6 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+MONTY_ROOT="${APP_ROOT}/bioscript/monty"
 MONTY_JS_DIR="${APP_ROOT}/bioscript/monty/crates/monty-js"
 DEST="${SCRIPT_DIR}/../web-runtime/monty-wasm32-wasi"
 
@@ -17,6 +18,21 @@ if [ ! -d "${MONTY_JS_DIR}" ]; then
   echo "[build-monty-web] monty submodule missing at ${MONTY_JS_DIR}" >&2
   echo "[build-monty-web] did you forget \`git submodule update --init --recursive\`?" >&2
   exit 1
+fi
+
+if [ ! -x "${MONTY_ROOT}/.venv/bin/python3" ]; then
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "[build-monty-web] monty Python environment missing and uv is not installed" >&2
+    echo "[build-monty-web] install uv or create ${MONTY_ROOT}/.venv manually, then rerun" >&2
+    exit 1
+  fi
+  echo "[build-monty-web] monty Python environment missing; running uv sync --all-packages --only-dev"
+  (cd "${MONTY_ROOT}" && uv sync --all-packages --only-dev)
+fi
+
+if [ ! -x "${MONTY_JS_DIR}/node_modules/.bin/run-s" ]; then
+  echo "[build-monty-web] monty-js dependencies missing; running npm ci"
+  (cd "${MONTY_JS_DIR}" && npm ci)
 fi
 
 echo "[build-monty-web] rebuilding monty-js (release, ESM)"

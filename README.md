@@ -187,6 +187,20 @@ Run the BioScript CLI directly:
 ./cli --help
 ```
 
+## Test Data
+
+Some repo tests rely on local fixture files under `test-data/`.
+
+Bootstrap them with:
+
+```bash
+./tools/fetch_test_data.sh
+```
+
+This downloads the web 23andMe fixture used by `./test-web.sh` plus the larger CRAM/reference fixtures used by `./wasm.sh` and some bioscript paths.
+
+If `./test-web.sh` reports a missing fixture, run `./tools/fetch_test_data.sh` and rerun the tests.
+
 ## Testing the Rust via CLI
 ```bash
 ./cli --help
