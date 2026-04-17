@@ -80,13 +80,12 @@ phase_pods() {
     echo "ios/Podfile missing — run prebuild first" >&2
     exit 1
   fi
-  # Fast path: if cached Pods/Manifest.lock already matches Podfile.lock,
-  # CocoaPods itself would be a no-op — skip the whole Ruby process and save
-  # ~2m on cache hits.
-  if [ -f ios/Pods/Manifest.lock ] && cmp -s ios/Podfile.lock ios/Pods/Manifest.lock; then
-    echo "==> Manifest.lock matches Podfile.lock — skipping pod install"
-    return 0
-  fi
+  # We don't skip pod install even when Manifest.lock matches: several
+  # podspecs (ExpoSQLite, ExpoBioscript, ...) do real side effects when
+  # CocoaPods evaluates them — copying vendored C sources, running
+  # prepare_command scripts — and those outputs live outside ios/ so they
+  # aren't all captured by the ios/ cache. Skipping leaves the build with
+  # dangling input files like node_modules/expo-sqlite/ios/sqlite3.c.
   echo "==> pod install (no repo-update, logs: $LOG_DIR/pods.log)"
   (cd ios && pod install >"../$LOG_DIR/pods.log" 2>&1) || {
     echo "pod install failed. Last 50 lines:" >&2
