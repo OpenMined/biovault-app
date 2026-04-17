@@ -15,6 +15,10 @@ export function isBioscriptAvailable(): boolean {
   return ExpoBioscriptModule.isAvailable();
 }
 
+export function warmupBioscriptRuntime(): Promise<void> {
+  return ExpoBioscriptModule.warmup();
+}
+
 export function runFile(request: RunFileRequest): Promise<RunFileResult> {
   return ExpoBioscriptModule.runFile(request);
 }

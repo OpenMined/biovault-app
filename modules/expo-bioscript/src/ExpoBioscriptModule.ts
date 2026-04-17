@@ -11,12 +11,16 @@ declare class ExpoBioscriptNativeModule extends NativeModule {
 
 type ExpoBioscriptModuleShape = {
   isAvailable(): boolean;
+  warmup(): Promise<void>;
   runFile(request: RunFileRequest): Promise<RunFileResult>;
 };
 
 const ExpoBioscriptModule: ExpoBioscriptModuleShape =
   Platform.OS === 'web'
     ? ExpoBioscriptWebModule
-    : requireNativeModule<ExpoBioscriptNativeModule>('ExpoBioscript');
+    : {
+        ...requireNativeModule<ExpoBioscriptNativeModule>('ExpoBioscript'),
+        warmup: async () => {},
+      };
 
 export default ExpoBioscriptModule;

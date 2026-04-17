@@ -88,6 +88,11 @@ export function isWebRuntimeAvailable(): boolean {
   );
 }
 
+export async function warmupWebRuntime(): Promise<void> {
+  if (!isWebRuntimeAvailable()) return;
+  await loadMontyModule();
+}
+
 export async function runFileOnWeb(request: RunFileRequest): Promise<RunFileResult> {
   if (!isWebRuntimeAvailable()) {
     throw new Error(WEB_SUPPORT_ERROR);

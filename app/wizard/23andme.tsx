@@ -116,7 +116,7 @@ const wizardSteps = [
 		title: 'Step 9: Upload to BioVault',
 		icon: '🚀',
 		description:
-			'Once the file is on your phone, tap the "Load" button in BioVault and select your genome file from your phone\'s file system.',
+			'Once the file is on your phone, tap the "Load" button in BioVault and select a genome file from your phone\'s file system.',
 		image: require('@/assets/guides/23andme/9.jpg'),
 		backgroundColor: '#e0f2e7',
 		isLast: true,
