@@ -171,9 +171,7 @@ async function loadMontyModule(): Promise<MontyBrowserModule> {
       asyncWorkPoolSize: 4,
       wasi,
       onCreateWorker() {
-        return new Worker(new URL('./workers/montyWasiThreadWorker', window.location.href), {
-          type: 'module',
-        })
+        return new Worker(new URL('./workers/montyWasiThreadWorker', window.location.href))
       },
        
       overwriteImports(importObject: any) {

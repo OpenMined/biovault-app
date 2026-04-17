@@ -50,7 +50,7 @@ const config: ExpoConfig = {
 	version: '0.3.0',
 	orientation: 'portrait',
 	scheme: 'biovaultapp',
-	icon: './assets/images/adaptive-icon.png',
+	icon: './assets/icons/ios-light.png',
 	userInterfaceStyle: 'dark',
 	ios: {
 		bundleIdentifier: getEnvironmentValues().bundleIdentifier,
@@ -82,7 +82,7 @@ const config: ExpoConfig = {
 	web: {
 		bundler: 'metro',
 		output: 'static',
-		favicon: './assets/images/icon.png',
+		favicon: './assets/icons/ios-light.png',
 	},
 	extra: {
 		eas: {

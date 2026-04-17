@@ -174,9 +174,7 @@ function ensureLookupWorker(): Worker {
 	if (typeof Worker === 'undefined') {
 		throw new Error('Web Worker not available in this environment')
 	}
-	const worker = new Worker(new URL('./workers/bioscriptLookupWorker', window.location.href), {
-		type: 'module',
-	})
+	const worker = new Worker(new URL('./workers/bioscriptLookupWorker', window.location.href))
 	worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
 		const msg = event.data
 		const pending = pendingLookupRequests.get(msg.requestId)
