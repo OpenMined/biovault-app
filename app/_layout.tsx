@@ -1,5 +1,5 @@
 import { initAnalytics } from '@/lib/analytics'
-import { getAppPreferenceSync } from '@/lib/app-preferences'
+import { getAppPreferenceSync, subscribeToAppPreference } from '@/lib/app-preferences'
 import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { omColors } from '@/styles/brand'
@@ -7,7 +7,7 @@ import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Platform, View } from 'react-native'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import 'react-native-reanimated'
@@ -22,9 +22,27 @@ applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})
 
 function RootNavigator() {
-	const completedOnboarding = getAppPreferenceSync('hasCompletedOnboarding') === 'true'
-	const acceptedDisclaimer = getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+	const [completedOnboarding, setCompletedOnboarding] = useState(
+		() => getAppPreferenceSync('hasCompletedOnboarding') === 'true'
+	)
+	const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(
+		() => getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+	)
 	const canAccessApp = completedOnboarding && acceptedDisclaimer
+
+	useEffect(() => {
+		const unsubscribeCompleted = subscribeToAppPreference('hasCompletedOnboarding', (value) => {
+			setCompletedOnboarding(value === 'true')
+		})
+		const unsubscribeDisclaimer = subscribeToAppPreference('hasAcceptedResearchDisclaimer', (value) => {
+			setAcceptedDisclaimer(value === 'true')
+		})
+
+		return () => {
+			unsubscribeCompleted()
+			unsubscribeDisclaimer()
+		}
+	}, [])
 
 	return (
 		<Stack
@@ -53,7 +71,6 @@ function RootNavigator() {
 					name="data-source"
 					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
 				/>
-				<Stack.Screen name="examples" />
 				<Stack.Screen
 					name="files/[documentId]/rename"
 					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}

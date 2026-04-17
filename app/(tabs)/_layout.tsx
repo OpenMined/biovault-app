@@ -1,5 +1,7 @@
 import { ActiveDocumentProvider, useActiveDocument } from '@/components/explore/ActiveDocumentContext'
 import { OMIcon } from '@/components/ui/OMIcon'
+import { OMText } from '@/components/ui/OMText'
+import { cycleColorSchemePreferenceSync, useColorSchemePreference } from '@/lib/color-theme'
 import { Slot, Link } from 'expo-router'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { omColors, omRadius, omTheme } from '@/styles/brand'
@@ -79,17 +81,42 @@ function TabChrome() {
 	)
 }
 
+function WebThemeToggle() {
+	const pref = useColorSchemePreference()
+	const { icon, label } =
+		pref === 'light'
+			? { icon: 'sunny-outline' as const, label: 'Light' }
+			: pref === 'dark'
+				? { icon: 'moon-outline' as const, label: 'Dark' }
+				: { icon: 'contrast-outline' as const, label: 'Auto' }
+	return (
+		<Pressable
+			onPress={() => cycleColorSchemePreferenceSync()}
+			style={styles.webThemeButton}
+			accessibilityLabel={`Color theme: ${label}. Tap to cycle.`}
+		>
+			<OMIcon name={icon} size={16} tone="accent" />
+			<OMText variant="caption" style={styles.webThemeButtonText}>
+				{label}
+			</OMText>
+		</Pressable>
+	)
+}
+
 export default function TabLayout() {
 	return (
 		<ActiveDocumentProvider>
 			{Platform.OS === 'web' ? (
 				<View style={styles.container}>
 					<Slot />
-					<Link href="/(tabs)/settings" asChild>
-						<Pressable style={styles.webSettingsButton}>
-							<OMIcon name="settings-outline" size={18} tone="accent" />
-						</Pressable>
-					</Link>
+					<View style={styles.webTopActions}>
+						<WebThemeToggle />
+						<Link href="/(tabs)/settings" asChild>
+							<Pressable style={styles.webSettingsButton}>
+								<OMIcon name="settings-outline" size={18} tone="accent" />
+							</Pressable>
+						</Link>
+					</View>
 				</View>
 			) : <TabChrome />}
 		</ActiveDocumentProvider>
@@ -100,10 +127,30 @@ const styles = StyleSheet.create({
 	container: {
 		flex: 1,
 	},
-	webSettingsButton: {
+	webTopActions: {
 		position: 'absolute',
 		top: 20,
 		right: 20,
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 8,
+		zIndex: 1000,
+	},
+	webThemeButton: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 6,
+		height: 40,
+		paddingHorizontal: 14,
+		borderRadius: omRadius.full,
+		backgroundColor: 'rgba(23,22,29,0.78)',
+		borderWidth: 1,
+		borderColor: 'rgba(83,190,169,0.24)',
+	},
+	webThemeButtonText: {
+		color: omTheme.primaryText,
+	},
+	webSettingsButton: {
 		width: 40,
 		height: 40,
 		borderRadius: omRadius.full,
@@ -112,6 +159,5 @@ const styles = StyleSheet.create({
 		backgroundColor: 'rgba(23,22,29,0.78)',
 		borderWidth: 1,
 		borderColor: 'rgba(83,190,169,0.24)',
-		zIndex: 1000,
 	},
 })

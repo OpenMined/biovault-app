@@ -1,8 +1,35 @@
 import { getAppDb, getAppDbSync } from '@/lib/app-db'
 
+type AppPreferenceListener = (value: string | null) => void
+
+const appPreferenceListeners = new Map<string, Set<AppPreferenceListener>>()
+
+function notifyAppPreferenceListeners(key: string, value: string | null) {
+	const listeners = appPreferenceListeners.get(key)
+	if (!listeners) return
+	for (const listener of listeners) {
+		listener(value)
+	}
+}
+
 export function getAppPreferenceSync(key: string): string | null {
 	const db = getAppDbSync()
 	return db.getFirstSync<{ value: string | null }>('SELECT value FROM app_preferences WHERE key = ?', key)?.value ?? null
+}
+
+export function subscribeToAppPreference(key: string, listener: AppPreferenceListener): () => void {
+	const listeners = appPreferenceListeners.get(key) ?? new Set<AppPreferenceListener>()
+	listeners.add(listener)
+	appPreferenceListeners.set(key, listeners)
+
+	return () => {
+		const current = appPreferenceListeners.get(key)
+		if (!current) return
+		current.delete(listener)
+		if (current.size === 0) {
+			appPreferenceListeners.delete(key)
+		}
+	}
 }
 
 export function setAppPreferenceSync(key: string, value: string | null) {
@@ -10,6 +37,7 @@ export function setAppPreferenceSync(key: string, value: string | null) {
 
 	if (value === null) {
 		db.runSync('DELETE FROM app_preferences WHERE key = ?', key)
+		notifyAppPreferenceListeners(key, null)
 		return
 	}
 
@@ -20,6 +48,7 @@ export function setAppPreferenceSync(key: string, value: string | null) {
 		key,
 		value
 	)
+	notifyAppPreferenceListeners(key, value)
 }
 
 export async function setAppPreference(key: string, value: string | null, retries = 3): Promise<void> {
@@ -29,6 +58,7 @@ export async function setAppPreference(key: string, value: string | null, retrie
 
 			if (value === null) {
 				await db.runAsync('DELETE FROM app_preferences WHERE key = ?', key)
+				notifyAppPreferenceListeners(key, null)
 				return
 			}
 
@@ -39,6 +69,7 @@ export async function setAppPreference(key: string, value: string | null, retrie
 				key,
 				value
 			)
+			notifyAppPreferenceListeners(key, value)
 			return
 		} catch (error) {
 			const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()

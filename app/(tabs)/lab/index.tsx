@@ -35,7 +35,7 @@ import type {
 } from '@/lib/lab/types'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import type { VariantObservation } from '@/modules/expo-bioscript'
-import { Link, useLocalSearchParams } from 'expo-router'
+import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -508,13 +508,6 @@ function HeroDrop({
 				We&rsquo;ll auto-pair indexes (.crai, .tbi) and references (.fa/.fa.fai). Drop .py
 				or .yaml assays to use as the variant plan. Click here to pick files too.
 			</OMText>
-			<Link href="/examples" asChild>
-				<Pressable style={styles.secondaryButton}>
-					<OMText variant="subtitle" style={styles.secondaryText}>
-						Browse examples
-					</OMText>
-				</Pressable>
-			</Link>
 			{genomeCount === 0 && assayCount === 0 ? (
 				<OMText variant="caption" style={styles.heroEmpty}>
 					Nothing loaded yet.
