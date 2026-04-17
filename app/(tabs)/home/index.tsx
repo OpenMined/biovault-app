@@ -109,18 +109,11 @@ export default function HomeScreen() {
 					<OMText variant="headline" style={styles.sectionTitle}>
 						Saved files
 					</OMText>
-					<View style={{ flexDirection: 'row', gap: omSpacing.s }}>
-						<Pressable onPress={() => router.push('/assay-lab' as never)} style={styles.addButton}>
-							<OMText variant="subtitle" style={styles.addButtonText}>
-								Assay lab
-							</OMText>
-						</Pressable>
-						<Pressable onPress={() => router.push('/data-source')} style={styles.addButton}>
-							<OMText variant="subtitle" style={styles.addButtonText}>
-								Add Files
-							</OMText>
-						</Pressable>
-					</View>
+					<Pressable onPress={() => router.push('/data-source')} style={styles.addButton}>
+						<OMText variant="subtitle" style={styles.addButtonText}>
+							Add Files
+						</OMText>
+					</Pressable>
 				</View>
 
 				{hasImportedDocuments ? (

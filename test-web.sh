@@ -49,7 +49,7 @@ node ./scripts/check-monty-artifacts.mjs
 echo "==> Ensuring Playwright browsers are installed"
 npx playwright install chromium >/dev/null 2>&1 || true
 
-SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/assay-lab.spec.ts)
+SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts)
 echo "==> Running Playwright specs: ${SPECS[*]}"
 if WEB_URL="$WEB_URL" npx playwright test \
     --config=.maestro-web/playwright.config.ts \

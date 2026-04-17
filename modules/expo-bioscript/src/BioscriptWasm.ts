@@ -8,6 +8,8 @@
 // just marshals bytes in and JSON out. See
 // docs/architecture/bioscript-is-source-of-truth.md.
 
+import { Platform } from 'react-native'
+
 import { Asset } from 'expo-asset'
 
 // Static imports so Metro bundles these. The wasm-pack "web" template emits
@@ -19,6 +21,13 @@ const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
 }
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const wasmAsset = require('./bioscript-wasm/bioscript_wasm_bg.wasm')
+
+// Static URLs for the Web Worker host + a separate copy of the bindings. These
+// files live under modules/expo-bioscript/web-runtime/bioscript-wasm/ so
+// Metro's dev server serves them as raw ES modules (they're not part of the JS
+// bundle). Kept as hardcoded absolute paths to mirror the Monty pattern.
+const CRAM_WORKER_URL = '/modules/expo-bioscript/web-runtime/bioscript-wasm/worker.mjs'
+const CRAM_WORKER_BINDINGS_URL = '/modules/expo-bioscript/web-runtime/bioscript-wasm/bioscript_wasm.mjs'
 
 let wasmPromise: Promise<typeof wasmJsModule> | null = null
 
@@ -81,4 +90,207 @@ export async function inspectBytes(
 		: ''
 	const json = mod.inspectBytes(name, bytes, optionsJson || null)
 	return JSON.parse(json) as BioscriptInspection
+}
+
+// === Variant lookup (CRAM + VCF, both via the same Worker) ==================
+
+export type VariantSpec = {
+	name: string
+	chrom: string
+	pos: number
+	ref: string
+	alt: string
+	rsid?: string
+	assembly?: 'grch37' | 'grch38'
+}
+
+export type VariantObservation = {
+	name: string
+	backend: string
+	matchedRsid?: string
+	assembly?: 'grch37' | 'grch38'
+	genotype?: string
+	refCount?: number
+	altCount?: number
+	depth?: number
+	rawCounts: Record<string, number>
+	decision?: string
+	evidence: string[]
+}
+
+export type VariantLookupResult = {
+	observations: VariantObservation[]
+	durationMs: number
+}
+
+export type CramVariantSpec = VariantSpec
+export type CramVariantObservation = VariantObservation
+export type CramVariantLookupResult = VariantLookupResult
+
+export type CramVariantLookupInput = {
+	cramFile: File
+	craiBytes: Uint8Array
+	fastaFile: File
+	faiBytes: Uint8Array
+	variants: VariantSpec[]
+}
+
+export type VcfVariantLookupInput = {
+	vcfFile: File
+	tbiBytes: Uint8Array
+	variants: VariantSpec[]
+}
+
+type WorkerLookupCramRequest = {
+	type: 'lookupCram'
+	requestId: number
+	bindingsUrl: string
+	wasmUrl: string
+	cramFile: File
+	craiBytes: Uint8Array
+	fastaFile: File
+	faiBytes: Uint8Array
+	variantsJson: string
+}
+
+type WorkerLookupVcfRequest = {
+	type: 'lookupVcf'
+	requestId: number
+	bindingsUrl: string
+	wasmUrl: string
+	vcfFile: File
+	tbiBytes: Uint8Array
+	variantsJson: string
+}
+
+type WorkerResponseDone = { type: 'done'; requestId: number; resultJson: string; durationMs: number }
+type WorkerResponseError = { type: 'error'; requestId: number; error: string }
+type WorkerResponse = WorkerResponseDone | WorkerResponseError
+
+let sharedWorker: Worker | null = null
+let nextLookupRequestId = 1
+const pendingLookupRequests = new Map<
+	number,
+	{ resolve: (r: VariantLookupResult) => void; reject: (err: Error) => void }
+>()
+
+function ensureLookupWorker(): Worker {
+	if (Platform.OS !== 'web') {
+		throw new Error('variant lookup is only available on web')
+	}
+	if (sharedWorker) return sharedWorker
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const WorkerCtor = (globalThis as any).Worker as typeof Worker | undefined
+	if (!WorkerCtor) {
+		throw new Error('Web Worker not available in this environment')
+	}
+	const worker = new WorkerCtor(CRAM_WORKER_URL, { type: 'module' })
+	worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+		const msg = event.data
+		const pending = pendingLookupRequests.get(msg.requestId)
+		if (!pending) return
+		pendingLookupRequests.delete(msg.requestId)
+		if (msg.type === 'done') {
+			pending.resolve({
+				observations: JSON.parse(msg.resultJson) as VariantObservation[],
+				durationMs: msg.durationMs,
+			})
+		} else {
+			pending.reject(new Error(msg.error))
+		}
+	}
+	worker.onerror = (event) => {
+		// eslint-disable-next-line no-console
+		console.error('[BioscriptWasm] lookup worker crashed', event)
+		for (const [id, pending] of pendingLookupRequests.entries()) {
+			pending.reject(new Error(`lookup worker error: ${event.message ?? 'unknown'}`))
+			pendingLookupRequests.delete(id)
+		}
+		sharedWorker = null
+	}
+	sharedWorker = worker
+	return worker
+}
+
+function resolveWorkerUrls(): { wasmUrl: string; bindingsUrl: string } {
+	const wasmUrlRaw = Asset.fromModule(wasmAsset).uri
+	const wasmUrl = typeof window !== 'undefined'
+		? new URL(wasmUrlRaw, window.location.href).href
+		: wasmUrlRaw
+	const bindingsUrl = typeof window !== 'undefined'
+		? new URL(CRAM_WORKER_BINDINGS_URL, window.location.href).href
+		: CRAM_WORKER_BINDINGS_URL
+	return { wasmUrl, bindingsUrl }
+}
+
+function serializeVariants(variants: VariantSpec[]): string {
+	return JSON.stringify(
+		variants.map((v) => ({
+			name: v.name,
+			chrom: v.chrom,
+			pos: v.pos,
+			ref: v.ref,
+			alt: v.alt,
+			rsid: v.rsid ?? null,
+			assembly: v.assembly ?? null,
+		})),
+	)
+}
+
+/**
+ * Look up SNP variants against an indexed CRAM + reference FASTA. The heavy
+ * lifting happens inside a Web Worker that owns the wasm-bindgen instance
+ * and uses `FileReaderSync` to provide synchronous `readAt` callbacks into
+ * the Rust-side `JsReader`. On native/desktop this throws — use the FFI
+ * path there.
+ */
+export async function lookupCramVariants(
+	input: CramVariantLookupInput,
+): Promise<VariantLookupResult> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl, bindingsUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	const variantsJson = serializeVariants(input.variants)
+	return new Promise<VariantLookupResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, { resolve, reject })
+		const req: WorkerLookupCramRequest = {
+			type: 'lookupCram',
+			requestId,
+			bindingsUrl,
+			wasmUrl,
+			cramFile: input.cramFile,
+			craiBytes: input.craiBytes,
+			fastaFile: input.fastaFile,
+			faiBytes: input.faiBytes,
+			variantsJson,
+		}
+		worker.postMessage(req)
+	})
+}
+
+/**
+ * Look up SNP variants against a bgzipped, tabix-indexed VCF. Same worker +
+ * FileReaderSync plumbing as `lookupCramVariants`; only the index and the
+ * wasm export differ.
+ */
+export async function lookupVcfVariants(
+	input: VcfVariantLookupInput,
+): Promise<VariantLookupResult> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl, bindingsUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	const variantsJson = serializeVariants(input.variants)
+	return new Promise<VariantLookupResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, { resolve, reject })
+		const req: WorkerLookupVcfRequest = {
+			type: 'lookupVcf',
+			requestId,
+			bindingsUrl,
+			wasmUrl,
+			vcfFile: input.vcfFile,
+			tbiBytes: input.tbiBytes,
+			variantsJson,
+		}
+		worker.postMessage(req)
+	})
 }

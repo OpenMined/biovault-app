@@ -1,5 +1,26 @@
 export type BioscriptInputFormat = 'auto' | 'text' | 'zip' | 'vcf' | 'cram';
 
+/** Descriptor passed from the web UI to the Monty runtime so `bioscript.load_genome`
+ * (and the legacy `bioscript.load_genotypes`) can dispatch to the right backend.
+ * See docs/architecture/wasm.md — this is the Phase 2 contract.
+ *
+ * On web, `GenomeDescriptor.kind === 'cram' | 'vcf'` is served via the
+ * bioscript-wasm Web Worker (`lookupCramVariants` / `lookupVcfVariants`);
+ * 'text' / 'zip' fall back to the in-memory TS parser for now.
+ */
+export type GenomeDescriptor =
+  | { kind: 'text'; name: string; text: string }
+  | { kind: 'zip'; name: string; text: string }
+  | { kind: 'vcf'; name: string; vcfFile: File; tbiBytes: Uint8Array }
+  | {
+      kind: 'cram'
+      name: string
+      cramFile: File
+      craiBytes: Uint8Array
+      fastaFile: File
+      faiBytes: Uint8Array
+    };
+
 export type RunFileRequest = {
   scriptPath: string;
   scriptContents?: string;
@@ -21,6 +42,16 @@ export type RunFileRequest = {
   maxMemoryBytes?: number;
   maxAllocations?: number;
   maxRecursionDepth?: number;
+  /**
+   * Web-only: rich genome descriptors the script can reference by name.
+   * Python calls `bioscript.load_genome(name)` → the runtime looks up
+   * `genomes[name]` and dispatches lookups to text/VCF/CRAM accordingly.
+   *
+   * Legacy `bioscript.load_genotypes(inputFile)` is still supported: if
+   * `genomes[inputFile]` exists the new path is used, otherwise the old
+   * text-only path via `inputContents` runs.
+   */
+  genomes?: Record<string, GenomeDescriptor>;
 };
 
 export type RunFileResult = {
