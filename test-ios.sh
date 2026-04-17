@@ -110,12 +110,19 @@ phase_rust_ios() {
     echo "==> BioscriptFFI.xcframework slices present, skipping rust-ios build"
     return 0
   fi
-  echo "==> build-rust-ios.sh (logs: $LOG_DIR/rust-ios.log)"
-  sh "$script" >"$LOG_DIR/rust-ios.log" 2>&1 || {
-    echo "build-rust-ios.sh failed. Last 50 lines:" >&2
-    tail -50 "$LOG_DIR/rust-ios.log" >&2
-    exit 1
-  }
+  echo "==> build-rust-ios.sh (streaming + tee to $LOG_DIR/rust-ios.log)"
+  sh "$script" 2>&1 | tee "$LOG_DIR/rust-ios.log"
+  echo "==> xcframework slices after build:"
+  ls -la "$xcf" 2>&1 || true
+  for slice in ios-arm64 ios-arm64-simulator; do
+    if [ -f "$xcf/$slice/libbioscript_ffi.a" ]; then
+      echo "-- $slice/libbioscript_ffi.a:"
+      ls -la "$xcf/$slice/libbioscript_ffi.a"
+      nm "$xcf/$slice/libbioscript_ffi.a" 2>/dev/null | grep -E "bioscript_(run_file_json|free_string)" || echo "  (symbols not found via nm)"
+    else
+      echo "-- $slice/libbioscript_ffi.a MISSING"
+    fi
+  done
 }
 
 phase_build() {
