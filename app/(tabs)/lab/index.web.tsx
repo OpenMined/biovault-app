@@ -51,7 +51,6 @@ import {
 	ScrollView,
 	StyleSheet,
 	View,
-	useWindowDimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -81,7 +80,6 @@ export default function LabScreen() {
 
 	const params = useLocalSearchParams<{ assay?: string | string[]; example?: string | string[] }>()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
-	const { width } = useWindowDimensions()
 
 	const [genomes, setGenomes] = useState<Genome[]>([])
 	const [assays, setAssays] = useState<Assay[]>([])
@@ -134,8 +132,6 @@ export default function LabScreen() {
 		Boolean(requestedExample) &&
 		requestedExample?.id !== dismissedExampleId &&
 		!hasRequestedExampleLoaded
-
-	const isWide = width >= 720
 
 	const addAssay = useCallback((file: File, language: Assay['language'], source?: string) => {
 		const assay = createAssayFromFile(file, language, source)
@@ -216,10 +212,7 @@ export default function LabScreen() {
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				setSamplePresetError(message)
-				trackEvent('lab_sample_preset_failed', {
-					presetId: preset.id,
-					error: message,
-				})
+				trackEvent('lab_sample_preset_failed', { presetId: preset.id, error: message })
 			} finally {
 				setSamplePresetLoadingId(null)
 			}
@@ -325,17 +318,6 @@ export default function LabScreen() {
 		setRun({ status: 'idle' })
 	}, [])
 
-	const startOver = useCallback(() => {
-		setAssays([])
-		setGenomes([])
-		setUnknowns([])
-		setSelectedAssayId(null)
-		setSelectedGenomeId(null)
-		setRun({ status: 'idle' })
-		setDismissedAssayUrl(null)
-		setDismissedExampleId(null)
-	}, [])
-
 	const removeUnknown = useCallback((id: string) => {
 		setUnknowns((prev) => prev.filter((u) => u.id !== id))
 	}, [])
@@ -388,191 +370,101 @@ export default function LabScreen() {
 		void executeRun()
 	}, [activeGenome, activeAssay, run.status, runDisabledReason, executeRun])
 
-	const stage: Stage =
-		run.status !== 'idle' ? 'result' : activeAssay ? 'drop' : 'choose'
+	const hasAnyFiles = Boolean(activeAssay || activeGenome || unknowns.length > 0)
 
 	return (
 		<ThemeCtx.Provider value={themeValue}>
 			<SafeAreaView style={styles.safe} edges={['top']}>
 				{dragActive ? <DragOverlay /> : null}
 
-				<ScrollView
-					style={styles.scroll}
-					contentContainerStyle={styles.content}
-					key={stage}
-				>
-					{stage === 'choose' ? (
-						<ChooseStage
-							deepLinkUrl={showRemoteAssayPrompt ? requestedAssayUrl : null}
-							deepLinkLoading={remoteAssayLoading}
-							deepLinkError={remoteAssayLoadError}
-							onLoadDeepLink={() => void loadRequestedAssay()}
-							onDismissDeepLink={() =>
+				<ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+					<Hero />
+
+					{showRemoteAssayPrompt && requestedAssayUrl ? (
+						<SharedPrompt
+							kicker="ASSAY SHARED WITH YOU"
+							title="Load this assay?"
+							meta={tryGetHostPath(requestedAssayUrl)}
+							loading={remoteAssayLoading}
+							error={remoteAssayLoadError}
+							primaryLabel="Load assay"
+							onPrimary={() => void loadRequestedAssay()}
+							onDismiss={() =>
 								requestedAssayUrl && setDismissedAssayUrl(requestedAssayUrl)
 							}
-							sharedExample={showExamplePrompt ? requestedExample : null}
-							sharedExampleLoading={
-								requestedExample ? samplePresetLoadingId === requestedExample.id : false
-							}
-							sharedExampleError={samplePresetError}
-							onLoadSharedExample={() =>
-								requestedExample && void loadSamplePreset(requestedExample)
-							}
-							onDismissSharedExample={() =>
+						/>
+					) : null}
+
+					{showExamplePrompt && requestedExample ? (
+						<SharedPrompt
+							kicker="SAMPLE SHARED WITH YOU"
+							title={`Load ${requestedExample.title}?`}
+							meta={`${requestedExample.inputKindLabel} · ${requestedExample.assayLabel}`}
+							loading={samplePresetLoadingId === requestedExample.id}
+							error={samplePresetError}
+							primaryLabel="Load & run"
+							onPrimary={() => void loadSamplePreset(requestedExample)}
+							onDismiss={() =>
 								requestedExample && setDismissedExampleId(requestedExample.id)
 							}
-							samplePresetLoadingId={samplePresetLoadingId}
-							samplePresetAssayLoadingId={samplePresetAssayLoadingId}
-							samplePresetError={samplePresetError}
-							onUseWithMyFiles={(preset) => void loadAssayFromPreset(preset)}
-							onTryWithDemoData={(preset) => void loadSamplePreset(preset)}
-							onDropOwnAssay={() => openPicker('.py,.yaml,.yml')}
-							pendingGenome={activeGenome}
-							onClearPendingGenome={clearGenome}
-							isWide={isWide}
 						/>
 					) : null}
 
-					{stage === 'drop' && activeAssay ? (
-						<DropStage
-							assay={activeAssay}
-							genome={activeGenome}
-							dragActive={dragActive}
-							onChooseFile={() => openPicker()}
-							onBack={clearAssay}
-							onRemoveGenome={clearGenome}
-							unknowns={unknowns}
-							onRemoveUnknown={removeUnknown}
+					<DropZone
+						compact={hasAnyFiles}
+						dragActive={dragActive}
+						onChoose={() => openPicker()}
+					/>
+
+					{activeAssay ? (
+						<AssayRow assay={activeAssay} onClear={clearAssay} />
+					) : null}
+
+					{activeGenome ? (
+						<GenomeRow genome={activeGenome} onClear={clearGenome} />
+					) : null}
+
+					{unknowns.length > 0 ? (
+						<UnknownFilesNote unknowns={unknowns} onRemove={removeUnknown} />
+					) : null}
+
+					{run.status === 'running' ? (
+						<RunningIndicator assayName={activeAssay?.name ?? 'assay'} />
+					) : null}
+
+					{run.status === 'done' && run.observations ? (
+						<ResultPanel
+							assayName={activeAssay?.name ?? 'assay'}
+							durationMs={run.durationMs ?? 0}
+							observations={run.observations}
 						/>
 					) : null}
 
-					{stage === 'result' && activeAssay ? (
-						<ResultStage
-							run={run}
-							assay={activeAssay}
-							genome={activeGenome}
-							onTryAnotherFile={clearGenome}
-							onChangeAssay={clearAssay}
-							onStartOver={startOver}
-						/>
+					{run.status === 'done' && run.textOutput !== undefined ? (
+						<TextResultPanel durationMs={run.durationMs ?? 0} text={run.textOutput} />
 					) : null}
+
+					{run.status === 'error' && run.error ? <ErrorPanel error={run.error} /> : null}
+
+					<PresetList
+						pendingGenome={activeGenome}
+						samplePresetLoadingId={samplePresetLoadingId}
+						samplePresetAssayLoadingId={samplePresetAssayLoadingId}
+						samplePresetError={samplePresetError}
+						onActivate={(preset) =>
+							activeGenome ? void loadAssayFromPreset(preset) : void loadSamplePreset(preset)
+						}
+						onDropOwn={() => openPicker('.py,.yaml,.yml')}
+					/>
+
+					<PrivacyFootnote />
 				</ScrollView>
 			</SafeAreaView>
 		</ThemeCtx.Provider>
 	)
 }
 
-// === Stage: Choose =========================================================
-
-function ChooseStage({
-	deepLinkError,
-	deepLinkLoading,
-	deepLinkUrl,
-	isWide,
-	onClearPendingGenome,
-	onDismissDeepLink,
-	onDismissSharedExample,
-	onDropOwnAssay,
-	onLoadDeepLink,
-	onLoadSharedExample,
-	onTryWithDemoData,
-	onUseWithMyFiles,
-	pendingGenome,
-	samplePresetAssayLoadingId,
-	samplePresetError,
-	samplePresetLoadingId,
-	sharedExample,
-	sharedExampleError,
-	sharedExampleLoading,
-}: {
-	deepLinkError: string | null
-	deepLinkLoading: boolean
-	deepLinkUrl: string | null
-	isWide: boolean
-	onClearPendingGenome: () => void
-	onDismissDeepLink: () => void
-	onDismissSharedExample: () => void
-	onDropOwnAssay: () => void
-	onLoadDeepLink: () => void
-	onLoadSharedExample: () => void
-	onTryWithDemoData: (preset: LabSamplePreset) => void
-	onUseWithMyFiles: (preset: LabSamplePreset) => void
-	pendingGenome: Genome | null
-	samplePresetAssayLoadingId: string | null
-	samplePresetError: string | null
-	samplePresetLoadingId: string | null
-	sharedExample: LabSamplePreset | null
-	sharedExampleError: string | null
-	sharedExampleLoading: boolean
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={styles.stack}>
-			<Hero />
-
-			{deepLinkUrl ? (
-				<SharedAssayPrompt
-					url={deepLinkUrl}
-					loading={deepLinkLoading}
-					error={deepLinkError}
-					onLoad={onLoadDeepLink}
-					onDismiss={onDismissDeepLink}
-				/>
-			) : null}
-
-			{sharedExample ? (
-				<SharedExamplePrompt
-					preset={sharedExample}
-					loading={sharedExampleLoading}
-					error={sharedExampleError}
-					onLoad={onLoadSharedExample}
-					onDismiss={onDismissSharedExample}
-				/>
-			) : null}
-
-			{pendingGenome ? (
-				<PendingGenomeNotice genome={pendingGenome} onClear={onClearPendingGenome} />
-			) : null}
-
-			<View style={styles.pickerHead}>
-				<OMText variant="h3" style={styles.pickerTitle}>
-					What do you want to check?
-				</OMText>
-				<OMText variant="body" style={styles.pickerSubtitle}>
-					Pick an assay. Run it with your own files, or try it with demo data first.
-				</OMText>
-			</View>
-
-			<View style={[styles.sampleGrid, isWide ? styles.sampleGridWide : null]}>
-				{LAB_SAMPLE_PRESETS.map((preset) => (
-					<AssayChoiceCard
-						key={preset.id}
-						preset={preset}
-						demoLoading={samplePresetLoadingId === preset.id}
-						useLoading={samplePresetAssayLoadingId === preset.id}
-						onUseWithMyFiles={() => onUseWithMyFiles(preset)}
-						onTryWithDemoData={() => onTryWithDemoData(preset)}
-					/>
-				))}
-			</View>
-
-			{samplePresetError ? (
-				<OMText variant="caption" style={styles.errorInline}>
-					{samplePresetError}
-				</OMText>
-			) : null}
-
-			<Pressable onPress={onDropOwnAssay} style={styles.ghostButton}>
-				<OMIcon name="add-outline" tone="accent" size={16} />
-				<OMText variant="subtitle" style={styles.ghostButtonText}>
-					Use your own assay (.py or .yaml)
-				</OMText>
-			</Pressable>
-
-			<PrivacyFootnote />
-		</View>
-	)
-}
+// === Hero ==================================================================
 
 function Hero() {
 	const { styles } = useTheme()
@@ -591,302 +483,109 @@ function Hero() {
 	)
 }
 
-function AssayChoiceCard({
-	demoLoading,
-	onTryWithDemoData,
-	onUseWithMyFiles,
-	preset,
-	useLoading,
+// === Drop zone =============================================================
+
+function DropZone({
+	compact,
+	dragActive,
+	onChoose,
 }: {
-	demoLoading: boolean
-	onTryWithDemoData: () => void
-	onUseWithMyFiles: () => void
-	preset: LabSamplePreset
-	useLoading: boolean
+	compact: boolean
+	dragActive: boolean
+	onChoose: () => void
 }) {
 	const { styles } = useTheme()
+	if (compact) {
+		return (
+			<Pressable
+				onPress={onChoose}
+				style={[styles.dropBar, dragActive ? styles.dropBarActive : null]}
+			>
+				<OMIcon name="add-outline" tone="accent" size={18} />
+				<OMText variant="body" style={styles.dropBarText}>
+					Drop more files or click to add
+				</OMText>
+				<OMText variant="caption" style={styles.dropBarHint}>
+					.cram · .vcf.gz · .txt · .py · .yaml
+				</OMText>
+			</Pressable>
+		)
+	}
 	return (
-		<View style={styles.assayCard}>
-			<View style={styles.assayCardHead}>
-				<View style={styles.sampleIcon}>
-					<OMIcon name="flask-outline" tone="accent" size={22} />
-				</View>
-				<View style={{ flex: 1, gap: 4 }}>
-					<OMText variant="headline" style={styles.assayCardTitle}>
-						{preset.title}
-					</OMText>
-					<OMText variant="caption" style={styles.assayCardMeta}>
-						{preset.assayLabel} · expects {preset.inputKindLabel}
-					</OMText>
-				</View>
-			</View>
-
-			<OMText variant="body" style={styles.assayCardBody}>
-				{preset.description}
+		<Pressable
+			onPress={onChoose}
+			style={[styles.dropZone, dragActive ? styles.dropZoneActive : null]}
+		>
+			<OMIcon name="cloud-upload-outline" tone="accent" size={40} />
+			<OMText variant="h3" style={styles.dropZoneTitle}>
+				Drop files here
 			</OMText>
-
-			<View style={styles.assayCardActions}>
-				<Pressable
-					onPress={onUseWithMyFiles}
-					disabled={useLoading || demoLoading}
-					style={[
-						styles.primaryButton,
-						useLoading || demoLoading ? styles.primaryButtonDisabled : null,
-					]}
-				>
-					<OMText variant="subtitle" style={styles.primaryButtonText}>
-						{useLoading ? 'Loading…' : 'Use with my files'}
-					</OMText>
-				</Pressable>
-				<Pressable
-					onPress={onTryWithDemoData}
-					disabled={useLoading || demoLoading}
-					style={[
-						styles.secondaryButton,
-						useLoading || demoLoading ? styles.primaryButtonDisabled : null,
-					]}
-				>
-					<OMText variant="subtitle" style={styles.secondaryButtonText}>
-						{demoLoading ? 'Loading…' : 'Try with demo data'}
-					</OMText>
-				</Pressable>
+			<OMText variant="body" style={styles.dropZoneBody}>
+				A genome (.cram, .vcf.gz, .zip, 23andMe .txt) and an assay (.py, .yaml).
+			</OMText>
+			<View style={styles.dropZoneButton}>
+				<OMText variant="subtitle" style={styles.primaryButtonText}>
+					Choose files
+				</OMText>
 			</View>
-		</View>
+			<OMText variant="caption" style={styles.dropZoneHint}>
+				Or try a preset below — no files of your own required.
+			</OMText>
+		</Pressable>
 	)
 }
 
-function SharedAssayPrompt({
-	error,
-	loading,
-	onDismiss,
-	onLoad,
-	url,
-}: {
-	error: string | null
-	loading: boolean
-	onDismiss: () => void
-	onLoad: () => void
-	url: string
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={styles.sharedPrompt}>
-			<View style={styles.sharedPromptHead}>
-				<OMIcon name="link-outline" tone="accent" size={16} />
-				<OMText variant="caption" style={styles.sharedPromptKicker}>
-					SHARED WITH YOU
-				</OMText>
-			</View>
-			<OMText variant="headline" style={styles.sharedPromptTitle}>
-				Someone shared an assay with you
-			</OMText>
-			<OMText variant="body" style={styles.sharedPromptBody}>
-				Load the script into the lab, then drop your genome to run it.
-			</OMText>
-			<OMText variant="caption" style={styles.sharedPromptMeta}>
-				{tryGetHostPath(url)}
-			</OMText>
-			{error ? (
-				<OMText variant="caption" style={styles.errorInline}>
-					{error}
-				</OMText>
-			) : null}
-			<View style={styles.sharedPromptActions}>
-				<Pressable
-					onPress={onLoad}
-					disabled={loading}
-					style={[styles.primaryButton, loading ? styles.primaryButtonDisabled : null]}
-				>
-					<OMText variant="subtitle" style={styles.primaryButtonText}>
-						{loading ? 'Loading…' : 'Load assay'}
-					</OMText>
-				</Pressable>
-				<Pressable onPress={onDismiss} style={styles.textButton}>
-					<OMText variant="subtitle" style={styles.textButtonText}>
-						Dismiss
-					</OMText>
-				</Pressable>
-			</View>
-		</View>
-	)
-}
+// === Loaded rows ===========================================================
 
-function SharedExamplePrompt({
-	error,
-	loading,
-	onDismiss,
-	onLoad,
-	preset,
-}: {
-	error: string | null
-	loading: boolean
-	onDismiss: () => void
-	onLoad: () => void
-	preset: LabSamplePreset
-}) {
-	const { styles } = useTheme()
+function AssayRow({ assay, onClear }: { assay: Assay; onClear: () => void }) {
+	const { styles, mutedIconTone } = useTheme()
 	return (
-		<View style={styles.sharedPrompt}>
-			<View style={styles.sharedPromptHead}>
-				<OMIcon name="link-outline" tone="accent" size={16} />
-				<OMText variant="caption" style={styles.sharedPromptKicker}>
-					SHARED WITH YOU
+		<View style={[styles.loadedRow, styles.loadedRowOk]}>
+			<View style={styles.loadedRowIcon}>
+				<OMIcon name="flask-outline" tone="accent" size={18} />
+			</View>
+			<View style={styles.loadedRowText}>
+				<OMText variant="headline" style={styles.loadedRowTitle}>
+					{assay.name}
+				</OMText>
+				<OMText variant="caption" style={styles.loadedRowMeta}>
+					{assay.language === 'python' ? 'Python assay' : 'YAML assay'} ·{' '}
+					{humanLabSize(assay.file.size)} ·{' '}
+					{assay.source ? `from ${tryGetHostPath(assay.source)}` : 'local'}
 				</OMText>
 			</View>
-			<OMText variant="headline" style={styles.sharedPromptTitle}>
-				Load {preset.title}?
-			</OMText>
-			<OMText variant="body" style={styles.sharedPromptBody}>
-				{preset.description}
-			</OMText>
-			{error ? (
-				<OMText variant="caption" style={styles.errorInline}>
-					{error}
-				</OMText>
-			) : null}
-			<View style={styles.sharedPromptActions}>
-				<Pressable
-					onPress={onLoad}
-					disabled={loading}
-					style={[styles.primaryButton, loading ? styles.primaryButtonDisabled : null]}
-				>
-					<OMText variant="subtitle" style={styles.primaryButtonText}>
-						{loading ? 'Loading…' : 'Load & run'}
-					</OMText>
-				</Pressable>
-				<Pressable onPress={onDismiss} style={styles.textButton}>
-					<OMText variant="subtitle" style={styles.textButtonText}>
-						Dismiss
-					</OMText>
-				</Pressable>
-			</View>
-		</View>
-	)
-}
-
-function PendingGenomeNotice({
-	genome,
-	onClear,
-}: {
-	genome: Genome
-	onClear: () => void
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={styles.pendingNotice}>
-			<OMIcon name="checkmark-circle" tone="accent" size={16} />
-			<OMText variant="body" style={styles.pendingNoticeText}>
-				Genome ready: {genomeDisplayName(genome)} · pick an assay below to run it.
-			</OMText>
-			<Pressable onPress={onClear} style={styles.textButton}>
-				<OMText variant="subtitle" style={styles.textButtonText}>
-					Remove file
+			<Pressable onPress={onClear} style={styles.removeButton}>
+				<OMIcon name="close-outline" tone={mutedIconTone} size={14} />
+				<OMText variant="subtitle" style={styles.removeButtonText}>
+					Remove
 				</OMText>
 			</Pressable>
 		</View>
 	)
 }
 
-// === Stage: Drop ===========================================================
-
-function DropStage({
-	assay,
-	dragActive,
-	genome,
-	onBack,
-	onChooseFile,
-	onRemoveGenome,
-	onRemoveUnknown,
-	unknowns,
-}: {
-	assay: Assay
-	dragActive: boolean
-	genome: Genome | null
-	onBack: () => void
-	onChooseFile: () => void
-	onRemoveGenome: () => void
-	onRemoveUnknown: (id: string) => void
-	unknowns: UnknownEntry[]
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={styles.stack}>
-			<BackBar label="Change assay" onBack={onBack} />
-
-			<View style={styles.contextHeader}>
-				<View style={styles.sampleIcon}>
-					<OMIcon name="flask-outline" tone="accent" size={20} />
-				</View>
-				<View style={{ flex: 1, gap: 2 }}>
-					<OMText variant="caption" style={styles.contextKicker}>
-						RUNNING
-					</OMText>
-					<OMText variant="headline" style={styles.contextTitle}>
-						{assay.name}
-					</OMText>
-					<OMText variant="caption" style={styles.contextMeta}>
-						{assay.language === 'python' ? 'Python assay' : 'YAML assay'}
-						{assay.source ? ` · from ${tryGetHostPath(assay.source)}` : ' · local file'}
-					</OMText>
-				</View>
-			</View>
-
-			{!genome ? (
-				<Pressable
-					onPress={onChooseFile}
-					style={[styles.dropZone, dragActive ? styles.dropZoneActive : null]}
-				>
-					<OMIcon name="cloud-upload-outline" tone="accent" size={40} />
-					<OMText variant="h3" style={styles.dropZoneTitle}>
-						Drop your genome
-					</OMText>
-					<OMText variant="body" style={styles.dropZoneBody}>
-						.cram · .vcf.gz · .zip · 23andMe-style .txt
-					</OMText>
-					<View style={styles.dropZoneButton}>
-						<OMText variant="subtitle" style={styles.primaryButtonText}>
-							Choose file
-						</OMText>
-					</View>
-					<OMText variant="caption" style={styles.dropZoneHint}>
-						Drag anywhere on the page, or click to browse. Companion files (.crai, .fa, .fa.fai, .tbi) are paired automatically.
-					</OMText>
-				</Pressable>
-			) : (
-				<GenomePanel genome={genome} onRemove={onRemoveGenome} />
-			)}
-
-			{unknowns.length > 0 ? (
-				<UnknownFilesNote unknowns={unknowns} onRemove={onRemoveUnknown} />
-			) : null}
-
-			<PrivacyFootnote />
-		</View>
-	)
-}
-
-function GenomePanel({ genome, onRemove }: { genome: Genome; onRemove: () => void }) {
+function GenomeRow({ genome, onClear }: { genome: Genome; onClear: () => void }) {
 	const { styles, mutedIconTone } = useTheme()
 	const complete = isGenomeComplete(genome)
 	const missing = missingGenomeSlots(genome)
 	return (
-		<View style={[styles.panel, complete ? styles.panelOk : styles.panelWarn]}>
-			<View style={styles.panelHead}>
-				<View style={{ flex: 1, gap: 2 }}>
-					<OMText variant="caption" style={styles.panelKicker}>
-						{complete ? 'READY' : 'NEEDS FILES'}
-					</OMText>
-					<OMText variant="headline" style={styles.panelTitle}>
+		<View style={[styles.loadedRow, complete ? styles.loadedRowOk : styles.loadedRowWarn]}>
+			<View style={styles.loadedRowHead}>
+				<View style={styles.loadedRowIcon}>
+					<OMIcon name="document-text-outline" tone="accent" size={18} />
+				</View>
+				<View style={styles.loadedRowText}>
+					<OMText variant="headline" style={styles.loadedRowTitle}>
 						{genomeDisplayName(genome)}
 					</OMText>
-					<OMText variant="caption" style={styles.panelMeta}>
+					<OMText variant="caption" style={styles.loadedRowMeta}>
 						{genomeKindLabel(genome)} · {humanLabSize(genomeBytesTotal(genome))}
 					</OMText>
 				</View>
-				<Pressable onPress={onRemove} style={styles.labeledIconButton}>
+				<Pressable onPress={onClear} style={styles.removeButton}>
 					<OMIcon name="close-outline" tone={mutedIconTone} size={14} />
-					<OMText variant="subtitle" style={styles.labeledIconButtonText}>
-						Remove file
+					<OMText variant="subtitle" style={styles.removeButtonText}>
+						Remove
 					</OMText>
 				</Pressable>
 			</View>
@@ -911,108 +610,50 @@ function GenomePanel({ genome, onRemove }: { genome: Genome; onRemove: () => voi
 
 			{!complete && missing.length > 0 ? (
 				<OMText variant="caption" style={styles.missingText}>
-					Drop these to continue: {missing.join(' · ')}
+					Drop to complete: {missing.join(' · ')}
 				</OMText>
-			) : (
-				<OMText variant="caption" style={styles.panelHint}>
-					About to run…
-				</OMText>
-			)}
+			) : null}
 		</View>
 	)
 }
 
-// === Stage: Result =========================================================
+function SlotChip({ file, label }: { file?: File; label: string }) {
+	const { styles, mutedIconTone } = useTheme()
+	const filled = Boolean(file)
+	return (
+		<View style={[styles.slotChip, filled ? styles.slotChipOk : styles.slotChipMissing]}>
+			<OMIcon
+				name={filled ? 'checkmark-circle' : 'ellipse-outline'}
+				tone={filled ? 'accent' : mutedIconTone}
+				size={14}
+			/>
+			<OMText variant="caption" style={filled ? styles.slotChipTextOk : styles.slotChipText}>
+				{label}
+			</OMText>
+		</View>
+	)
+}
 
-function ResultStage({
-	assay,
-	genome,
-	onChangeAssay,
-	onStartOver,
-	onTryAnotherFile,
-	run,
-}: {
-	assay: Assay
-	genome: Genome | null
-	onChangeAssay: () => void
-	onStartOver: () => void
-	onTryAnotherFile: () => void
-	run: RunResult
-}) {
+// === Run status ============================================================
+
+function RunningIndicator({ assayName }: { assayName: string }) {
 	const { palette, styles } = useTheme()
 	return (
-		<View style={styles.stack}>
-			<BackBar label="Try another file" onBack={onTryAnotherFile} />
-
-			<View style={styles.contextHeader}>
-				<View style={styles.sampleIcon}>
-					<OMIcon name="flask-outline" tone="accent" size={20} />
-				</View>
-				<View style={{ flex: 1, gap: 2 }}>
-					<OMText variant="caption" style={styles.contextKicker}>
-						RESULT FOR
-					</OMText>
-					<OMText variant="headline" style={styles.contextTitle}>
-						{assay.name}
-						{genome ? ` · ${genomeDisplayName(genome)}` : ''}
-					</OMText>
-				</View>
-			</View>
-
-			{run.status === 'running' ? (
-				<View style={styles.runningPanel}>
-					<ActivityIndicator size="large" color={palette.accent} />
-					<OMText variant="headline" style={styles.runningTitle}>
-						Running {assay.name} in your browser…
-					</OMText>
-					<OMText variant="caption" style={styles.runningBody}>
-						Nothing is uploaded. Large files still finish in seconds.
-					</OMText>
-				</View>
-			) : null}
-
-			{run.status === 'done' && run.observations ? (
-				<ResultPanel
-					durationMs={run.durationMs ?? 0}
-					observations={run.observations}
-				/>
-			) : null}
-
-			{run.status === 'done' && run.textOutput !== undefined ? (
-				<TextResultsPanel durationMs={run.durationMs ?? 0} text={run.textOutput} />
-			) : null}
-
-			{run.status === 'error' && run.error ? <ErrorPanel error={run.error} /> : null}
-
-			{run.status !== 'running' ? (
-				<View style={styles.resultActionRow}>
-					<Pressable onPress={onTryAnotherFile} style={styles.primaryButton}>
-						<OMText variant="subtitle" style={styles.primaryButtonText}>
-							Try another file
-						</OMText>
-					</Pressable>
-					<Pressable onPress={onChangeAssay} style={styles.secondaryButton}>
-						<OMText variant="subtitle" style={styles.secondaryButtonText}>
-							Change assay
-						</OMText>
-					</Pressable>
-					<Pressable onPress={onStartOver} style={styles.textButton}>
-						<OMText variant="subtitle" style={styles.textButtonText}>
-							Start over
-						</OMText>
-					</Pressable>
-				</View>
-			) : null}
-
-			<PrivacyFootnote />
+		<View style={styles.runningRow}>
+			<ActivityIndicator size="small" color={palette.accent} />
+			<OMText variant="body" style={styles.runningText}>
+				Running {assayName} in your browser…
+			</OMText>
 		</View>
 	)
 }
 
 function ResultPanel({
+	assayName,
 	durationMs,
 	observations,
 }: {
+	assayName: string
 	durationMs: number
 	observations: VariantObservation[]
 }) {
@@ -1020,13 +661,34 @@ function ResultPanel({
 	return (
 		<View style={styles.resultPanel}>
 			<OMText variant="caption" style={styles.resultKicker}>
-				{observations.length} variant{observations.length === 1 ? '' : 's'} · {durationMs} ms
+				{assayName.toUpperCase()} · {observations.length} variant
+				{observations.length === 1 ? '' : 's'} · {durationMs} ms
 			</OMText>
-			<View style={styles.stack}>
-				{observations.map((obs) => (
-					<ObservationCard key={obs.name} obs={obs} />
-				))}
-			</View>
+			{observations.map((obs) => (
+				<ObservationCard key={obs.name} obs={obs} />
+			))}
+		</View>
+	)
+}
+
+function TextResultPanel({ durationMs, text }: { durationMs: number; text: string }) {
+	const { styles } = useTheme()
+	return (
+		<View style={styles.resultPanel}>
+			<OMText variant="caption" style={styles.resultKicker}>
+				OUTPUT · {durationMs} ms
+			</OMText>
+			{text ? (
+				<View style={styles.preBlock}>
+					<OMText variant="body" style={styles.preText}>
+						{text}
+					</OMText>
+				</View>
+			) : (
+				<OMText variant="body" style={styles.mutedBody}>
+					(no output produced)
+				</OMText>
+			)}
 		</View>
 	)
 }
@@ -1069,28 +731,6 @@ function ObservationCard({ obs }: { obs: VariantObservation }) {
 	)
 }
 
-function TextResultsPanel({ durationMs, text }: { durationMs: number; text: string }) {
-	const { styles } = useTheme()
-	return (
-		<View style={styles.resultPanel}>
-			<OMText variant="caption" style={styles.resultKicker}>
-				{durationMs} ms
-			</OMText>
-			{text ? (
-				<View style={styles.preBlock}>
-					<OMText variant="body" style={styles.preText}>
-						{text}
-					</OMText>
-				</View>
-			) : (
-				<OMText variant="body" style={styles.mutedBody}>
-					(no output produced)
-				</OMText>
-			)}
-		</View>
-	)
-}
-
 function ErrorPanel({ error }: { error: string }) {
 	const { styles } = useTheme()
 	return (
@@ -1108,36 +748,145 @@ function ErrorPanel({ error }: { error: string }) {
 	)
 }
 
-// === Shared widgets ========================================================
+// === Preset list ===========================================================
 
-function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
+function PresetList({
+	onActivate,
+	onDropOwn,
+	pendingGenome,
+	samplePresetAssayLoadingId,
+	samplePresetError,
+	samplePresetLoadingId,
+}: {
+	onActivate: (preset: LabSamplePreset) => void
+	onDropOwn: () => void
+	pendingGenome: Genome | null
+	samplePresetAssayLoadingId: string | null
+	samplePresetError: string | null
+	samplePresetLoadingId: string | null
+}) {
 	const { styles } = useTheme()
+	const cta = pendingGenome ? 'Run →' : 'Try demo →'
 	return (
-		<Pressable onPress={onBack} style={styles.backBar}>
-			<OMIcon name="arrow-back-outline" tone="accent" size={18} />
-			<OMText variant="subtitle" style={styles.backBarText}>
-				{label}
+		<View style={styles.presetSection}>
+			<OMText variant="caption" style={styles.presetSectionKicker}>
+				{pendingGenome ? 'RUN AN ASSAY ON YOUR FILE' : 'OR TRY A PRESET'}
 			</OMText>
-		</Pressable>
-	)
-}
+			<View style={styles.presetList}>
+				{LAB_SAMPLE_PRESETS.map((preset) => {
+					const loading =
+						samplePresetLoadingId === preset.id ||
+						samplePresetAssayLoadingId === preset.id
+					return (
+						<Pressable
+							key={preset.id}
+							onPress={() => onActivate(preset)}
+							disabled={loading}
+							style={[styles.presetRow, loading ? styles.presetRowDisabled : null]}
+						>
+							<View style={styles.presetIcon}>
+								<OMIcon name="flask-outline" tone="accent" size={16} />
+							</View>
+							<View style={styles.presetText}>
+								<OMText variant="body" style={styles.presetTitle}>
+									{preset.title}
+								</OMText>
+								<OMText variant="caption" style={styles.presetMeta}>
+									{preset.inputKindLabel} · {preset.assayLabel}
+								</OMText>
+							</View>
+							<OMText variant="subtitle" style={styles.presetCta}>
+								{loading ? 'Loading…' : cta}
+							</OMText>
+						</Pressable>
+					)
+				})}
 
-function SlotChip({ file, label }: { file?: File; label: string }) {
-	const { styles, mutedIconTone } = useTheme()
-	const filled = Boolean(file)
-	return (
-		<View style={[styles.slotChip, filled ? styles.slotChipOk : styles.slotChipMissing]}>
-			<OMIcon
-				name={filled ? 'checkmark-circle' : 'ellipse-outline'}
-				tone={filled ? 'accent' : mutedIconTone}
-				size={14}
-			/>
-			<OMText variant="caption" style={filled ? styles.slotChipTextOk : styles.slotChipText}>
-				{label}
-			</OMText>
+				<Pressable onPress={onDropOwn} style={[styles.presetRow, styles.presetRowAdd]}>
+					<View style={styles.presetIconAdd}>
+						<OMIcon name="add-outline" tone="accent" size={16} />
+					</View>
+					<View style={styles.presetText}>
+						<OMText variant="body" style={styles.presetTitle}>
+							Use your own assay
+						</OMText>
+						<OMText variant="caption" style={styles.presetMeta}>
+							Drop a .py or .yaml
+						</OMText>
+					</View>
+					<OMText variant="subtitle" style={styles.presetCtaGhost}>
+						Choose →
+					</OMText>
+				</Pressable>
+			</View>
+			{samplePresetError ? (
+				<OMText variant="caption" style={styles.errorInline}>
+					{samplePresetError}
+				</OMText>
+			) : null}
 		</View>
 	)
 }
+
+// === Shared prompt (deep link) =============================================
+
+function SharedPrompt({
+	error,
+	kicker,
+	loading,
+	meta,
+	onDismiss,
+	onPrimary,
+	primaryLabel,
+	title,
+}: {
+	error: string | null
+	kicker: string
+	loading: boolean
+	meta: string
+	onDismiss: () => void
+	onPrimary: () => void
+	primaryLabel: string
+	title: string
+}) {
+	const { styles } = useTheme()
+	return (
+		<View style={styles.sharedPrompt}>
+			<OMText variant="caption" style={styles.sharedPromptKicker}>
+				{kicker}
+			</OMText>
+			<OMText variant="headline" style={styles.sharedPromptTitle}>
+				{title}
+			</OMText>
+			<OMText variant="caption" style={styles.sharedPromptMeta}>
+				{meta}
+			</OMText>
+			{error ? (
+				<OMText variant="caption" style={styles.errorInline}>
+					{error}
+				</OMText>
+			) : null}
+			<View style={styles.sharedPromptActions}>
+				<Pressable
+					onPress={onPrimary}
+					disabled={loading}
+					style={[styles.primaryButton, loading ? styles.primaryButtonDisabled : null]}
+				>
+					<OMText variant="subtitle" style={styles.primaryButtonText}>
+						{loading ? 'Loading…' : primaryLabel}
+					</OMText>
+				</Pressable>
+				<Pressable onPress={onDismiss} style={styles.textButton}>
+					<OMText variant="subtitle" style={styles.textButtonText}>
+						Dismiss
+					</OMText>
+				</Pressable>
+			</View>
+		</View>
+	)
+}
+
+// === Misc ==================================================================
 
 function MetaChip({ label }: { label: string }) {
 	const { styles } = useTheme()
@@ -1166,20 +915,18 @@ function UnknownFilesNote({
 					Couldn’t recognise {unknowns.length} file{unknowns.length === 1 ? '' : 's'}
 				</OMText>
 			</View>
-			<View style={styles.stackTight}>
-				{unknowns.map((u) => (
-					<View key={u.id} style={styles.unknownRow}>
-						<OMText variant="caption" style={styles.unknownRowName}>
-							{u.file.name}
+			{unknowns.map((u) => (
+				<View key={u.id} style={styles.unknownRow}>
+					<OMText variant="caption" style={styles.unknownRowName}>
+						{u.file.name}
+					</OMText>
+					<Pressable onPress={() => onRemove(u.id)} style={styles.textButton}>
+						<OMText variant="subtitle" style={styles.textButtonText}>
+							Remove
 						</OMText>
-						<Pressable onPress={() => onRemove(u.id)} style={styles.textButton}>
-							<OMText variant="subtitle" style={styles.textButtonText}>
-								Remove
-							</OMText>
-						</Pressable>
-					</View>
-				))}
-			</View>
+					</Pressable>
+				</View>
+			))}
 		</View>
 	)
 }
@@ -1234,137 +981,19 @@ function makeStyles(p: LabPalette) {
 			paddingHorizontal: omSpacing.xl,
 			paddingTop: 88,
 			paddingBottom: omSpacing.xxxxl,
-			maxWidth: 760,
+			maxWidth: 720,
 			width: '100%',
 			alignSelf: 'center',
+			gap: omSpacing.m,
 		},
-
-		stack: { gap: omSpacing.l },
-		stackTight: { gap: omSpacing.xs },
 
 		// hero
-		hero: {
-			gap: omSpacing.s,
-			paddingBottom: omSpacing.s,
-		},
+		hero: { gap: omSpacing.s, paddingBottom: omSpacing.s },
 		heroKicker: { color: p.accentStrong, letterSpacing: 1.4 },
 		heroTitle: { color: p.text, lineHeight: 42, maxWidth: 640 },
 		heroBody: { color: p.textMuted, maxWidth: 620 },
 
-		// back bar — prominent, labeled, obvious
-		backBar: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.s,
-			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.s,
-			borderRadius: omRadius.full,
-			backgroundColor: p.surface,
-			borderWidth: 1,
-			borderColor: p.borderStrong,
-			alignSelf: 'flex-start',
-		},
-		backBarText: { color: p.accentStrong },
-
-		// context header (shown above drop / result)
-		contextHeader: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.m,
-			padding: omSpacing.l,
-			borderRadius: omRadius.l,
-			backgroundColor: p.accentSoft,
-			borderWidth: 1,
-			borderColor: p.accentBorder,
-		},
-		contextKicker: { color: p.accentStrong, letterSpacing: 1.4 },
-		contextTitle: { color: p.text },
-		contextMeta: { color: p.textMuted },
-
-		// picker
-		pickerHead: { gap: omSpacing.xs },
-		pickerTitle: { color: p.text, lineHeight: 40 },
-		pickerSubtitle: { color: p.textMuted },
-
-		sampleGrid: { gap: omSpacing.m },
-		sampleGridWide: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-		},
-
-		// assay choice card
-		assayCard: {
-			flex: 1,
-			minWidth: 280,
-			padding: omSpacing.l,
-			borderRadius: omRadius.l,
-			backgroundColor: p.surface,
-			borderWidth: 1,
-			borderColor: p.border,
-			gap: omSpacing.m,
-		},
-		assayCardHead: {
-			flexDirection: 'row',
-			alignItems: 'flex-start',
-			gap: omSpacing.m,
-		},
-		assayCardTitle: { color: p.text },
-		assayCardMeta: { color: p.textFaint },
-		assayCardBody: { color: p.textMuted },
-		assayCardActions: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: omSpacing.s,
-			marginTop: omSpacing.xs,
-		},
-		sampleIcon: {
-			width: 40,
-			height: 40,
-			borderRadius: 12,
-			alignItems: 'center',
-			justifyContent: 'center',
-			backgroundColor: p.accentSoft,
-		},
-
-		// shared prompt (deep link / shared example)
-		sharedPrompt: {
-			padding: omSpacing.xl,
-			borderRadius: omRadius.l,
-			backgroundColor: p.accentSoft,
-			borderWidth: 1,
-			borderColor: p.accentBorder,
-			gap: omSpacing.s,
-		},
-		sharedPromptHead: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.xs,
-		},
-		sharedPromptKicker: { color: p.accentStrong, letterSpacing: 1.4 },
-		sharedPromptTitle: { color: p.text },
-		sharedPromptBody: { color: p.textMuted },
-		sharedPromptMeta: { color: p.accentStrong, marginTop: omSpacing.xs },
-		sharedPromptActions: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: omSpacing.s,
-			marginTop: omSpacing.s,
-		},
-
-		// pending genome notice (shown on choose when a genome is already dropped)
-		pendingNotice: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.s,
-			padding: omSpacing.m,
-			borderRadius: omRadius.m,
-			backgroundColor: p.accentSoft,
-			borderWidth: 1,
-			borderColor: p.accentBorder,
-		},
-		pendingNoticeText: { color: p.text, flex: 1 },
-
-		// drop zone
+		// primary drop zone (when nothing loaded)
 		dropZone: {
 			alignItems: 'center',
 			gap: omSpacing.m,
@@ -1376,10 +1005,7 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.accentBorder,
 			backgroundColor: p.accentTint,
 		},
-		dropZoneActive: {
-			borderColor: p.accent,
-			backgroundColor: p.accentSoft,
-		},
+		dropZoneActive: { borderColor: p.accent, backgroundColor: p.accentSoft },
 		dropZoneTitle: { color: p.text, textAlign: 'center' },
 		dropZoneBody: { color: p.textMuted, textAlign: 'center' },
 		dropZoneButton: {
@@ -1396,8 +1022,25 @@ function makeStyles(p: LabPalette) {
 			maxWidth: 420,
 		},
 
-		// genome panel
-		panel: {
+		// compact drop bar (when something is loaded)
+		dropBar: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.m,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.m,
+			borderRadius: omRadius.l,
+			borderWidth: 1,
+			borderStyle: 'dashed',
+			borderColor: p.borderStrong,
+			backgroundColor: p.surface,
+		},
+		dropBarActive: { borderColor: p.accent, backgroundColor: p.accentSoft },
+		dropBarText: { color: p.text, flex: 1 },
+		dropBarHint: { color: p.textFaint },
+
+		// loaded rows
+		loadedRow: {
 			padding: omSpacing.l,
 			borderRadius: omRadius.l,
 			backgroundColor: p.surface,
@@ -1405,26 +1048,33 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.border,
 			gap: omSpacing.m,
 		},
-		panelOk: {
+		loadedRowOk: {
 			borderColor: p.accentBorder,
 			backgroundColor: p.accentTint,
 		},
-		panelWarn: {
+		loadedRowWarn: {
 			borderColor: p.warningBorder,
 			backgroundColor: p.warningBg,
 		},
-		panelHead: {
+		loadedRowHead: {
 			flexDirection: 'row',
-			alignItems: 'flex-start',
+			alignItems: 'center',
 			gap: omSpacing.m,
 		},
-		panelKicker: { color: p.accentStrong, letterSpacing: 1.4 },
-		panelTitle: { color: p.text },
-		panelMeta: { color: p.textMuted },
-		panelHint: { color: p.textFaint },
+		loadedRowIcon: {
+			width: 36,
+			height: 36,
+			borderRadius: 10,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.accentSoft,
+		},
+		loadedRowText: { flex: 1, gap: 2 },
+		loadedRowTitle: { color: p.text },
+		loadedRowMeta: { color: p.textMuted },
 
-		// labeled remove button
-		labeledIconButton: {
+		// remove button (labeled, clear)
+		removeButton: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.xs,
@@ -1435,14 +1085,10 @@ function makeStyles(p: LabPalette) {
 			borderWidth: 1,
 			borderColor: p.borderStrong,
 		},
-		labeledIconButtonText: { color: p.textMuted },
+		removeButtonText: { color: p.textMuted },
 
-		// slot chips
-		slotGrid: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: omSpacing.xs,
-		},
+		// slot chips (for loaded genome)
+		slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: omSpacing.xs },
 		slotChip: {
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -1463,21 +1109,21 @@ function makeStyles(p: LabPalette) {
 		},
 		slotChipText: { color: p.textMuted },
 		slotChipTextOk: { color: p.accentStrong },
-
 		missingText: { color: p.warningText },
 
-		// running panel
-		runningPanel: {
-			padding: omSpacing.xxxl,
+		// running indicator
+		runningRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.m,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.m,
 			borderRadius: omRadius.l,
 			backgroundColor: p.surface,
 			borderWidth: 1,
 			borderColor: p.border,
-			alignItems: 'center',
-			gap: omSpacing.m,
 		},
-		runningTitle: { color: p.text, textAlign: 'center' },
-		runningBody: { color: p.textMuted, textAlign: 'center' },
+		runningText: { color: p.text },
 
 		// result panel
 		resultPanel: {
@@ -1501,11 +1147,7 @@ function makeStyles(p: LabPalette) {
 		},
 		obsHeader: { gap: omSpacing.xs },
 		obsTitle: { color: p.text },
-		obsBadgeRow: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: omSpacing.xs,
-		},
+		obsBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: omSpacing.xs },
 		obsGenotype: {
 			padding: omSpacing.m,
 			borderRadius: omRadius.m,
@@ -1539,13 +1181,6 @@ function makeStyles(p: LabPalette) {
 		},
 		metaChipText: { color: p.textMuted },
 
-		// result action row
-		resultActionRow: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: omSpacing.s,
-		},
-
 		// error
 		errorBlock: {
 			flexDirection: 'row',
@@ -1560,6 +1195,74 @@ function makeStyles(p: LabPalette) {
 		errorBody: { color: p.dangerText },
 		errorInline: { color: p.dangerText },
 
+		// preset list
+		presetSection: {
+			gap: omSpacing.s,
+			marginTop: omSpacing.l,
+		},
+		presetSectionKicker: { color: p.textFaint, letterSpacing: 1.4 },
+		presetList: { gap: omSpacing.xs },
+		presetRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.m,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.m,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		presetRowDisabled: { opacity: 0.5 },
+		presetRowAdd: {
+			borderStyle: 'dashed',
+			borderColor: p.accentBorder,
+			backgroundColor: 'transparent',
+		},
+		presetIcon: {
+			width: 32,
+			height: 32,
+			borderRadius: 8,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.accentSoft,
+		},
+		presetIconAdd: {
+			width: 32,
+			height: 32,
+			borderRadius: 8,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.accentTint,
+			borderWidth: 1,
+			borderStyle: 'dashed',
+			borderColor: p.accentBorder,
+		},
+		presetText: { flex: 1, gap: 2 },
+		presetTitle: { color: p.text },
+		presetMeta: { color: p.textMuted },
+		presetCta: { color: p.accentStrong },
+		presetCtaGhost: { color: p.accentStrong },
+
+		// shared prompt (deep link)
+		sharedPrompt: {
+			padding: omSpacing.l,
+			borderRadius: omRadius.l,
+			backgroundColor: p.accentSoft,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+			gap: omSpacing.xs,
+		},
+		sharedPromptKicker: { color: p.accentStrong, letterSpacing: 1.4 },
+		sharedPromptTitle: { color: p.text },
+		sharedPromptMeta: { color: p.accentStrong, marginTop: omSpacing.xs },
+		sharedPromptActions: {
+			flexDirection: 'row',
+			flexWrap: 'wrap',
+			gap: omSpacing.s,
+			marginTop: omSpacing.s,
+		},
+
 		// buttons
 		primaryButton: {
 			paddingHorizontal: omSpacing.xl,
@@ -1569,35 +1272,12 @@ function makeStyles(p: LabPalette) {
 		},
 		primaryButtonDisabled: { opacity: 0.4 },
 		primaryButtonText: { color: p.invertText },
-		secondaryButton: {
-			paddingHorizontal: omSpacing.l,
-			paddingVertical: omSpacing.m,
-			borderRadius: omRadius.full,
-			backgroundColor: p.surfaceRaised,
-			borderWidth: 1,
-			borderColor: p.borderStrong,
-		},
-		secondaryButtonText: { color: p.text },
 		textButton: {
 			paddingHorizontal: omSpacing.m,
 			paddingVertical: omSpacing.s,
 			borderRadius: omRadius.full,
 		},
 		textButtonText: { color: p.accentStrong },
-		ghostButton: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			justifyContent: 'center',
-			gap: omSpacing.xs,
-			alignSelf: 'flex-start',
-			paddingHorizontal: omSpacing.l,
-			paddingVertical: omSpacing.m,
-			borderRadius: omRadius.full,
-			borderWidth: 1,
-			borderStyle: 'dashed',
-			borderColor: p.accentBorder,
-		},
-		ghostButtonText: { color: p.accentStrong },
 
 		// unknown files note
 		unknownNote: {
@@ -1606,7 +1286,7 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.warningBg,
 			borderWidth: 1,
 			borderColor: p.warningBorder,
-			gap: omSpacing.s,
+			gap: omSpacing.xs,
 		},
 		unknownNoteHead: {
 			flexDirection: 'row',
