@@ -168,8 +168,9 @@ const config: ExpoConfig = {
 			'expo-router',
 			{
 				headers: {
-					'Cross-Origin-Embedder-Policy': 'credentialless',
+					'Cross-Origin-Embedder-Policy': 'require-corp',
 					'Cross-Origin-Opener-Policy': 'same-origin',
+					'Permissions-Policy': 'cross-origin-isolated=(self)',
 				},
 			},
 		],

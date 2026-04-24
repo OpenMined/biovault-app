@@ -34,7 +34,6 @@ import {
 	sortFilesForIngestion,
 } from '@/lib/lab/file-model'
 import {
-	getLabRunDisabledReason,
 	getLabRunDisabledReasonFor,
 	runLabAssay,
 } from '@/lib/lab/runner'
@@ -297,10 +296,6 @@ export default function LabScreen() {
 			try {
 				const file = await loadAssayFile(catalogAssay)
 				const loaded = createAssayFromFile(file, catalogAssay.language, catalogAssay.url)
-				const disabledReason = getLabRunDisabledReason(activeGenome, loaded)
-				if (disabledReason) {
-					throw new Error(disabledReason)
-				}
 
 				setRunningAssayId(catalogAssay.id)
 				const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
@@ -747,7 +742,7 @@ function AssayPicker({
 							? getLabRunDisabledReasonFor(genome, assay.language)
 							: 'Assay is not compatible with this genome format.'
 						const isRunning = runningAssayId === assay.id
-						const disabled = anyRunning || !compatible || Boolean(disabledReason)
+						const disabled = anyRunning || !compatible
 						return (
 							<Pressable
 								key={assay.id}
@@ -785,7 +780,7 @@ function AssayPicker({
 											variant="subtitle"
 											style={compatible ? styles.pickerActionText : styles.pickerActionMutedText}
 										>
-											{disabledReason ? 'Unavailable' : 'Run assay'}
+											{compatible ? 'Run assay' : 'Unavailable'}
 										</OMText>
 									</View>
 								)}
