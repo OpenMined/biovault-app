@@ -20,6 +20,7 @@
     "build-dev-android": "npx eas build --profile development --platform android --local --clear-cache",
     "build-prod": "npx eas build --profile production --platform ios --local --clear-cache",
     "build-preview-android": "npx eas build --profile preview --platform android --local --clear-cache",
+    "deploy-web-prod": "npx expo export --platform web && eas deploy --prod",
     "deploy-preview-android": "npx eas build --profile preview --platform android --clear-cache",
     "deploy-dev": "npx eas build --profile development --platform ios --clear-cache",
     "deploy-dev-all": "npx eas build --profile development --platform all --clear-cache",
