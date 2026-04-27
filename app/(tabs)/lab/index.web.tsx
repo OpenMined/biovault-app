@@ -3,7 +3,6 @@ import { OMText } from '@/components/ui/OMText'
 import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
-import { isBioscriptAvailable, warmupBioscriptRuntime } from '@/modules/expo-bioscript'
 import {
 	ASSAY_CATEGORY_LABELS,
 	ASSAY_INPUT_FORMAT_LABELS,
@@ -39,7 +38,7 @@ import {
 } from '@/lib/lab/runner'
 import type { Genome, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
-import type { VariantObservation } from '@/modules/expo-bioscript'
+import { warmupMontyRuntime, type VariantObservation } from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
 import { labPalettes, type LabPalette } from '@/styles/lab-theme'
 import { Asset } from 'expo-asset'
@@ -86,6 +85,7 @@ type RunRecord = {
 	startedAt: number
 	result: RunResult
 }
+type RuntimeWarmupStatus = 'loading' | 'ready' | 'error'
 
 function genomeKindToFormat(genome: Genome): AssayInputFormat {
 	switch (genome.kind) {
@@ -102,6 +102,10 @@ function genomeKindToFormat(genome: Genome): AssayInputFormat {
 
 function isAssayCompatible(assay: LabAssay, genome: Genome): boolean {
 	return assay.inputFormats.includes(genomeKindToFormat(genome))
+}
+
+function assayNeedsWebRuntime(assay: LabAssay, genome: Genome): boolean {
+	return assay.language === 'python' || genome.kind === 'text' || genome.kind === 'zip'
 }
 
 // === Page ===================================================================
@@ -128,6 +132,7 @@ export default function LabScreen() {
 	const [category, setCategory] = useState<AssayCategory | null>(null)
 	const [sampleLoadingId, setSampleLoadingId] = useState<string | null>(null)
 	const [sampleLoadError, setSampleLoadError] = useState<string | null>(null)
+	const [runtimeWarmupStatus, setRuntimeWarmupStatus] = useState<RuntimeWarmupStatus>('loading')
 
 	const activeGenome = useMemo(
 		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
@@ -169,32 +174,17 @@ export default function LabScreen() {
 	)
 
 	useEffect(() => {
-		if (Platform.OS !== 'web') return
-		if (!isBioscriptAvailable()) return
-
 		let cancelled = false
-		const warm = () => {
-			void warmupBioscriptRuntime().catch(() => {
-				// Ignore warmup failures and fall back to on-demand startup during the first run.
+		void warmupMontyRuntime()
+			.then(() => {
+				if (!cancelled) setRuntimeWarmupStatus('ready')
 			})
-		}
-
-		if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-			const idleId = window.requestIdleCallback(() => {
-				if (!cancelled) warm()
+			.catch((error) => {
+				console.warn('[bioscript] web runtime warmup failed', error)
+				if (!cancelled) setRuntimeWarmupStatus('error')
 			})
-			return () => {
-				cancelled = true
-				window.cancelIdleCallback(idleId)
-			}
-		}
-
-		const timeoutId = window.setTimeout(() => {
-			if (!cancelled) warm()
-		}, 0)
 		return () => {
 			cancelled = true
-			window.clearTimeout(timeoutId)
 		}
 	}, [])
 
@@ -292,6 +282,7 @@ export default function LabScreen() {
 			if (!activeGenome || !isGenomeComplete(activeGenome)) return
 			if (runningAssayId) return
 			if (!isAssayCompatible(catalogAssay, activeGenome)) return
+			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, activeGenome)) return
 
 			try {
 				const file = await loadAssayFile(catalogAssay)
@@ -336,7 +327,7 @@ export default function LabScreen() {
 				setRunningAssayId(null)
 			}
 		},
-		[activeGenome, runningAssayId, trackEvent],
+		[activeGenome, runningAssayId, runtimeWarmupStatus, trackEvent],
 	)
 
 	// Auto-run from `?run=<assayId>` once genome is ready — consumed only once.
@@ -352,9 +343,10 @@ export default function LabScreen() {
 			return
 		}
 		if (!isAssayCompatible(assay, activeGenome)) return
+		if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(assay, activeGenome)) return
 		pendingAutoRunRef.current = null
 		void runAssay(assay)
-	}, [activeGenome, runningAssayId, runAssay])
+	}, [activeGenome, runningAssayId, runAssay, runtimeWarmupStatus])
 
 	// Auto-scroll to latest run when it starts / completes
 	const scrollRef = useRef<ScrollView>(null)
@@ -427,6 +419,7 @@ export default function LabScreen() {
 							categories={categories}
 							results={searchResults}
 							runningAssayId={runningAssayId}
+							runtimeWarmupStatus={runtimeWarmupStatus}
 							onRun={runAssay}
 						/>
 					) : null}
@@ -670,6 +663,7 @@ function AssayPicker({
 	query,
 	results,
 	runningAssayId,
+	runtimeWarmupStatus,
 }: {
 	categories: AssayCategory[]
 	category: AssayCategory | null
@@ -680,6 +674,7 @@ function AssayPicker({
 	query: string
 	results: LabAssay[]
 	runningAssayId: string | null
+	runtimeWarmupStatus: RuntimeWarmupStatus
 }) {
 	const { palette, styles } = useTheme()
 	const anyRunning = Boolean(runningAssayId)
@@ -738,11 +733,17 @@ function AssayPicker({
 				<View style={styles.pickerList}>
 					{results.map((assay) => {
 						const compatible = isAssayCompatible(assay, genome)
+						const waitingForRuntime =
+							compatible &&
+							runtimeWarmupStatus === 'loading' &&
+							assayNeedsWebRuntime(assay, genome)
 						const disabledReason = compatible
-							? getLabRunDisabledReasonFor(genome, assay.language)
+							? waitingForRuntime
+								? 'Runtime is loading.'
+								: getLabRunDisabledReasonFor(genome, assay.language)
 							: 'Assay is not compatible with this genome format.'
 						const isRunning = runningAssayId === assay.id
-						const disabled = anyRunning || !compatible
+						const disabled = anyRunning || !compatible || waitingForRuntime
 						return (
 							<Pressable
 								key={assay.id}
@@ -772,6 +773,13 @@ function AssayPicker({
 										<ActivityIndicator size="small" color={palette.accent} />
 										<OMText variant="subtitle" style={styles.pickerActionRunningText}>
 											Running…
+										</OMText>
+									</View>
+								) : waitingForRuntime ? (
+									<View style={styles.pickerActionRunning}>
+										<ActivityIndicator size="small" color={palette.accent} />
+										<OMText variant="subtitle" style={styles.pickerActionRunningText}>
+											Loading runtime…
 										</OMText>
 									</View>
 								) : (
@@ -1068,7 +1076,7 @@ function makeStyles(p: LabPalette) {
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
-		},
+		} as object,
 		webThemeButtonIcon: { justifyContent: 'center' },
 		webThemeButtonLight: {
 			backgroundColor: 'rgba(252,252,253,0.92)',

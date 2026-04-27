@@ -19,6 +19,10 @@ export function warmupBioscriptRuntime(): Promise<void> {
   return ExpoBioscriptModule.warmup();
 }
 
+export function warmupMontyRuntime(): Promise<void> {
+  return ExpoBioscriptModule.warmupMonty();
+}
+
 export function runFile(request: RunFileRequest): Promise<RunFileResult> {
   return ExpoBioscriptModule.runFile(request);
 }
@@ -29,6 +33,7 @@ export {
   inspectBytes,
   lookupCramVariants,
   lookupVcfVariants,
+  warmupBioscriptLookupWorker,
   type BioscriptInspection,
   type BioscriptInspectOptions,
   type CramVariantLookupInput,

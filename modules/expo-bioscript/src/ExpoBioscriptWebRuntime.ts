@@ -2,6 +2,7 @@ import type { GenomeDescriptor, RunFileRequest, RunFileResult } from './ExpoBios
 import {
   lookupCramVariants,
   lookupVcfVariants,
+  warmupBioscriptLookupWorker,
   type VariantObservation,
   type VariantSpec,
 } from './BioscriptWasm';
@@ -74,30 +75,36 @@ const GENOTYPE_ALIASES = [
 const ALLELE1_ALIASES = ['allele1', 'allelea', 'allele_a', 'allele1top'];
 const ALLELE2_ALIASES = ['allele2', 'alleleb', 'allele_b', 'allele2top'];
 
-const WEB_SUPPORT_ERROR =
-  'expo-bioscript web execution requires cross-origin isolation with SharedArrayBuffer support.';
-
 let montyModulePromise: Promise<MontyBrowserModule> | null = null;
 
-export function isWebRuntimeAvailable(): boolean {
-  return (
-    typeof WebAssembly !== 'undefined' &&
-    typeof Worker !== 'undefined' &&
-    typeof SharedArrayBuffer !== 'undefined' &&
-    globalThis.crossOriginIsolated === true
-  );
+export async function warmupWebRuntime(): Promise<void> {
+  const startedAt = Date.now();
+  console.info('[bioscript] warmup total started');
+  try {
+    await Promise.all([
+      warmupMontyWebRuntime(),
+      warmupBioscriptLookupWorker(),
+    ]);
+    console.info(`[bioscript] warmup total completed in ${Date.now() - startedAt} ms`);
+  } catch (error) {
+    console.warn(`[bioscript] warmup total failed after ${Date.now() - startedAt} ms`, error);
+    throw error;
+  }
 }
 
-export async function warmupWebRuntime(): Promise<void> {
-  if (!isWebRuntimeAvailable()) return;
-  await loadMontyModule();
+export async function warmupMontyWebRuntime(): Promise<void> {
+  const startedAt = Date.now();
+  console.info('[bioscript] warmup monty started');
+  try {
+    await loadMontyModule();
+    console.info(`[bioscript] warmup monty completed in ${Date.now() - startedAt} ms`);
+  } catch (error) {
+    console.warn(`[bioscript] warmup monty failed after ${Date.now() - startedAt} ms`, error);
+    throw error;
+  }
 }
 
 export async function runFileOnWeb(request: RunFileRequest): Promise<RunFileResult> {
-  if (!isWebRuntimeAvailable()) {
-    throw new Error(WEB_SUPPORT_ERROR);
-  }
-
   // Web runs through the bioscript-wasm Web Worker for CRAM/VCF; for text it
   // uses the in-memory TS parser. `genomes[name]` descriptors from the UI
   // carry the real File handles + indexes, so a CRAM genome no longer needs

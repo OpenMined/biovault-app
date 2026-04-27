@@ -155,6 +155,12 @@ type WorkerLookupVcfRequest = {
 	variantsJson: string
 }
 
+type WorkerWarmupRequest = {
+	type: 'warmup'
+	requestId: number
+	wasmUrl: string
+}
+
 type WorkerResponseDone = { type: 'done'; requestId: number; resultJson: string; durationMs: number }
 type WorkerResponseError = { type: 'error'; requestId: number; error: string }
 type WorkerResponse = WorkerResponseDone | WorkerResponseError
@@ -165,6 +171,7 @@ const pendingLookupRequests = new Map<
 	number,
 	{ resolve: (r: VariantLookupResult) => void; reject: (err: Error) => void }
 >()
+let lookupWorkerWarmupPromise: Promise<void> | null = null
 
 function ensureLookupWorker(): Worker {
 	if (Platform.OS !== 'web') {
@@ -219,6 +226,36 @@ function serializeVariants(variants: VariantSpec[]): string {
 			assembly: v.assembly ?? null,
 		})),
 	)
+}
+
+export async function warmupBioscriptLookupWorker(): Promise<void> {
+	if (lookupWorkerWarmupPromise) return lookupWorkerWarmupPromise
+	const startedAt = Date.now()
+	console.info('[bioscript] warmup lookup worker started')
+	lookupWorkerWarmupPromise = new Promise<void>((resolve, reject) => {
+		const worker = ensureLookupWorker()
+		const { wasmUrl } = resolveWorkerUrls()
+		const requestId = nextLookupRequestId++
+		pendingLookupRequests.set(requestId, {
+			resolve: () => resolve(),
+			reject,
+		})
+		const req: WorkerWarmupRequest = {
+			type: 'warmup',
+			requestId,
+			wasmUrl,
+		}
+		worker.postMessage(req)
+	})
+		.then(() => {
+			console.info(`[bioscript] warmup lookup worker completed in ${Date.now() - startedAt} ms`)
+		})
+		.catch((error) => {
+			console.warn(`[bioscript] warmup lookup worker failed after ${Date.now() - startedAt} ms`, error)
+			lookupWorkerWarmupPromise = null
+			throw error
+		})
+	return lookupWorkerWarmupPromise
 }
 
 /**

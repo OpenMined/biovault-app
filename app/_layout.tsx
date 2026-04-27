@@ -2,6 +2,7 @@ import { initAnalytics } from '@/lib/analytics'
 import { getAppPreferenceSync, subscribeToAppPreference } from '@/lib/app-preferences'
 import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+import { warmupBioscriptRuntime } from '@/modules/expo-bioscript'
 import { omColors } from '@/styles/brand'
 import { useFonts } from 'expo-font'
 import { Stack, usePathname, useRouter } from 'expo-router'
@@ -119,6 +120,14 @@ export default function RootLayout() {
 			SplashScreen.hideAsync().catch(() => {})
 		}
 	}, [fontsReady])
+
+	useEffect(() => {
+		if (Platform.OS !== 'web') return
+
+		void warmupBioscriptRuntime().catch((error) => {
+			console.warn('[bioscript] web runtime warmup failed', error)
+		})
+	}, [])
 
 	if (!fontsReady) {
 		return null

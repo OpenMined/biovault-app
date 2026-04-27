@@ -27,7 +27,13 @@ type LookupVcfMessage = {
 	variantsJson: string
 }
 
-type LookupMessage = LookupCramMessage | LookupVcfMessage
+type WarmupMessage = {
+	type: 'warmup'
+	requestId: number
+	wasmUrl: string
+}
+
+type LookupMessage = LookupCramMessage | LookupVcfMessage | WarmupMessage
 
 let wasmReady: Promise<void> | null = null
 
@@ -52,6 +58,16 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 
 	try {
 		await ensureBioscriptModule(message.wasmUrl)
+		if (message.type === 'warmup') {
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson: '[]',
+				durationMs: 0,
+			})
+			return
+		}
+
 		const fileReader = new FileReaderSync()
 
 		if (message.type === 'lookupCram') {
