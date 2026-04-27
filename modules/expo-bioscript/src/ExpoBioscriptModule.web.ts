@@ -1,13 +1,17 @@
 import type { RunFileRequest, RunFileResult } from './ExpoBioscript.types';
-import { isWebRuntimeAvailable, runFileOnWeb, warmupWebRuntime } from './ExpoBioscriptWebRuntime';
+import { runFileOnWeb, warmupMontyWebRuntime, warmupWebRuntime } from './ExpoBioscriptWebRuntime';
 
 class ExpoBioscriptWebModule {
   isAvailable(): boolean {
-    return isWebRuntimeAvailable();
+    return true;
   }
 
   async warmup(): Promise<void> {
     await warmupWebRuntime();
+  }
+
+  async warmupMonty(): Promise<void> {
+    await warmupMontyWebRuntime();
   }
 
   async runFile(request: RunFileRequest): Promise<RunFileResult> {

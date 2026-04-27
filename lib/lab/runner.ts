@@ -1,5 +1,4 @@
 import {
-	isBioscriptAvailable,
 	lookupCramVariants,
 	lookupVcfVariants,
 	runFile,
@@ -22,13 +21,6 @@ export function getLabRunDisabledReasonFor(
 	if (!assayLanguage) return 'Pick an assay above.'
 	if (!isGenomeComplete(selectedGenome)) {
 		return `Genome is missing: ${missingGenomeSlots(selectedGenome).join(', ')}`
-	}
-	const needsMonty =
-		assayLanguage === 'python' ||
-		selectedGenome.kind === 'text' ||
-		selectedGenome.kind === 'zip'
-	if (needsMonty && !isBioscriptAvailable()) {
-		return 'This assay needs the threaded web runtime. Some browsers, including Safari, do not support the required SharedArrayBuffer + cross-origin isolation setup for this web runtime.'
 	}
 	return null
 }
