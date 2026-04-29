@@ -60,11 +60,19 @@ export type UnknownEntry = {
 
 export type RunStatus = 'idle' | 'running' | 'done' | 'error'
 
+export type LabRunProgress = {
+	completed: number | null
+	label?: string
+	phase: 'preparing' | 'compiling' | 'running' | 'complete'
+	total: number | null
+}
+
 export type RunResult = {
 	status: RunStatus
 	error?: string
 	durationMs?: number
 	observations?: VariantObservation[]
+	progress?: LabRunProgress
 	textOutput?: string
 }
 

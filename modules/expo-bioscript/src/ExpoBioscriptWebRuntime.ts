@@ -614,6 +614,8 @@ function wasmVariantFromMontySpec(raw: unknown, index: number, store: GenomeStor
     name: rsid ?? `variant_${index}`,
     chrom: preferred.chrom,
     pos: preferred.pos,
+    start: preferred.pos,
+    end: preferred.pos,
     ref,
     alt,
     rsid,

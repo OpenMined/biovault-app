@@ -23,8 +23,13 @@ if ! command -v wasm-pack >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[build-bioscript-wasm] building (release, target=web)"
-(cd "${CRATE_DIR}" && wasm-pack build --target web --release --out-dir pkg)
+PROFILE="${BIOSCRIPT_WASM_PROFILE:-dev}"
+echo "[build-bioscript-wasm] building (${PROFILE}, target=web)"
+if [ "${PROFILE}" = "release" ]; then
+  (cd "${CRATE_DIR}" && wasm-pack build --target web --release --out-dir pkg)
+else
+  (cd "${CRATE_DIR}" && wasm-pack build --target web --dev --out-dir pkg)
+fi
 
 mkdir -p "${DEST}"
 for name in bioscript_wasm.js bioscript_wasm.d.ts bioscript_wasm_bg.wasm; do

@@ -1,6 +1,8 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export function compileVariantYamlText(name: string, text: string): string;
+
 /**
  * Classify bytes as a known genomic file. Mirrors `bioscript-formats::inspect::inspect_bytes`.
  * Returns JSON matching the `Inspection` shape the app already uses.
@@ -18,6 +20,8 @@ export function inspectBytes(name: string, bytes: Uint8Array, options_json?: str
  */
 export function lookupCramVariants(cram_read_at: Function, cram_len: number, crai_bytes: Uint8Array, fasta_read_at: Function, fasta_len: number, fai_bytes: Uint8Array, variants_json: string): string;
 
+export function lookupGenotypeBytesVariants(name: string, bytes: Uint8Array, variants_json: string): string;
+
 /**
  * Observe a list of SNP variants against a bgzipped + tabix-indexed VCF,
  * with the bulk bytes pulled on demand via a JS-supplied `readAt(offset, len)`
@@ -28,15 +32,27 @@ export function lookupCramVariants(cram_read_at: Function, cram_len: number, cra
  */
 export function lookupVcfVariants(vcf_read_at: Function, vcf_len: number, tbi_bytes: Uint8Array, variants_json: string): string;
 
+/**
+ * Classify a fetched remote resource and return dependency requirements.
+ *
+ * Network access stays in the host app so each platform can prompt before
+ * fetching. The schema/type/dependency logic lives here so web, mobile,
+ * desktop, and CLI share one implementation.
+ */
+export function resolveRemoteResourceText(source_url: string, name: string, text: string): string;
+
 export function start(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupVcfVariants: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly start: () => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

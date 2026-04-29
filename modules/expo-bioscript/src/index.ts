@@ -31,9 +31,14 @@ export { runAssay } from './ExpoBioscriptAssays';
 
 export {
   inspectBytes,
+  compileVariantYamlText,
+  lookupGenotypeBytesVariants,
   lookupCramVariants,
   lookupVcfVariants,
+  resolveRemoteResourceText,
   warmupBioscriptLookupWorker,
+  type BioscriptRemoteDependency,
+  type BioscriptRemoteResourceResolution,
   type BioscriptInspection,
   type BioscriptInspectOptions,
   type CramVariantLookupInput,
