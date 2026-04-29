@@ -4,6 +4,15 @@ import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import {
+	deleteHandles,
+	getHandles,
+	inspectPermission,
+	listHandles,
+	putHandles,
+	type StoredHandleBundle,
+} from '@/lib/file-handle-store'
+import { getCurrentWebLaunchIntent, type LaunchIntent } from '@/lib/launch-intents'
+import {
 	ASSAY_CATEGORY_LABELS,
 	ASSAY_INPUT_FORMAT_LABELS,
 	type AssayCategory,
@@ -31,12 +40,30 @@ import {
 	missingGenomeSlots,
 	pairCompanionFile,
 	sortFilesForIngestion,
+	stripGenomeSuffix,
 } from '@/lib/lab/file-model'
 import {
 	getLabRunDisabledReasonFor,
 	runLabAssay,
+	runLabVariantYamlFiles,
 } from '@/lib/lab/runner'
-import type { Genome, RunResult, UnknownEntry } from '@/lib/lab/types'
+import {
+	deleteRemoteResourceCache,
+	listResolvedCachedRemoteResources,
+	resolveRemoteResource,
+	resourceKindLabel,
+	type ResolvedRemoteResource,
+} from '@/lib/remote-resource-resolver'
+import {
+	deleteCachedRemoteLabFile,
+	fetchRemoteLabFile,
+	listCachedRemoteLabFiles,
+	remoteLabFileCacheLimitLabel,
+	remoteLabFileKind,
+	remoteLabFileName,
+	type RemoteLabFile,
+} from '@/lib/remote-lab-file'
+import type { AssayLang, Genome, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
 import { warmupMontyRuntime, type VariantObservation } from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
@@ -61,6 +88,7 @@ import {
 	TextInput,
 	View,
 } from 'react-native'
+import { Highlight, themes } from 'prism-react-renderer'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 // === Theme context =========================================================
@@ -82,10 +110,52 @@ function useTheme(): ThemeValue {
 type RunRecord = {
 	id: string
 	assay: LabAssay
+	genomeName: string
+	sourceFiles: AssaySourceFile[]
 	startedAt: number
 	result: RunResult
 }
+type AssaySourceFile = {
+	language: AssayLang
+	name: string
+	source?: string
+	text: string
+}
+type SourceViewerState = {
+	files: AssaySourceFile[]
+	title: string
+}
+type SessionLabAssay = LabAssay & {
+	dependencyUrls: string[]
+	file: File
+	remoteKind: ResolvedRemoteResource['kind']
+}
+type PendingPersistentHandle = {
+	fileName: string
+	groupId: string
+	groupLabel: string
+	handle?: FileSystemFileHandle
+	id: string
+	lastError?: string
+	needsPicker?: boolean
+}
+type SavedHandleGroup = {
+	id: string
+	label: string
+	rows: StoredHandleBundle[]
+	summary: string
+}
 type RuntimeWarmupStatus = 'loading' | 'ready' | 'error'
+type RemoteIntentState =
+	| { status: 'idle' }
+	| { intent: LaunchIntent; status: 'pending' }
+	| { intent: LaunchIntent; status: 'resolving' }
+	| { error: string; intent: LaunchIntent; status: 'error' }
+	| { file: RemoteLabFile; intent: LaunchIntent; status: 'file-loaded' }
+	| { intent: LaunchIntent; status: 'file-loading' }
+	| { dependencies: ResolvedRemoteResource[]; intent: LaunchIntent; resource: ResolvedRemoteResource; status: 'resolved' }
+	| { error: string; intent: LaunchIntent; resource: ResolvedRemoteResource; status: 'dependency-error' }
+	| { intent: LaunchIntent; resource: ResolvedRemoteResource; status: 'resolving-dependencies' }
 
 function genomeKindToFormat(genome: Genome): AssayInputFormat {
 	switch (genome.kind) {
@@ -106,6 +176,366 @@ function isAssayCompatible(assay: LabAssay, genome: Genome): boolean {
 
 function assayNeedsWebRuntime(assay: LabAssay, genome: Genome): boolean {
 	return assay.language === 'python' || genome.kind === 'text' || genome.kind === 'zip'
+}
+
+function searchSessionAssays(assays: LabAssay[], query: string, category: AssayCategory | null): LabAssay[] {
+	const q = query.trim().toLowerCase()
+	return assays.filter((assay) => {
+		if (category && assay.category !== category) return false
+		if (!q) return true
+		return [
+			assay.title,
+			assay.subtitle ?? '',
+			assay.description,
+			...(assay.tags ?? []),
+		]
+			.join(' ')
+			.toLowerCase()
+			.includes(q)
+	})
+}
+
+function isSessionLabAssay(assay: LabAssay): assay is SessionLabAssay {
+	return 'file' in assay && assay.file instanceof File
+}
+
+function assayDisplayKind(assay: LabAssay): 'builtin' | 'panel' | 'python' | 'variant' {
+	if (isSessionLabAssay(assay)) {
+		if (assay.remoteKind === 'panel') return 'panel'
+		if (assay.remoteKind === 'python') return 'python'
+		return 'variant'
+	}
+	if (assay.category === 'panel') return 'panel'
+	if (assay.language === 'python') return 'python'
+	return 'builtin'
+}
+
+function assayKindLabel(kind: ReturnType<typeof assayDisplayKind>): string {
+	switch (kind) {
+		case 'panel':
+			return 'Panel'
+		case 'variant':
+			return 'Variant'
+		case 'python':
+			return 'Python assay'
+		default:
+			return 'Built-in'
+	}
+}
+
+function assayKindIcon(kind: ReturnType<typeof assayDisplayKind>) {
+	switch (kind) {
+		case 'panel':
+			return 'layers-outline'
+		case 'variant':
+			return 'git-branch-outline'
+		case 'python':
+			return 'code-slash-outline'
+		default:
+			return 'flask-outline'
+	}
+}
+
+function mergeAssayList(assays: LabAssay[]): LabAssay[] {
+	const byKey = new Map<string, LabAssay>()
+	for (const assay of assays) {
+		const key = assayStableKey(assay)
+		byKey.set(key, assay)
+	}
+	return Array.from(byKey.values())
+}
+
+function assayStableKey(assay: LabAssay): string {
+	if (isSessionLabAssay(assay)) {
+		return `remote:${assay.remoteKind}:${normalizeRemoteAssayUrl(assay.url)}`
+	}
+	return `catalog:${assay.id || assay.url || assay.title}`
+}
+
+function normalizeRemoteAssayUrl(url: string): string {
+	try {
+		const parsed = new URL(url)
+		parsed.hash = ''
+		return parsed.toString()
+	} catch {
+		return url.trim()
+	}
+}
+
+function panelVariantAssays(panel: SessionLabAssay, assays: SessionLabAssay[]): SessionLabAssay[] {
+	const dependencyUrls = new Set(panel.dependencyUrls)
+	if (!dependencyUrls.size) return []
+	return assays.filter((assay) => assay.remoteKind === 'variant' && dependencyUrls.has(assay.url))
+}
+
+function buildGenomeBundleFromFiles(files: File[]): { genome: Genome; unknowns: File[] } | null {
+	const ordered = sortFilesForIngestion(files)
+	const primary = ordered.find((file) => {
+		const kind = classifyLabFile(file.name)
+		return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
+	})
+	if (!primary) return null
+	const primaryKind = classifyLabFile(primary.name)
+	if (
+		primaryKind !== 'cram' &&
+		primaryKind !== 'vcf_gz' &&
+		primaryKind !== 'genotype_text' &&
+		primaryKind !== 'zip'
+	) {
+		return null
+	}
+	let genome = createGenomeFromPrimaryFile(primary, primaryKind)
+	const unknowns: File[] = []
+	for (const file of ordered) {
+		if (file === primary) continue
+		const kind = classifyLabFile(file.name)
+		if (kind === 'crai' || kind === 'tbi' || kind === 'fai' || kind === 'fasta') {
+			genome = pairCompanionFile([genome], file, kind)[0] ?? genome
+			continue
+		}
+		if (kind === 'unknown' || kind === 'assay_python' || kind === 'assay_yaml') {
+			unknowns.push(file)
+		}
+	}
+	return { genome, unknowns }
+}
+
+function storedHandleName(row: StoredHandleBundle): string {
+	return row.handles.primary?.name ?? row.handles.reference?.name ?? row.documentId.replace(/^lab-drop:/, '')
+}
+
+function savedGroupKey(name: string): string {
+	const kind = classifyLabFile(name)
+	if (kind === 'crai' || kind === 'tbi' || kind === 'fai') {
+		return stripGenomeSuffix(name).toLowerCase()
+	}
+	if (kind === 'fasta') return name.toLowerCase()
+	return stripGenomeSuffix(name).toLowerCase()
+}
+
+function groupStoredHandles(rows: StoredHandleBundle[]): SavedHandleGroup[] {
+	const groups = new Map<string, StoredHandleBundle[]>()
+	for (const row of rows) {
+		const name = storedHandleName(row)
+		const key = row.handles.groupId ?? savedGroupKey(name)
+		const current = groups.get(key) ?? []
+		current.push(row)
+		groups.set(key, current)
+	}
+
+	const pendingFasta = new Map<string, StoredHandleBundle[]>()
+	const result = Array.from(groups.entries()).map(([key, groupRows]) => {
+		const names = groupRows.map(storedHandleName)
+		const storedLabel = groupRows.find((row) => row.handles.groupLabel)?.handles.groupLabel
+		const primary = names.find((name) => {
+			const kind = classifyLabFile(name)
+			return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip' || kind === 'assay_yaml' || kind === 'assay_python'
+		}) ?? storedLabel ?? names[0] ?? key
+		return {
+			id: key,
+			label: primary,
+			rows: groupRows.sort((left, right) => storedHandleName(left).localeCompare(storedHandleName(right))),
+			summary: names.map((name) => {
+				const kind = classifyLabFile(name)
+				return kind === 'unknown' ? name : kind.replace('_', ' ')
+			}).join(' · '),
+		} satisfies SavedHandleGroup
+	})
+
+	// A CRAM genome often has an unrelated reference FASTA name. Attach loose
+	// FASTA/FAI groups to a single CRAM group so reopening restores one complete
+	// genome bundle from the files the user persisted together.
+	const cramGroups = result.filter((group) => group.rows.some((row) => classifyLabFile(storedHandleName(row)) === 'cram'))
+	const looseCraiGroups = result.filter((group) =>
+		group.rows.every((row) => classifyLabFile(storedHandleName(row)) === 'crai')
+	)
+	for (const craiGroup of looseCraiGroups) {
+		const craiName = storedHandleName(craiGroup.rows[0]!)
+		const cramName = stripGenomeSuffix(craiName).toLowerCase()
+		const target = cramGroups.find((group) =>
+			group.rows.some((row) => storedHandleName(row).toLowerCase() === cramName)
+		)
+		if (!target) continue
+		pendingFasta.set(craiGroup.id, craiGroup.rows)
+		target.rows.push(...craiGroup.rows)
+	}
+	const looseReferenceGroups = result.filter((group) =>
+		group.rows.every((row) => {
+			const kind = classifyLabFile(storedHandleName(row))
+			return kind === 'fasta' || kind === 'fai'
+		})
+	)
+	if (cramGroups.length === 1 && looseReferenceGroups.length) {
+		const cram = cramGroups[0]
+		if (!cram) return result
+		for (const refGroup of looseReferenceGroups) {
+			pendingFasta.set(refGroup.id, refGroup.rows)
+			cram.rows.push(...refGroup.rows)
+		}
+		cram.rows.sort((left, right) => storedHandleName(left).localeCompare(storedHandleName(right)))
+		cram.summary = cram.rows
+			.map((row) => classifyLabFile(storedHandleName(row)).replace('_', ' '))
+			.join(' · ')
+	}
+
+	return result
+		.filter((group) => !pendingFasta.has(group.id))
+		.sort((left, right) => left.label.localeCompare(right.label))
+}
+
+function logPersistentHandleDebug(label: string, payload: Record<string, unknown>) {
+	if (typeof console === 'undefined') return
+	console.info(`[lab:persistent-handles] ${label}`, payload)
+}
+
+function logPersistentHandleWarning(label: string, payload: Record<string, unknown>) {
+	if (typeof console === 'undefined') return
+	console.warn(`[lab:persistent-handles] ${label}`, payload)
+}
+
+async function selectPersistentHandlesForPending(
+	pending: PendingPersistentHandle[],
+): Promise<PendingPersistentHandle[]> {
+	const picker = (window as typeof window & {
+		showOpenFilePicker?: (options?: {
+			excludeAcceptAllOption?: boolean
+			multiple?: boolean
+			types?: Array<{
+				accept: Record<string, string[]>
+				description: string
+			}>
+		}) => Promise<FileSystemFileHandle[]>
+	}).showOpenFilePicker
+	if (typeof picker !== 'function') {
+		throw new Error('File picker handle persistence is not supported in this browser.')
+	}
+
+	const selected = await picker({
+		excludeAcceptAllOption: false,
+		multiple: pending.length > 1,
+	})
+	const byName = new Map(selected.map((handle) => [handle.name, handle]))
+	return pending.map((item) => {
+		const handle = byName.get(item.fileName)
+		if (!handle) {
+			return {
+				...item,
+				handle: undefined,
+				lastError: `Selected files did not include ${item.fileName}`,
+				needsPicker: true,
+			}
+		}
+		return {
+			...item,
+			handle,
+			lastError: undefined,
+			needsPicker: false,
+		}
+	})
+}
+
+function droppedFileGroupPlan(files: File[]): Map<string, { groupId: string; groupLabel: string }> {
+	type PlannedGroup = {
+		crai?: string
+		fai?: string
+		fasta?: string
+		groupId: string
+		groupLabel: string
+		kind: 'assay' | 'cram' | 'other' | 'vcf'
+		names: string[]
+		primary?: string
+		tbi?: string
+	}
+
+	const groups: PlannedGroup[] = []
+	const ordered = sortFilesForIngestion(files)
+	const addStandalone = (file: File, kind: PlannedGroup['kind'] = 'other') => {
+		groups.push({
+			groupId: `drop-record-${groups.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			groupLabel: file.name,
+			kind,
+			names: [file.name],
+			primary: file.name,
+		})
+	}
+
+	for (const file of ordered) {
+		const kind = classifyLabFile(file.name)
+		if (kind === 'cram') {
+			addStandalone(file, 'cram')
+			continue
+		}
+		if (kind === 'vcf_gz') {
+			addStandalone(file, 'vcf')
+			continue
+		}
+		if (kind === 'genotype_text' || kind === 'zip') {
+			addStandalone(file, 'other')
+			continue
+		}
+		if (kind === 'assay_yaml' || kind === 'assay_python') {
+			addStandalone(file, 'assay')
+			continue
+		}
+		if (kind === 'crai') {
+			const stem = stripGenomeSuffix(file.name).toLowerCase()
+			const target =
+				groups.find((group) => group.kind === 'cram' && group.primary?.toLowerCase() === stem) ??
+				groups.find((group) => group.kind === 'cram' && !group.crai)
+			if (target) {
+				target.crai = file.name
+				target.names.push(file.name)
+			} else {
+				addStandalone(file)
+			}
+			continue
+		}
+		if (kind === 'tbi') {
+			const stem = stripGenomeSuffix(file.name).toLowerCase()
+			const target =
+				groups.find((group) => group.kind === 'vcf' && group.primary?.toLowerCase() === stem) ??
+				groups.find((group) => group.kind === 'vcf' && !group.tbi)
+			if (target) {
+				target.tbi = file.name
+				target.names.push(file.name)
+			} else {
+				addStandalone(file)
+			}
+			continue
+		}
+		if (kind === 'fasta') {
+			const target = groups.find((group) => group.kind === 'cram' && !group.fasta)
+			if (target) {
+				target.fasta = file.name
+				target.names.push(file.name)
+			} else {
+				addStandalone(file)
+			}
+			continue
+		}
+		if (kind === 'fai') {
+			const stem = stripGenomeSuffix(file.name).toLowerCase()
+			const target =
+				groups.find((group) => group.kind === 'cram' && group.fasta?.toLowerCase() === stem) ??
+				groups.find((group) => group.kind === 'cram' && !group.fai)
+			if (target) {
+				target.fai = file.name
+				target.names.push(file.name)
+			} else {
+				addStandalone(file)
+			}
+			continue
+		}
+		addStandalone(file)
+	}
+
+	const plan = new Map<string, { groupId: string; groupLabel: string }>()
+	for (const group of groups) {
+		for (const name of group.names) {
+			plan.set(name, { groupId: group.groupId, groupLabel: group.groupLabel })
+		}
+	}
+	return plan
 }
 
 // === Page ===================================================================
@@ -129,10 +559,21 @@ export default function LabScreen() {
 	const [runningAssayId, setRunningAssayId] = useState<string | null>(null)
 	const [dragActive, setDragActive] = useState(false)
 	const [query, setQuery] = useState('')
+	const [assayUrlInput, setAssayUrlInput] = useState('')
+	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
 	const [category, setCategory] = useState<AssayCategory | null>(null)
 	const [sampleLoadingId, setSampleLoadingId] = useState<string | null>(null)
 	const [sampleLoadError, setSampleLoadError] = useState<string | null>(null)
+	const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null)
 	const [runtimeWarmupStatus, setRuntimeWarmupStatus] = useState<RuntimeWarmupStatus>('loading')
+	const [remoteIntent, setRemoteIntent] = useState<RemoteIntentState>({ status: 'idle' })
+	const [sessionAssays, setSessionAssays] = useState<SessionLabAssay[]>([])
+	const [pendingHandles, setPendingHandles] = useState<PendingPersistentHandle[]>([])
+	const [handlePersistMessage, setHandlePersistMessage] = useState<string | null>(null)
+	const [savedHandles, setSavedHandles] = useState<SavedHandleGroup[]>([])
+	const [savedHandlesLoading, setSavedHandlesLoading] = useState(false)
+	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
+	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
 
 	const activeGenome = useMemo(
 		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
@@ -168,9 +609,132 @@ export default function LabScreen() {
 				fileKinds: ordered.map((file) => classifyLabFile(file.name)),
 				totalFiles: ordered.length,
 			})
+			const primaryCount = ordered.filter((file) => {
+				const kind = classifyLabFile(file.name)
+				return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
+			}).length
+			if (primaryCount === 1) {
+				const bundle = buildGenomeBundleFromFiles(ordered)
+				if (bundle) {
+					setGenomes((prev) => [
+						...prev.filter((genome) => genome.primary.name !== bundle.genome.primary.name),
+						bundle.genome,
+					])
+					setSelectedGenomeId(bundle.genome.id)
+					if (bundle.unknowns.length) {
+						setUnknowns((prev) => [...prev, ...bundle.unknowns.map(createUnknownEntry)])
+					}
+					return
+				}
+			}
 			for (const file of ordered) ingest(file)
 		},
 		[ingest, trackEvent],
+	)
+
+	const refreshSavedHandles = useCallback(async () => {
+		const rows = await listHandles()
+		const labRows = rows.filter((row) => row.documentId.startsWith('lab-drop:'))
+		const groups = groupStoredHandles(labRows)
+		logPersistentHandleDebug('refresh saved rows', {
+			groups: groups.map((group) => ({
+				id: group.id,
+				label: group.label,
+				rows: group.rows.map((row) => row.documentId),
+			})),
+			rowCount: labRows.length,
+			rows: labRows.map((row) => ({
+				documentId: row.documentId,
+				groupId: row.handles.groupId ?? null,
+				groupLabel: row.handles.groupLabel ?? null,
+				primary: row.handles.primary?.name ?? null,
+				reference: row.handles.reference?.name ?? null,
+			})),
+			totalRowCount: rows.length,
+		})
+		setSavedHandles(groups)
+	}, [])
+
+	const refreshCachedRemoteFiles = useCallback(async () => {
+		try {
+			setCachedRemoteFiles(await listCachedRemoteLabFiles())
+		} catch (error) {
+			logPersistentHandleWarning('remote file cache refresh failed', {
+				error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+			})
+		}
+	}, [])
+
+	const ingestDroppedItems = useCallback(
+		async (items: DataTransferItemList | undefined, fallbackFiles: File[]) => {
+			const files = fallbackFiles
+			ingestMany(files)
+			const groupPlan = droppedFileGroupPlan(files)
+			const handles: PendingPersistentHandle[] = []
+			const handledNames = new Set<string>()
+			const itemList = Array.from(items ?? [])
+			logPersistentHandleDebug('drop received', {
+				fileNames: files.map((file) => file.name),
+				itemCount: itemList.length,
+				hasGetAsFileSystemHandle: itemList.map((item) =>
+					typeof (item as DataTransferItem & { getAsFileSystemHandle?: unknown }).getAsFileSystemHandle === 'function'
+				),
+			})
+			for (const item of itemList) {
+				if (item.kind !== 'file') continue
+				const getHandle = (item as DataTransferItem & {
+					getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>
+				}).getAsFileSystemHandle
+				if (typeof getHandle !== 'function') continue
+				try {
+					const handle = await getHandle.call(item)
+					logPersistentHandleDebug('drop handle resolved', {
+						handleKind: handle?.kind ?? 'none',
+						handleName: handle?.name ?? 'none',
+					})
+					if (handle?.kind === 'file') {
+						handledNames.add(handle.name)
+						const group = groupPlan.get(handle.name) ?? {
+							groupId: `drop-record-${handle.name}`,
+							groupLabel: handle.name,
+						}
+						handles.push({
+							fileName: handle.name,
+							groupId: group.groupId,
+							groupLabel: group.groupLabel,
+							handle: handle as FileSystemFileHandle,
+							id: `drop-${handle.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+						})
+					}
+				} catch (error) {
+					logPersistentHandleWarning('drop handle failed', {
+						error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+					})
+				}
+			}
+			for (const file of files) {
+				if (handledNames.has(file.name)) continue
+				const group = groupPlan.get(file.name) ?? {
+					groupId: `drop-record-${file.name}`,
+					groupLabel: file.name,
+				}
+				handles.push({
+					fileName: file.name,
+					groupId: group.groupId,
+					groupLabel: group.groupLabel,
+					id: `upgrade-${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+				})
+			}
+			if (handles.length) {
+				setPendingHandles((prev) => {
+					const byName = new Map(prev.map((item) => [item.fileName, item]))
+					for (const handle of handles) byName.set(handle.fileName, handle)
+					return Array.from(byName.values())
+				})
+				setHandlePersistMessage(null)
+			}
+		},
+		[ingestMany],
 	)
 
 	useEffect(() => {
@@ -185,6 +749,33 @@ export default function LabScreen() {
 			})
 		return () => {
 			cancelled = true
+		}
+	}, [])
+
+	useEffect(() => {
+		void refreshSavedHandles()
+	}, [refreshSavedHandles])
+
+	useEffect(() => {
+		void refreshCachedRemoteFiles()
+	}, [refreshCachedRemoteFiles])
+
+	useEffect(() => {
+		if (Platform.OS !== 'web') return
+		const syncIntent = () => {
+			const intent = getCurrentWebLaunchIntent()
+			if (!intent) return
+			setRemoteIntent((current) => {
+				if ('intent' in current && current.intent.url === intent.url) return current
+				return { intent, status: 'pending' }
+			})
+		}
+		syncIntent()
+		window.addEventListener('hashchange', syncIntent)
+		window.addEventListener('popstate', syncIntent)
+		return () => {
+			window.removeEventListener('hashchange', syncIntent)
+			window.removeEventListener('popstate', syncIntent)
 		}
 	}, [])
 
@@ -217,7 +808,7 @@ export default function LabScreen() {
 			stop(e)
 			depth = 0
 			setDragActive(false)
-			ingestMany(Array.from(e.dataTransfer?.files ?? []))
+			void ingestDroppedItems(e.dataTransfer?.items, Array.from(e.dataTransfer?.files ?? []))
 		}
 		window.addEventListener('dragenter', onEnter)
 		window.addEventListener('dragover', onOver)
@@ -229,7 +820,218 @@ export default function LabScreen() {
 			window.removeEventListener('dragleave', onLeave)
 			window.removeEventListener('drop', onDrop)
 		}
-	}, [ingestMany])
+	}, [ingestDroppedItems])
+
+	const persistDroppedHandles = useCallback(async () => {
+		if (!pendingHandles.length) return
+		let handlesToPersist = pendingHandles
+		const pickerRequired = handlesToPersist.some((item) => item.needsPicker || !item.handle)
+		if (pickerRequired) {
+			logPersistentHandleDebug('persist picker fallback start', {
+				pending: handlesToPersist.map((item) => ({
+					fileName: item.fileName,
+					lastError: item.lastError ?? null,
+					needsPicker: Boolean(item.needsPicker || !item.handle),
+				})),
+			})
+			try {
+				handlesToPersist = await selectPersistentHandlesForPending(handlesToPersist)
+				setPendingHandles(handlesToPersist)
+				logPersistentHandleDebug('persist picker fallback selected', {
+					pending: handlesToPersist.map((item) => ({
+						fileName: item.fileName,
+						hasHandle: Boolean(item.handle),
+						lastError: item.lastError ?? null,
+					})),
+				})
+			} catch (error) {
+				const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+				logPersistentHandleWarning('persist picker fallback failed', { error: message })
+				setHandlePersistMessage(`Persistent access was not saved. ${message}`)
+				return
+			}
+		}
+		let saved = 0
+		const failed: string[] = []
+		const storedRows: string[] = []
+		const retryByName = new Map<string, PendingPersistentHandle>()
+		logPersistentHandleDebug('persist start', {
+			pending: handlesToPersist.map((item) => ({
+				fileName: item.fileName,
+				groupId: item.groupId,
+				hasHandle: Boolean(item.handle),
+			})),
+		})
+		for (const item of handlesToPersist) {
+			const handle = item.handle
+			if (!handle) {
+				logPersistentHandleWarning('persist skipped missing browser handle', { fileName: item.fileName })
+				failed.push(item.fileName)
+				retryByName.set(item.fileName, {
+					...item,
+					lastError: 'Chrome did not provide a persistent dropped-file handle.',
+					needsPicker: true,
+				})
+				continue
+			}
+			const permission = await inspectPermission(handle)
+			logPersistentHandleDebug('persist permission', {
+				fileName: item.fileName,
+				permission,
+			})
+			if (permission.state !== 'granted') {
+				failed.push(`${item.fileName}: permission ${permission.state}${permission.error ? ` (${permission.error})` : ''}`)
+				continue
+			}
+			logPersistentHandleDebug('persist getFile probe start', { fileName: item.fileName })
+			try {
+				const file = await handle.getFile()
+				logPersistentHandleDebug('persist getFile probe ok', {
+					fileName: item.fileName,
+					lastModified: file.lastModified,
+					size: file.size,
+					type: file.type,
+				})
+			} catch (error) {
+				const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+				logPersistentHandleWarning('persist getFile probe failed', { fileName: item.fileName, error: message })
+				failed.push(`${item.fileName}: ${message}`)
+				retryByName.set(item.fileName, {
+					...item,
+					handle: undefined,
+					lastError: message,
+					needsPicker: true,
+				})
+				continue
+			}
+			const documentId = `lab-drop:${item.fileName}`
+			logPersistentHandleDebug('persist put start', { documentId, fileName: item.fileName })
+			try {
+				await putHandles(documentId, {
+					groupId: item.groupId,
+					groupLabel: item.groupLabel,
+					primary: handle,
+				})
+				const stored = await getHandles(documentId)
+				logPersistentHandleDebug('persist stored', {
+					documentId,
+					fileName: item.fileName,
+					groupId: item.groupId,
+					groupLabel: item.groupLabel,
+					verified: Boolean(stored?.primary),
+					verifiedName: stored?.primary?.name ?? null,
+				})
+				if (!stored?.primary) {
+					failed.push(`${item.fileName}: IndexedDB write verification failed`)
+					continue
+				}
+				storedRows.push(documentId)
+				saved += 1
+			} catch (error) {
+				const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+				logPersistentHandleWarning('persist put failed', { documentId, fileName: item.fileName, error: message })
+				failed.push(`${item.fileName}: ${message}`)
+			}
+		}
+		await refreshSavedHandles()
+		for (const documentId of storedRows) {
+			retryByName.delete(documentId.replace(/^lab-drop:/, ''))
+		}
+		const retryWithPicker = Array.from(retryByName.values())
+		setPendingHandles(retryWithPicker)
+		const failedMessage = failed.length ? ` Failed: ${failed.join(' · ')}` : ''
+		setHandlePersistMessage(
+			saved
+				? `Saved persistent access for ${saved} ${saved === 1 ? 'file' : 'files'} (${storedRows.join(', ')}).${failedMessage}`
+				: retryWithPicker.length
+					? `Chrome's dropped handle could not be reopened. Click "Select files to persist" and choose the same ${retryWithPicker.length === 1 ? 'file' : 'files'}.${failedMessage}`
+					: `Persistent access was not saved.${failedMessage}`,
+		)
+		setSavedHandlesError(null)
+		trackEvent('lab_persistent_handles_saved', { saved, offered: handlesToPersist.length })
+	}, [pendingHandles, refreshSavedHandles, trackEvent])
+
+	const restoreSavedHandle = useCallback(async (group: SavedHandleGroup) => {
+		setSavedHandlesLoading(true)
+		setSavedHandlesError(null)
+		try {
+			const files: File[] = []
+			const failed: string[] = []
+			logPersistentHandleDebug('restore start', {
+				groupId: group.id,
+				groupLabel: group.label,
+				rows: group.rows.map((row) => ({
+					documentId: row.documentId,
+					primary: row.handles.primary?.name ?? null,
+					reference: row.handles.reference?.name ?? null,
+				})),
+			})
+			for (const row of group.rows) {
+				for (const handle of [row.handles.primary, row.handles.reference]) {
+					if (!handle) continue
+					try {
+						const permission = await inspectPermission(handle)
+						logPersistentHandleDebug('restore permission', {
+							documentId: row.documentId,
+							fileName: handle.name,
+							permission,
+						})
+						if (permission.state !== 'granted') {
+							failed.push(`${handle.name}: permission ${permission.state}${permission.error ? ` (${permission.error})` : ''}`)
+							continue
+						}
+						const file = await handle.getFile()
+						logPersistentHandleDebug('restore getFile ok', {
+							documentId: row.documentId,
+							fileName: handle.name,
+							lastModified: file.lastModified,
+							size: file.size,
+							type: file.type,
+						})
+						files.push(file)
+					} catch (error) {
+						const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+						logPersistentHandleWarning('restore getFile failed', {
+							documentId: row.documentId,
+							fileName: handle.name,
+							error: message,
+							hint: 'The browser handle is stale, the file moved, or Chrome revoked access. Use Forget, then drag/drop and Keep access again.',
+						})
+						failed.push(`${handle.name}: ${message}`)
+					}
+				}
+			}
+			if (files.length) {
+				ingestMany(files)
+			}
+			if (failed.length) {
+				setSavedHandlesError(
+					`${files.length ? 'Partially restored.' : 'Could not restore saved files.'} ${failed.join(' · ')}`,
+				)
+			}
+			trackEvent('lab_persistent_handles_restored', {
+				documentId: group.id,
+				failedFiles: failed.length,
+				totalFiles: files.length,
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			setSavedHandlesError(message)
+			trackEvent('lab_persistent_handles_restore_failed', {
+				documentId: group.id,
+				error: message,
+			})
+		} finally {
+			setSavedHandlesLoading(false)
+		}
+	}, [ingestMany, trackEvent])
+
+	const removeSavedHandle = useCallback(async (group: SavedHandleGroup) => {
+		await Promise.all(group.rows.map((row) => deleteHandles(row.documentId)))
+		await refreshSavedHandles()
+		setSavedHandlesError(null)
+		setHandlePersistMessage(null)
+	}, [refreshSavedHandles])
 
 	const openPicker = useCallback(() => {
 		if (Platform.OS !== 'web') return
@@ -259,6 +1061,13 @@ export default function LabScreen() {
 
 	const pickSample = useCallback(
 		async (bundle: LabTestFileBundle) => {
+			if (bundle.remoteUrl) {
+				trackEvent('lab_sample_genome_remote_requested', { bundleId: bundle.id })
+				if (Platform.OS === 'web') {
+					window.location.hash = `url=${encodeURIComponent(bundle.remoteUrl)}`
+				}
+				return
+			}
 			setSampleLoadingId(bundle.id)
 			setSampleLoadError(null)
 			trackEvent('lab_sample_genome_requested', { bundleId: bundle.id })
@@ -277,6 +1086,211 @@ export default function LabScreen() {
 		[ingestMany, trackEvent],
 	)
 
+	const addResolvedSessionAssays = useCallback((resources: ResolvedRemoteResource[]) => {
+		const assays = resources
+			.filter((resource) => resource.kind === 'panel' || resource.kind === 'variant' || resource.kind === 'python')
+			.map((resource): SessionLabAssay => {
+				const language = resource.kind === 'python' ? 'python' : 'yaml'
+				return {
+					id: `remote-${resource.sha256.slice(0, 16)}`,
+					title: resource.title,
+					subtitle: resource.schema ?? resource.name,
+					description: resource.summary,
+					category: resource.kind === 'panel' ? 'panel' : 'pharmacogenomics',
+					language,
+					url: resource.sourceUrl,
+					inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+					tags: [
+						'remote',
+						resource.kind,
+						...(resource.version ? [`version:${resource.version}`] : []),
+					],
+					file: new File([resource.contents], resource.name, {
+						type: language === 'python' ? 'text/x-python' : 'application/yaml',
+					}),
+					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
+					remoteKind: resource.kind,
+				}
+			})
+		if (!assays.length) return
+		setSessionAssays((prev) => {
+			const byKey = new Map(prev.map((assay) => [assayStableKey(assay), assay]))
+			for (const assay of assays) byKey.set(assayStableKey(assay), assay)
+			return Array.from(byKey.values()).sort((left, right) => left.title.localeCompare(right.title))
+		})
+	}, [])
+
+	useEffect(() => {
+		let cancelled = false
+		void listResolvedCachedRemoteResources()
+			.then((resources) => {
+				if (cancelled || !resources.length) return
+				addResolvedSessionAssays(resources)
+				logPersistentHandleDebug('remote cache rehydrated', {
+					count: resources.length,
+					resources: resources.map((resource) => ({
+						kind: resource.kind,
+						sourceUrl: resource.sourceUrl,
+						title: resource.title,
+					})),
+				})
+			})
+			.catch((error) => {
+				logPersistentHandleWarning('remote cache rehydrate failed', {
+					error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+				})
+			})
+		return () => {
+			cancelled = true
+		}
+	}, [addResolvedSessionAssays])
+
+	const forgetRemoteAssay = useCallback(async (assay: LabAssay) => {
+		if (!isSessionLabAssay(assay)) return
+		await deleteRemoteResourceCache(assay.url)
+		setSessionAssays((prev) => prev.filter((item) => item.url !== assay.url))
+		trackEvent('lab_remote_resource_cache_deleted', {
+			kind: assay.remoteKind,
+			sourceUrl: assay.url,
+		})
+	}, [trackEvent])
+
+	const dismissRemoteIntent = useCallback(() => {
+		setRemoteIntent({ status: 'idle' })
+	}, [])
+
+	const loadAssayUrl = useCallback((url: string) => {
+		const trimmed = url.trim()
+		if (!trimmed || Platform.OS !== 'web') return
+		window.location.hash = `url=${encodeURIComponent(trimmed)}`
+	}, [])
+
+	const shareAssayUrl = useMemo(() => {
+		const trimmed = assayUrlInput.trim()
+		if (!trimmed || Platform.OS !== 'web') return ''
+		return `${window.location.origin}/lab#url=${encodeURIComponent(trimmed)}`
+	}, [assayUrlInput])
+
+	const copyShareAssayUrl = useCallback(async () => {
+		if (!shareAssayUrl || Platform.OS !== 'web') return
+		await navigator.clipboard?.writeText(shareAssayUrl)
+		setAssayUrlCopied(true)
+		window.setTimeout(() => setAssayUrlCopied(false), 1500)
+	}, [shareAssayUrl])
+
+	const fetchRemoteIntent = useCallback(async () => {
+		if (remoteIntent.status !== 'pending' && remoteIntent.status !== 'error') return
+		const { intent } = remoteIntent
+		const intentFileKind = remoteLabFileKind(intent.url)
+		const isRemoteLabFile =
+			intentFileKind !== 'assay_python' &&
+			intentFileKind !== 'assay_yaml' &&
+			intentFileKind !== 'unknown'
+		setRemoteIntent({ intent, status: isRemoteLabFile ? 'file-loading' : 'resolving' })
+		trackEvent('lab_remote_intent_fetch_requested', { source: intent.source })
+		try {
+			if (isRemoteLabFile) {
+				const remoteFile = await fetchRemoteLabFile(intent.url)
+				ingestMany([remoteFile.file])
+				if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
+					await refreshCachedRemoteFiles()
+				}
+				setRemoteIntent({ file: remoteFile, intent, status: 'file-loaded' })
+				trackEvent('lab_remote_file_loaded', {
+					cacheStatus: remoteFile.cacheStatus,
+					fileKind: remoteFile.fileKind,
+					size: remoteFile.file.size,
+				})
+				return
+			}
+			const resource = await resolveRemoteResource(intent.url)
+			addResolvedSessionAssays([resource])
+			setRemoteIntent({ dependencies: [], intent, resource, status: 'resolved' })
+			trackEvent('lab_remote_intent_resolved', {
+				dependencyCount: resource.dependencies.length,
+				kind: resource.kind,
+				schema: resource.schema ?? 'none',
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			setRemoteIntent({ error: message, intent, status: 'error' })
+			trackEvent('lab_remote_intent_failed', { error: message })
+		}
+	}, [addResolvedSessionAssays, ingestMany, refreshCachedRemoteFiles, remoteIntent, trackEvent])
+
+	const restoreCachedRemoteFile = useCallback((remoteFile: RemoteLabFile) => {
+		ingestMany([remoteFile.file])
+		trackEvent('lab_remote_file_cache_restored', {
+			fileKind: remoteFile.fileKind,
+			size: remoteFile.file.size,
+			sourceUrl: remoteFile.sourceUrl,
+		})
+	}, [ingestMany, trackEvent])
+
+	const removeCachedRemoteFile = useCallback(async (remoteFile: RemoteLabFile) => {
+		await deleteCachedRemoteLabFile(remoteFile.sourceUrl)
+		await refreshCachedRemoteFiles()
+		trackEvent('lab_remote_file_cache_deleted', {
+			fileKind: remoteFile.fileKind,
+			sourceUrl: remoteFile.sourceUrl,
+		})
+	}, [refreshCachedRemoteFiles, trackEvent])
+
+	const resolveRemoteDependencies = useCallback(async () => {
+		if (remoteIntent.status !== 'resolved' && remoteIntent.status !== 'dependency-error') return
+		const { intent, resource } = remoteIntent
+		setRemoteIntent({ intent, resource, status: 'resolving-dependencies' })
+		trackEvent('lab_remote_dependencies_fetch_requested', {
+			dependencyCount: resource.dependencies.length,
+			kind: resource.kind,
+		})
+		try {
+			const dependencies = await Promise.all(
+				resource.dependencies.map((dependency) => resolveRemoteResource(dependency.url)),
+			)
+			addResolvedSessionAssays([resource, ...dependencies])
+			setRemoteIntent({ dependencies, intent, resource, status: 'resolved' })
+			trackEvent('lab_remote_dependencies_resolved', {
+				dependencyCount: dependencies.length,
+				kind: resource.kind,
+			})
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			setRemoteIntent({ error: message, intent, resource, status: 'dependency-error' })
+			trackEvent('lab_remote_dependencies_failed', { error: message, kind: resource.kind })
+		}
+	}, [addResolvedSessionAssays, remoteIntent, trackEvent])
+
+	const buildAssaySourceFiles = useCallback(
+		async (catalogAssay: LabAssay): Promise<AssaySourceFile[]> => {
+			const sourceFromAssay = async (assay: LabAssay): Promise<AssaySourceFile> => {
+				const file = isSessionLabAssay(assay) ? assay.file : await loadAssayFile(assay)
+				return {
+					language: assay.language,
+					name: file.name,
+					source: assay.url,
+					text: await file.text(),
+				}
+			}
+
+			if (isSessionLabAssay(catalogAssay) && catalogAssay.remoteKind === 'panel') {
+				const panel = await sourceFromAssay(catalogAssay)
+				const variants = await Promise.all(panelVariantAssays(catalogAssay, sessionAssays).map(sourceFromAssay))
+				return [panel, ...variants]
+			}
+			return [await sourceFromAssay(catalogAssay)]
+		},
+		[sessionAssays],
+	)
+
+	const openAssaySource = useCallback(
+		async (assay: LabAssay) => {
+			const files = await buildAssaySourceFiles(assay)
+			setSourceViewer({ files, title: assay.title })
+		},
+		[buildAssaySourceFiles],
+	)
+
 	const runAssay = useCallback(
 		async (catalogAssay: LabAssay) => {
 			if (!activeGenome || !isGenomeComplete(activeGenome)) return
@@ -285,13 +1299,18 @@ export default function LabScreen() {
 			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, activeGenome)) return
 
 			try {
-				const file = await loadAssayFile(catalogAssay)
-				const loaded = createAssayFromFile(file, catalogAssay.language, catalogAssay.url)
-
 				setRunningAssayId(catalogAssay.id)
 				const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+				const sourceFiles = await buildAssaySourceFiles(catalogAssay)
 				setRuns((prev) => [
-					{ id: runId, assay: catalogAssay, startedAt: Date.now(), result: { status: 'running' } },
+					{
+						id: runId,
+						assay: catalogAssay,
+						genomeName: genomeDisplayName(activeGenome),
+						sourceFiles,
+						startedAt: Date.now(),
+						result: { status: 'running' },
+					},
 					...prev,
 				])
 				trackEvent('lab_run_started', {
@@ -300,7 +1319,31 @@ export default function LabScreen() {
 					genomeKind: activeGenome.kind,
 				})
 
-				const success = await runLabAssay(activeGenome, loaded)
+				const success =
+					isSessionLabAssay(catalogAssay) && catalogAssay.remoteKind === 'panel'
+						? await runLabVariantYamlFiles(
+								activeGenome,
+								panelVariantAssays(catalogAssay, sessionAssays).map((assay) => assay.file),
+								(progress) => {
+									setRuns((prev) =>
+										prev.map((r) =>
+											r.id === runId && r.result.status === 'running'
+												? { ...r, result: { ...r.result, progress } }
+												: r,
+										),
+									)
+								},
+							)
+						: await runLabAssay(
+								activeGenome,
+								createAssayFromFile(
+									isSessionLabAssay(catalogAssay)
+										? catalogAssay.file
+										: await loadAssayFile(catalogAssay),
+									catalogAssay.language,
+									catalogAssay.url,
+								),
+							)
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
 				)
@@ -327,7 +1370,7 @@ export default function LabScreen() {
 				setRunningAssayId(null)
 			}
 		},
-		[activeGenome, runningAssayId, runtimeWarmupStatus, trackEvent],
+		[activeGenome, buildAssaySourceFiles, runningAssayId, runtimeWarmupStatus, sessionAssays, trackEvent],
 	)
 
 	// Auto-run from `?run=<assayId>` once genome is ready — consumed only once.
@@ -366,8 +1409,15 @@ export default function LabScreen() {
 		}
 	}, [runs.length])
 
-	const categories = useMemo(() => listAssayCategories(), [])
-	const searchResults = useMemo(() => searchAssays(query, category), [query, category])
+	const categories = useMemo(() => {
+		const seen = new Set<AssayCategory>(listAssayCategories())
+		for (const assay of sessionAssays) seen.add(assay.category)
+		return Array.from(seen)
+	}, [sessionAssays])
+	const searchResults = useMemo(
+		() => searchSessionAssays(mergeAssayList([...searchAssays('', null), ...sessionAssays]), query, category),
+		[category, query, sessionAssays],
+	)
 	const latestRun = runs[0] ?? null
 	const previousRuns = runs.slice(1)
 
@@ -388,10 +1438,47 @@ export default function LabScreen() {
 						<WebThemeToggle scheme={scheme} />
 					</View>
 
+					<RemoteIntentCard
+						state={remoteIntent}
+						onDismiss={dismissRemoteIntent}
+						onFetch={fetchRemoteIntent}
+						onResolveDependencies={resolveRemoteDependencies}
+					/>
+
 					<DropZone
 						compact={Boolean(activeGenome)}
 						dragActive={dragActive}
 						onChoose={openPicker}
+					/>
+
+					<UrlLoadBox
+						urlInput={assayUrlInput}
+						shareUrl={shareAssayUrl}
+						shareUrlCopied={assayUrlCopied}
+						onUrlInputChange={setAssayUrlInput}
+						onLoadUrl={loadAssayUrl}
+						onCopyShareUrl={copyShareAssayUrl}
+					/>
+
+					<PersistentHandlePrompt
+						message={handlePersistMessage}
+						pendingHandles={pendingHandles}
+						onDismiss={() => {
+							setPendingHandles([])
+							setHandlePersistMessage(null)
+						}}
+						onSave={persistDroppedHandles}
+					/>
+
+					<SavedLocalFiles
+						cachedRemoteFiles={cachedRemoteFiles}
+						error={savedHandlesError}
+						loading={savedHandlesLoading}
+						rows={savedHandles}
+						onRemoveCachedRemote={removeCachedRemoteFile}
+						onRemove={removeSavedHandle}
+						onRestoreCachedRemote={restoreCachedRemoteFile}
+						onRestore={restoreSavedHandle}
 					/>
 
 					{activeGenome ? (
@@ -418,9 +1505,14 @@ export default function LabScreen() {
 							onCategoryChange={setCategory}
 							categories={categories}
 							results={searchResults}
+							onForgetRemoteAssay={forgetRemoteAssay}
 							runningAssayId={runningAssayId}
 							runtimeWarmupStatus={runtimeWarmupStatus}
+							sessionAssays={sessionAssays}
 							onRun={runAssay}
+							onViewSource={(assay) => {
+								void openAssaySource(assay)
+							}}
 						/>
 					) : null}
 
@@ -435,7 +1527,12 @@ export default function LabScreen() {
 								<OMText variant="caption" style={styles.sectionKicker}>
 									LATEST RESULT
 								</OMText>
-								<RunCard record={latestRun} />
+								<RunCard
+									record={latestRun}
+									onViewSource={() => {
+										setSourceViewer({ files: latestRun.sourceFiles, title: latestRun.assay.title })
+									}}
+								/>
 							</View>
 						) : null}
 						{previousRuns.length > 0 ? (
@@ -445,7 +1542,13 @@ export default function LabScreen() {
 								</OMText>
 								<View style={styles.stack}>
 									{previousRuns.map((r) => (
-										<RunCard key={r.id} record={r} />
+										<RunCard
+											key={r.id}
+											record={r}
+											onViewSource={() => {
+												setSourceViewer({ files: r.sourceFiles, title: r.assay.title })
+											}}
+										/>
 									))}
 								</View>
 							</View>
@@ -454,8 +1557,408 @@ export default function LabScreen() {
 
 					<PrivacyFootnote />
 				</ScrollView>
+				{sourceViewer ? (
+					<SourceViewer viewer={sourceViewer} onClose={() => setSourceViewer(null)} />
+				) : null}
 			</SafeAreaView>
 		</ThemeCtx.Provider>
+	)
+}
+
+function RemoteIntentCard({
+	onDismiss,
+	onFetch,
+	onResolveDependencies,
+	state,
+}: {
+	onDismiss: () => void
+	onFetch: () => void
+	onResolveDependencies: () => void
+	state: RemoteIntentState
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	if (state.status === 'idle') return null
+
+	if (state.status === 'pending' || state.status === 'resolving' || state.status === 'file-loading' || state.status === 'error') {
+		const busy = state.status === 'resolving' || state.status === 'file-loading'
+		const fileName = remoteLabFileName(state.intent.url)
+		const fileKind = remoteLabFileKind(state.intent.url)
+		const looksLikeFile = fileKind !== 'assay_python' && fileKind !== 'assay_yaml' && fileKind !== 'unknown'
+		return (
+			<View style={styles.intentCard}>
+				<View style={styles.intentHeader}>
+					<View style={styles.intentIcon}>
+						<OMIcon name="link-outline" tone="accent" size={18} />
+					</View>
+					<View style={styles.intentText}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							SHARED RESOURCE
+						</OMText>
+						<OMText variant="headline" style={styles.intentTitle}>
+							{looksLikeFile ? 'Load this file URL?' : 'Fetch this URL?'}
+						</OMText>
+						<OMText variant="caption" style={styles.intentUrl} numberOfLines={2}>
+							{state.intent.url}
+						</OMText>
+					</View>
+					<Pressable onPress={onDismiss} style={styles.intentClose}>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+				<OMText variant="body" style={styles.intentBody}>
+					{looksLikeFile
+						? `BioVault will download ${fileName}, load it into the Lab, and cache it in this browser if it is ${remoteLabFileCacheLimitLabel()} or smaller.`
+						: 'BioVault will fetch the target file first, inspect its schema, then ask again before fetching any dependencies it references.'}
+				</OMText>
+				{looksLikeFile ? (
+					<View style={styles.intentMetaRow}>
+						<MetaChip label={`file: ${fileName}`} />
+						<MetaChip label={`kind: ${fileKind}`} />
+					</View>
+				) : null}
+				{state.status === 'error' ? (
+					<View style={styles.errorInlineBlock}>
+						<OMIcon name="alert-circle-outline" tone="danger" size={14} />
+						<OMText variant="caption" style={styles.errorInline}>
+							{state.error}
+						</OMText>
+					</View>
+				) : null}
+				<View style={styles.intentActions}>
+					<Pressable onPress={onDismiss} disabled={busy} style={styles.intentSecondaryButton}>
+						<OMText variant="subtitle" style={styles.intentSecondaryText}>
+							Ignore
+						</OMText>
+					</Pressable>
+					<Pressable onPress={onFetch} disabled={busy} style={styles.intentPrimaryButton}>
+						{busy ? <ActivityIndicator color="#ffffff" size="small" /> : null}
+						<OMText variant="subtitle" style={styles.primaryButtonText}>
+							{busy ? 'Loading' : state.status === 'error' ? 'Retry fetch' : looksLikeFile ? 'Load file' : 'Fetch URL'}
+						</OMText>
+					</Pressable>
+				</View>
+			</View>
+		)
+	}
+
+	if (state.status === 'file-loaded') {
+		return (
+			<View style={styles.intentCard}>
+				<View style={styles.intentHeader}>
+					<View style={styles.intentIcon}>
+						<OMIcon name="document-attach-outline" tone="accent" size={18} />
+					</View>
+					<View style={styles.intentText}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							REMOTE FILE LOADED
+						</OMText>
+						<OMText variant="headline" style={styles.intentTitle}>
+							{state.file.file.name}
+						</OMText>
+						<OMText variant="caption" style={styles.intentUrl} numberOfLines={2}>
+							{state.intent.url}
+						</OMText>
+					</View>
+					<Pressable onPress={onDismiss} style={styles.intentClose}>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+				<OMText variant="body" style={styles.intentBody}>
+					Loaded into the Lab as {state.file.fileKind}. Cache status: {state.file.cacheStatus}.
+				</OMText>
+				<View style={styles.intentMetaRow}>
+					<MetaChip label={`size: ${humanLabSize(state.file.file.size)}`} />
+					<MetaChip label={`cache: ${state.file.cacheStatus}`} />
+					<MetaChip label={`limit: ${remoteLabFileCacheLimitLabel()}`} />
+				</View>
+				<View style={styles.intentActions}>
+					<Pressable onPress={onDismiss} style={styles.intentPrimaryButton}>
+						<OMText variant="subtitle" style={styles.primaryButtonText}>
+							Done
+						</OMText>
+					</Pressable>
+				</View>
+			</View>
+		)
+	}
+
+	const resource = state.resource
+	const resolvingDeps = state.status === 'resolving-dependencies'
+	const resolvedDeps = state.status === 'resolved' ? state.dependencies : []
+	return (
+		<View style={styles.intentCard}>
+			<View style={styles.intentHeader}>
+				<View style={styles.intentIcon}>
+					<OMIcon name="document-text-outline" tone="accent" size={18} />
+				</View>
+				<View style={styles.intentText}>
+					<OMText variant="caption" style={styles.intentKicker}>
+						{resourceKindLabel(resource.kind).toUpperCase()}
+					</OMText>
+					<OMText variant="headline" style={styles.intentTitle}>
+						{resource.title}
+					</OMText>
+					<OMText variant="caption" style={styles.intentUrl} numberOfLines={2}>
+						{resource.sourceUrl}
+					</OMText>
+				</View>
+				<Pressable onPress={onDismiss} style={styles.intentClose}>
+					<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+				</Pressable>
+			</View>
+
+			<OMText variant="body" style={styles.intentBody}>
+				{resource.summary}
+			</OMText>
+			<View style={styles.intentMetaRow}>
+				<MetaChip label={`schema: ${resource.schema ?? 'none'}`} />
+				<MetaChip label={`version: ${resource.version ?? 'none'}`} />
+				<MetaChip label={`cache: ${resource.cacheStatus}`} />
+				<MetaChip label={`file: ${resource.name}`} />
+			</View>
+			{resource.cacheStatus === 'updated' ? (
+				<View style={styles.errorInlineBlock}>
+					<OMIcon name="alert-circle-outline" tone="danger" size={14} />
+					<OMText variant="caption" style={styles.errorInline}>
+						This URL differs from the cached copy
+						{resource.previousVersion ? ` (cached version ${resource.previousVersion})` : ''}. Fetching
+						dependencies will use the newly fetched version for this session.
+					</OMText>
+				</View>
+			) : null}
+
+			{resource.dependencies.length ? (
+				<View style={styles.intentDependencyList}>
+					<OMText variant="caption" style={styles.intentKicker}>
+						DEPENDENCIES
+					</OMText>
+					{resource.dependencies.slice(0, 8).map((dependency) => (
+						<OMText key={dependency.url} variant="caption" style={styles.intentDependency}>
+							{dependency.label}: {dependency.url}
+						</OMText>
+					))}
+					{resource.dependencies.length > 8 ? (
+						<OMText variant="caption" style={styles.intentDependency}>
+							+{resource.dependencies.length - 8} more
+						</OMText>
+					) : null}
+				</View>
+			) : null}
+
+			{state.status === 'dependency-error' ? (
+				<View style={styles.errorInlineBlock}>
+					<OMIcon name="alert-circle-outline" tone="danger" size={14} />
+					<OMText variant="caption" style={styles.errorInline}>
+						{state.error}
+					</OMText>
+				</View>
+			) : null}
+
+			{resolvedDeps.length ? (
+				<View style={styles.intentDependencyList}>
+					<OMText variant="caption" style={styles.intentKicker}>
+						FETCHED
+					</OMText>
+					<OMText variant="caption" style={styles.intentDependency}>
+						{resolvedDeps.length} dependency {resolvedDeps.length === 1 ? 'file' : 'files'} fetched for this session.
+					</OMText>
+				</View>
+			) : null}
+
+			<View style={styles.intentActions}>
+				<Pressable onPress={onDismiss} disabled={resolvingDeps} style={styles.intentSecondaryButton}>
+					<OMText variant="subtitle" style={styles.intentSecondaryText}>
+						Done
+					</OMText>
+				</Pressable>
+				{resource.dependencies.length ? (
+					<Pressable onPress={onResolveDependencies} disabled={resolvingDeps} style={styles.intentPrimaryButton}>
+						{resolvingDeps ? <ActivityIndicator color="#ffffff" size="small" /> : null}
+						<OMText variant="subtitle" style={styles.primaryButtonText}>
+							{resolvingDeps ? 'Fetching dependencies' : resolvedDeps.length ? 'Refetch dependencies' : 'Fetch dependencies'}
+						</OMText>
+					</Pressable>
+				) : null}
+			</View>
+		</View>
+	)
+}
+
+function PersistentHandlePrompt({
+	message,
+	onDismiss,
+	onSave,
+	pendingHandles,
+}: {
+	message: string | null
+	onDismiss: () => void
+	onSave: () => void
+	pendingHandles: PendingPersistentHandle[]
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	if (!pendingHandles.length && !message) return null
+	return (
+		<View style={styles.intentCard}>
+			<View style={styles.intentHeader}>
+				<View style={styles.intentIcon}>
+					<OMIcon name="folder-open-outline" tone="accent" size={18} />
+				</View>
+				<View style={styles.intentText}>
+					<OMText variant="caption" style={styles.intentKicker}>
+						PERSISTENT FILE ACCESS
+					</OMText>
+					<OMText variant="headline" style={styles.intentTitle}>
+						Keep access after refresh?
+					</OMText>
+					<OMText variant="caption" style={styles.intentUrl}>
+						{message ?? `${pendingHandles.length} dropped ${pendingHandles.length === 1 ? 'file can' : 'files can'} be upgraded to persistent browser handles.`}
+					</OMText>
+				</View>
+				<Pressable onPress={onDismiss} style={styles.intentClose}>
+					<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+				</Pressable>
+			</View>
+			{pendingHandles.length ? (
+				<View style={styles.intentDependencyList}>
+					{pendingHandles.slice(0, 6).map((item) => (
+						<OMText key={item.id} variant="caption" style={styles.intentDependency}>
+							{item.fileName}{item.needsPicker || !item.handle ? ' (select again to persist)' : ''}
+							{item.lastError ? ` - ${item.lastError}` : ''}
+						</OMText>
+					))}
+					{pendingHandles.length > 6 ? (
+						<OMText variant="caption" style={styles.intentDependency}>
+							+{pendingHandles.length - 6} more
+						</OMText>
+					) : null}
+				</View>
+			) : null}
+			{pendingHandles.length ? (
+				<View style={styles.intentActions}>
+					<Pressable onPress={onDismiss} style={styles.intentSecondaryButton}>
+						<OMText variant="subtitle" style={styles.intentSecondaryText}>
+							Not now
+						</OMText>
+					</Pressable>
+					<Pressable onPress={onSave} style={styles.intentPrimaryButton}>
+						<OMText variant="subtitle" style={styles.primaryButtonText}>
+							{pendingHandles.some((item) => item.needsPicker || !item.handle)
+								? 'Select files to persist'
+								: 'Keep access'}
+						</OMText>
+					</Pressable>
+				</View>
+			) : null}
+		</View>
+	)
+}
+
+function SavedLocalFiles({
+	cachedRemoteFiles,
+	error,
+	loading,
+	onRemove,
+	onRemoveCachedRemote,
+	onRestore,
+	onRestoreCachedRemote,
+	rows,
+	}: {
+		cachedRemoteFiles: RemoteLabFile[]
+		error: string | null
+		loading: boolean
+		onRemove: (group: SavedHandleGroup) => void
+		onRemoveCachedRemote: (remoteFile: RemoteLabFile) => void
+		onRestore: (group: SavedHandleGroup) => void
+		onRestoreCachedRemote: (remoteFile: RemoteLabFile) => void
+		rows: SavedHandleGroup[]
+	}) {
+	const { styles } = useTheme()
+	if (!rows.length && !cachedRemoteFiles.length && !error) return null
+	return (
+		<View testID="saved-local-files" style={styles.pickerSection}>
+			<OMText variant="caption" style={styles.pickerKicker}>
+				SAVED LOCAL FILES
+			</OMText>
+			<OMText variant="caption" style={styles.pickerIntro}>
+				Persistent browser handles and cached URL downloads. Reopen them after refresh.
+			</OMText>
+			{error ? (
+				<View style={styles.errorInlineBlock}>
+					<OMIcon name="alert-circle-outline" tone="danger" size={14} />
+					<OMText variant="caption" style={styles.errorInline}>
+						{error}
+					</OMText>
+				</View>
+			) : null}
+			<View style={styles.pickerList}>
+				{rows.map((group) => {
+					return (
+						<View key={group.id} testID="saved-local-file-row" style={styles.pickerRow}>
+							<View style={styles.pickerIcon}>
+								<OMIcon name="folder-open-outline" tone="accent" size={16} />
+							</View>
+							<View style={styles.pickerText}>
+								<OMText testID="saved-local-file-title" variant="body" style={styles.pickerTitle}>
+									{group.label}
+								</OMText>
+								<OMText testID="saved-local-file-meta" variant="caption" style={styles.pickerMeta}>
+									{group.summary} · {group.rows.length} persisted {group.rows.length === 1 ? 'file' : 'files'}
+								</OMText>
+							</View>
+							<Pressable
+								onPress={() => onRestore(group)}
+								disabled={loading}
+								style={loading ? styles.pickerActionMuted : styles.pickerAction}
+							>
+								<OMText
+									variant="subtitle"
+									style={loading ? styles.pickerActionMutedText : styles.pickerActionText}
+								>
+									Open
+								</OMText>
+							</Pressable>
+							<Pressable onPress={() => onRemove(group)} disabled={loading} style={styles.textButton}>
+								<OMText variant="subtitle" style={styles.textButtonText}>
+									Forget
+								</OMText>
+							</Pressable>
+						</View>
+					)
+				})}
+				{cachedRemoteFiles.map((remoteFile) => (
+					<View key={remoteFile.sourceUrl} testID="saved-local-file-row" style={styles.pickerRow}>
+						<View style={styles.pickerIcon}>
+							<OMIcon name="cloud-download-outline" tone="accent" size={16} />
+						</View>
+						<View style={styles.pickerText}>
+							<OMText testID="saved-local-file-title" variant="body" style={styles.pickerTitle}>
+								{remoteFile.file.name}
+							</OMText>
+							<OMText testID="saved-local-file-meta" variant="caption" style={styles.pickerMeta}>
+								Cached URL file · {remoteFile.fileKind} · {humanLabSize(remoteFile.file.size)}
+							</OMText>
+						</View>
+						<Pressable
+							onPress={() => onRestoreCachedRemote(remoteFile)}
+							disabled={loading}
+							style={loading ? styles.pickerActionMuted : styles.pickerAction}
+						>
+							<OMText
+								variant="subtitle"
+								style={loading ? styles.pickerActionMutedText : styles.pickerActionText}
+							>
+								Open
+							</OMText>
+						</Pressable>
+						<Pressable onPress={() => onRemoveCachedRemote(remoteFile)} disabled={loading} style={styles.textButton}>
+							<OMText variant="subtitle" style={styles.textButtonText}>
+								Forget
+							</OMText>
+						</Pressable>
+					</View>
+				))}
+			</View>
+		</View>
 	)
 }
 
@@ -511,6 +2014,78 @@ function DropZone({
 				.cram · .vcf.gz · .zip · 23andMe-style .txt. Companion files (.crai, .fa, .fa.fai, .tbi) are paired automatically.
 			</OMText>
 		</Pressable>
+	)
+}
+
+function UrlLoadBox({
+	onCopyShareUrl,
+	onLoadUrl,
+	onUrlInputChange,
+	shareUrl,
+	shareUrlCopied,
+	urlInput,
+}: {
+	onCopyShareUrl: () => void
+	onLoadUrl: (url: string) => void
+	onUrlInputChange: (url: string) => void
+	shareUrl: string
+	shareUrlCopied: boolean
+	urlInput: string
+}) {
+	const { palette, styles } = useTheme()
+	return (
+		<View style={styles.urlLoadBox}>
+			<View style={styles.urlLoadHeader}>
+				<OMIcon name="link-outline" tone="accent" size={16} />
+				<OMText variant="caption" style={styles.urlLoadTitle}>
+					Or load from URL
+				</OMText>
+			</View>
+			<View style={styles.urlLoadRow}>
+				<TextInput
+					value={urlInput}
+					onChangeText={onUrlInputChange}
+					placeholder="Paste a GitHub/raw assay, panel, genome ZIP, or genotype URL…"
+					placeholderTextColor={palette.textFaint}
+					style={styles.urlLoadInput}
+					autoCapitalize="none"
+					autoCorrect={false}
+					keyboardType="url"
+					returnKeyType="go"
+					onSubmitEditing={() => onLoadUrl(urlInput)}
+				/>
+				<Pressable
+					onPress={() => onLoadUrl(urlInput)}
+					disabled={!urlInput.trim()}
+					style={urlInput.trim() ? styles.urlLoadButton : styles.urlLoadButtonDisabled}
+				>
+					<OMText
+						variant="subtitle"
+						style={urlInput.trim() ? styles.pickerActionText : styles.pickerActionMutedText}
+					>
+						Load
+					</OMText>
+				</Pressable>
+			</View>
+			<OMText variant="caption" style={styles.pickerIntro}>
+				Assays are schema-inspected; genome/test files are loaded into the Lab and cached if small enough.
+			</OMText>
+			{shareUrl ? (
+				<View style={styles.shareLinkBox}>
+					<OMText variant="caption" style={styles.urlLoadTitle}>
+						Shareable lab link
+					</OMText>
+					<OMText variant="caption" style={styles.shareLinkText} selectable>
+						{shareUrl}
+					</OMText>
+					<Pressable onPress={onCopyShareUrl} style={styles.intentSecondaryButton}>
+						<OMText variant="subtitle" style={styles.intentSecondaryText}>
+							{shareUrlCopied ? 'Copied' : 'Copy link'}
+						</OMText>
+					</Pressable>
+				</View>
+			) : null}
+		</View>
 	)
 }
 
@@ -635,7 +2210,7 @@ function SampleGenomeList({
 									variant="subtitle"
 									style={loading ? styles.pickerActionMutedText : styles.pickerActionText}
 								>
-									{loading ? 'Loading…' : 'Use sample'}
+									{loading ? 'Loading…' : bundle.remoteUrl ? 'Download' : 'Use sample'}
 								</OMText>
 							</View>
 						</Pressable>
@@ -658,22 +2233,28 @@ function AssayPicker({
 	category,
 	genome,
 	onCategoryChange,
+	onForgetRemoteAssay,
 	onQueryChange,
 	onRun,
+	onViewSource,
 	query,
 	results,
 	runningAssayId,
+	sessionAssays,
 	runtimeWarmupStatus,
 }: {
 	categories: AssayCategory[]
 	category: AssayCategory | null
 	genome: Genome
 	onCategoryChange: (c: AssayCategory | null) => void
+	onForgetRemoteAssay: (assay: LabAssay) => void
 	onQueryChange: (q: string) => void
 	onRun: (assay: LabAssay) => void
+	onViewSource: (assay: LabAssay) => void
 	query: string
 	results: LabAssay[]
 	runningAssayId: string | null
+	sessionAssays: SessionLabAssay[]
 	runtimeWarmupStatus: RuntimeWarmupStatus
 }) {
 	const { palette, styles } = useTheme()
@@ -732,18 +2313,26 @@ function AssayPicker({
 			) : (
 				<View style={styles.pickerList}>
 					{results.map((assay) => {
+						const displayKind = assayDisplayKind(assay)
+						const isPanel = isSessionLabAssay(assay) && displayKind === 'panel'
+						const isRemote = isSessionLabAssay(assay)
+						const panelVariants = isPanel ? panelVariantAssays(assay, sessionAssays) : []
 						const compatible = isAssayCompatible(assay, genome)
 						const waitingForRuntime =
 							compatible &&
 							runtimeWarmupStatus === 'loading' &&
 							assayNeedsWebRuntime(assay, genome)
 						const disabledReason = compatible
-							? waitingForRuntime
+							? isPanel
+								? panelVariants.length
+									? `${panelVariants.length} fetched variants ready.`
+									: 'Fetch panel dependencies first.'
+								: waitingForRuntime
 								? 'Runtime is loading.'
 								: getLabRunDisabledReasonFor(genome, assay.language)
 							: 'Assay is not compatible with this genome format.'
 						const isRunning = runningAssayId === assay.id
-						const disabled = anyRunning || !compatible || waitingForRuntime
+						const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length)
 						return (
 							<Pressable
 								key={assay.id}
@@ -751,20 +2340,38 @@ function AssayPicker({
 								disabled={disabled}
 								style={[
 									styles.pickerRow,
+									displayKind === 'panel' ? styles.pickerRowPanel : null,
+									displayKind === 'variant' ? styles.pickerRowVariant : null,
 									!compatible ? styles.pickerRowIncompatible : null,
-									disabled && !isRunning ? styles.pickerRowDisabled : null,
+									disabled && !isRunning && !isPanel ? styles.pickerRowDisabled : null,
 								]}
 							>
-								<View style={styles.pickerIcon}>
-									<OMIcon name="flask-outline" tone="accent" size={16} />
+								<View style={[
+									styles.pickerIcon,
+									displayKind === 'panel' ? styles.pickerIconPanel : null,
+									displayKind === 'variant' ? styles.pickerIconVariant : null,
+								]}>
+									<OMIcon name={assayKindIcon(displayKind)} tone="accent" size={16} />
 								</View>
 								<View style={styles.pickerText}>
-									<OMText variant="body" style={styles.pickerTitle}>
-										{assay.title}
-									</OMText>
+									<View style={styles.assayTitleRow}>
+										<OMText variant="body" style={styles.pickerTitle}>
+											{assay.title}
+										</OMText>
+										<View style={[
+											styles.assayKindBadge,
+											displayKind === 'panel' ? styles.assayKindBadgePanel : null,
+											displayKind === 'variant' ? styles.assayKindBadgeVariant : null,
+										]}>
+											<OMText variant="caption" style={styles.assayKindBadgeText}>
+												{assayKindLabel(displayKind)}
+											</OMText>
+										</View>
+									</View>
 									<OMText variant="caption" style={styles.pickerMeta} numberOfLines={1}>
 										{ASSAY_CATEGORY_LABELS[assay.category]} ·{' '}
 										{assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')}
+										{isRemote ? ' · Cached remote' : ''}
 										{disabledReason ? ` · ${disabledReason}` : ''}
 									</OMText>
 								</View>
@@ -783,13 +2390,39 @@ function AssayPicker({
 										</OMText>
 									</View>
 								) : (
-									<View style={compatible ? styles.pickerAction : styles.pickerActionMuted}>
-										<OMText
-											variant="subtitle"
-											style={compatible ? styles.pickerActionText : styles.pickerActionMutedText}
+									<View style={styles.assayActionGroup}>
+										<View style={!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted}>
+											<OMText
+												variant="subtitle"
+												style={!disabled || isRunning ? styles.pickerActionText : styles.pickerActionMutedText}
+											>
+												{isPanel ? 'Run panel' : compatible ? 'Run assay' : 'Unavailable'}
+											</OMText>
+										</View>
+										{isRemote ? (
+											<Pressable
+												onPress={(event) => {
+													event.stopPropagation?.()
+													void onForgetRemoteAssay(assay)
+												}}
+												style={styles.textButton}
+											>
+												<OMText variant="subtitle" style={styles.textButtonText}>
+													Forget
+												</OMText>
+											</Pressable>
+										) : null}
+										<Pressable
+											onPress={(event) => {
+												event.stopPropagation?.()
+												onViewSource(assay)
+											}}
+											style={styles.textButton}
 										>
-											{compatible ? 'Run assay' : 'Unavailable'}
-										</OMText>
+											<OMText variant="subtitle" style={styles.textButtonText}>
+												View
+											</OMText>
+										</Pressable>
 									</View>
 								)}
 							</Pressable>
@@ -822,7 +2455,7 @@ function CategoryChip({
 
 // === Run card ==============================================================
 
-function RunCard({ record }: { record: RunRecord }) {
+function RunCard({ onViewSource, record }: { onViewSource: () => void; record: RunRecord }) {
 	const { palette, styles } = useTheme()
 	const { assay, result } = record
 	return (
@@ -844,24 +2477,26 @@ function RunCard({ record }: { record: RunRecord }) {
 							{result.observations ? ` · ${result.observations.length} variant${result.observations.length === 1 ? '' : 's'}` : ''}
 						</OMText>
 					) : null}
+					<OMText variant="caption" style={styles.runCardHint} numberOfLines={1}>
+						Input: {record.genomeName}
+					</OMText>
 				</View>
 				{result.status === 'running' ? (
 					<ActivityIndicator size="small" color={palette.accent} />
 				) : null}
+				<Pressable accessibilityRole="button" onPress={onViewSource} style={styles.textButton}>
+					<OMText variant="subtitle" style={styles.textButtonText}>
+						View source
+					</OMText>
+				</Pressable>
 			</View>
 
 			{result.status === 'running' ? (
-				<OMText variant="caption" style={styles.runCardHint}>
-					Running locally in your browser.
-				</OMText>
+				<RunProgress progress={result.progress} />
 			) : null}
 
 			{result.status === 'done' && result.observations ? (
-				<View style={styles.stack}>
-					{result.observations.map((obs) => (
-						<ObservationCard key={obs.name} obs={obs} />
-					))}
-				</View>
+				<ObservationTable observations={result.observations} />
 			) : null}
 
 			{result.status === 'done' && result.textOutput !== undefined ? (
@@ -890,42 +2525,292 @@ function RunCard({ record }: { record: RunRecord }) {
 	)
 }
 
-function ObservationCard({ obs }: { obs: VariantObservation }) {
-	const { styles } = useTheme()
+function RunProgress({ progress }: { progress: RunResult['progress'] }) {
+	const { palette, styles } = useTheme()
+	const hasTotal = progress?.total !== null && progress?.total !== undefined
+	const completed = progress?.completed ?? 0
+	const total = progress?.total ?? null
+	const ratio = hasTotal && total ? Math.max(0, Math.min(1, completed / total)) : 0
 	return (
-		<View style={styles.obsCard}>
-			<View style={styles.obsHeader}>
-				<OMText variant="headline" style={styles.obsTitle}>
-					{obs.name}
+		<View style={styles.runProgressBlock}>
+			<View style={styles.runProgressHead}>
+				<OMText variant="caption" style={styles.runCardHint}>
+					{progress?.label ?? 'Running locally in your browser.'}
 				</OMText>
-				<View style={styles.obsBadgeRow}>
-					<MetaChip label={obs.backend} />
-					{obs.assembly ? <MetaChip label={obs.assembly.toUpperCase()} /> : null}
-					{obs.matchedRsid ? <MetaChip label={obs.matchedRsid} /> : null}
-				</View>
+				{hasTotal ? (
+					<OMText variant="caption" style={styles.runCardHint}>
+						{completed}/{total}
+					</OMText>
+				) : null}
 			</View>
-			{obs.genotype ? (
-				<View style={styles.obsGenotype}>
-					<OMText variant="caption" style={styles.obsGenotypeLabel}>
-						GENOTYPE
-					</OMText>
-					<OMText variant="h3" style={styles.obsGenotypeValue}>
-						{obs.genotype}
-					</OMText>
-					<OMText variant="caption" style={styles.obsGenotypeMeta}>
-						{obs.depth !== undefined ? `depth ${obs.depth}` : null}
-						{obs.refCount !== undefined ? ` · ref ${obs.refCount}` : null}
-						{obs.altCount !== undefined ? ` · alt ${obs.altCount}` : null}
-					</OMText>
+			{hasTotal ? (
+				<View style={styles.runProgressTrack}>
+					<View style={[styles.runProgressFill, { backgroundColor: palette.accent, width: `${ratio * 100}%` }]} />
 				</View>
-			) : null}
-			{obs.evidence.length > 0 ? (
-				<OMText variant="caption" style={styles.obsEvidence}>
-					{obs.evidence.join(' · ')}
-				</OMText>
 			) : null}
 		</View>
 	)
+}
+
+function ObservationTable({ observations }: { observations: VariantObservation[] }) {
+	const { styles } = useTheme()
+	const showCounts = observations.some((obs) => obs.depth !== undefined || obs.refCount !== undefined || obs.altCount !== undefined)
+	const showEvidence = showCounts && observations.some((obs) => obs.evidence.length > 0 || Object.keys(obs.rawCounts).length > 0)
+	return (
+		<View style={styles.obsTableWrap}>
+			<View style={styles.obsTableTitleRow}>
+				<OMText variant="caption" style={styles.sectionKicker}>
+					OBSERVATIONS
+				</OMText>
+				<OMText variant="caption" style={styles.runCardHint}>
+					{observations.length} row{observations.length === 1 ? '' : 's'}
+				</OMText>
+			</View>
+			<ScrollView horizontal showsHorizontalScrollIndicator>
+				<View style={styles.obsTable}>
+					<ObservationTableRow header showCounts={showCounts} showEvidence={showEvidence} />
+					{observations.map((obs, index) => (
+						<ObservationTableRow
+							key={`${obs.name}-${obs.matchedRsid ?? 'no-rsid'}-${index}`}
+							obs={obs}
+							showCounts={showCounts}
+							showEvidence={showEvidence}
+						/>
+					))}
+				</View>
+			</ScrollView>
+		</View>
+	)
+}
+
+function ObservationTableRow({
+	header,
+	obs,
+	showCounts,
+	showEvidence,
+}: {
+	header?: boolean
+	obs?: VariantObservation
+	showCounts: boolean
+	showEvidence: boolean
+}) {
+	const { styles } = useTheme()
+	const [evidenceExpanded, setEvidenceExpanded] = useState(false)
+	if (header) {
+		return (
+			<View style={[styles.obsTableRow, styles.obsTableHeaderRow]}>
+				<ObsCell width={110} header value="RSID" />
+				<ObsCell width={92} header value="Ref->Alt" />
+				<ObsCell width={120} header value="Genotype" />
+				<ObsCell width={110} header value="Decision" />
+				<ObsCell width={220} header value="Variant" />
+				<ObsCell width={90} header value="Assembly" />
+				<ObsCell width={120} header value="Backend" />
+				{showCounts ? (
+					<>
+						<ObsCell width={80} header value="Depth" />
+						<ObsCell width={90} header value="ref_count" />
+						<ObsCell width={90} header value="alt_count" />
+					</>
+				) : null}
+				{showEvidence ? <ObsCell width={320} header value="Evidence" /> : null}
+			</View>
+		)
+	}
+	if (!obs) return null
+	const hasAltSupport = observationHasFoundSignal(obs)
+	const alleles = parseObservationAlleles(obs)
+	return (
+		<View style={[styles.obsTableRow, hasAltSupport ? styles.obsTableAltRow : null]}>
+			<RsidCell width={110} rsid={obs.matchedRsid} />
+			<ObsCell width={92} value={formatObservationAlleles(obs, alleles)} strong />
+			<GenotypeCell width={120} obs={obs} />
+			<ObsCell width={110} value={formatObservationDecision(obs)} />
+			<ObsCell width={220} value={obs.name} />
+			<ObsCell width={90} value={obs.assembly?.toUpperCase() ?? '—'} />
+			<ObsCell width={120} value={obs.backend} />
+			{showCounts ? (
+				<>
+					<ObsCell width={80} value={formatOptionalNumber(obs.depth)} />
+					<ObsCell width={90} value={formatOptionalNumber(obs.refCount)} />
+					<ObsCell width={90} value={formatOptionalNumber(obs.altCount)} />
+				</>
+			) : null}
+			{showEvidence ? (
+				<EvidenceCell
+					expanded={evidenceExpanded}
+					onToggle={() => setEvidenceExpanded((value) => !value)}
+					value={obs.evidence.length ? obs.evidence.join(' · ') : formatRawCounts(obs.rawCounts)}
+					width={320}
+				/>
+			) : null}
+		</View>
+	)
+}
+
+function GenotypeCell({ obs, width }: { obs: VariantObservation; width: number }) {
+	const { styles } = useTheme()
+	const genotype = obs.genotype ?? '—'
+	const alleles = parseObservationAlleles(obs)
+	const hasAltSupport = observationHasFoundSignal(obs)
+	if (!alleles || genotype === '—') {
+		return (
+			<View style={[styles.obsCell, { width }]}>
+				<View style={[styles.obsGenotypePill, hasAltSupport ? styles.obsGenotypePillAlt : null]}>
+					<OMText variant="caption" numberOfLines={1} style={hasAltSupport ? styles.obsGenotypeAltText : styles.obsGenotypeRefText}>
+						{genotype}
+					</OMText>
+				</View>
+			</View>
+		)
+	}
+
+	const canSplitBases = alleles.ref.length === 1 && alleles.alt.length === 1 && genotype.length <= 2
+	return (
+		<View style={[styles.obsCell, { width }]}>
+			<View style={[styles.obsGenotypePill, hasAltSupport ? styles.obsGenotypePillAlt : null]}>
+				{canSplitBases ? (
+					<OMText variant="caption" style={styles.obsGenotypeText}>
+						{genotype.split('').map((base, index) => {
+							const normalized = base.toUpperCase()
+							const isAlt = normalized === alleles.alt.toUpperCase()
+							const isRef = normalized === alleles.ref.toUpperCase()
+							return (
+								<OMText
+									key={`${base}-${index}`}
+									variant="caption"
+									style={isAlt ? styles.obsGenotypeAltText : isRef ? styles.obsGenotypeRefText : styles.obsGenotypeText}
+								>
+									{base}
+								</OMText>
+							)
+						})}
+					</OMText>
+				) : (
+					<OMText variant="caption" numberOfLines={1} style={hasAltSupport ? styles.obsGenotypeAltText : styles.obsGenotypeRefText}>
+						{genotype}
+					</OMText>
+				)}
+			</View>
+		</View>
+	)
+}
+
+function RsidCell({ rsid, width }: { rsid?: string; width: number }) {
+	const { styles } = useTheme()
+	if (!rsid) return <ObsCell width={width} value="—" />
+	const normalizedRsid = rsid.trim()
+	const href = `https://www.ncbi.nlm.nih.gov/snp/${normalizedRsid}`
+	return (
+		<View style={[styles.obsCell, { width }]}>
+			<Pressable
+				accessibilityRole="link"
+				onPress={() => {
+					window.open(href, '_blank', 'noopener,noreferrer')
+				}}
+			>
+				<OMText numberOfLines={1} variant="caption" style={styles.obsLinkText}>
+					{normalizedRsid}
+				</OMText>
+			</Pressable>
+		</View>
+	)
+}
+
+function EvidenceCell({
+	expanded,
+	onToggle,
+	value,
+	width,
+}: {
+	expanded: boolean
+	onToggle: () => void
+	value: string
+	width: number
+}) {
+	const { styles } = useTheme()
+	return (
+		<View style={[styles.obsCell, { width }]}>
+			<OMText
+				numberOfLines={expanded ? undefined : 2}
+				variant="caption"
+				style={expanded ? styles.obsEvidenceExpandedText : styles.obsCellText}
+			>
+				{value}
+			</OMText>
+			{value.length > 120 ? (
+				<Pressable accessibilityRole="button" onPress={onToggle} style={styles.obsEvidenceToggle}>
+					<OMText variant="caption" style={styles.obsLinkText}>
+						{expanded ? 'Show less' : 'Full evidence'}
+					</OMText>
+				</Pressable>
+			) : null}
+		</View>
+	)
+}
+
+function ObsCell({
+	header,
+	strong,
+	value,
+	width,
+}: {
+	header?: boolean
+	strong?: boolean
+	value: string
+	width: number
+}) {
+	const { styles } = useTheme()
+	return (
+		<View style={[styles.obsCell, { width }]}>
+			<OMText
+				numberOfLines={header ? 1 : 2}
+				variant="caption"
+				style={header ? styles.obsCellHeaderText : strong ? styles.obsCellStrongText : styles.obsCellText}
+			>
+				{value}
+			</OMText>
+		</View>
+	)
+}
+
+function formatObservationDecision(obs: VariantObservation): string {
+	return obs.decision ?? (obs.genotype ? 'called' : 'not found')
+}
+
+function formatObservationAlleles(
+	obs: VariantObservation,
+	parsedAlleles: { ref: string; alt: string } | null = parseObservationAlleles(obs),
+): string {
+	const ref = obs.ref ?? parsedAlleles?.ref
+	const alt = obs.alt ?? parsedAlleles?.alt
+	return ref && alt ? `${ref}->${alt}` : '—'
+}
+
+function observationHasFoundSignal(obs: VariantObservation): boolean {
+	if ((obs.altCount ?? 0) > 0) return true
+	if (obs.altCount !== undefined || obs.refCount !== undefined) return false
+	const genotype = obs.genotype?.trim()
+	return Boolean(genotype && genotype !== '—' && genotype !== '--')
+}
+
+function parseObservationAlleles(obs: VariantObservation): { ref: string; alt: string } | null {
+	const text = obs.decision ?? ''
+	const snpMatch = text.match(/\bfor\s+([ACGT]+)>([ACGT]+)\b/i)
+	if (snpMatch?.[1] && snpMatch[2]) return { ref: snpMatch[1], alt: snpMatch[2] }
+	const indelMatch = text.match(/\bfor\s+([ACGT]+)->([ACGT]+)\b/i)
+	if (indelMatch?.[1] && indelMatch[2]) return { ref: indelMatch[1], alt: indelMatch[2] }
+	return null
+}
+
+function formatOptionalNumber(value: number | undefined): string {
+	return value === undefined ? '—' : String(value)
+}
+
+function formatRawCounts(rawCounts: Record<string, number>): string {
+	const entries = Object.entries(rawCounts)
+	if (!entries.length) return '—'
+	return entries.map(([allele, count]) => `${allele}:${count}`).join(' · ')
 }
 
 function MetaChip({ label }: { label: string }) {
@@ -971,6 +2856,125 @@ function UnknownFilesNote({
 			))}
 		</View>
 	)
+}
+
+function SourceViewer({
+	onClose,
+	viewer,
+}: {
+	onClose: () => void
+	viewer: SourceViewerState
+}) {
+	const { styles } = useTheme()
+	const [selectedIndex, setSelectedIndex] = useState(0)
+	const selected = viewer.files[Math.min(selectedIndex, viewer.files.length - 1)] ?? viewer.files[0]
+	return (
+		<View style={styles.sourceOverlay}>
+			<Pressable accessibilityRole="button" onPress={onClose} style={styles.sourceBackdrop} />
+			<View style={styles.sourcePanel}>
+				<View style={styles.sourceHead}>
+					<View style={{ flex: 1, gap: 2 }}>
+						<OMText variant="caption" style={styles.sectionKicker}>
+							SOURCE FILES
+						</OMText>
+						<OMText variant="headline" style={styles.sourceTitle}>
+							{viewer.title}
+						</OMText>
+						<OMText variant="caption" style={styles.runCardHint}>
+							{viewer.files.length} file{viewer.files.length === 1 ? '' : 's'} used by this assay/report
+						</OMText>
+					</View>
+					<Pressable accessibilityRole="button" onPress={onClose} style={styles.iconButton}>
+						<OMIcon name="close-outline" tone="muted" size={18} />
+					</Pressable>
+				</View>
+
+				{viewer.files.length > 1 ? (
+					<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourceTabsScroll}>
+						<View style={styles.sourceTabs}>
+							{viewer.files.map((file, index) => (
+								<Pressable
+									key={`${file.name}-${index}`}
+									onPress={() => setSelectedIndex(index)}
+									style={[styles.sourceTab, selectedIndex === index ? styles.sourceTabActive : null]}
+								>
+									<OMText
+										variant="caption"
+										style={selectedIndex === index ? styles.sourceTabTextActive : styles.sourceTabText}
+										numberOfLines={1}
+									>
+										{file.name}
+									</OMText>
+								</Pressable>
+							))}
+						</View>
+					</ScrollView>
+				) : null}
+
+				{selected ? (
+					<View style={styles.sourceBody}>
+						<View style={styles.sourceMetaRow}>
+							<OMText variant="caption" style={styles.sourceFileName}>
+								{selected.name}
+							</OMText>
+							<OMText variant="caption" style={styles.runCardHint}>
+								{selected.language.toUpperCase()}
+							</OMText>
+						</View>
+						{selected.source ? (
+							<OMText variant="caption" style={styles.runCardHint} numberOfLines={1}>
+								{selected.source}
+							</OMText>
+						) : null}
+						<ScrollView style={styles.sourceCodeScroll}>
+							<ScrollView horizontal>
+								<HighlightedSourceCode file={selected} />
+							</ScrollView>
+						</ScrollView>
+					</View>
+				) : null}
+			</View>
+		</View>
+	)
+}
+
+function HighlightedSourceCode({ file }: { file: AssaySourceFile }) {
+	const { styles } = useTheme()
+	const language = sourceLanguage(file)
+	return (
+		<Highlight code={file.text} language={language} theme={themes.github}>
+			{({ tokens, getTokenProps }) => (
+				<View style={styles.sourceCodeBlock}>
+					{tokens.map((line, lineIndex) => (
+						<View key={lineIndex} style={styles.sourceCodeLine}>
+							<OMText variant="caption" style={styles.sourceLineNumber}>
+								{String(lineIndex + 1).padStart(3, ' ')}
+							</OMText>
+							<OMText selectable variant="caption" style={styles.sourceCodeText}>
+								{line.map((token, tokenIndex) => {
+									const tokenProps = getTokenProps({ token })
+									return (
+										<OMText
+											key={tokenIndex}
+											variant="caption"
+											style={[styles.sourceCodeText, tokenProps.style as any]}
+										>
+											{token.content}
+										</OMText>
+									)
+								})}
+							</OMText>
+						</View>
+					))}
+				</View>
+			)}
+		</Highlight>
+	)
+}
+
+function sourceLanguage(file: AssaySourceFile): 'yaml' | 'python' {
+	if (file.language === 'python' || /\.py$/i.test(file.name)) return 'python'
+	return 'yaml'
 }
 
 // === Footer + overlay ======================================================
@@ -1216,6 +3220,84 @@ function makeStyles(p: LabPalette) {
 		slotChipText: { color: p.textMuted },
 		slotChipTextOk: { color: p.accentStrong },
 
+		// launch intents
+		intentCard: {
+			padding: omSpacing.l,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+			gap: omSpacing.m,
+		},
+		intentHeader: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
+		},
+		intentIcon: {
+			width: 32,
+			height: 32,
+			borderRadius: 8,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.accentSoft,
+		},
+		intentText: { flex: 1, gap: 2 },
+		intentKicker: { color: p.accentStrong, letterSpacing: 1.4 },
+		intentTitle: { color: p.text },
+		intentUrl: { color: p.textMuted },
+		intentBody: { color: p.textMuted },
+		intentClose: {
+			padding: omSpacing.xs,
+			borderRadius: omRadius.full,
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		intentMetaRow: {
+			flexDirection: 'row',
+			flexWrap: 'wrap',
+			gap: omSpacing.xs,
+		},
+		intentDependencyList: {
+			gap: omSpacing.xs,
+			padding: omSpacing.m,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surfaceSunken,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		intentDependency: { color: p.textMuted },
+		intentActions: {
+			flexDirection: 'row',
+			justifyContent: 'flex-end',
+			flexWrap: 'wrap',
+			gap: omSpacing.s,
+		},
+		intentPrimaryButton: {
+			minHeight: 40,
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.full,
+			backgroundColor: p.accent,
+		},
+		intentSecondaryButton: {
+			minHeight: 40,
+			alignItems: 'center',
+			justifyContent: 'center',
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.full,
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		intentSecondaryText: { color: p.textMuted },
+
 		// picker sections (sample genomes + assays)
 		pickerSection: { gap: omSpacing.m, marginTop: omSpacing.m },
 		pickerKicker: { color: p.textFaint, letterSpacing: 1.4 },
@@ -1234,6 +3316,14 @@ function makeStyles(p: LabPalette) {
 		},
 		pickerRowDisabled: { opacity: 0.5 },
 		pickerRowIncompatible: { opacity: 0.6 },
+		pickerRowPanel: {
+			backgroundColor: p.accentTint,
+			borderColor: p.accentBorder,
+		},
+		pickerRowVariant: {
+			backgroundColor: p.surfaceSunken,
+			borderColor: p.borderStrong,
+		},
 		pickerIcon: {
 			width: 32,
 			height: 32,
@@ -1242,9 +3332,40 @@ function makeStyles(p: LabPalette) {
 			justifyContent: 'center',
 			backgroundColor: p.accentSoft,
 		},
+		pickerIconPanel: {
+			backgroundColor: p.accent,
+		},
+		pickerIconVariant: {
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+		},
 		pickerText: { flex: 1, gap: 2 },
+		assayTitleRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			flexWrap: 'wrap',
+			gap: omSpacing.xs,
+		},
 		pickerTitle: { color: p.text },
 		pickerMeta: { color: p.textMuted },
+		assayKindBadge: {
+			paddingHorizontal: omSpacing.s,
+			paddingVertical: 2,
+			borderRadius: omRadius.full,
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		assayKindBadgePanel: {
+			backgroundColor: p.accentSoft,
+			borderColor: p.accentBorder,
+		},
+		assayKindBadgeVariant: {
+			backgroundColor: p.surface,
+			borderColor: p.accentBorder,
+		},
+		assayKindBadgeText: { color: p.textMuted, letterSpacing: 0.8 },
 		pickerAction: {
 			paddingHorizontal: omSpacing.m,
 			paddingVertical: omSpacing.s,
@@ -1268,6 +3389,11 @@ function makeStyles(p: LabPalette) {
 			paddingHorizontal: omSpacing.s,
 		},
 		pickerActionRunningText: { color: p.accentStrong },
+		assayActionGroup: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.s,
+		},
 
 		// search
 		searchBox: {
@@ -1289,6 +3415,65 @@ function makeStyles(p: LabPalette) {
 			outlineStyle: 'none',
 		} as object,
 		clearBtn: { padding: 2 },
+		urlLoadBox: {
+			gap: omSpacing.s,
+			padding: omSpacing.m,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surfaceSunken,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		urlLoadHeader: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.xs,
+		},
+		urlLoadTitle: { color: p.accentStrong, letterSpacing: 1.1 },
+		urlLoadRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.s,
+		},
+		urlLoadInput: {
+			flex: 1,
+			minWidth: 0,
+			color: p.text,
+			fontSize: 14,
+			fontFamily: BrandFonts.body,
+			outlineStyle: 'none',
+			paddingHorizontal: omSpacing.m,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.border,
+		} as object,
+		urlLoadButton: {
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.full,
+			backgroundColor: p.accent,
+		},
+		urlLoadButtonDisabled: {
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.full,
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		shareLinkBox: {
+			gap: omSpacing.s,
+			padding: omSpacing.m,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+		},
+		shareLinkText: {
+			color: p.textMuted,
+			fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+		},
 		chipRow: {
 			flexDirection: 'row',
 			flexWrap: 'wrap',
@@ -1339,29 +3524,116 @@ function makeStyles(p: LabPalette) {
 		runCardTitle: { color: p.text },
 		runCardMeta: { color: p.textMuted },
 		runCardHint: { color: p.textFaint },
+		runProgressBlock: { gap: omSpacing.s },
+		runProgressHead: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: omSpacing.m,
+		},
+		runProgressTrack: {
+			height: 8,
+			borderRadius: omRadius.full,
+			backgroundColor: p.surfaceSunken,
+			overflow: 'hidden',
+		},
+		runProgressFill: {
+			height: '100%',
+			borderRadius: omRadius.full,
+		},
 
 		// observations
-		obsCard: {
-			padding: omSpacing.l,
+		obsTableWrap: {
 			borderRadius: omRadius.l,
 			backgroundColor: p.surfaceRaised,
 			borderWidth: 1,
 			borderColor: p.border,
+			overflow: 'hidden',
+		},
+		obsTableTitleRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
 			gap: omSpacing.m,
+			paddingHorizontal: omSpacing.m,
+			paddingTop: omSpacing.m,
+			paddingBottom: omSpacing.s,
 		},
-		obsHeader: { gap: omSpacing.xs },
-		obsTitle: { color: p.text },
-		obsBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: omSpacing.xs },
-		obsGenotype: {
-			padding: omSpacing.m,
-			borderRadius: omRadius.m,
-			backgroundColor: p.accentSoft,
-			gap: 2,
+		obsTable: {
+			minWidth: 1330,
+			paddingBottom: omSpacing.s,
 		},
-		obsGenotypeLabel: { color: p.textMuted, letterSpacing: 1 },
-		obsGenotypeValue: { color: p.accentStrong },
-		obsGenotypeMeta: { color: p.textMuted },
-		obsEvidence: { color: p.textMuted },
+		obsTableRow: {
+			flexDirection: 'row',
+			borderTopWidth: 1,
+			borderTopColor: p.border,
+		},
+		obsTableAltRow: {
+			backgroundColor: p.warningBg,
+		},
+		obsTableHeaderRow: {
+			backgroundColor: p.surfaceSunken,
+		},
+		obsCell: {
+			paddingHorizontal: omSpacing.m,
+			paddingVertical: omSpacing.s,
+			justifyContent: 'center',
+		},
+		obsCellHeaderText: {
+			color: p.textMuted,
+			letterSpacing: 1,
+			textTransform: 'uppercase',
+		},
+		obsCellText: {
+			color: p.textMuted,
+			lineHeight: 18,
+		},
+		obsEvidenceExpandedText: {
+			color: p.textMuted,
+			lineHeight: 18,
+		},
+		obsEvidenceToggle: {
+			alignSelf: 'flex-start',
+			marginTop: 4,
+		},
+		obsLinkText: {
+			color: p.accentStrong,
+			fontWeight: '700',
+			lineHeight: 18,
+		},
+		obsCellStrongText: {
+			color: p.text,
+			fontWeight: '700',
+			lineHeight: 18,
+		},
+		obsGenotypePill: {
+			alignSelf: 'flex-start',
+			borderRadius: omRadius.full,
+			borderWidth: 1,
+			borderColor: p.borderStrong,
+			backgroundColor: p.surface,
+			paddingHorizontal: 10,
+			paddingVertical: 3,
+		},
+		obsGenotypePillAlt: {
+			borderColor: p.warningBorder,
+			backgroundColor: p.warningBg,
+		},
+		obsGenotypeText: {
+			color: p.text,
+			fontWeight: '800',
+			lineHeight: 18,
+		},
+		obsGenotypeRefText: {
+			color: p.text,
+			fontWeight: '800',
+			lineHeight: 18,
+		},
+		obsGenotypeAltText: {
+			color: p.warningText,
+			fontWeight: '900',
+			lineHeight: 18,
+		},
 
 		preBlock: {
 			padding: omSpacing.l,
@@ -1407,6 +3679,16 @@ function makeStyles(p: LabPalette) {
 			borderRadius: omRadius.full,
 		},
 		textButtonText: { color: p.accentStrong },
+		iconButton: {
+			width: 36,
+			height: 36,
+			borderRadius: omRadius.full,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.surfaceSunken,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
 
 		// unknowns
 		unknownNote: {
@@ -1430,6 +3712,118 @@ function makeStyles(p: LabPalette) {
 			gap: omSpacing.m,
 		},
 		unknownRowName: { color: p.textMuted, flex: 1 },
+
+		// source viewer
+		sourceOverlay: {
+			...(Platform.OS === 'web' ? ({ position: 'fixed' } as any) : null),
+			left: 0,
+			right: 0,
+			top: 0,
+			bottom: 0,
+			zIndex: 30,
+			alignItems: 'center',
+			justifyContent: 'center',
+			padding: omSpacing.xl,
+		},
+		sourceBackdrop: {
+			...(Platform.OS === 'web' ? ({ position: 'fixed' } as any) : null),
+			left: 0,
+			right: 0,
+			top: 0,
+			bottom: 0,
+			backgroundColor: p.overlayBg,
+		},
+		sourcePanel: {
+			width: '100%',
+			maxWidth: 980,
+			maxHeight: '86%',
+			borderRadius: omRadius.xl,
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.borderStrong,
+			overflow: 'hidden',
+			boxShadow: `0 24px 70px ${p.shadow}`,
+		},
+		sourceHead: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
+			padding: omSpacing.l,
+			borderBottomWidth: 1,
+			borderBottomColor: p.border,
+		},
+		sourceTitle: { color: p.text },
+		sourceTabsScroll: {
+			borderBottomWidth: 1,
+			borderBottomColor: p.border,
+		},
+		sourceTabs: {
+			flexDirection: 'row',
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.s,
+		},
+		sourceTab: {
+			maxWidth: 240,
+			paddingHorizontal: omSpacing.m,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.full,
+			backgroundColor: p.surfaceSunken,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		sourceTabActive: {
+			backgroundColor: p.warningBg,
+			borderColor: p.warningBorder,
+		},
+		sourceTabText: { color: p.textMuted },
+		sourceTabTextActive: { color: p.warningText, fontWeight: '800' },
+		sourceBody: {
+			gap: omSpacing.s,
+			padding: omSpacing.l,
+			minHeight: 280,
+			maxHeight: 620,
+		},
+		sourceMetaRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: omSpacing.m,
+		},
+		sourceFileName: {
+			color: p.text,
+			fontWeight: '800',
+		},
+		sourceCodeScroll: {
+			borderRadius: omRadius.m,
+			backgroundColor: p.surfaceSunken,
+			borderWidth: 1,
+			borderColor: p.border,
+			maxHeight: 520,
+		},
+		sourceCodeBlock: {
+			paddingVertical: omSpacing.m,
+			minWidth: 680,
+		},
+		sourceCodeLine: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			paddingHorizontal: omSpacing.m,
+		},
+		sourceLineNumber: {
+			width: 40,
+			color: p.textFaint,
+			fontFamily: Platform.OS === 'web' ? 'monospace' : undefined,
+			fontSize: 12,
+			lineHeight: 18,
+			userSelect: 'none',
+		},
+		sourceCodeText: {
+			color: p.text,
+			fontFamily: Platform.OS === 'web' ? 'monospace' : undefined,
+			fontSize: 12,
+			lineHeight: 18,
+		},
 
 		// footer
 		footerNote: {

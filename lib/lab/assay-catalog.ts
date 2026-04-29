@@ -37,6 +37,7 @@ export type LabTestFileBundle = {
 	description: string
 	format: AssayInputFormat
 	files: { name: string; kind: Exclude<FileKind, 'unknown'>; url: string }[]
+	remoteUrl?: string
 }
 
 const REPO_RAW_BASE = 'https://raw.githubusercontent.com/OpenMined/biovault-app/main'
@@ -103,14 +104,15 @@ export const LAB_TEST_FILES: LabTestFileBundle[] = [
 	},
 	{
 		id: 'biovault-23andme-sample',
-		title: 'Sample 23andMe text',
-		description: 'A small 23andMe-style genotype export, handy for text-based assays.',
-		format: 'genotype_text',
+		title: 'Sample 23andMe ZIP',
+		description: 'A 23andMe v5 genome export from biovault-data. Downloads through the URL flow and caches in this browser if small enough.',
+		format: 'zip',
+		remoteUrl: 'https://github.com/OpenMined/biovault-data/blob/main/snp/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
 		files: [
 			{
-				name: 'biovault_sample_23andme.txt',
-				url: rawGitHubUrl('/assets/examples/biovault_sample_23andme.txt'),
-				kind: 'genotype_text',
+				name: 'genome_hu50B3F5_v5_Full.zip',
+				url: 'https://github.com/OpenMined/biovault-data/blob/main/snp/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
+				kind: 'zip',
 			},
 		],
 	},

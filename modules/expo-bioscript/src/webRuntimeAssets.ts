@@ -9,8 +9,17 @@ function toAbsoluteUrl(uri: string) {
 	return typeof window !== 'undefined' ? new URL(uri, window.location.href).href : uri
 }
 
+function cacheBustDevAssetUrl(uri: string) {
+	if (typeof window === 'undefined') return uri
+	const url = new URL(uri, window.location.href)
+	if (process.env.NODE_ENV !== 'production') {
+		url.searchParams.set('bioscript_wasm_build', String(Date.now()))
+	}
+	return url.href
+}
+
 export function getBioscriptWasmUrl() {
-	return toAbsoluteUrl(Asset.fromModule(bioscriptWasmAsset).uri)
+	return cacheBustDevAssetUrl(Asset.fromModule(bioscriptWasmAsset).uri)
 }
 
 export function getMontyWasmUrl() {

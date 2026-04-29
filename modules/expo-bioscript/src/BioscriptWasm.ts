@@ -10,7 +10,6 @@
 
 import { Platform } from 'react-native'
 
-import { Asset } from 'expo-asset'
 import { getBioscriptWasmUrl } from './webRuntimeAssets'
 
 // Static imports so Metro bundles these. The wasm-pack "web" template emits
@@ -18,17 +17,17 @@ import { getBioscriptWasmUrl } from './webRuntimeAssets'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
 	default: (input?: { module_or_path: string | URL | Request }) => Promise<unknown>
+	compileVariantYamlText: (name: string, text: string) => string
 	inspectBytes: (name: string, bytes: Uint8Array, optionsJson: string | null) => string
+	lookupGenotypeBytesVariants: (name: string, bytes: Uint8Array, variantsJson: string) => string
+	resolveRemoteResourceText: (sourceUrl: string, name: string, text: string) => string
 }
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const wasmAsset = require('./bioscript-wasm/bioscript_wasm_bg.wasm')
-
 let wasmPromise: Promise<typeof wasmJsModule> | null = null
 
 async function loadBioscriptWasm(): Promise<typeof wasmJsModule> {
 	if (wasmPromise) return wasmPromise
 	wasmPromise = (async () => {
-		const wasmUrl = Asset.fromModule(wasmAsset).uri
+		const wasmUrl = getBioscriptWasmUrl()
 		await wasmJsModule.default({ module_or_path: wasmUrl })
 		return wasmJsModule
 	})()
@@ -86,21 +85,59 @@ export async function inspectBytes(
 	return JSON.parse(json) as BioscriptInspection
 }
 
+export type BioscriptRemoteDependency = {
+	kind: string
+	label: string
+	optional: boolean
+	url: string
+	version?: string | null
+}
+
+export type BioscriptRemoteResourceResolution = {
+	dependencies: BioscriptRemoteDependency[]
+	kind: 'assay' | 'catalogue' | 'panel' | 'python' | 'unknown' | 'variant'
+	name: string
+	schema?: string | null
+	sha256: string
+	source_url: string
+	title: string
+	version?: string | null
+}
+
+export async function resolveRemoteResourceText(
+	sourceUrl: string,
+	name: string,
+	text: string,
+): Promise<BioscriptRemoteResourceResolution> {
+	const mod = await loadBioscriptWasm()
+	return JSON.parse(mod.resolveRemoteResourceText(sourceUrl, name, text)) as BioscriptRemoteResourceResolution
+}
+
 // === Variant lookup (CRAM + VCF, both via the same Worker) ==================
 
 export type VariantSpec = {
 	name: string
 	chrom: string
-	pos: number
+	pos?: number
+	start: number
+	end: number
 	ref: string
 	alt: string
 	rsid?: string
 	assembly?: 'grch37' | 'grch38'
+	kind?: string
+}
+
+export async function compileVariantYamlText(name: string, text: string): Promise<VariantSpec[]> {
+	const mod = await loadBioscriptWasm()
+	return JSON.parse(mod.compileVariantYamlText(name, text)) as VariantSpec[]
 }
 
 export type VariantObservation = {
 	name: string
 	backend: string
+	ref?: string
+	alt?: string
 	matchedRsid?: string
 	assembly?: 'grch37' | 'grch38'
 	genotype?: string
@@ -195,6 +232,12 @@ function ensureLookupWorker(): Worker {
 				durationMs: msg.durationMs,
 			})
 		} else {
+			if (isWasmMemoryTrap(msg.error)) {
+				console.warn('[BioscriptWasm] resetting lookup worker after wasm memory trap')
+				worker.terminate()
+				sharedWorker = null
+				lookupWorkerWarmupPromise = null
+			}
 			pending.reject(new Error(msg.error))
 		}
 	}
@@ -210,6 +253,10 @@ function ensureLookupWorker(): Worker {
 	return worker
 }
 
+function isWasmMemoryTrap(message: string): boolean {
+	return /memory access out of bounds|unreachable/i.test(message)
+}
+
 function resolveWorkerUrls(): { wasmUrl: string } {
 	return { wasmUrl: getBioscriptWasmUrl() }
 }
@@ -219,11 +266,13 @@ function serializeVariants(variants: VariantSpec[]): string {
 		variants.map((v) => ({
 			name: v.name,
 			chrom: v.chrom,
-			pos: v.pos,
+			start: v.start,
+			end: v.end,
 			ref: v.ref,
 			alt: v.alt,
 			rsid: v.rsid ?? null,
 			assembly: v.assembly ?? null,
+			kind: v.kind ?? null,
 		})),
 	)
 }
@@ -312,4 +361,18 @@ export async function lookupVcfVariants(
 		}
 		worker.postMessage(req)
 	})
+}
+
+export async function lookupGenotypeBytesVariants(
+	name: string,
+	bytes: Uint8Array,
+	variants: VariantSpec[],
+): Promise<VariantLookupResult> {
+	const mod = await loadBioscriptWasm()
+	const startedAt = Date.now()
+	const resultJson = mod.lookupGenotypeBytesVariants(name, bytes, serializeVariants(variants))
+	return {
+		observations: JSON.parse(resultJson) as VariantObservation[],
+		durationMs: Date.now() - startedAt,
+	}
 }
