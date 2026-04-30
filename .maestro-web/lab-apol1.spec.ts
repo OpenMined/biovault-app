@@ -1,27 +1,25 @@
 // Smoke test for the Monty ↔ bioscript-wasm bridge introduced by
-// docs/architecture/wasm.md Phase 1a. Drops the NA06985 CRAM bundle + the
-// apol1.py assay into /lab and verifies apol1_status resolves without
+// docs/architecture/wasm.md Phase 1a. Drops the NA06985 CRAM bundle into
+// /lab and runs the built-in APOL1 assay, verifying apol1_status resolves without
 // "Invalid exception type" or other runtime errors.
 //
 // Uses the 124 KB embed_ref CRAM slice co-located with the assay at
-// `assays/risk/APOL1/test-data/`. The top-level `test-data/` dir is
+// `exvitae/assays/risk/APOL1/test-data/`. The top-level `test-data/` dir is
 // gitignored (holds multi-GB CRAMs / FASTAs); per-assay fixtures live next
 // to their Python so they're committable and easy to find.
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
+import { labTestFixtures } from '../lib/lab/core/test-scenarios'
 
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:8081'
 const REPO_ROOT = path.resolve(__dirname, '..')
 
-const ASSAY_DIR = path.join(REPO_ROOT, 'assays/risk/APOL1')
-const FIXTURE_DIR = path.join(ASSAY_DIR, 'test-data')
-const CRAM = path.join(FIXTURE_DIR, 'apol1.cram')
-const CRAI = path.join(FIXTURE_DIR, 'apol1.cram.crai')
-const FASTA = path.join(FIXTURE_DIR, 'stub.fa')
-const FAI = path.join(FIXTURE_DIR, 'stub.fa.fai')
-const APOL1 = path.join(ASSAY_DIR, 'apol1.py')
+const CRAM = path.join(REPO_ROOT, labTestFixtures.apol1Cram[0])
+const CRAI = path.join(REPO_ROOT, labTestFixtures.apol1Cram[1])
+const FASTA = path.join(REPO_ROOT, labTestFixtures.apol1Cram[2])
+const FAI = path.join(REPO_ROOT, labTestFixtures.apol1Cram[3])
 
 async function dismissDisclaimer(page: Page) {
 	// The app gates with a "I understand and want to continue" screen on first
@@ -34,7 +32,7 @@ async function dismissDisclaimer(page: Page) {
 	}
 }
 
-const ALL_FIXTURES = [CRAM, CRAI, FASTA, FAI, APOL1]
+const ALL_FIXTURES = [CRAM, CRAI, FASTA, FAI]
 const missingFixture = ALL_FIXTURES.find((p) => !fs.existsSync(p))
 
 test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', async ({ page }) => {
@@ -59,35 +57,33 @@ test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', as
 	await dismissDisclaimer(page)
 
 	await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
-	await expect(page.getByText('Drag and drop files', { exact: false })).toBeVisible({
+	await expect(page.getByText('Drop a genome', { exact: false })).toBeVisible({
 		timeout: 30_000,
 	})
 
-	// Intercept the next filechooser and feed all 5 files at once; the lab
+	// Intercept the next filechooser and feed the CRAM bundle at once; the lab
 	// classifies them and auto-pairs the companions.
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
-		page.getByText('Drag and drop files', { exact: false }).click(),
+		page.getByText('Drop a genome', { exact: false }).click(),
 	])
-	await chooser.setFiles([CRAM, CRAI, FASTA, FAI, APOL1])
+	await chooser.setFiles([CRAM, CRAI, FASTA, FAI])
 
-	// Wait for the CRAM genome + apol1 assay to register. The lab renders a
-	// "complete" pill once all CRAM slots are filled; that's our readiness signal.
-	await expect(page.getByText('complete').first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText(/apol1\.py/).first()).toBeVisible({ timeout: 15_000 })
+	await expect(page.getByText('Genome complete').first()).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('APOL1 kidney risk', { exact: false }).first()).toBeVisible({ timeout: 30_000 })
 
 	await page.screenshot({
 		path: '.maestro-web/screenshots/lab-apol1-01-loaded.png',
 		fullPage: true,
 	})
 
-	const runButton = page.getByText(/^Run$/).first()
+	const runButton = page.getByText('Run assay', { exact: true }).first()
 	await expect(runButton).toBeEnabled({ timeout: 15_000 })
 	await runButton.click()
 
-	// Either RESULTS appears (success) or the "Run failed" card appears
+	// Either LATEST RESULT appears (success) or the "Run failed" card appears
 	// (error — we want to capture the message either way for debugging).
-	const results = page.getByText(/RESULTS/)
+	const results = page.getByText(/LATEST RESULT/)
 	const runFailed = page.getByText('Run failed', { exact: false })
 	await Promise.race([
 		results.waitFor({ state: 'visible', timeout: 120_000 }),

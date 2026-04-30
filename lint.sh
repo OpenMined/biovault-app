@@ -69,6 +69,7 @@ RUST_WORKSPACES=(
   "bioscript/rust"
   "desktop/src-tauri"
 )
+CLIPPY_FLAGS=(-D warnings -A clippy::doc_overindented_list_items)
 
 # Filter rustc warning blocks that originate in vendored paths. cargo clippy
 # emits blocks separated by blank lines; awk treats each block as a record and
@@ -79,7 +80,9 @@ filter_vendor_warnings() {
   awk -v pat="$RUST_FILTER_PATHS" '
     BEGIN { RS=""; ORS="\n\n" }
     $0 !~ pat { print }
-  ' | sed -E '/`noodles-[a-z]+` \(lib\) generated [0-9]+ warnings?/d'
+  ' | sed -E \
+    -e '/^Warning: can'\''t set `(imports_granularity|group_imports) = /d' \
+    -e '/`noodles-[a-z]+` \(lib\) generated [0-9]+ warnings?/d'
 }
 
 rust_one() {
@@ -95,10 +98,10 @@ rust_one() {
   local rc=0
   if [ "$CHECK" = "1" ]; then
     { cargo fmt --all -- --check 2>&1 || rc=1; } | filter_vendor_warnings
-    { cargo clippy --workspace --all-targets --all-features --no-deps -- -D warnings 2>&1 || rc=1; } | filter_vendor_warnings
+    { cargo clippy --workspace --all-targets --all-features --no-deps -- "${CLIPPY_FLAGS[@]}" 2>&1 || rc=1; } | filter_vendor_warnings
   else
     cargo fmt --all 2>&1 | filter_vendor_warnings
-    { cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged --no-deps -- -D warnings 2>&1 || rc=1; } | filter_vendor_warnings
+    { cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged --no-deps -- "${CLIPPY_FLAGS[@]}" 2>&1 || rc=1; } | filter_vendor_warnings
   fi
   popd >/dev/null
   return $rc

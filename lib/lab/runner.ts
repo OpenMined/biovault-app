@@ -1,75 +1,68 @@
 import {
-	compileVariantYamlText,
-	lookupCramVariants,
-	lookupGenotypeBytesVariants,
-	lookupVcfVariants,
-	runFile,
+	expoBioscriptRuntime,
 	type GenomeDescriptor,
+	type LabBioscriptRuntime,
 	type VariantObservation,
 	type VariantSpec,
-} from '@/modules/expo-bioscript'
+} from '@/lib/lab/bioscript-runtime'
 
-import {
-	extractTextFromZip,
-} from '@/lib/lab/yaml-compile'
-import type { Assay, AssayLang, BuildGenomeDescriptorResult, Genome, LabRunProgress, LabRunSuccess } from '@/lib/lab/types'
-import { isGenomeComplete, missingGenomeSlots } from '@/lib/lab/file-model'
+import type { LabFileAdapter, LabFileRef } from '@/lib/lab/core/files'
+import type { LabAssayRef, LabGenomeRef } from '@/lib/lab/core/refs'
+import type { LabRunProgress, LabRunSuccess } from '@/lib/lab/types'
 
 type LabRunProgressCallback = (progress: LabRunProgress) => void
 type GenomeAssembly = 'grch37' | 'grch38'
-
-export function getLabRunDisabledReasonFor(
-	selectedGenome: Genome | null,
-	assayLanguage: AssayLang | null,
-): string | null {
-	if (!selectedGenome) return 'Pick a genome above.'
-	if (!assayLanguage) return 'Pick an assay above.'
-	if (!isGenomeComplete(selectedGenome)) {
-		return `Genome is missing: ${missingGenomeSlots(selectedGenome).join(', ')}`
-	}
-	return null
+type LabRunFileAdapter = Pick<LabFileAdapter, 'readBytes' | 'readText'> & {
+	getFile?: (ref: LabFileRef) => File
 }
 
-export function getLabRunDisabledReason(
-	selectedGenome: Genome | null,
-	selectedAssay: Assay | null,
-): string | null {
-	return getLabRunDisabledReasonFor(selectedGenome, selectedAssay?.language ?? null)
-}
-
-export async function buildGenomeDescriptor(genome: Genome): Promise<BuildGenomeDescriptorResult> {
+export async function buildGenomeDescriptorFromRef(
+	genome: LabGenomeRef,
+	files: LabRunFileAdapter,
+): Promise<GenomeDescriptor> {
 	if (genome.kind === 'text') {
-		return { kind: 'text', name: genome.primary.name, text: await genome.primary.text() }
+		return { kind: 'text', name: genome.primary.name, text: await files.readText(genome.primary) }
 	}
 	if (genome.kind === 'zip') {
-		const extracted = await extractTextFromZip(genome.primary)
-		if (!extracted) throw new Error(`could not extract text from ${genome.primary.name}`)
-		return { kind: 'zip', name: genome.primary.name, text: extracted.contents }
+		return { kind: 'zip', name: genome.primary.name, bytes: await files.readBytes(genome.primary) }
 	}
 	if (genome.kind === 'vcf') {
 		if (!genome.tbi) throw new Error('VCF genome is missing its .tbi index')
-		const tbiBytes = new Uint8Array(await genome.tbi.arrayBuffer())
-		return { kind: 'vcf', name: genome.primary.name, vcfFile: genome.primary, tbiBytes }
+		return {
+			kind: 'vcf',
+			name: genome.primary.name,
+			vcfFile: requirePlatformFile(files, genome.primary, 'VCF genome'),
+			tbiBytes: await files.readBytes(genome.tbi),
+		}
 	}
 	if (!genome.crai || !genome.fasta || !genome.fai) {
 		throw new Error('CRAM genome needs .cram.crai + reference .fa + .fa.fai')
 	}
-	const craiBytes = new Uint8Array(await genome.crai.arrayBuffer())
-	const faiBytes = new Uint8Array(await genome.fai.arrayBuffer())
 	return {
 		kind: 'cram',
 		name: genome.primary.name,
-		cramFile: genome.primary,
-		craiBytes,
-		fastaFile: genome.fasta,
-		faiBytes,
+		cramFile: requirePlatformFile(files, genome.primary, 'CRAM genome'),
+		craiBytes: await files.readBytes(genome.crai),
+		fastaFile: requirePlatformFile(files, genome.fasta, 'CRAM reference FASTA'),
+		faiBytes: await files.readBytes(genome.fai),
 	}
 }
 
-function inferGenomeAssembly(genome: Genome): GenomeAssembly | null {
+function requirePlatformFile(files: LabRunFileAdapter, ref: LabFileRef, label: string): File {
+	if (!files.getFile) {
+		throw new Error(`${label} requires a platform file handle for the current BioScript runtime`)
+	}
+	return files.getFile(ref)
+}
+
+function genomeFileNames(genome: LabGenomeRef): string[] {
 	const names = [genome.primary.name]
 	if (genome.kind === 'cram') names.push(genome.crai?.name ?? '', genome.fasta?.name ?? '', genome.fai?.name ?? '')
 	if (genome.kind === 'vcf') names.push(genome.tbi?.name ?? '')
+	return names
+}
+
+function inferGenomeAssemblyFromNames(names: string[]): GenomeAssembly | null {
 	const joined = names.join(' ').toLowerCase()
 	if (/\b(grch38|hg38)\b/.test(joined)) return 'grch38'
 	if (/\b(grch37|hg19)\b/.test(joined)) return 'grch37'
@@ -88,8 +81,8 @@ function variantAssemblyGroupKey(variant: VariantSpec): string {
 	return variant.name.replace(/_grch3[78]$/i, '').toLowerCase()
 }
 
-function selectPreferredAssemblyVariants(genome: Genome, variants: VariantSpec[]): VariantSpec[] {
-	const targetAssembly = inferGenomeAssembly(genome) ?? 'grch38'
+function selectPreferredAssemblyVariantsForNames(names: string[], variants: VariantSpec[]): VariantSpec[] {
+	const targetAssembly = inferGenomeAssemblyFromNames(names) ?? 'grch38'
 	const groups = new Map<string, VariantSpec[]>()
 	for (const variant of variants) {
 		const key = variantAssemblyGroupKey(variant)
@@ -134,26 +127,29 @@ function isUnsupportedSingleBaseLookupError(message: string): boolean {
 	return /supports single-base SNV observations only/i.test(message)
 }
 
-export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay): Promise<LabRunSuccess> {
+export async function runLabAssayRef(
+	selectedGenome: LabGenomeRef,
+	selectedAssay: LabAssayRef,
+	files: LabRunFileAdapter,
+	runtime: LabBioscriptRuntime = expoBioscriptRuntime,
+): Promise<LabRunSuccess> {
 	const startedAt = Date.now()
 
 	if (selectedAssay.language === 'yaml') {
-		const yamlText = await selectedAssay.file.text()
-		const variants = selectPreferredAssemblyVariants(
-			selectedGenome,
-			await compileVariantYamlText(selectedAssay.file.name, yamlText),
+		const yamlText = await files.readText(selectedAssay.file)
+		const variants = selectPreferredAssemblyVariantsForNames(
+			genomeFileNames(selectedGenome),
+			await runtime.compileVariantYamlText(selectedAssay.file.name, yamlText),
 		)
 		if (selectedGenome.kind === 'cram') {
 			if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
 				throw new Error('CRAM genome incomplete')
 			}
-			const craiBytes = new Uint8Array(await selectedGenome.crai.arrayBuffer())
-			const faiBytes = new Uint8Array(await selectedGenome.fai.arrayBuffer())
-			const result = await lookupCramVariants({
-				cramFile: selectedGenome.primary,
-				craiBytes,
-				fastaFile: selectedGenome.fasta,
-				faiBytes,
+			const result = await runtime.lookupCramVariants({
+				cramFile: requirePlatformFile(files, selectedGenome.primary, 'CRAM genome'),
+				craiBytes: await files.readBytes(selectedGenome.crai),
+				fastaFile: requirePlatformFile(files, selectedGenome.fasta, 'CRAM reference FASTA'),
+				faiBytes: await files.readBytes(selectedGenome.fai),
 				variants,
 			})
 			return {
@@ -167,10 +163,9 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 		}
 		if (selectedGenome.kind === 'vcf') {
 			if (!selectedGenome.tbi) throw new Error('VCF genome missing tabix index')
-			const tbiBytes = new Uint8Array(await selectedGenome.tbi.arrayBuffer())
-			const result = await lookupVcfVariants({
-				vcfFile: selectedGenome.primary,
-				tbiBytes,
+			const result = await runtime.lookupVcfVariants({
+				vcfFile: requirePlatformFile(files, selectedGenome.primary, 'VCF genome'),
+				tbiBytes: await files.readBytes(selectedGenome.tbi),
 				variants,
 			})
 			return {
@@ -183,8 +178,11 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 			}
 		}
 		if (selectedGenome.kind === 'text' || selectedGenome.kind === 'zip') {
-			const bytes = new Uint8Array(await selectedGenome.primary.arrayBuffer())
-			const result = await lookupGenotypeBytesVariants(selectedGenome.primary.name, bytes, variants)
+			const result = await runtime.lookupGenotypeBytesVariants(
+				selectedGenome.primary.name,
+				await files.readBytes(selectedGenome.primary),
+				variants,
+			)
 			return {
 				kind: 'variant_lookup',
 				result: {
@@ -196,15 +194,15 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 		}
 	}
 
-	const scriptContents = await selectedAssay.file.text()
-	const descriptor: GenomeDescriptor = await buildGenomeDescriptor(selectedGenome)
+	const scriptContents = await files.readText(selectedAssay.file)
+	const descriptor: GenomeDescriptor = await buildGenomeDescriptorFromRef(selectedGenome, files)
 	const genomeKey = selectedGenome.primary.name
-	const result = await runFile({
+	const result = await runtime.runFile({
 		scriptPath: selectedAssay.file.name,
 		scriptContents,
 		inputFile: genomeKey,
 		inputContents:
-			descriptor.kind === 'text' || descriptor.kind === 'zip'
+			descriptor.kind === 'text'
 				? descriptor.text
 				: undefined,
 		outputFile: 'assay-output.tsv',
@@ -226,10 +224,12 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 	}
 }
 
-export async function runLabVariantYamlFiles(
-	selectedGenome: Genome,
-	files: File[],
+export async function runLabVariantYamlRefs(
+	selectedGenome: LabGenomeRef,
+	files: LabFileRef[],
+	fileAdapter: LabRunFileAdapter,
 	onProgress?: LabRunProgressCallback,
+	runtime: LabBioscriptRuntime = expoBioscriptRuntime,
 ): Promise<LabRunSuccess> {
 	if (!files.length) throw new Error('Panel has no fetched variant assays to run')
 
@@ -241,28 +241,29 @@ export async function runLabVariantYamlFiles(
 		total: files.length,
 	})
 
-	const yamlTexts = await Promise.all(files.map((file) => file.text()))
+	const yamlTexts = await Promise.all(files.map((file) => fileAdapter.readText(file)))
 	const compiledFiles = []
 	for (let index = 0; index < files.length; index += 1) {
 		const file = files[index]
+		const fileName = file?.name || `variant-${index + 1}.yaml`
 		onProgress?.({
 			completed: index,
-			label: `Compiling ${file?.name || `variant-${index + 1}.yaml`}`,
+			label: `Compiling ${fileName}`,
 			phase: 'compiling',
 			total: files.length,
 		})
 		compiledFiles.push({
-			fileName: file?.name || `variant-${index + 1}.yaml`,
-			variants: selectPreferredAssemblyVariants(
-				selectedGenome,
-				await compileVariantYamlText(file?.name || `variant-${index + 1}.yaml`, yamlTexts[index] ?? ''),
+			fileName,
+			variants: selectPreferredAssemblyVariantsForNames(
+				genomeFileNames(selectedGenome),
+				await runtime.compileVariantYamlText(fileName, yamlTexts[index] ?? ''),
 			),
 		})
 	}
 
 	const observations: VariantObservation[] = []
 	if (selectedGenome.kind === 'text' || selectedGenome.kind === 'zip') {
-		const bytes = new Uint8Array(await selectedGenome.primary.arrayBuffer())
+		const bytes = await fileAdapter.readBytes(selectedGenome.primary)
 		for (const [index, compiled] of compiledFiles.entries()) {
 			onProgress?.({
 				completed: index,
@@ -271,7 +272,7 @@ export async function runLabVariantYamlFiles(
 				total: compiledFiles.length,
 			})
 			try {
-				const result = await lookupGenotypeBytesVariants(
+				const result = await runtime.lookupGenotypeBytesVariants(
 					selectedGenome.primary.name,
 					bytes,
 					compiled.variants,
@@ -302,8 +303,8 @@ export async function runLabVariantYamlFiles(
 		if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
 			throw new Error('CRAM genome incomplete')
 		}
-		const craiBytes = new Uint8Array(await selectedGenome.crai.arrayBuffer())
-		const faiBytes = new Uint8Array(await selectedGenome.fai.arrayBuffer())
+		const craiBytes = await fileAdapter.readBytes(selectedGenome.crai)
+		const faiBytes = await fileAdapter.readBytes(selectedGenome.fai)
 		for (const [index, compiled] of compiledFiles.entries()) {
 			onProgress?.({
 				completed: index,
@@ -312,10 +313,10 @@ export async function runLabVariantYamlFiles(
 				total: compiledFiles.length,
 			})
 			try {
-				const result = await lookupCramVariants({
-					cramFile: selectedGenome.primary,
+				const result = await runtime.lookupCramVariants({
+					cramFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome'),
 					craiBytes,
-					fastaFile: selectedGenome.fasta,
+					fastaFile: requirePlatformFile(fileAdapter, selectedGenome.fasta, 'CRAM reference FASTA'),
 					faiBytes,
 					variants: compiled.variants,
 				})
@@ -347,7 +348,7 @@ export async function runLabVariantYamlFiles(
 	}
 
 	if (!selectedGenome.tbi) throw new Error('VCF genome missing tabix index')
-	const tbiBytes = new Uint8Array(await selectedGenome.tbi.arrayBuffer())
+	const tbiBytes = await fileAdapter.readBytes(selectedGenome.tbi)
 	for (const [index, compiled] of compiledFiles.entries()) {
 		onProgress?.({
 			completed: index,
@@ -356,8 +357,8 @@ export async function runLabVariantYamlFiles(
 			total: compiledFiles.length,
 		})
 		try {
-			const result = await lookupVcfVariants({
-				vcfFile: selectedGenome.primary,
+			const result = await runtime.lookupVcfVariants({
+				vcfFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'VCF genome'),
 				tbiBytes,
 				variants: compiled.variants,
 			})

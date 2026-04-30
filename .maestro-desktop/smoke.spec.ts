@@ -24,8 +24,11 @@ test('desktop smoke', async ({ page }) => {
 	await cont.click()
 	await page.waitForTimeout(600)
 
-	await expect(page.getByText('Explore Assays', { exact: false })).toBeVisible({ timeout: 30_000 })
-	await page.screenshot({ path: '.maestro-desktop/screenshots/04-home.png', fullPage: true })
+	await expect(page.getByRole('heading', { name: 'Lab' })).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('Local files', { exact: true })).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Choose Files' })).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Run Assay' })).toBeDisabled()
+	await page.screenshot({ path: '.maestro-desktop/screenshots/04-lab.png', fullPage: true })
 
 	const fatal = errors.filter(
 		(msg) =>

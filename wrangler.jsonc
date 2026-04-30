@@ -1,0 +1,16 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "biovault-app",
+	"account_id": "a13177c2a05d56bdcc668c431ece4bba",
+	"compatibility_date": "2026-04-30",
+	"main": "./workers/biovault-app.ts",
+	"assets": {
+		"directory": "./dist-cloudflare",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": true
+	},
+	"observability": {
+		"enabled": true
+	}
+}
