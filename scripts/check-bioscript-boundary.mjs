@@ -8,21 +8,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 
 const scanRoots = ['app', 'lib', 'widgets', 'modules/expo-bioscript/src']
-const allowedKnownDebt = new Map([
-	[
-		'modules/expo-bioscript/src/ExpoBioscriptWebRuntime.ts',
-		new Set([
-			'parseDelimitedGenotypes',
-			'parseVcfGenotypes',
-			'genotypeFromVcfGt',
-			'chooseDelimiter',
-			'looksLikeHeader',
-			'indexHeader',
-			'readDelimitedValue',
-		]),
-	],
-])
-
 const allowedWrappers = new Set([
 	'modules/expo-bioscript/src/BioscriptWasm.ts',
 	'modules/expo-bioscript/src/ExpoBioscript.types.ts',
@@ -67,12 +52,10 @@ const violations = []
 for (const file of listFiles()) {
 	if (allowedWrappers.has(file)) continue
 	const text = readFileSync(path.join(root, file), 'utf8')
-	const allowedSymbols = allowedKnownDebt.get(file) ?? new Set()
 
 	for (const pattern of riskyPatterns) {
 		for (const match of text.matchAll(pattern.regex)) {
 			const symbol = match[1] ?? match[0]
-			if (allowedSymbols.has(symbol)) continue
 			const before = text.slice(0, match.index ?? 0)
 			const line = before.split('\n').length
 			violations.push(`${file}:${line} ${pattern.name}: ${symbol}`)
@@ -88,4 +71,3 @@ if (violations.length) {
 }
 
 console.log('BioScript boundary guard passed')
-

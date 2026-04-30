@@ -15,6 +15,17 @@ import {
 	pairCompanionFile,
 	sortFilesForIngestion,
 } from '@/lib/lab/file-model'
+import { createFileLabFileAdapter } from '@/lib/lab/adapters/file-adapter'
+import {
+	createLabAssayRef,
+	createLabGenomeRefFromPrimary,
+	pairLabGenomeCompanionRef,
+	type LabGenomeRef,
+} from '@/lib/lab/core/refs'
+import {
+	isLabGenomeComplete,
+	missingLabGenomeSlots,
+} from '@/lib/lab/core/genomes'
 import {
 	getRemoteAssaySourceHost,
 	loadRemoteAssayFile,
@@ -26,7 +37,7 @@ import {
 	loadLabSamplePresetFiles,
 	type LabSamplePreset,
 } from '@/lib/lab/sample-data'
-import { getLabRunDisabledReason, runLabAssay } from '@/lib/lab/runner'
+import { runLabAssayRef } from '@/lib/lab/runner'
 import type {
 	Assay,
 	Genome,
@@ -36,7 +47,7 @@ import type {
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import type { VariantObservation } from '@/modules/expo-bioscript'
 import { useLocalSearchParams } from 'expo-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 // Unified Bioscript lab — drop any mix of genomic files + assay scripts, pick
@@ -48,7 +59,9 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function LabScreen() {
 	const params = useLocalSearchParams<{ assay?: string | string[]; example?: string | string[] }>()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
+	const fileAdapterRef = useRef(createFileLabFileAdapter())
 	const [genomes, setGenomes] = useState<Genome[]>([])
+	const [genomeRefsById, setGenomeRefsById] = useState<Record<string, LabGenomeRef>>({})
 	const [assays, setAssays] = useState<Assay[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
 	const [selectedGenomeId, setSelectedGenomeId] = useState<string | null>(null)
@@ -97,6 +110,8 @@ export default function LabScreen() {
 	)
 
 	const ingest = useCallback((file: File) => {
+		const ref = fileAdapterRef.current.fromPlatformFiles([file], 'local')[0]
+		if (!ref) return
 		const kind = classifyLabFile(file.name)
 		if (kind === 'unknown') {
 			setUnknowns((prev) => [...prev, createUnknownEntry(file)])
@@ -108,10 +123,21 @@ export default function LabScreen() {
 		}
 		if (kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip') {
 			const genome = createGenomeFromPrimaryFile(file, kind)
+			const genomeRef = createLabGenomeRefFromPrimary(ref)
+			if (genomeRef) {
+				setGenomeRefsById((prev) => ({
+					...prev,
+					[genome.id]: { ...genomeRef, id: genome.id },
+				}))
+			}
 			setGenomes((prev) => [...prev, genome])
 			setSelectedGenomeId((current) => current ?? genome.id)
 			return
 		}
+		setGenomeRefsById((prev) => {
+			const next = pairLabGenomeCompanionRef(Object.values(prev), ref)
+			return Object.fromEntries(next.map((genome) => [genome.id, genome]))
+		})
 		setGenomes((prev) => pairCompanionFile(prev, file, kind))
 	}, [addAssay])
 
@@ -237,6 +263,7 @@ export default function LabScreen() {
 
 	const reset = useCallback(() => {
 		setGenomes([])
+		setGenomeRefsById({})
 		setAssays([])
 		setUnknowns([])
 		setSelectedGenomeId(null)
@@ -246,6 +273,7 @@ export default function LabScreen() {
 
 	const removeGenome = useCallback((id: string) => {
 		setGenomes((prev) => prev.filter((g) => g.id !== id))
+		setGenomeRefsById((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id)))
 		setSelectedGenomeId((curr) => (curr === id ? null : curr))
 	}, [])
 
@@ -266,16 +294,24 @@ export default function LabScreen() {
 		() => assays.find((a) => a.id === selectedAssayId) ?? null,
 		[assays, selectedAssayId],
 	)
+	const selectedGenomeRef = selectedGenome ? genomeRefsById[selectedGenome.id] ?? null : null
 
 	const runDisabledReason = useMemo(
-		() => getLabRunDisabledReason(selectedGenome, selectedAssay),
-		[selectedAssay, selectedGenome],
+		() => {
+			if (!selectedGenomeRef) return 'Pick a genome above.'
+			if (!selectedAssay) return 'Pick an assay above.'
+			if (!isLabGenomeComplete(selectedGenomeRef)) {
+				return `Genome is missing: ${missingLabGenomeSlots(selectedGenomeRef).join(', ')}`
+			}
+			return null
+		},
+		[selectedAssay, selectedGenomeRef],
 	)
 
 	const runBlocked = runDisabledReason !== null || run.status === 'running'
 
 	const executeRun = useCallback(async () => {
-		if (!selectedGenome || !selectedAssay) return
+		if (!selectedGenome || !selectedGenomeRef || !selectedAssay) return
 		setRun({ status: 'running' })
 		trackEvent('lab_run_started', {
 			assayLanguage: selectedAssay.language,
@@ -283,7 +319,13 @@ export default function LabScreen() {
 			genomeKind: selectedGenome.kind,
 		})
 		try {
-			const success = await runLabAssay(selectedGenome, selectedAssay)
+			const assayRef = fileAdapterRef.current.fromPlatformFiles([selectedAssay.file], selectedAssay.source ? 'url' : 'local')[0]
+			if (!assayRef) throw new Error(`Could not create assay ref for ${selectedAssay.name}`)
+			const success = await runLabAssayRef(
+				selectedGenomeRef,
+				createLabAssayRef(assayRef, selectedAssay.language, selectedAssay.source),
+				fileAdapterRef.current,
+			)
 			setRun(success.result)
 			trackEvent('lab_run_completed', {
 				assayLanguage: selectedAssay.language,
@@ -302,7 +344,7 @@ export default function LabScreen() {
 				error: message,
 			})
 		}
-	}, [selectedAssay, selectedGenome, trackEvent])
+	}, [selectedAssay, selectedGenome, selectedGenomeRef, trackEvent])
 
 	// === Render ==============================================================
 

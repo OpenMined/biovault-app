@@ -20,6 +20,8 @@ export function inspectBytes(name: string, bytes: Uint8Array, options_json?: str
  */
 export function lookupCramVariants(cram_read_at: Function, cram_len: number, crai_bytes: Uint8Array, fasta_read_at: Function, fasta_len: number, fai_bytes: Uint8Array, variants_json: string): string;
 
+export function lookupGenotypeBytesRsids(name: string, bytes: Uint8Array, rsids_json: string): string;
+
 export function lookupGenotypeBytesVariants(name: string, bytes: Uint8Array, variants_json: string): string;
 
 /**
@@ -50,6 +52,7 @@ export interface InitOutput {
     readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly lookupGenotypeBytesRsids: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupVcfVariants: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];

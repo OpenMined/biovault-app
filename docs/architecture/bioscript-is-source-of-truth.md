@@ -64,13 +64,13 @@ bioscript returns.
 Monty's external functions (`__bioscript_load_genotypes__`, `__bioscript_lookup_variants__`,
 etc.) delegate to bioscript-wasm. No JS-side parsing.
 
-## Migration status (updated 2026-04-16)
+## Migration status (updated 2026-04-30)
 
 - [ ] Delete `widgets/FilePicker/heuristics.ts` (TS port of `inspect.rs`) once
       `bioscript-wasm` exposes `inspect_bytes`.
-- [ ] Delete `parseDelimitedGenotypes` / `parseVcfGenotypes` / `lookupVariant` /
-      `lookupVariants` from `ExpoBioscriptWebRuntime.ts` once wasm exports
-      equivalents.
+- [x] Delete `parseDelimitedGenotypes` / `parseVcfGenotypes` from
+      `ExpoBioscriptWebRuntime.ts`; text/zip rsid lookup now uses
+      `bioscript-wasm` backed by Rust `GenotypeStore`.
 - [ ] Delete `compileVariantYamlToPython` from `app/assay-lab.tsx`.
 - [ ] Wire alignment runs through wasm-based CRAM/BAM parser.
 - [ ] Flag every new PR touching these files — the linter should catch JS

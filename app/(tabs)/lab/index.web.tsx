@@ -16,7 +16,6 @@ import {
 	ASSAY_CATEGORY_LABELS,
 	ASSAY_INPUT_FORMAT_LABELS,
 	type AssayCategory,
-	type AssayInputFormat,
 	getAssayById,
 	type LabAssay,
 	LAB_TEST_FILES,
@@ -28,27 +27,37 @@ import {
 } from '@/lib/lab/assay-catalog'
 import { normalizeLabSearchParam } from '@/lib/lab/assay-loader'
 import { createWebLabFileAdapter } from '@/lib/lab/adapters/file-adapter.web'
+import {
+	buildLabFileGroupPlan,
+	isPrimaryGenomeFileKind,
+	savedLabFileGroupKey,
+	sortLabFileRefsForIngestion,
+} from '@/lib/lab/core/file-groups'
 import type { LabFileRef } from '@/lib/lab/core/files'
 import {
+	isLabGenomeComplete,
+	labGenomeBytesTotal,
+	labGenomeDisplayName,
+	labGenomeInputFormat,
+	labGenomeKindLabel,
+	missingLabGenomeSlots,
+} from '@/lib/lab/core/genomes'
+import {
 	classifyLabFile,
-	createAssayFromFile,
-	createGenomeFromPrimaryFile,
 	createUnknownEntry,
-	genomeBytesTotal,
-	genomeDisplayName,
-	genomeKindLabel,
 	humanLabSize,
-	isGenomeComplete,
-	missingGenomeSlots,
-	pairCompanionFile,
-	sortFilesForIngestion,
 	stripGenomeSuffix,
 } from '@/lib/lab/file-model'
 import {
-	getLabRunDisabledReasonFor,
-	runLabAssay,
-	runLabVariantYamlFiles,
+	runLabAssayRef,
+	runLabVariantYamlRefs,
 } from '@/lib/lab/runner'
+import {
+	createLabAssayRef,
+	createLabGenomeRefFromPrimary,
+	pairLabGenomeCompanionRef,
+	type LabGenomeRef,
+} from '@/lib/lab/core/refs'
 import {
 	deleteRemoteResourceCache,
 	listResolvedCachedRemoteResources,
@@ -65,7 +74,7 @@ import {
 	remoteLabFileName,
 	type RemoteLabFile,
 } from '@/lib/remote-lab-file'
-import type { AssayLang, Genome, RunResult, UnknownEntry } from '@/lib/lab/types'
+import type { AssayLang, LabRunProgress, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
 import { warmupMontyRuntime, type VariantObservation } from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
@@ -159,25 +168,24 @@ type RemoteIntentState =
 	| { error: string; intent: LaunchIntent; resource: ResolvedRemoteResource; status: 'dependency-error' }
 	| { intent: LaunchIntent; resource: ResolvedRemoteResource; status: 'resolving-dependencies' }
 
-function genomeKindToFormat(genome: Genome): AssayInputFormat {
-	switch (genome.kind) {
-		case 'cram':
-			return 'cram'
-		case 'vcf':
-			return 'vcf_gz'
-		case 'text':
-			return 'genotype_text'
-		case 'zip':
-			return 'zip'
-	}
+function isAssayCompatible(assay: LabAssay, genome: LabGenomeRef): boolean {
+	return assay.inputFormats.includes(labGenomeInputFormat(genome))
 }
 
-function isAssayCompatible(assay: LabAssay, genome: Genome): boolean {
-	return assay.inputFormats.includes(genomeKindToFormat(genome))
-}
-
-function assayNeedsWebRuntime(assay: LabAssay, genome: Genome): boolean {
+function assayNeedsWebRuntime(assay: LabAssay, genome: LabGenomeRef): boolean {
 	return assay.language === 'python' || genome.kind === 'text' || genome.kind === 'zip'
+}
+
+function getLabRunDisabledReasonForRef(
+	selectedGenome: LabGenomeRef | null,
+	assayLanguage: AssayLang | null,
+): string | null {
+	if (!selectedGenome) return 'Pick a genome above.'
+	if (!assayLanguage) return 'Pick an assay above.'
+	if (!isLabGenomeComplete(selectedGenome)) {
+		return `Genome is missing: ${missingLabGenomeSlots(selectedGenome).join(', ')}`
+	}
+	return null
 }
 
 function searchSessionAssays(assays: LabAssay[], query: string, category: AssayCategory | null): LabAssay[] {
@@ -270,20 +278,12 @@ function panelVariantAssays(panel: SessionLabAssay, assays: SessionLabAssay[]): 
 	return assays.filter((assay) => assay.remoteKind === 'variant' && dependencyUrls.has(assay.url))
 }
 
-function isPrimaryGenomeKind(kind: LabFileRef['kind']) {
-	return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
-}
-
 function buildGenomeBundleFromRefs(
 	refs: LabFileRef[],
 	getFile: (ref: LabFileRef) => File,
-): { genome: Genome; unknowns: File[] } | null {
-	const ordered = [...refs].sort((a, b) => {
-		if (isPrimaryGenomeKind(a.kind) && !isPrimaryGenomeKind(b.kind)) return -1
-		if (isPrimaryGenomeKind(b.kind) && !isPrimaryGenomeKind(a.kind)) return 1
-		return 0
-	})
-	const primary = ordered.find((ref) => isPrimaryGenomeKind(ref.kind))
+): { genomeRef: LabGenomeRef; unknowns: File[] } | null {
+	const ordered = sortLabFileRefsForIngestion(refs)
+	const primary = ordered.find((ref) => isPrimaryGenomeFileKind(ref.kind))
 	if (!primary) return null
 	const primaryKind = primary.kind
 	if (
@@ -294,41 +294,34 @@ function buildGenomeBundleFromRefs(
 	) {
 		return null
 	}
-	let genome = createGenomeFromPrimaryFile(getFile(primary), primaryKind)
+	const initialGenomeRef = createLabGenomeRefFromPrimary(primary)
+	if (!initialGenomeRef) return null
+	let genomeRef = initialGenomeRef
 	const unknowns: File[] = []
 	for (const ref of ordered) {
 		if (ref.id === primary.id) continue
 		const kind = ref.kind
 		const file = getFile(ref)
 		if (kind === 'crai' || kind === 'tbi' || kind === 'fai' || kind === 'fasta') {
-			genome = pairCompanionFile([genome], file, kind)[0] ?? genome
+			genomeRef = pairLabGenomeCompanionRef([genomeRef], ref)[0] ?? genomeRef
 			continue
 		}
 		if (kind === 'unknown' || kind === 'assay_python' || kind === 'assay_yaml') {
 			unknowns.push(file)
 		}
 	}
-	return { genome, unknowns }
+	return { genomeRef, unknowns }
 }
 
 function storedHandleName(row: StoredHandleBundle): string {
 	return row.handles.primary?.name ?? row.handles.reference?.name ?? row.documentId.replace(/^lab-drop:/, '')
 }
 
-function savedGroupKey(name: string): string {
-	const kind = classifyLabFile(name)
-	if (kind === 'crai' || kind === 'tbi' || kind === 'fai') {
-		return stripGenomeSuffix(name).toLowerCase()
-	}
-	if (kind === 'fasta') return name.toLowerCase()
-	return stripGenomeSuffix(name).toLowerCase()
-}
-
 function groupStoredHandles(rows: StoredHandleBundle[]): SavedHandleGroup[] {
 	const groups = new Map<string, StoredHandleBundle[]>()
 	for (const row of rows) {
 		const name = storedHandleName(row)
-		const key = row.handles.groupId ?? savedGroupKey(name)
+		const key = row.handles.groupId ?? savedLabFileGroupKey(name)
 		const current = groups.get(key) ?? []
 		current.push(row)
 		groups.set(key, current)
@@ -445,110 +438,6 @@ async function selectPersistentHandlesForPending(
 	})
 }
 
-function droppedFileGroupPlan(files: File[]): Map<string, { groupId: string; groupLabel: string }> {
-	type PlannedGroup = {
-		crai?: string
-		fai?: string
-		fasta?: string
-		groupId: string
-		groupLabel: string
-		kind: 'assay' | 'cram' | 'other' | 'vcf'
-		names: string[]
-		primary?: string
-		tbi?: string
-	}
-
-	const groups: PlannedGroup[] = []
-	const ordered = sortFilesForIngestion(files)
-	const addStandalone = (file: File, kind: PlannedGroup['kind'] = 'other') => {
-		groups.push({
-			groupId: `drop-record-${groups.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-			groupLabel: file.name,
-			kind,
-			names: [file.name],
-			primary: file.name,
-		})
-	}
-
-	for (const file of ordered) {
-		const kind = classifyLabFile(file.name)
-		if (kind === 'cram') {
-			addStandalone(file, 'cram')
-			continue
-		}
-		if (kind === 'vcf_gz') {
-			addStandalone(file, 'vcf')
-			continue
-		}
-		if (kind === 'genotype_text' || kind === 'zip') {
-			addStandalone(file, 'other')
-			continue
-		}
-		if (kind === 'assay_yaml' || kind === 'assay_python') {
-			addStandalone(file, 'assay')
-			continue
-		}
-		if (kind === 'crai') {
-			const stem = stripGenomeSuffix(file.name).toLowerCase()
-			const target =
-				groups.find((group) => group.kind === 'cram' && group.primary?.toLowerCase() === stem) ??
-				groups.find((group) => group.kind === 'cram' && !group.crai)
-			if (target) {
-				target.crai = file.name
-				target.names.push(file.name)
-			} else {
-				addStandalone(file)
-			}
-			continue
-		}
-		if (kind === 'tbi') {
-			const stem = stripGenomeSuffix(file.name).toLowerCase()
-			const target =
-				groups.find((group) => group.kind === 'vcf' && group.primary?.toLowerCase() === stem) ??
-				groups.find((group) => group.kind === 'vcf' && !group.tbi)
-			if (target) {
-				target.tbi = file.name
-				target.names.push(file.name)
-			} else {
-				addStandalone(file)
-			}
-			continue
-		}
-		if (kind === 'fasta') {
-			const target = groups.find((group) => group.kind === 'cram' && !group.fasta)
-			if (target) {
-				target.fasta = file.name
-				target.names.push(file.name)
-			} else {
-				addStandalone(file)
-			}
-			continue
-		}
-		if (kind === 'fai') {
-			const stem = stripGenomeSuffix(file.name).toLowerCase()
-			const target =
-				groups.find((group) => group.kind === 'cram' && group.fasta?.toLowerCase() === stem) ??
-				groups.find((group) => group.kind === 'cram' && !group.fai)
-			if (target) {
-				target.fai = file.name
-				target.names.push(file.name)
-			} else {
-				addStandalone(file)
-			}
-			continue
-		}
-		addStandalone(file)
-	}
-
-	const plan = new Map<string, { groupId: string; groupLabel: string }>()
-	for (const group of groups) {
-		for (const name of group.names) {
-			plan.set(name, { groupId: group.groupId, groupLabel: group.groupLabel })
-		}
-	}
-	return plan
-}
-
 // === Page ===================================================================
 
 export default function LabScreen() {
@@ -564,7 +453,7 @@ export default function LabScreen() {
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const fileAdapterRef = useRef(createWebLabFileAdapter())
 
-	const [genomes, setGenomes] = useState<Genome[]>([])
+	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
 	const [selectedGenomeId, setSelectedGenomeId] = useState<string | null>(null)
 	const [runs, setRuns] = useState<RunRecord[]>([])
@@ -587,7 +476,7 @@ export default function LabScreen() {
 	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
 	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
 
-	const activeGenome = useMemo(
+	const activeGenomeRef = useMemo(
 		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
 		[genomes, selectedGenomeId],
 	)
@@ -607,35 +496,32 @@ export default function LabScreen() {
 			return
 		}
 		if (kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip') {
-			const genome = createGenomeFromPrimaryFile(file, kind)
-			setGenomes((prev) => [...prev, genome])
-			setSelectedGenomeId(genome.id)
+			const genomeRef = createLabGenomeRefFromPrimary(ref)
+			if (!genomeRef) return
+			setGenomes((prev) => [...prev, genomeRef])
+			setSelectedGenomeId(genomeRef.id)
 			return
 		}
-		setGenomes((prev) => pairCompanionFile(prev, file, kind))
+		setGenomes((prev) => pairLabGenomeCompanionRef(prev, ref))
 	}, [])
 
 	const ingestManyRefs = useCallback(
 		(refs: LabFileRef[]) => {
-			const ordered = [...refs].sort((a, b) => {
-				if (isPrimaryGenomeKind(a.kind) && !isPrimaryGenomeKind(b.kind)) return -1
-				if (isPrimaryGenomeKind(b.kind) && !isPrimaryGenomeKind(a.kind)) return 1
-				return 0
-			})
+			const ordered = sortLabFileRefsForIngestion(refs)
 			trackEvent('lab_files_added', {
 				fileKinds: ordered.map((ref) => ref.kind),
 				fileSources: ordered.map((ref) => ref.source),
 				totalFiles: ordered.length,
 			})
-			const primaryCount = ordered.filter((ref) => isPrimaryGenomeKind(ref.kind)).length
+			const primaryCount = ordered.filter((ref) => isPrimaryGenomeFileKind(ref.kind)).length
 			if (primaryCount === 1) {
 				const bundle = buildGenomeBundleFromRefs(ordered, fileAdapterRef.current.getFile)
 				if (bundle) {
 					setGenomes((prev) => [
-						...prev.filter((genome) => genome.primary.name !== bundle.genome.primary.name),
-						bundle.genome,
+						...prev.filter((genome) => genome.primary.name !== bundle.genomeRef.primary.name),
+						bundle.genomeRef,
 					])
-					setSelectedGenomeId(bundle.genome.id)
+					setSelectedGenomeId(bundle.genomeRef.id)
 					if (bundle.unknowns.length) {
 						setUnknowns((prev) => [...prev, ...bundle.unknowns.map(createUnknownEntry)])
 					}
@@ -690,8 +576,9 @@ export default function LabScreen() {
 	const ingestDroppedItems = useCallback(
 		async (items: DataTransferItemList | undefined, fallbackFiles: File[]) => {
 			const files = fallbackFiles
-			ingestMany(files)
-			const groupPlan = droppedFileGroupPlan(files)
+			const refs = fileAdapterRef.current.fromPlatformFiles(files, 'local')
+			ingestManyRefs(refs)
+			const groupPlan = buildLabFileGroupPlan(refs)
 			const handles: PendingPersistentHandle[] = []
 			const handledNames = new Set<string>()
 			const itemList = Array.from(items ?? [])
@@ -756,7 +643,7 @@ export default function LabScreen() {
 				setHandlePersistMessage(null)
 			}
 		},
-		[ingestMany],
+		[ingestManyRefs],
 	)
 
 	useEffect(() => {
@@ -1315,10 +1202,10 @@ export default function LabScreen() {
 
 	const runAssay = useCallback(
 		async (catalogAssay: LabAssay) => {
-			if (!activeGenome || !isGenomeComplete(activeGenome)) return
+			if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
 			if (runningAssayId) return
-			if (!isAssayCompatible(catalogAssay, activeGenome)) return
-			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, activeGenome)) return
+			if (!isAssayCompatible(catalogAssay, activeGenomeRef)) return
+			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, activeGenomeRef)) return
 
 			try {
 				setRunningAssayId(catalogAssay.id)
@@ -1328,7 +1215,7 @@ export default function LabScreen() {
 					{
 						id: runId,
 						assay: catalogAssay,
-						genomeName: genomeDisplayName(activeGenome),
+						genomeName: labGenomeDisplayName(activeGenomeRef),
 						sourceFiles,
 						startedAt: Date.now(),
 						result: { status: 'running' },
@@ -1338,15 +1225,14 @@ export default function LabScreen() {
 				trackEvent('lab_run_started', {
 					assayId: catalogAssay.id,
 					assayLanguage: catalogAssay.language,
-					genomeKind: activeGenome.kind,
+					genomeKind: activeGenomeRef.kind,
 				})
 
 				const success =
 					isSessionLabAssay(catalogAssay) && catalogAssay.remoteKind === 'panel'
-						? await runLabVariantYamlFiles(
-								activeGenome,
-								panelVariantAssays(catalogAssay, sessionAssays).map((assay) => assay.file),
-								(progress) => {
+						? await (async () => {
+								const panelFiles = panelVariantAssays(catalogAssay, sessionAssays).map((assay) => assay.file)
+								const onProgress = (progress: LabRunProgress) => {
 									setRuns((prev) =>
 										prev.map((r) =>
 											r.id === runId && r.result.status === 'running'
@@ -1354,24 +1240,28 @@ export default function LabScreen() {
 												: r,
 										),
 									)
-								},
-							)
-						: await runLabAssay(
-								activeGenome,
-								createAssayFromFile(
-									isSessionLabAssay(catalogAssay)
-										? catalogAssay.file
-										: await loadAssayFile(catalogAssay),
-									catalogAssay.language,
-									catalogAssay.url,
-								),
-							)
+								}
+								const panelRefs = fileAdapterRef.current.fromPlatformFiles(panelFiles, 'url')
+								return runLabVariantYamlRefs(activeGenomeRef, panelRefs, fileAdapterRef.current, onProgress)
+							})()
+						: await (async () => {
+								const assayFile = isSessionLabAssay(catalogAssay)
+									? catalogAssay.file
+									: await loadAssayFile(catalogAssay)
+								const assayRef = fileAdapterRef.current.fromPlatformFiles([assayFile], 'bundled')[0]
+								if (!assayRef) throw new Error(`Could not create assay ref for ${assayFile.name}`)
+								return runLabAssayRef(
+									activeGenomeRef,
+									createLabAssayRef(assayRef, catalogAssay.language, catalogAssay.url),
+									fileAdapterRef.current,
+								)
+							})()
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
 				)
 				trackEvent('lab_run_completed', {
 					assayId: catalogAssay.id,
-					genomeKind: activeGenome.kind,
+					genomeKind: activeGenomeRef.kind,
 					resultKind: success.kind,
 				})
 			} catch (err) {
@@ -1385,14 +1275,14 @@ export default function LabScreen() {
 				})
 				trackEvent('lab_run_failed', {
 					assayId: catalogAssay.id,
-					genomeKind: activeGenome.kind,
+					genomeKind: activeGenomeRef.kind,
 					error: msg,
 				})
 			} finally {
 				setRunningAssayId(null)
 			}
 		},
-		[activeGenome, buildAssaySourceFiles, runningAssayId, runtimeWarmupStatus, sessionAssays, trackEvent],
+		[activeGenomeRef, buildAssaySourceFiles, runningAssayId, runtimeWarmupStatus, sessionAssays, trackEvent],
 	)
 
 	// Auto-run from `?run=<assayId>` once genome is ready — consumed only once.
@@ -1400,18 +1290,18 @@ export default function LabScreen() {
 	useEffect(() => {
 		const id = pendingAutoRunRef.current
 		if (!id) return
-		if (!activeGenome || !isGenomeComplete(activeGenome)) return
+		if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
 		if (runningAssayId) return
 		const assay = getAssayById(id)
 		if (!assay) {
 			pendingAutoRunRef.current = null
 			return
 		}
-		if (!isAssayCompatible(assay, activeGenome)) return
-		if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(assay, activeGenome)) return
+		if (!isAssayCompatible(assay, activeGenomeRef)) return
+		if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(assay, activeGenomeRef)) return
 		pendingAutoRunRef.current = null
 		void runAssay(assay)
-	}, [activeGenome, runningAssayId, runAssay, runtimeWarmupStatus])
+	}, [activeGenomeRef, runningAssayId, runAssay, runtimeWarmupStatus])
 
 	// Auto-scroll to latest run when it starts / completes
 	const scrollRef = useRef<ScrollView>(null)
@@ -1468,7 +1358,7 @@ export default function LabScreen() {
 					/>
 
 					<DropZone
-						compact={Boolean(activeGenome)}
+						compact={Boolean(activeGenomeRef)}
 						dragActive={dragActive}
 						onChoose={openPicker}
 					/>
@@ -1503,8 +1393,8 @@ export default function LabScreen() {
 						onRestore={restoreSavedHandle}
 					/>
 
-					{activeGenome ? (
-						<GenomeCard genome={activeGenome} onClear={clearGenome} />
+					{activeGenomeRef ? (
+						<GenomeCard genome={activeGenomeRef} onClear={clearGenome} />
 					) : (
 						<SampleGenomeList
 							bundles={LAB_TEST_FILES}
@@ -1518,9 +1408,9 @@ export default function LabScreen() {
 						<UnknownFilesNote unknowns={unknowns} onRemove={removeUnknown} />
 					) : null}
 
-					{activeGenome ? (
+					{activeGenomeRef ? (
 						<AssayPicker
-							genome={activeGenome}
+							genome={activeGenomeRef}
 							query={query}
 							onQueryChange={setQuery}
 							category={category}
@@ -2113,10 +2003,10 @@ function UrlLoadBox({
 
 // === Genome card ===========================================================
 
-function GenomeCard({ genome, onClear }: { genome: Genome; onClear: () => void }) {
+function GenomeCard({ genome, onClear }: { genome: LabGenomeRef; onClear: () => void }) {
 	const { styles, mutedIconTone } = useTheme()
-	const complete = isGenomeComplete(genome)
-	const missing = missingGenomeSlots(genome)
+	const complete = isLabGenomeComplete(genome)
+	const missing = missingLabGenomeSlots(genome)
 	const readiness = complete ? 'Genome complete' : `Missing ${missing.join(' · ')}`
 	return (
 		<View style={[styles.loadedRow, complete ? styles.loadedRowOk : styles.loadedRowWarn]}>
@@ -2129,10 +2019,10 @@ function GenomeCard({ genome, onClear }: { genome: Genome; onClear: () => void }
 						LOADED GENOME
 					</OMText>
 					<OMText variant="headline" style={styles.loadedRowTitle}>
-						{genomeDisplayName(genome)}
+						{labGenomeDisplayName(genome)}
 					</OMText>
 					<OMText variant="caption" style={styles.loadedRowMeta}>
-						{genomeKindLabel(genome)} · {humanLabSize(genomeBytesTotal(genome))}
+						{labGenomeKindLabel(genome)} · {humanLabSize(labGenomeBytesTotal(genome))}
 					</OMText>
 					<OMText
 						variant="caption"
@@ -2170,7 +2060,7 @@ function GenomeCard({ genome, onClear }: { genome: Genome; onClear: () => void }
 	)
 }
 
-function SlotChip({ file, label }: { file?: File; label: string }) {
+function SlotChip({ file, label }: { file?: LabFileRef; label: string }) {
 	const { styles, mutedIconTone } = useTheme()
 	const filled = Boolean(file)
 	return (
@@ -2267,7 +2157,7 @@ function AssayPicker({
 }: {
 	categories: AssayCategory[]
 	category: AssayCategory | null
-	genome: Genome
+	genome: LabGenomeRef
 	onCategoryChange: (c: AssayCategory | null) => void
 	onForgetRemoteAssay: (assay: LabAssay) => void
 	onQueryChange: (q: string) => void
@@ -2288,9 +2178,9 @@ function AssayPicker({
 				CHOOSE AN ASSAY
 			</OMText>
 			<OMText variant="caption" style={styles.pickerIntro}>
-				{isGenomeComplete(genome)
+				{isLabGenomeComplete(genome)
 					? 'Pick an assay to run on this genome.'
-					: `Complete this genome first: ${missingGenomeSlots(genome).join(' · ')}`}
+					: `Complete this genome first: ${missingLabGenomeSlots(genome).join(' · ')}`}
 			</OMText>
 
 			<View style={styles.searchBox}>
@@ -2351,7 +2241,7 @@ function AssayPicker({
 									: 'Fetch panel dependencies first.'
 								: waitingForRuntime
 								? 'Runtime is loading.'
-								: getLabRunDisabledReasonFor(genome, assay.language)
+								: getLabRunDisabledReasonForRef(genome, assay.language)
 							: 'Assay is not compatible with this genome format.'
 						const isRunning = runningAssayId === assay.id
 						const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length)

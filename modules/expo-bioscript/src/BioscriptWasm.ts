@@ -19,6 +19,7 @@ const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
 	default: (input?: { module_or_path: string | URL | Request }) => Promise<unknown>
 	compileVariantYamlText: (name: string, text: string) => string
 	inspectBytes: (name: string, bytes: Uint8Array, optionsJson: string | null) => string
+	lookupGenotypeBytesRsids: (name: string, bytes: Uint8Array, rsidsJson: string) => string
 	lookupGenotypeBytesVariants: (name: string, bytes: Uint8Array, variantsJson: string) => string
 	resolveRemoteResourceText: (sourceUrl: string, name: string, text: string) => string
 }
@@ -375,4 +376,14 @@ export async function lookupGenotypeBytesVariants(
 		observations: JSON.parse(resultJson) as VariantObservation[],
 		durationMs: Date.now() - startedAt,
 	}
+}
+
+export async function lookupGenotypeBytesRsids(
+	name: string,
+	bytes: Uint8Array,
+	rsids: string[],
+): Promise<(string | null)[]> {
+	if (!rsids.length) return []
+	const mod = await loadBioscriptWasm()
+	return JSON.parse(mod.lookupGenotypeBytesRsids(name, bytes, JSON.stringify(rsids))) as (string | null)[]
 }

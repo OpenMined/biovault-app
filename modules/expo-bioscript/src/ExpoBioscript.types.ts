@@ -4,13 +4,13 @@ export type BioscriptInputFormat = 'auto' | 'text' | 'zip' | 'vcf' | 'cram';
  * (and the legacy `bioscript.load_genotypes`) can dispatch to the right backend.
  * See docs/architecture/wasm.md — this is the Phase 2 contract.
  *
- * On web, `GenomeDescriptor.kind === 'cram' | 'vcf'` is served via the
- * bioscript-wasm Web Worker (`lookupCramVariants` / `lookupVcfVariants`);
- * 'text' / 'zip' fall back to the in-memory TS parser for now.
+ * On web, genome descriptors are served through Rust-backed bioscript-wasm
+ * lookups. `cram` / `vcf` retain browser `File` handles for indexed reads;
+ * text-shaped inputs pass bytes to Rust for genotype parsing.
  */
 export type GenomeDescriptor =
   | { kind: 'text'; name: string; text: string }
-  | { kind: 'zip'; name: string; text: string }
+  | { kind: 'zip'; name: string; bytes: Uint8Array }
   | { kind: 'vcf'; name: string; vcfFile: File; tbiBytes: Uint8Array }
   | {
       kind: 'cram'

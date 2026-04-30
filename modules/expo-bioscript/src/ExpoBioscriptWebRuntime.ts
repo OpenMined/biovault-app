@@ -1,5 +1,6 @@
 import type { GenomeDescriptor, RunFileRequest, RunFileResult } from './ExpoBioscript.types';
 import {
+  lookupGenotypeBytesRsids,
   lookupCramVariants,
   lookupVcfVariants,
   warmupBioscriptLookupWorker,
@@ -37,16 +38,8 @@ type MontyBrowserModule = {
 
 type ExternalFunction = (...args: unknown[]) => unknown | Promise<unknown>;
 
-type InMemoryGenotypeStore = {
-  values: Map<string, string>;
-};
-
-/** What we track per `load_genome` / `load_genotypes` handle. Text/zip use the
- * existing in-memory rsid map; vcf/cram retain the descriptor so
- * `lookup_variants` can batch-dispatch to the bioscript-wasm worker.
- */
 type GenomeStore =
-  | { kind: 'text'; store: InMemoryGenotypeStore }
+  | { kind: 'genotype-bytes'; name: string; bytes: Uint8Array }
   | { kind: 'vcf'; descriptor: Extract<GenomeDescriptor, { kind: 'vcf' }> }
   | { kind: 'cram'; descriptor: Extract<GenomeDescriptor, { kind: 'cram' }> };
 
@@ -56,24 +49,6 @@ type RuntimeContext = {
   genomes: Map<string, GenomeDescriptor>;
   nextStoreId: number;
 };
-
-const COMMENT_PREFIXES = ['#', '//'];
-const RSID_ALIASES = ['rsid', 'name', 'snp', 'marker', 'id', 'snpid'];
-const GENOTYPE_ALIASES = [
-  'genotype',
-  'gt',
-  'result',
-  'results',
-  'result1',
-  'call',
-  'calls',
-  'yourcode',
-  'code',
-  'genotypevalue',
-  'variation',
-];
-const ALLELE1_ALIASES = ['allele1', 'allelea', 'allele_a', 'allele1top'];
-const ALLELE2_ALIASES = ['allele2', 'alleleb', 'allele_b', 'allele2top'];
 
 let montyModulePromise: Promise<MontyBrowserModule> | null = null;
 
@@ -102,10 +77,9 @@ export async function warmupMontyWebRuntime(): Promise<void> {
 }
 
 export async function runFileOnWeb(request: RunFileRequest): Promise<RunFileResult> {
-  // Web runs through the bioscript-wasm Web Worker for CRAM/VCF; for text it
-  // uses the in-memory TS parser. `genomes[name]` descriptors from the UI
-  // carry the real File handles + indexes, so a CRAM genome no longer needs
-  // `inputFormat: cram` + paths (that path is native-only).
+  // Web runs genomic parsing and lookup through bioscript-wasm. `genomes[name]`
+  // descriptors from the UI carry bytes or File handles + indexes, so a CRAM
+  // genome no longer needs `inputFormat: cram` + paths (that path is native-only).
   if (request.inputFormat === 'zip') {
     throw new Error('expo-bioscript web currently supports text / VCF / CRAM inputs, not zip (yet).');
   }
@@ -462,7 +436,7 @@ function createExternalFunctions(
     __bioscript_load_genome__: async (handle) => loadGenome(context, request, expectString(handle, 'load_genome')),
     __bioscript_lookup_variant__: async (storeId, variant) => lookupVariant(context, storeId, variant),
     __bioscript_lookup_variants__: async (storeId, plan) => lookupVariantsDispatch(context, storeId, plan),
-    __bioscript_get__: (storeId, rsid) => getGenotype(context, storeId, expectString(rsid, 'get')),
+    __bioscript_get__: async (storeId, rsid) => getGenotype(context, storeId, expectString(rsid, 'get')),
     __bioscript_write_tsv__: (path, rows) => writeTsv(context, expectString(path, 'write_tsv'), rows),
     __bioscript_read_text__: async (path) => readTextFile(context, expectString(path, 'read_text')),
     __bioscript_write_text__: (path, text) => writeTextFile(context, expectString(path, 'write_text'), expectString(text, 'write_text')),
@@ -511,10 +485,10 @@ async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, p
   }
 
   const content = await readTextFile(context, path);
-  const textStore = format === 'vcf' ? parseVcfGenotypes(content) : parseDelimitedGenotypes(content);
+  const bytes = new TextEncoder().encode(content);
   const storeId = `genotypes:${context.nextStoreId}`;
   context.nextStoreId += 1;
-  context.genotypeStores.set(storeId, { kind: 'text', store: textStore });
+  context.genotypeStores.set(storeId, { kind: 'genotype-bytes', name: path, bytes });
    
   console.log(
     '[bioscript-web] load_genotypes ' +
@@ -522,8 +496,6 @@ async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, p
         path,
         format,
         contentLength: content.length,
-        rsidCount: textStore.values.size,
-        sampleRsids: Array.from(textStore.values.keys()).slice(0, 5),
       }),
   );
   return storeId;
@@ -543,25 +515,38 @@ async function loadGenome(
   const storeId = `genome:${context.nextStoreId}`;
   context.nextStoreId += 1;
 
-  if (descriptor.kind === 'text' || descriptor.kind === 'zip') {
-    // Text-shaped descriptors share the same rsid-map backend as load_genotypes.
-    const textStore = parseDelimitedGenotypes(descriptor.text);
-    context.genotypeStores.set(storeId, { kind: 'text', store: textStore });
-     
-    console.log(`[bioscript-web] load_genome text ${handle} (${textStore.values.size} rsids)`);
+  if (descriptor.kind === 'text') {
+    context.genotypeStores.set(storeId, {
+      kind: 'genotype-bytes',
+      name: descriptor.name,
+      bytes: new TextEncoder().encode(descriptor.text),
+    });
+
+    console.log(`[bioscript-web] load_genome text ${handle}`);
+    return storeId;
+  }
+
+  if (descriptor.kind === 'zip') {
+    context.genotypeStores.set(storeId, {
+      kind: 'genotype-bytes',
+      name: descriptor.name,
+      bytes: descriptor.bytes,
+    });
+
+    console.log(`[bioscript-web] load_genome zip ${handle}`);
     return storeId;
   }
 
   if (descriptor.kind === 'vcf') {
     context.genotypeStores.set(storeId, { kind: 'vcf', descriptor });
-     
+
     console.log(`[bioscript-web] load_genome vcf ${handle} (${descriptor.vcfFile.name})`);
     return storeId;
   }
 
   if (descriptor.kind === 'cram') {
     context.genotypeStores.set(storeId, { kind: 'cram', descriptor });
-     
+
     console.log(`[bioscript-web] load_genome cram ${handle} (${descriptor.cramFile.name})`);
     return storeId;
   }
@@ -575,13 +560,10 @@ async function lookupVariant(
   variant: unknown,
 ): Promise<string | null> {
   const store = getStore(context, storeHandle);
-  if (store.kind === 'text') {
+  if (store.kind === 'genotype-bytes') {
     const spec = toVariantSpec(variant);
-    for (const rsid of spec.rsids) {
-      const genotype = store.store.values.get(rsid);
-      if (genotype) return genotype;
-    }
-    return null;
+    const [genotype] = await lookupRsidGroups(store, [spec.rsids]);
+    return genotype ?? null;
   }
   // VCF / CRAM: single-variant lookup uses the same wasm path as batch.
   const results = await lookupVariantsDispatch(context, storeHandle, [variant]);
@@ -596,15 +578,11 @@ async function lookupVariantsDispatch(
   const store = getStore(context, storeHandle);
   const variants = extractVariantsFromPlan(plan);
 
-  if (store.kind === 'text') {
-    return variants.map((variant) => {
-      const spec = toVariantSpec(variant);
-      for (const rsid of spec.rsids) {
-        const genotype = store.store.values.get(rsid);
-        if (genotype) return genotype;
-      }
-      return null;
-    });
+  if (store.kind === 'genotype-bytes') {
+    return lookupRsidGroups(
+      store,
+      variants.map((variant) => toVariantSpec(variant).rsids),
+    );
   }
 
   // VCF / CRAM: translate every Monty-side VariantSpec into a wasm VariantSpec
@@ -696,14 +674,40 @@ function observationToGenotype(obs: VariantObservation): string | null {
   return obs.genotype ?? null;
 }
 
-function getGenotype(context: RuntimeContext, storeHandle: unknown, rsid: string): string | null {
+async function getGenotype(context: RuntimeContext, storeHandle: unknown, rsid: string): Promise<string | null> {
   const store = getStore(context, storeHandle);
-  if (store.kind !== 'text') {
+  if (store.kind !== 'genotype-bytes') {
     throw new Error(
       `bioscript.get(rsid) is only supported on text genotype stores — use lookup_variant(s) with a query plan for VCF/CRAM instead`,
     );
   }
-  return store.store.values.get(rsid) ?? null;
+  const [genotype] = await lookupRsidGroups(store, [[rsid]]);
+  return genotype ?? null;
+}
+
+async function lookupRsidGroups(
+  store: Extract<GenomeStore, { kind: 'genotype-bytes' }>,
+  rsidGroups: string[][],
+): Promise<(string | null)[]> {
+  const flatRsids = rsidGroups.flat();
+  if (!flatRsids.length) return rsidGroups.map(() => null);
+
+  const flatResults = await lookupGenotypeBytesRsids(store.name, store.bytes, flatRsids);
+  const results: (string | null)[] = [];
+  let offset = 0;
+  for (const rsids of rsidGroups) {
+    let matched: string | null = null;
+    for (let index = 0; index < rsids.length; index += 1) {
+      const genotype = flatResults[offset + index] ?? null;
+      if (genotype) {
+        matched = genotype;
+        break;
+      }
+    }
+    results.push(matched);
+    offset += rsids.length;
+  }
+  return results;
 }
 
 function writeTsv(context: RuntimeContext, path: string, rows: unknown): null {
@@ -777,152 +781,6 @@ function detectInputFormat(path: string, requested?: string): 'text' | 'vcf' | '
     return 'cram';
   }
   return 'text';
-}
-
-function parseDelimitedGenotypes(content: string): InMemoryGenotypeStore {
-  const values = new Map<string, string>();
-  const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  const dataLines = lines.filter((line) => !COMMENT_PREFIXES.some((prefix) => line.trimStart().startsWith(prefix)));
-  if (dataLines.length === 0) {
-    return { values };
-  }
-
-  const firstLine = dataLines[0]!;
-  const delimiter = chooseDelimiter(firstLine);
-  let headerMap: Record<string, number> | null = null;
-  let startIndex = 0;
-  const maybeHeader = splitDelimitedLine(firstLine, delimiter).map((value) => value.trim().toLowerCase());
-  if (looksLikeHeader(maybeHeader)) {
-    headerMap = indexHeader(maybeHeader);
-    startIndex = 1;
-  }
-
-  for (let index = startIndex; index < dataLines.length; index += 1) {
-    const line = dataLines[index]!;
-    const parts = splitDelimitedLine(line, delimiter).map((value) => value.trim());
-    if (parts.length === 0) {
-      continue;
-    }
-    const rsid = readDelimitedValue(parts, headerMap, RSID_ALIASES) ?? parts[0];
-    if (!rsid || !rsid.toLowerCase().startsWith('rs')) {
-      continue;
-    }
-    const genotype =
-      readDelimitedValue(parts, headerMap, GENOTYPE_ALIASES) ??
-      joinAlleles(
-        readDelimitedValue(parts, headerMap, ALLELE1_ALIASES),
-        readDelimitedValue(parts, headerMap, ALLELE2_ALIASES),
-      ) ??
-      parts[parts.length - 1];
-    if (genotype) {
-      values.set(rsid, genotype);
-    }
-  }
-
-  return { values };
-}
-
-function parseVcfGenotypes(content: string): InMemoryGenotypeStore {
-  const values = new Map<string, string>();
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('##') || trimmed.startsWith('#CHROM')) {
-      continue;
-    }
-    const fields = trimmed.split('\t');
-    if (fields.length < 10) {
-      continue;
-    }
-    const rsid = fields[2]?.trim();
-    const reference = fields[3]?.trim();
-    const alternates = fields[4]
-      ?.split(',')
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0 && value !== '.');
-    if (!rsid || rsid === '.' || !reference || !alternates || alternates.length === 0) {
-      continue;
-    }
-    const sampleGt = fields[9]?.split(':')[0] ?? '.';
-    const genotype = genotypeFromVcfGt(sampleGt, reference, alternates);
-    if (genotype) {
-      values.set(rsid, genotype);
-    }
-  }
-  return { values };
-}
-
-function genotypeFromVcfGt(sampleGt: string, reference: string, alternates: string[]): string | null {
-  if (!sampleGt || sampleGt === '.' || sampleGt === './.' || sampleGt === '.|.') {
-    return null;
-  }
-  const alleles = sampleGt.split(/[\/|]/).map((value) => value.trim());
-  if (alleles.length === 0) {
-    return null;
-  }
-  const resolved = alleles.map((allele) => {
-    if (allele === '.' || allele.length === 0) {
-      return '';
-    }
-    const index = Number.parseInt(allele, 10);
-    if (!Number.isFinite(index)) {
-      return '';
-    }
-    if (index === 0) {
-      return reference;
-    }
-    return alternates[index - 1] ?? '';
-  });
-  return resolved.every((allele) => allele.length > 0) ? resolved.join('') : null;
-}
-
-function chooseDelimiter(line: string): string | RegExp {
-  if (line.includes('\t')) {
-    return '\t';
-  }
-  if (line.includes(',')) {
-    return ',';
-  }
-  return /\s+/;
-}
-
-function splitDelimitedLine(line: string, delimiter: string | RegExp): string[] {
-  return line.split(delimiter).filter((value) => value.length > 0);
-}
-
-function looksLikeHeader(values: string[]): boolean {
-  return values.some((value) => RSID_ALIASES.includes(value) || GENOTYPE_ALIASES.includes(value));
-}
-
-function indexHeader(values: string[]): Record<string, number> {
-  const header: Record<string, number> = {};
-  values.forEach((value, index) => {
-    header[value] = index;
-  });
-  return header;
-}
-
-function readDelimitedValue(
-  parts: string[],
-  headerMap: Record<string, number> | null,
-  aliases: string[],
-): string | null {
-  if (!headerMap) {
-    return null;
-  }
-  for (const alias of aliases) {
-    const index = headerMap[alias];
-    if (index !== undefined && parts[index]) {
-      return parts[index];
-    }
-  }
-  return null;
-}
-
-function joinAlleles(first: string | null, second: string | null): string | null {
-  if (!first || !second) {
-    return null;
-  }
-  return `${first}${second}`;
 }
 
 function getStore(context: RuntimeContext, storeHandle: unknown): GenomeStore {

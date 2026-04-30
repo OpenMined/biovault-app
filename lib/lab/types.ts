@@ -1,4 +1,4 @@
-import type { GenomeDescriptor, VariantObservation } from '@/lib/lab/bioscript-runtime'
+import type { VariantObservation } from '@/lib/lab/bioscript-runtime'
 
 export type FileKind =
 	| 'cram'
@@ -85,5 +85,3 @@ export type LabRunSuccess =
 			kind: 'text_output'
 			result: RunResult
 	  }
-
-export type BuildGenomeDescriptorResult = GenomeDescriptor

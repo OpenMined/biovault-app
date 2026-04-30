@@ -167,7 +167,8 @@ per run (tight loops over big variant panels).
 - Runtime: `__bioscript_load_genome__(handle)` + legacy
   `__bioscript_load_genotypes__(path)` (auto-promotes to `load_genome` when
   the path resolves to a descriptor). Source rewriter supports both.
-- Text/zip keep the in-memory rsid-map path. VCF/CRAM hit the wasm worker.
+- Text/zip genotype stores pass bytes into `bioscript-wasm` and resolve rsids
+  through Rust `GenotypeStore`. VCF/CRAM hit the wasm worker.
 
 **Not yet shipped from this phase (future work):**
 
@@ -175,9 +176,9 @@ per run (tight loops over big variant panels).
       host side is a trivial loop over `load_genome`; the Python-side
       shim needs a small change so a list-of-genomes object exposes its
       own `.lookup_variants(plan)` (or users iterate and call per-genome).
-- [ ] Once `bioscript-wasm` exposes `load_genotypes_bytes`, retire the
-      JS `parseDelimitedGenotypes` / `parseVcfGenotypes` — last of the TS
-      reimplementations tracked in `bioscript-is-source-of-truth.md`.
+- [x] Retire the JS `parseDelimitedGenotypes` / `parseVcfGenotypes` path.
+      `lookupGenotypeBytesRsids` now covers the Monty compatibility
+      `get(rsid)` and text `lookup_variants` paths.
 
 ## Phase 3 — `/lab` UI wires handles into `runFile` ✅
 

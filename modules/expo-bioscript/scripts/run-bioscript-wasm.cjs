@@ -8,6 +8,9 @@
 //   genotype --input <genotype.txt|genotype.zip> --variants '<json>'
 //       → calls lookupGenotypeBytesVariants with the whole file in memory.
 //
+//   rsids --input <genotype.txt|genotype.zip> --rsids '<json>'
+//       → calls lookupGenotypeBytesRsids with the whole file in memory.
+//
 //   cram --cram <x.cram> --crai <x.cram.crai> \
 //        --fasta <ref.fa> --fai <ref.fa.fai> \
 //        --variants '<json>' [--assembly grch38]
@@ -125,6 +128,25 @@ function runGenotype(mod, args) {
   }
 }
 
+function runRsids(mod, args) {
+  const flags = parseFlags(args);
+  const inputPath = resolve(requireFlag(flags, 'input'));
+  const rsidsJson = requireFlag(flags, 'rsids');
+  const bytes = readFileSync(inputPath);
+  const name = basename(inputPath);
+  console.error(`[run-bioscript-wasm] rsids genotype=${name} (${bytes.length} bytes)`);
+  try {
+    const startedAt = Date.now();
+    const resultJson = mod.lookupGenotypeBytesRsids(name, bytes, rsidsJson);
+    console.error(`[run-bioscript-wasm] lookupGenotypeBytesRsids took ${Date.now() - startedAt}ms`);
+    console.log(JSON.stringify(JSON.parse(resultJson), null, 2));
+  } catch (err) {
+    console.error('[run-bioscript-wasm] lookupGenotypeBytesRsids threw:');
+    console.error(err);
+    process.exitCode = 3;
+  }
+}
+
 function runCram(mod, args) {
   const flags = parseFlags(args);
   const cramPath = resolve(requireFlag(flags, 'cram'));
@@ -208,6 +230,7 @@ function main() {
     console.error('usage:');
     console.error('  run-bioscript-wasm.cjs inspect <file> [optionsJson]');
     console.error("  run-bioscript-wasm.cjs genotype --input <genotype.txt|genotype.zip> --variants '<json>'");
+    console.error("  run-bioscript-wasm.cjs rsids --input <genotype.txt|genotype.zip> --rsids '<json>'");
     console.error(
       '  run-bioscript-wasm.cjs cram --cram <x.cram> --crai <x.cram.crai> \\',
     );
@@ -228,6 +251,9 @@ function main() {
       break;
     case 'genotype':
       runGenotype(mod, rest);
+      break;
+    case 'rsids':
+      runRsids(mod, rest);
       break;
     case 'cram':
       runCram(mod, rest);

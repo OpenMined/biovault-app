@@ -156,6 +156,9 @@ jobs:
           workspaces: bioscript/rust
           key: web-bioscript-parity
 
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
       - name: Install npm dependencies
         run: npm install
         env:

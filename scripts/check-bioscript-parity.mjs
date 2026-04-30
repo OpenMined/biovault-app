@@ -17,7 +17,7 @@ const inputRel = path.relative(root, inputPath)
 const apol1ScriptRel = 'exvitae/assays/risk/APOL1/apol1.py'
 const wasmRunner = path.join(root, 'modules/expo-bioscript/scripts/run-bioscript-wasm.cjs')
 const bioscriptShim = path.join(root, 'bioscript/bs')
-const requireWasm = process.env.BIOSCRIPT_REQUIRE_WASM_PARITY === '1'
+const skipWasm = process.env.BIOSCRIPT_SKIP_WASM_PARITY === '1'
 
 process.on('exit', () => {
 	rmSync(tempRoot, { force: true, recursive: true })
@@ -56,6 +56,12 @@ function assertObservationGenotypes(observations, expected) {
 	const byName = new Map(observations.map((obs) => [obs.name, obs]))
 	for (const [name, genotype] of Object.entries(expected)) {
 		assertEqual(byName.get(name)?.genotype, genotype, `wasm ${name} genotype`)
+	}
+}
+
+function assertArrayEqual(actual, expected, label) {
+	if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) {
+		throw new Error(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
 	}
 }
 
@@ -102,8 +108,8 @@ try {
 		variantsJson,
 	]))
 } catch (error) {
-	if (error.status === 2 && !requireWasm) {
-		console.warn('Skipping WASM parity because wasm-pack is not available. Set BIOSCRIPT_REQUIRE_WASM_PARITY=1 to fail instead.')
+	if (error.status === 2 && skipWasm) {
+		console.warn('Skipping WASM parity because BIOSCRIPT_SKIP_WASM_PARITY=1 is set.')
 		process.exit(0)
 	}
 	throw error
@@ -113,6 +119,19 @@ assertObservationGenotypes(textLookup, {
 	rs60910145: 'TT',
 	rs71785313: 'II',
 })
+
+console.log('==> WASM APOL1 rsid text parity')
+const textRsidLookup = parseJsonOutput(run('bioscript wasm rsid text', 'node', [
+	wasmRunner,
+	'rsids',
+	'--input',
+	inputPath,
+	'--rsids',
+	JSON.stringify(['rs73885319', 'rs60910145', 'rs71785313', 'rs-missing']),
+], {
+	env: { ...process.env, RUN_BIOSCRIPT_WASM_NO_BUILD: '1' },
+}))
+assertArrayEqual(textRsidLookup, ['AA', 'TT', 'II', null], 'wasm text rsid lookup')
 
 console.log('==> WASM APOL1 genotype zip parity')
 const zipPath = makeZipFixture()
@@ -131,6 +150,19 @@ assertObservationGenotypes(zipLookup, {
 	rs60910145: 'TT',
 	rs71785313: 'II',
 })
+
+console.log('==> WASM APOL1 rsid zip parity')
+const zipRsidLookup = parseJsonOutput(run('bioscript wasm rsid zip', 'node', [
+	wasmRunner,
+	'rsids',
+	'--input',
+	zipPath,
+	'--rsids',
+	JSON.stringify(['rs73885319', 'rs60910145', 'rs71785313', 'rs-missing']),
+], {
+	env: { ...process.env, RUN_BIOSCRIPT_WASM_NO_BUILD: '1' },
+}))
+assertArrayEqual(zipRsidLookup, ['AA', 'TT', 'II', null], 'wasm zip rsid lookup')
 
 console.log('==> WASM inspect parity')
 const inspection = parseJsonOutput(run('bioscript wasm inspect', 'node', [
