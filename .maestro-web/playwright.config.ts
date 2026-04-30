@@ -1,11 +1,19 @@
 import { defineConfig, devices } from '@playwright/test'
+import os from 'node:os'
+
+const autoWorkers = typeof os.availableParallelism === 'function'
+	? os.availableParallelism()
+	: os.cpus().length
+const workers = Number(process.env.PW_WORKERS ?? autoWorkers)
+const headed = process.argv.includes('--headed') || process.env.PWDEBUG === '1'
+const fullyParallel = headed ? false : process.env.PW_FULLY_PARALLEL !== '0'
 
 export default defineConfig({
 	testDir: '.',
 	timeout: 120_000,
 	retries: 0,
-	workers: 1,
-	fullyParallel: false,
+	workers: headed ? 1 : workers,
+	fullyParallel,
 	reporter: [['list']],
 	use: {
 		trace: 'on',

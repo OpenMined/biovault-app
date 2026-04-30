@@ -1,13 +1,10 @@
 import {
-	compileVariantYamlText,
-	lookupCramVariants,
-	lookupGenotypeBytesVariants,
-	lookupVcfVariants,
-	runFile,
+	expoBioscriptRuntime,
 	type GenomeDescriptor,
+	type LabBioscriptRuntime,
 	type VariantObservation,
 	type VariantSpec,
-} from '@/modules/expo-bioscript'
+} from '@/lib/lab/bioscript-runtime'
 
 import {
 	extractTextFromZip,
@@ -134,14 +131,18 @@ function isUnsupportedSingleBaseLookupError(message: string): boolean {
 	return /supports single-base SNV observations only/i.test(message)
 }
 
-export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay): Promise<LabRunSuccess> {
+export async function runLabAssay(
+	selectedGenome: Genome,
+	selectedAssay: Assay,
+	runtime: LabBioscriptRuntime = expoBioscriptRuntime,
+): Promise<LabRunSuccess> {
 	const startedAt = Date.now()
 
 	if (selectedAssay.language === 'yaml') {
 		const yamlText = await selectedAssay.file.text()
 		const variants = selectPreferredAssemblyVariants(
 			selectedGenome,
-			await compileVariantYamlText(selectedAssay.file.name, yamlText),
+			await runtime.compileVariantYamlText(selectedAssay.file.name, yamlText),
 		)
 		if (selectedGenome.kind === 'cram') {
 			if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
@@ -149,7 +150,7 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 			}
 			const craiBytes = new Uint8Array(await selectedGenome.crai.arrayBuffer())
 			const faiBytes = new Uint8Array(await selectedGenome.fai.arrayBuffer())
-			const result = await lookupCramVariants({
+			const result = await runtime.lookupCramVariants({
 				cramFile: selectedGenome.primary,
 				craiBytes,
 				fastaFile: selectedGenome.fasta,
@@ -168,7 +169,7 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 		if (selectedGenome.kind === 'vcf') {
 			if (!selectedGenome.tbi) throw new Error('VCF genome missing tabix index')
 			const tbiBytes = new Uint8Array(await selectedGenome.tbi.arrayBuffer())
-			const result = await lookupVcfVariants({
+			const result = await runtime.lookupVcfVariants({
 				vcfFile: selectedGenome.primary,
 				tbiBytes,
 				variants,
@@ -184,7 +185,7 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 		}
 		if (selectedGenome.kind === 'text' || selectedGenome.kind === 'zip') {
 			const bytes = new Uint8Array(await selectedGenome.primary.arrayBuffer())
-			const result = await lookupGenotypeBytesVariants(selectedGenome.primary.name, bytes, variants)
+			const result = await runtime.lookupGenotypeBytesVariants(selectedGenome.primary.name, bytes, variants)
 			return {
 				kind: 'variant_lookup',
 				result: {
@@ -199,7 +200,7 @@ export async function runLabAssay(selectedGenome: Genome, selectedAssay: Assay):
 	const scriptContents = await selectedAssay.file.text()
 	const descriptor: GenomeDescriptor = await buildGenomeDescriptor(selectedGenome)
 	const genomeKey = selectedGenome.primary.name
-	const result = await runFile({
+	const result = await runtime.runFile({
 		scriptPath: selectedAssay.file.name,
 		scriptContents,
 		inputFile: genomeKey,
@@ -230,6 +231,7 @@ export async function runLabVariantYamlFiles(
 	selectedGenome: Genome,
 	files: File[],
 	onProgress?: LabRunProgressCallback,
+	runtime: LabBioscriptRuntime = expoBioscriptRuntime,
 ): Promise<LabRunSuccess> {
 	if (!files.length) throw new Error('Panel has no fetched variant assays to run')
 
@@ -255,7 +257,7 @@ export async function runLabVariantYamlFiles(
 			fileName: file?.name || `variant-${index + 1}.yaml`,
 			variants: selectPreferredAssemblyVariants(
 				selectedGenome,
-				await compileVariantYamlText(file?.name || `variant-${index + 1}.yaml`, yamlTexts[index] ?? ''),
+				await runtime.compileVariantYamlText(file?.name || `variant-${index + 1}.yaml`, yamlTexts[index] ?? ''),
 			),
 		})
 	}
@@ -271,7 +273,7 @@ export async function runLabVariantYamlFiles(
 				total: compiledFiles.length,
 			})
 			try {
-				const result = await lookupGenotypeBytesVariants(
+				const result = await runtime.lookupGenotypeBytesVariants(
 					selectedGenome.primary.name,
 					bytes,
 					compiled.variants,
@@ -312,7 +314,7 @@ export async function runLabVariantYamlFiles(
 				total: compiledFiles.length,
 			})
 			try {
-				const result = await lookupCramVariants({
+				const result = await runtime.lookupCramVariants({
 					cramFile: selectedGenome.primary,
 					craiBytes,
 					fastaFile: selectedGenome.fasta,
@@ -356,7 +358,7 @@ export async function runLabVariantYamlFiles(
 			total: compiledFiles.length,
 		})
 		try {
-			const result = await lookupVcfVariants({
+			const result = await runtime.lookupVcfVariants({
 				vcfFile: selectedGenome.primary,
 				tbiBytes,
 				variants: compiled.variants,

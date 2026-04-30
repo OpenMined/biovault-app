@@ -35,27 +35,27 @@ export const LAB_SAMPLE_PRESETS: LabSamplePreset[] = [
 		files: [
 			{
 				name: 'apol1.cram',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/apol1.cram'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/apol1.cram'),
 				kind: 'cram',
 			},
 			{
 				name: 'apol1.cram.crai',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/apol1.cram.crai'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/apol1.cram.crai'),
 				kind: 'crai',
 			},
 			{
 				name: 'stub.fa',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/stub.fa'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/stub.fa'),
 				kind: 'fasta',
 			},
 			{
 				name: 'stub.fa.fai',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/stub.fa.fai'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/stub.fa.fai'),
 				kind: 'fai',
 			},
 			{
 				name: 'apol1.py',
-				url: rawGitHubUrl('/assays/risk/APOL1/apol1.py'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/apol1.py'),
 				kind: 'assay_python',
 			},
 		],
@@ -76,7 +76,7 @@ export const LAB_SAMPLE_PRESETS: LabSamplePreset[] = [
 			},
 			{
 				name: 'apol1.py',
-				url: rawGitHubUrl('/assays/risk/APOL1/apol1.py'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/apol1.py'),
 				kind: 'assay_python',
 			},
 		],

@@ -1,4 +1,4 @@
-import type { GenomeDescriptor, VariantObservation } from '@/modules/expo-bioscript'
+import type { GenomeDescriptor, VariantObservation } from '@/lib/lab/bioscript-runtime'
 
 export type FileKind =
 	| 'cram'

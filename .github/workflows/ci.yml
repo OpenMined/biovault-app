@@ -20,8 +20,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: |
+          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
+          rm -rf bioscript
+          git init bioscript
+          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
+          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
+          git -C bioscript checkout --detach FETCH_HEAD
+          rm -rf exvitae
+          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -60,8 +71,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: |
+          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
+          rm -rf bioscript
+          git init bioscript
+          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
+          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
+          git -C bioscript checkout --detach FETCH_HEAD
+          rm -rf exvitae
+          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -100,26 +122,51 @@ jobs:
         run: ./lint.sh --check
 
   web:
-    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
-    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: |
+          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
+          rm -rf bioscript
+          git init bioscript
+          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
+          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
+          git -C bioscript checkout --detach FETCH_HEAD
+          rm -rf exvitae
+          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust (bioscript parity)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bioscript/rust
+          key: web-bioscript-parity
+
       - name: Install npm dependencies
         run: npm install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify required submodules
+        run: |
+          test -f bioscript/rust/Cargo.toml
+          test -f exvitae/assays/risk/APOL1/apol1.py
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
+          git submodule status bioscript exvitae
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -128,18 +175,30 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bioscript/cache/test-data
-          key: bioscript-test-data-23andme-v1
+          key: bioscript-test-data-web-v2
           restore-keys: bioscript-test-data-
 
-      - name: Fetch 23andMe test fixtures
-        run: ./bioscript/tools/fetch_test_data.sh --dataset 23andme
+      - name: Install Python test-data parser dependency
+        run: python3 -m pip install PyYAML
 
-      - name: Link fixtures into repo (tests expect ./test-data)
+      - name: Fetch web genomic test fixtures
         run: |
-          if [ ! -e test-data ]; then
-            ln -s "$HOME/.bioscript/cache/test-data" test-data
-          fi
-          ls -la test-data/23andme/v5/ 2>/dev/null || true
+          BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 23andme --only genome_hu50B3F5_v5_Full.zip
+          BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 1k-genomes --only "NA06985.clean.vcf.gz*"
+
+      - name: Verify web genomic test fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+          ls -la test-data/23andme/v5/hu50B3F5
+          ls -la test-data/1k-genomes/vcf
+
+      - name: Check BioScript app/core boundary
+        run: npm run check:bioscript-boundary
+
+      - name: Check BioScript CLI/WASM parity
+        run: npm run check:bioscript-parity
 
       - name: Run web tests
         run: ./test-web.sh
@@ -163,8 +222,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: |
+          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
+          rm -rf bioscript
+          git init bioscript
+          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
+          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
+          git -C bioscript checkout --detach FETCH_HEAD
+          rm -rf exvitae
+          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -321,8 +391,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: |
+          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
+          rm -rf bioscript
+          git init bioscript
+          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
+          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
+          git -C bioscript checkout --detach FETCH_HEAD
+          rm -rf exvitae
+          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
       - name: Enable KVM
         run: |

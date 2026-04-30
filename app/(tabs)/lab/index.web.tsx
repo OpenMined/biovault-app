@@ -27,6 +27,8 @@ import {
 	searchAssays,
 } from '@/lib/lab/assay-catalog'
 import { normalizeLabSearchParam } from '@/lib/lab/assay-loader'
+import { createWebLabFileAdapter } from '@/lib/lab/adapters/file-adapter.web'
+import type { LabFileRef } from '@/lib/lab/core/files'
 import {
 	classifyLabFile,
 	createAssayFromFile,
@@ -268,14 +270,22 @@ function panelVariantAssays(panel: SessionLabAssay, assays: SessionLabAssay[]): 
 	return assays.filter((assay) => assay.remoteKind === 'variant' && dependencyUrls.has(assay.url))
 }
 
-function buildGenomeBundleFromFiles(files: File[]): { genome: Genome; unknowns: File[] } | null {
-	const ordered = sortFilesForIngestion(files)
-	const primary = ordered.find((file) => {
-		const kind = classifyLabFile(file.name)
-		return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
+function isPrimaryGenomeKind(kind: LabFileRef['kind']) {
+	return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
+}
+
+function buildGenomeBundleFromRefs(
+	refs: LabFileRef[],
+	getFile: (ref: LabFileRef) => File,
+): { genome: Genome; unknowns: File[] } | null {
+	const ordered = [...refs].sort((a, b) => {
+		if (isPrimaryGenomeKind(a.kind) && !isPrimaryGenomeKind(b.kind)) return -1
+		if (isPrimaryGenomeKind(b.kind) && !isPrimaryGenomeKind(a.kind)) return 1
+		return 0
 	})
+	const primary = ordered.find((ref) => isPrimaryGenomeKind(ref.kind))
 	if (!primary) return null
-	const primaryKind = classifyLabFile(primary.name)
+	const primaryKind = primary.kind
 	if (
 		primaryKind !== 'cram' &&
 		primaryKind !== 'vcf_gz' &&
@@ -284,11 +294,12 @@ function buildGenomeBundleFromFiles(files: File[]): { genome: Genome; unknowns: 
 	) {
 		return null
 	}
-	let genome = createGenomeFromPrimaryFile(primary, primaryKind)
+	let genome = createGenomeFromPrimaryFile(getFile(primary), primaryKind)
 	const unknowns: File[] = []
-	for (const file of ordered) {
-		if (file === primary) continue
-		const kind = classifyLabFile(file.name)
+	for (const ref of ordered) {
+		if (ref.id === primary.id) continue
+		const kind = ref.kind
+		const file = getFile(ref)
 		if (kind === 'crai' || kind === 'tbi' || kind === 'fai' || kind === 'fasta') {
 			genome = pairCompanionFile([genome], file, kind)[0] ?? genome
 			continue
@@ -400,10 +411,10 @@ async function selectPersistentHandlesForPending(
 		showOpenFilePicker?: (options?: {
 			excludeAcceptAllOption?: boolean
 			multiple?: boolean
-			types?: Array<{
+			types?: {
 				accept: Record<string, string[]>
 				description: string
-			}>
+			}[]
 		}) => Promise<FileSystemFileHandle[]>
 	}).showOpenFilePicker
 	if (typeof picker !== 'function') {
@@ -551,6 +562,7 @@ export default function LabScreen() {
 
 	const params = useLocalSearchParams<{ run?: string | string[] }>()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
+	const fileAdapterRef = useRef(createWebLabFileAdapter())
 
 	const [genomes, setGenomes] = useState<Genome[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
@@ -580,8 +592,9 @@ export default function LabScreen() {
 		[genomes, selectedGenomeId],
 	)
 
-	const ingest = useCallback((file: File) => {
-		const kind = classifyLabFile(file.name)
+	const ingestRef = useCallback((ref: LabFileRef) => {
+		const file = fileAdapterRef.current.getFile(ref)
+		const kind = ref.kind
 		if (kind === 'unknown') {
 			setUnknowns((prev) => [...prev, createUnknownEntry(file)])
 			return
@@ -602,19 +615,21 @@ export default function LabScreen() {
 		setGenomes((prev) => pairCompanionFile(prev, file, kind))
 	}, [])
 
-	const ingestMany = useCallback(
-		(files: File[]) => {
-			const ordered = sortFilesForIngestion(files)
+	const ingestManyRefs = useCallback(
+		(refs: LabFileRef[]) => {
+			const ordered = [...refs].sort((a, b) => {
+				if (isPrimaryGenomeKind(a.kind) && !isPrimaryGenomeKind(b.kind)) return -1
+				if (isPrimaryGenomeKind(b.kind) && !isPrimaryGenomeKind(a.kind)) return 1
+				return 0
+			})
 			trackEvent('lab_files_added', {
-				fileKinds: ordered.map((file) => classifyLabFile(file.name)),
+				fileKinds: ordered.map((ref) => ref.kind),
+				fileSources: ordered.map((ref) => ref.source),
 				totalFiles: ordered.length,
 			})
-			const primaryCount = ordered.filter((file) => {
-				const kind = classifyLabFile(file.name)
-				return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
-			}).length
+			const primaryCount = ordered.filter((ref) => isPrimaryGenomeKind(ref.kind)).length
 			if (primaryCount === 1) {
-				const bundle = buildGenomeBundleFromFiles(ordered)
+				const bundle = buildGenomeBundleFromRefs(ordered, fileAdapterRef.current.getFile)
 				if (bundle) {
 					setGenomes((prev) => [
 						...prev.filter((genome) => genome.primary.name !== bundle.genome.primary.name),
@@ -627,9 +642,16 @@ export default function LabScreen() {
 					return
 				}
 			}
-			for (const file of ordered) ingest(file)
+			for (const ref of ordered) ingestRef(ref)
 		},
-		[ingest, trackEvent],
+		[ingestRef, trackEvent],
+	)
+
+	const ingestMany = useCallback(
+		(files: File[], source: LabFileRef['source'] = 'local') => {
+			ingestManyRefs(fileAdapterRef.current.fromPlatformFiles(files, source))
+		},
+		[ingestManyRefs],
 	)
 
 	const refreshSavedHandles = useCallback(async () => {
@@ -1073,7 +1095,7 @@ export default function LabScreen() {
 			trackEvent('lab_sample_genome_requested', { bundleId: bundle.id })
 			try {
 				const files = await loadTestFileBundle(bundle)
-				ingestMany(files)
+				ingestMany(files, 'bundled')
 				trackEvent('lab_sample_genome_loaded', { bundleId: bundle.id, totalFiles: files.length })
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
@@ -1191,7 +1213,7 @@ export default function LabScreen() {
 		try {
 			if (isRemoteLabFile) {
 				const remoteFile = await fetchRemoteLabFile(intent.url)
-				ingestMany([remoteFile.file])
+				ingestMany([remoteFile.file], 'url')
 				if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
 					await refreshCachedRemoteFiles()
 				}
@@ -1219,7 +1241,7 @@ export default function LabScreen() {
 	}, [addResolvedSessionAssays, ingestMany, refreshCachedRemoteFiles, remoteIntent, trackEvent])
 
 	const restoreCachedRemoteFile = useCallback((remoteFile: RemoteLabFile) => {
-		ingestMany([remoteFile.file])
+		ingestMany([remoteFile.file], 'url')
 		trackEvent('lab_remote_file_cache_restored', {
 			fileKind: remoteFile.fileKind,
 			size: remoteFile.file.size,

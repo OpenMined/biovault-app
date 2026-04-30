@@ -1,4 +1,5 @@
 import type { FileKind } from '@/lib/lab/types'
+import { loadBundledApol1Script } from '@/lib/lab/bundled-assay-assets'
 
 export type AssayCategory = 'risk' | 'pharmacogenomics' | 'ancestry' | 'panel' | 'demo'
 
@@ -61,8 +62,8 @@ export const LAB_ASSAYS: LabAssay[] = [
 			'Detects the APOL1 G1 and G2 high-risk variants associated with chronic kidney disease.',
 		category: 'risk',
 		language: 'python',
-		url: rawGitHubUrl('/assays/risk/APOL1/apol1.py'),
-		inputFormats: ['cram', 'genotype_text'],
+		url: rawGitHubUrl('/exvitae/assays/risk/APOL1/apol1.py'),
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
 		tags: ['kidney', 'APOL1', 'G1', 'G2', 'nephropathy'],
 	},
 ]
@@ -82,22 +83,22 @@ export const LAB_TEST_FILES: LabTestFileBundle[] = [
 		files: [
 			{
 				name: 'apol1.cram',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/apol1.cram'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/apol1.cram'),
 				kind: 'cram',
 			},
 			{
 				name: 'apol1.cram.crai',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/apol1.cram.crai'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/apol1.cram.crai'),
 				kind: 'crai',
 			},
 			{
 				name: 'stub.fa',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/stub.fa'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/stub.fa'),
 				kind: 'fasta',
 			},
 			{
 				name: 'stub.fa.fai',
-				url: rawGitHubUrl('/assays/risk/APOL1/test-data/stub.fa.fai'),
+				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/stub.fa.fai'),
 				kind: 'fai',
 			},
 		],
@@ -180,6 +181,9 @@ async function fetchToFile(name: string, url: string): Promise<File> {
 }
 
 export async function loadAssayFile(assay: LabAssay): Promise<File> {
+	if (assay.id === 'apol1') {
+		return new File([await loadBundledApol1Script()], 'apol1.py', { type: 'text/x-python' })
+	}
 	const name = assay.url.split('/').pop() ?? `${assay.id}.${assay.language === 'python' ? 'py' : 'yaml'}`
 	return fetchToFile(name, assay.url)
 }

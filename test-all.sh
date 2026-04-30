@@ -10,6 +10,12 @@ echo "==> Fetching test data"
 echo "==> Running root Rust tests"
 ./test.sh
 
+echo "==> Checking BioScript app/core boundary"
+npm run check:bioscript-boundary
+
+echo "==> Checking BioScript CLI/WASM parity"
+npm run check:bioscript-parity
+
 echo "==> Running web tests"
 ./test-web.sh
 

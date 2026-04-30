@@ -1,0 +1,38 @@
+[
+  {
+    "name": "rs73885319",
+    "chrom": "22",
+    "pos": 36265860,
+    "start": 36265860,
+    "end": 36265860,
+    "ref": "A",
+    "alt": "G",
+    "rsid": "rs73885319",
+    "assembly": "grch38",
+    "kind": "snv"
+  },
+  {
+    "name": "rs60910145",
+    "chrom": "22",
+    "pos": 36265988,
+    "start": 36265988,
+    "end": 36265988,
+    "ref": "T",
+    "alt": "G",
+    "rsid": "rs60910145",
+    "assembly": "grch38",
+    "kind": "snv"
+  },
+  {
+    "name": "rs71785313",
+    "chrom": "22",
+    "pos": 36266000,
+    "start": 36266000,
+    "end": 36266005,
+    "ref": "I",
+    "alt": "D",
+    "rsid": "rs71785313",
+    "assembly": "grch38",
+    "kind": "deletion"
+  }
+]

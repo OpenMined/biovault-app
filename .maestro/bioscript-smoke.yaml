@@ -1,0 +1,51 @@
+appId: org.openmined.biovault.dev
+---
+- launchApp:
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "DEVELOPMENT SERVERS|This is the developer menu.*|I understand.*|Explore Assays|Your genomic files"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "DEVELOPMENT SERVERS"
+    commands:
+      - tapOn:
+          text: "http://.*:8081"
+
+- extendedWaitUntil:
+    visible: "This is the developer menu.*|Reload|I understand.*|Explore Assays|Your genomic files"
+    timeout: 90000
+- runFlow:
+    when:
+      visible: "This is the developer menu.*"
+    commands:
+      - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Go home"
+    commands:
+      - pressKey: Back
+
+- extendedWaitUntil:
+    visible: "I understand.*|Explore Assays|Your genomic files"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "I understand.*"
+    commands:
+      - tapOn: "I understand.*"
+      - tapOn: "Continue"
+
+- extendedWaitUntil:
+    visible: "Explore Assays|Your genomic files"
+    timeout: 60000
+
+- openLink: "biovaultapp://test/bioscript?autorun=1"
+- extendedWaitUntil:
+    visible: "BioScript E2E"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "passed"
+    timeout: 60000
+- assertVisible: "G0/G0"

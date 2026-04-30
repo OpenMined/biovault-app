@@ -86,6 +86,10 @@ function RootNavigator() {
 					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
 				/>
 				<Stack.Screen
+					name="test/bioscript"
+					options={{ presentation: 'card', animation: 'none' }}
+				/>
+				<Stack.Screen
 					name="files/[documentId]/rename"
 					options={{ presentation: 'formSheet', animation: 'slide_from_bottom' }}
 				/>

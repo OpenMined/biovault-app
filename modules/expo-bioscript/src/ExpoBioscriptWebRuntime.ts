@@ -81,10 +81,7 @@ export async function warmupWebRuntime(): Promise<void> {
   const startedAt = Date.now();
   console.info('[bioscript] warmup total started');
   try {
-    await Promise.all([
-      warmupMontyWebRuntime(),
-      warmupBioscriptLookupWorker(),
-    ]);
+    await warmupBioscriptLookupWorker();
     console.info(`[bioscript] warmup total completed in ${Date.now() - startedAt} ms`);
   } catch (error) {
     console.warn(`[bioscript] warmup total failed after ${Date.now() - startedAt} ms`, error);
@@ -171,11 +168,7 @@ async function loadMontyModule(): Promise<MontyBrowserModule> {
       shared: true,
     })
 
-    const res = await fetch(wasmUrl)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch monty wasm at ${wasmUrl}: ${res.status}`)
-    }
-    const bytes = await res.arrayBuffer()
+    const bytes = await fetchMontyWasmBytes(wasmUrl)
 
      
     const { napiModule } = await instantiateNapiModule(bytes as any, {
@@ -210,6 +203,64 @@ async function loadMontyModule(): Promise<MontyBrowserModule> {
     return napiModule.exports as unknown as MontyBrowserModule
   })()
   return montyModulePromise
+}
+
+type ChunkedWasmManifest = {
+  version: number;
+  totalSize: number;
+  chunks: string[];
+};
+
+async function fetchMontyWasmBytes(wasmUrl: string): Promise<ArrayBuffer> {
+  const chunkedBytes = await fetchChunkedWasmBytes(wasmUrl);
+  if (chunkedBytes) return chunkedBytes;
+
+  const res = await fetch(wasmUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch monty wasm at ${wasmUrl}: ${res.status}`);
+  }
+  return res.arrayBuffer();
+}
+
+async function fetchChunkedWasmBytes(wasmUrl: string): Promise<ArrayBuffer | null> {
+  const manifestUrl = new URL(wasmUrl);
+  if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(manifestUrl.hostname)) return null;
+  manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;
+
+  const manifestRes = await fetch(manifestUrl.href);
+  if (manifestRes.status === 404) return null;
+  if (!manifestRes.ok) {
+    throw new Error(`Failed to fetch monty wasm chunk manifest at ${manifestUrl.href}: ${manifestRes.status}`);
+  }
+
+  const manifest = (await manifestRes.json()) as ChunkedWasmManifest;
+  if (manifest.version !== 1 || !Number.isFinite(manifest.totalSize) || !Array.isArray(manifest.chunks)) {
+    throw new Error(`Invalid monty wasm chunk manifest at ${manifestUrl.href}`);
+  }
+
+  const bytes = new Uint8Array(manifest.totalSize);
+  let offset = 0;
+
+  for (const chunkPath of manifest.chunks) {
+    const chunkUrl = new URL(chunkPath, manifestUrl.href);
+    const chunkRes = await fetch(chunkUrl.href);
+    if (!chunkRes.ok) {
+      throw new Error(`Failed to fetch monty wasm chunk at ${chunkUrl.href}: ${chunkRes.status}`);
+    }
+
+    const chunk = new Uint8Array(await chunkRes.arrayBuffer());
+    if (offset + chunk.byteLength > bytes.byteLength) {
+      throw new Error(`Monty wasm chunks exceed manifest size from ${manifestUrl.href}`);
+    }
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  if (offset !== bytes.byteLength) {
+    throw new Error(`Monty wasm chunks were incomplete from ${manifestUrl.href}`);
+  }
+
+  return bytes.buffer;
 }
 
 function createMontyRunner(

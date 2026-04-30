@@ -320,9 +320,32 @@ class Analytics {
 	}
 }
 
-let analyticsInstance: Analytics | null = null
+type AnalyticsClient = Pick<
+	Analytics,
+	'endSession' | 'setUserAgent' | 'startSession' | 'trackError' | 'trackEvent' | 'trackScreen'
+>
+
+let analyticsInstance: AnalyticsClient | null = null
+
+const analyticsDisabled =
+	process.env.EXPO_PUBLIC_DISABLE_ANALYTICS === '1' ||
+	(Platform.OS === 'web' &&
+		typeof window !== 'undefined' &&
+		/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname))
+
+const disabledAnalytics: AnalyticsClient = {
+	setUserAgent() {},
+	trackScreen: async () => {},
+	trackEvent: async () => {},
+	trackError: async () => {},
+	startSession: async () => {},
+	endSession: async () => {},
+}
 
 export const initAnalytics = (siteId: string, apiEndpoint?: string, appDomain?: string) => {
+	if (analyticsDisabled) {
+		return disabledAnalytics
+	}
 	if (!analyticsInstance) {
 		console.log('Analytics: Initializing new analytics instance')
 		analyticsInstance = new Analytics(siteId, apiEndpoint, appDomain)
@@ -332,6 +355,6 @@ export const initAnalytics = (siteId: string, apiEndpoint?: string, appDomain?: 
 	return analyticsInstance
 }
 
-export const getAnalytics = (): Analytics | null => {
+export const getAnalytics = (): AnalyticsClient | null => {
 	return analyticsInstance
 }

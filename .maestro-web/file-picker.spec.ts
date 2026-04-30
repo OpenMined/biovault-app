@@ -9,6 +9,15 @@ const FIXTURE_23ANDME = path.join(
 	'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
 )
 
+async function dismissDisclaimer(page: Page) {
+	await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
+	const understand = page.getByText('I understand and want to continue', { exact: false })
+	if (await understand.isVisible().catch(() => false)) {
+		await understand.click()
+		await page.getByText(/^Continue$/).click({ timeout: 10_000 })
+	}
+}
+
 async function expectInspection(page: Page) {
 	const inspection = page.getByTestId('file-picker-inspection')
 	await expect(inspection).toBeVisible({ timeout: 30_000 })
@@ -22,6 +31,7 @@ test.describe('file picker — web', () => {
 		// ?e2e=input forces the <input> fallback so Playwright's filechooser is
 		// the one driving the picker. The FS-Access path is covered by manual QA
 		// and by the drag-drop test below.
+		await dismissDisclaimer(page)
 		await page.goto(`${BASE_URL}/file-picker?e2e=input`, { waitUntil: 'domcontentloaded' })
 		await expect(page.getByTestId('file-picker')).toBeVisible({ timeout: 30_000 })
 		await page.screenshot({
@@ -52,6 +62,7 @@ test.describe('file picker — web', () => {
 	})
 
 	test('drag-and-drop → picks 23andMe v5 zip', async ({ page }) => {
+		await dismissDisclaimer(page)
 		await page.goto(`${BASE_URL}/file-picker`, { waitUntil: 'domcontentloaded' })
 		await expect(page.getByTestId('file-picker-drop')).toBeVisible({ timeout: 30_000 })
 

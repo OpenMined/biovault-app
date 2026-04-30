@@ -5,6 +5,10 @@ WEB_URL="${WEB_URL:-http://localhost:8081}"
 PORT="${PORT:-8081}"
 LOG_DIR=".maestro-web/logs"
 FIXTURE_23ANDME="test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip"
+AUTO_WORKERS="$(node -e "const os=require('os'); console.log(os.availableParallelism?.() ?? os.cpus().length)")"
+if [ -n "${FORCE_COLOR:-}" ]; then
+  unset NO_COLOR
+fi
 
 PW_EXTRA=()
 for arg in "$@"; do
@@ -23,6 +27,8 @@ for arg in "$@"; do
 done
 mkdir -p "$LOG_DIR" ".maestro-web/screenshots"
 
+echo "==> Playwright workers: ${PW_WORKERS:-auto:$AUTO_WORKERS} (fully parallel: ${PW_FULLY_PARALLEL:-on})"
+
 if [ ! -f "$FIXTURE_23ANDME" ]; then
   echo "Missing required web test fixture: $FIXTURE_23ANDME" >&2
   echo "Run ./tools/fetch_test_data.sh to download repo test fixtures, then rerun ./test-web.sh." >&2
@@ -36,8 +42,8 @@ cleanup() {
 trap cleanup EXIT
 
 if ! curl -sf "$WEB_URL" >/dev/null 2>&1; then
-  echo "==> Starting Expo web on :$PORT (logs: $LOG_DIR/web.log)"
-  (npx expo start --web --port "$PORT" >"$LOG_DIR/web.log" 2>&1) &
+	echo "==> Starting Expo web on :$PORT (logs: $LOG_DIR/web.log)"
+	(EXPO_PUBLIC_DISABLE_ANALYTICS=1 npx expo start --web --port "$PORT" >"$LOG_DIR/web.log" 2>&1) &
   WEB_PID=$!
   for _ in {1..90}; do
     curl -sf "$WEB_URL" >/dev/null 2>&1 && break
@@ -54,14 +60,14 @@ echo "==> Checking monty artifact freshness"
 node ./scripts/check-monty-artifacts.mjs
 
 echo "==> Ensuring Playwright browsers are installed"
-if ! npx playwright install chromium; then
+if ! env -u NO_COLOR -u FORCE_COLOR npx playwright install chromium; then
   echo "Playwright Chromium install failed. Fix Playwright/browser setup and rerun." >&2
   exit 1
 fi
 
-SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-apol1.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
+SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-apol1.spec.ts .maestro-web/lab-format-matrix.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
 echo "==> Running Playwright specs: ${SPECS[*]}"
-if WEB_URL="$WEB_URL" npx playwright test \
+if WEB_URL="$WEB_URL" env -u NO_COLOR -u FORCE_COLOR npx playwright test \
     --config=.maestro-web/playwright.config.ts \
     ${PW_EXTRA[@]+"${PW_EXTRA[@]}"} \
     "${SPECS[@]}"; then

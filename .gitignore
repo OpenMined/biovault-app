@@ -9,6 +9,7 @@ node_modules/
 # Expo
 .expo/
 dist/
+dist-cloudflare/
 web-build/
 expo-env.d.ts
 
@@ -101,10 +102,14 @@ Thumbs.db
 
 # Caches and temporary files
 .cache/
+cache/
 .tmp/
 .temp/
 coverage/
 .npm/
+.turbo/
+.parcel-cache/
+.eslintcache
 .metro-health-check*
 
 # Build artifacts
