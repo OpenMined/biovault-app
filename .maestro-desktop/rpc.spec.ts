@@ -40,7 +40,9 @@ function open(): Promise<{
 
 test('rpc: drive app via WebSocket (no UI)', async () => {
 	const c = await open()
-	const first = await c.next()
+	c.send({ type: 'command', command: { type: 'reset' } })
+	let first = await c.next()
+	if (first.type === 'state' && first.state.screen !== 'warning') first = await c.next()
 	expect(first.type).toBe('state')
 	if (first.type !== 'state') throw new Error('unreachable')
 	expect(first.state.screen).toBe('warning')

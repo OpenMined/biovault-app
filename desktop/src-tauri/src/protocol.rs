@@ -36,11 +36,28 @@ pub enum Command {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
-    Command { command: Command },
+    Command {
+        command: Command,
+    },
+    LabRequest {
+        id: String,
+        action: String,
+        payload: serde_json::Value,
+    },
 }
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
-    State { state: AppState },
+    State {
+        state: AppState,
+    },
+    LabResponse {
+        id: String,
+        ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        value: Option<serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }

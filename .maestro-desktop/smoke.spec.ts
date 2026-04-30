@@ -1,8 +1,34 @@
 import { test, expect } from '@playwright/test'
+import WebSocket from 'ws'
 
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:1420'
+const TOKEN = 'biovault-dev-token'
+const WS_URL = `ws://127.0.0.1:17890/ws?token=${TOKEN}`
+
+async function resetDesktopState() {
+	await new Promise<void>((resolve, reject) => {
+		const ws = new WebSocket(WS_URL)
+		const timeout = setTimeout(() => {
+			ws.close()
+			reject(new Error('timed out resetting desktop state'))
+		}, 10_000)
+		ws.on('open', () => {
+			ws.send(JSON.stringify({ type: 'command', command: { type: 'reset' } }))
+		})
+		ws.on('message', (data) => {
+			const msg = JSON.parse(data.toString())
+			if (msg.type === 'state' && msg.state?.screen === 'warning') {
+				clearTimeout(timeout)
+				ws.close()
+				resolve()
+			}
+		})
+		ws.on('error', reject)
+	})
+}
 
 test('desktop smoke', async ({ page }) => {
+	await resetDesktopState()
 	const errors: string[] = []
 	page.on('pageerror', (err) => errors.push(err.message))
 	page.on('console', (msg) => {

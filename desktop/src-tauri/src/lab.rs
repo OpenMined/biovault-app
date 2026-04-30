@@ -4,7 +4,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bioscript_ffi::{run_file_request, RunFileRequest};
+use bioscript_ffi::{
+    run_file_request, run_variant_yaml_request, RunFileRequest, RunVariantYamlRequest,
+    RunVariantYamlResult,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
@@ -33,6 +36,8 @@ pub struct DesktopRunAssayRequest {
 #[serde(rename_all = "camelCase")]
 pub struct DesktopRunAssayResult {
     output_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observations: Option<Vec<bioscript_ffi::VariantObservationResult>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -68,16 +73,20 @@ fn metadata_for_path(path: PathBuf) -> Result<DesktopLabFile, String> {
 
 #[tauri::command]
 pub async fn lab_pick_files(app: AppHandle) -> Result<Vec<DesktopLabFile>, String> {
-    let paths = tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_files())
-        .await
-        .map_err(|error| format!("file picker failed: {error}"))?;
+    let paths =
+        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_files())
+            .await
+            .map_err(|error| format!("file picker failed: {error}"))?;
     let Some(paths) = paths else {
         return Ok(Vec::new());
     };
 
     paths
         .into_iter()
-        .map(|path| path.into_path().map_err(|error| format!("invalid path: {error}")))
+        .map(|path| {
+            path.into_path()
+                .map_err(|error| format!("invalid path: {error}"))
+        })
         .map(|path| path.and_then(metadata_for_path))
         .collect()
 }
@@ -117,10 +126,104 @@ pub async fn lab_read_file_text(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn lab_run_assay(request: DesktopRunAssayRequest) -> Result<DesktopRunAssayResult, String> {
+pub async fn lab_run_assay(
+    request: DesktopRunAssayRequest,
+) -> Result<DesktopRunAssayResult, String> {
     tauri::async_runtime::spawn_blocking(move || run_assay_blocking(request))
         .await
         .map_err(|error| format!("run failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn lab_run_variant_yaml(
+    request: DesktopRunAssayRequest,
+) -> Result<DesktopRunAssayResult, String> {
+    tauri::async_runtime::spawn_blocking(move || run_variant_yaml_blocking(request))
+        .await
+        .map_err(|error| format!("run failed: {error}"))?
+}
+
+pub async fn handle_ws_lab_request(
+    action: &str,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    match action {
+        "stat_paths" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                paths: Vec<String>,
+            }
+            let payload: Payload = serde_json::from_value(payload)
+                .map_err(|error| format!("invalid stat_paths payload: {error}"))?;
+            serde_json::to_value(lab_stat_paths(payload.paths).await?)
+                .map_err(|error| format!("encode stat_paths response: {error}"))
+        }
+        "read_file_bytes" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                path: String,
+            }
+            let payload: Payload = serde_json::from_value(payload)
+                .map_err(|error| format!("invalid read_file_bytes payload: {error}"))?;
+            serde_json::to_value(lab_read_file_bytes(payload.path).await?)
+                .map_err(|error| format!("encode read_file_bytes response: {error}"))
+        }
+        "read_file_text" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                path: String,
+            }
+            let payload: Payload = serde_json::from_value(payload)
+                .map_err(|error| format!("invalid read_file_text payload: {error}"))?;
+            serde_json::to_value(lab_read_file_text(payload.path).await?)
+                .map_err(|error| format!("encode read_file_text response: {error}"))
+        }
+        "download_url_file" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                request: UrlFileRequest,
+            }
+            let payload: Payload = serde_json::from_value(payload)
+                .map_err(|error| format!("invalid download_url_file payload: {error}"))?;
+            let cache_dir = std::env::temp_dir()
+                .join("biovault-desktop")
+                .join("lab-url-files");
+            let file = tauri::async_runtime::spawn_blocking(move || {
+                download_url_file_blocking(cache_dir, payload.request)
+            })
+            .await
+            .map_err(|error| format!("download failed: {error}"))??;
+            serde_json::to_value(file).map_err(|error| format!("encode download response: {error}"))
+        }
+        "run_assay" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                request: DesktopRunAssayRequest,
+            }
+            let payload: Payload = serde_json::from_value(payload)
+                .map_err(|error| format!("invalid run_assay payload: {error}"))?;
+            let result =
+                tauri::async_runtime::spawn_blocking(move || run_assay_blocking(payload.request))
+                    .await
+                    .map_err(|error| format!("run failed: {error}"))??;
+            serde_json::to_value(result).map_err(|error| format!("encode run response: {error}"))
+        }
+        "run_variant_yaml" => {
+            #[derive(serde::Deserialize)]
+            struct Payload {
+                request: DesktopRunAssayRequest,
+            }
+            let payload: Payload = serde_json::from_value(payload)
+                .map_err(|error| format!("invalid run_variant_yaml payload: {error}"))?;
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                run_variant_yaml_blocking(payload.request)
+            })
+            .await
+            .map_err(|error| format!("run failed: {error}"))??;
+            serde_json::to_value(result).map_err(|error| format!("encode run response: {error}"))
+        }
+        other => Err(format!("unknown lab action: {other}")),
+    }
 }
 
 fn run_assay_blocking(request: DesktopRunAssayRequest) -> Result<DesktopRunAssayResult, String> {
@@ -149,9 +252,15 @@ fn run_assay_blocking(request: DesktopRunAssayRequest) -> Result<DesktopRunAssay
         trace_report_path: None,
         timing_report_path: None,
         input_format: Some(request.input_format),
-        input_index: request.input_index.map(|path| root_relative_path(&root, &PathBuf::from(path))),
-        reference_file: request.reference_file.map(|path| root_relative_path(&root, &PathBuf::from(path))),
-        reference_index: request.reference_index.map(|path| root_relative_path(&root, &PathBuf::from(path))),
+        input_index: request
+            .input_index
+            .map(|path| root_relative_path(&root, &PathBuf::from(path))),
+        reference_file: request
+            .reference_file
+            .map(|path| root_relative_path(&root, &PathBuf::from(path))),
+        reference_index: request
+            .reference_index
+            .map(|path| root_relative_path(&root, &PathBuf::from(path))),
         allow_md5_mismatch: Some(true),
         auto_index: Some(false),
         cache_dir: None,
@@ -163,7 +272,28 @@ fn run_assay_blocking(request: DesktopRunAssayRequest) -> Result<DesktopRunAssay
 
     let output_text = fs::read_to_string(&output_path).unwrap_or_default();
     let _ = fs::remove_file(&output_path);
-    Ok(DesktopRunAssayResult { output_text })
+    Ok(DesktopRunAssayResult {
+        output_text,
+        observations: None,
+    })
+}
+
+fn run_variant_yaml_blocking(
+    request: DesktopRunAssayRequest,
+) -> Result<DesktopRunAssayResult, String> {
+    let RunVariantYamlResult { observations } = run_variant_yaml_request(RunVariantYamlRequest {
+        yaml_path: request.assay_path,
+        genome_path: request.genome_path,
+        input_format: Some(request.input_format),
+        input_index: request.input_index,
+        reference_file: request.reference_file,
+        reference_index: request.reference_index,
+        allow_md5_mismatch: Some(true),
+    })?;
+    Ok(DesktopRunAssayResult {
+        output_text: String::new(),
+        observations: Some(observations),
+    })
 }
 
 fn root_relative_path(root: &std::path::Path, path: &std::path::Path) -> String {
@@ -173,11 +303,19 @@ fn root_relative_path(root: &std::path::Path, path: &std::path::Path) -> String 
         .to_string()
 }
 
-fn download_url_file_blocking(cache_dir: PathBuf, request: UrlFileRequest) -> Result<DesktopLabFile, String> {
-    fs::create_dir_all(&cache_dir)
-        .map_err(|error| format!("failed to create cache dir {}: {error}", cache_dir.display()))?;
+fn download_url_file_blocking(
+    cache_dir: PathBuf,
+    request: UrlFileRequest,
+) -> Result<DesktopLabFile, String> {
+    fs::create_dir_all(&cache_dir).map_err(|error| {
+        format!(
+            "failed to create cache dir {}: {error}",
+            cache_dir.display()
+        )
+    })?;
     let effective_url = raw_download_url(&request.url);
-    let url = reqwest::Url::parse(&effective_url).map_err(|error| format!("invalid URL: {error}"))?;
+    let url =
+        reqwest::Url::parse(&effective_url).map_err(|error| format!("invalid URL: {error}"))?;
     let name = request
         .name
         .filter(|name| !name.trim().is_empty())
@@ -188,16 +326,24 @@ fn download_url_file_blocking(cache_dir: PathBuf, request: UrlFileRequest) -> Re
                 .unwrap_or("downloaded-lab-file")
                 .to_owned()
         });
-    let file_name = format!("{}-{}", stable_hash(effective_url.as_bytes()), sanitize_file_name(&name));
+    let file_name = format!(
+        "{}-{}",
+        stable_hash(effective_url.as_bytes()),
+        sanitize_file_name(&name)
+    );
     let path = cache_dir.join(file_name);
 
     if !path.exists() {
-        let response = reqwest::blocking::get(url).map_err(|error| format!("download request failed: {error}"))?;
+        let response = reqwest::blocking::get(url)
+            .map_err(|error| format!("download request failed: {error}"))?;
         if !response.status().is_success() {
             return Err(format!("download failed with HTTP {}", response.status()));
         }
-        let bytes = response.bytes().map_err(|error| format!("download body failed: {error}"))?;
-        fs::write(&path, bytes).map_err(|error| format!("failed to write cache file {}: {error}", path.display()))?;
+        let bytes = response
+            .bytes()
+            .map_err(|error| format!("download body failed: {error}"))?;
+        fs::write(&path, bytes)
+            .map_err(|error| format!("failed to write cache file {}: {error}", path.display()))?;
     }
 
     metadata_for_path(path)
@@ -220,7 +366,13 @@ fn raw_download_url(url: &str) -> String {
 
 fn sanitize_file_name(name: &str) -> String {
     name.chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -258,6 +410,7 @@ mod tests {
     #[derive(Deserialize)]
     struct ScenarioAssay {
         path: String,
+        language: String,
     }
 
     #[derive(Deserialize)]
@@ -299,7 +452,10 @@ mod tests {
     fn desktop_scenario(id: &str) -> Scenario {
         let scenario = shared_scenario(id);
         assert!(
-            scenario.platforms.iter().any(|platform| platform == "desktop"),
+            scenario
+                .platforms
+                .iter()
+                .any(|platform| platform == "desktop"),
             "{id} must be marked for desktop"
         );
         scenario
@@ -342,19 +498,28 @@ mod tests {
             return;
         }
 
-        let result = run_assay_blocking(DesktopRunAssayRequest {
+        let request = DesktopRunAssayRequest {
             assay_path: assay_path.display().to_string(),
             genome_path: genome_path.display().to_string(),
             input_format: desktop_input_format(&genome.kind).to_owned(),
             input_index: input_index_path(&repo, genome),
             reference_file: reference_path(&repo, genome),
             reference_index: reference_index_path(&repo, genome),
-        })
+        };
+        let result = if assay.language == "yaml" {
+            run_variant_yaml_blocking(request)
+        } else {
+            run_assay_blocking(request)
+        }
         .unwrap_or_else(|err| panic!("desktop {id} run: {err}"));
+        let combined_output = format!(
+            "{}\n{}",
+            result.output_text,
+            serde_json::to_string(&result.observations).unwrap_or_default()
+        );
         assert!(
-            result.output_text.contains(&scenario.assertion.contains),
-            "{}",
-            result.output_text
+            combined_output.contains(&scenario.assertion.contains),
+            "{combined_output}"
         );
 
         if let Some(path) = generated_zip {
@@ -412,7 +577,8 @@ mod tests {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("genome.txt");
-        zip.start_file(name, options).expect("start zip fixture file");
+        zip.start_file(name, options)
+            .expect("start zip fixture file");
         std::io::copy(
             &mut fs::File::open(source_path).expect("open zip source"),
             &mut zip,
@@ -453,7 +619,9 @@ mod tests {
         }
         let files = lab_stat_paths(vec![path.display().to_string()]);
         let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
-        let files = runtime.block_on(files).expect("desktop drag/drop stat paths");
+        let files = runtime
+            .block_on(files)
+            .expect("desktop drag/drop stat paths");
         assert_eq!(files[0].name, genome.expect_display_name);
     }
 
@@ -480,5 +648,25 @@ mod tests {
     #[test]
     fn desktop_lab_runs_shared_apol1_vcf_scenario() {
         run_shared_desktop_scenario("apol1-vcf");
+    }
+
+    #[test]
+    fn desktop_lab_runs_shared_yaml_apol1_text_scenario() {
+        run_shared_desktop_scenario("yaml-apol1-text");
+    }
+
+    #[test]
+    fn desktop_lab_runs_shared_yaml_apol1_zip_scenario() {
+        run_shared_desktop_scenario("yaml-apol1-zip");
+    }
+
+    #[test]
+    fn desktop_lab_runs_shared_yaml_apol1_cram_scenario() {
+        run_shared_desktop_scenario("yaml-apol1-cram");
+    }
+
+    #[test]
+    fn desktop_lab_runs_shared_yaml_apol1_vcf_scenario() {
+        run_shared_desktop_scenario("yaml-apol1-vcf");
     }
 }

@@ -1,9 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod lab;
 mod protocol;
 mod server;
 mod state;
-mod lab;
 
 use protocol::{AppState, Command, ServerMsg};
 use state::Store;
@@ -43,15 +43,18 @@ fn main() {
             lab::lab_read_file_bytes,
             lab::lab_read_file_text,
             lab::lab_download_url_file,
-            lab::lab_run_assay
+            lab::lab_run_assay,
+            lab::lab_run_variant_yaml
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let store = store.clone();
             tauri::async_runtime::spawn(async move {
                 let mut rx = store.subscribe();
-                while let Ok(ServerMsg::State { state }) = rx.recv().await {
-                    let _ = app_handle.emit("app-state", state);
+                while let Ok(msg) = rx.recv().await {
+                    if let ServerMsg::State { state } = msg {
+                        let _ = app_handle.emit("app-state", state);
+                    }
                 }
             });
             Ok(())

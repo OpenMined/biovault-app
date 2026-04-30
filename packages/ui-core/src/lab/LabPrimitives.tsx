@@ -9,6 +9,7 @@ export function LabFileIngress({
   description,
   disabled,
   onAction,
+  onPathDrop,
   title,
   active = false,
 }: {
@@ -16,6 +17,7 @@ export function LabFileIngress({
   description: string
   disabled?: boolean
   onAction?: () => void
+  onPathDrop?: (paths: string[]) => void
   title: string
   active?: boolean
 }) {
@@ -30,6 +32,20 @@ export function LabFileIngress({
         justifyContent: 'space-between',
         gap: omSpacing.l,
         backgroundColor: active ? 'rgba(255,255,255,0.08)' : 'rgba(83,190,169,0.06)',
+      }}
+      onDragOver={(event) => {
+        if (!onPathDrop) return
+        event.preventDefault()
+      }}
+      onDrop={(event) => {
+        if (!onPathDrop) return
+        event.preventDefault()
+        const text = event.dataTransfer.getData('text/plain')
+        const paths = text
+          .split(/\r?\n/)
+          .map((path) => path.trim())
+          .filter(Boolean)
+        if (paths.length) onPathDrop(paths)
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: omSpacing.s }}>

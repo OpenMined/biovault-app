@@ -292,8 +292,11 @@ jobs:
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
 
-      - name: Run desktop tests
+      - name: Run desktop UI tests
         run: xvfb-run -a ./test-desktop.sh
+
+      - name: Run native Rust Lab tests
+        run: ./test-lib.sh
 
       - name: Upload desktop Linux artifacts
         if: always()
@@ -377,8 +380,11 @@ jobs:
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
 
-      - name: Run desktop tests
+      - name: Run desktop UI tests
         run: ./test-desktop.sh
+
+      - name: Run native Rust Lab tests
+        run: ./test-lib.sh
 
       - name: Upload desktop macOS artifacts
         if: always()
