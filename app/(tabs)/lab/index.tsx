@@ -4,18 +4,13 @@ import {
 	appendAssay,
 	classifyLabFile,
 	createAssayFromFile,
-	createGenomeFromPrimaryFile,
 	createUnknownEntry,
-	genomeBytesTotal,
-	genomeDisplayName,
-	genomeKindLabel,
 	humanLabSize,
-	isGenomeComplete,
-	missingGenomeSlots,
-	pairCompanionFile,
 	sortFilesForIngestion,
 } from '@/lib/lab/file-model'
 import { createFileLabFileAdapter } from '@/lib/lab/adapters/file-adapter'
+import { createLabFilePickerAdapter } from '@/lib/lab/adapters/file-picker'
+import type { LabFileRef } from '@/lib/lab/core/files'
 import {
 	createLabAssayRef,
 	createLabGenomeRefFromPrimary,
@@ -23,6 +18,9 @@ import {
 	type LabGenomeRef,
 } from '@/lib/lab/core/refs'
 import {
+	labGenomeBytesTotal,
+	labGenomeDisplayName,
+	labGenomeKindLabel,
 	isLabGenomeComplete,
 	missingLabGenomeSlots,
 } from '@/lib/lab/core/genomes'
@@ -40,7 +38,6 @@ import {
 import { runLabAssayRef } from '@/lib/lab/runner'
 import type {
 	Assay,
-	Genome,
 	RunResult,
 	UnknownEntry,
 } from '@/lib/lab/types'
@@ -60,8 +57,8 @@ export default function LabScreen() {
 	const params = useLocalSearchParams<{ assay?: string | string[]; example?: string | string[] }>()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const fileAdapterRef = useRef(createFileLabFileAdapter())
-	const [genomes, setGenomes] = useState<Genome[]>([])
-	const [genomeRefsById, setGenomeRefsById] = useState<Record<string, LabGenomeRef>>({})
+	const filePickerRef = useRef(createLabFilePickerAdapter())
+	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [assays, setAssays] = useState<Assay[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
 	const [selectedGenomeId, setSelectedGenomeId] = useState<string | null>(null)
@@ -122,23 +119,14 @@ export default function LabScreen() {
 			return
 		}
 		if (kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip') {
-			const genome = createGenomeFromPrimaryFile(file, kind)
 			const genomeRef = createLabGenomeRefFromPrimary(ref)
 			if (genomeRef) {
-				setGenomeRefsById((prev) => ({
-					...prev,
-					[genome.id]: { ...genomeRef, id: genome.id },
-				}))
+				setGenomes((prev) => [...prev, genomeRef])
+				setSelectedGenomeId((current) => current ?? genomeRef.id)
 			}
-			setGenomes((prev) => [...prev, genome])
-			setSelectedGenomeId((current) => current ?? genome.id)
 			return
 		}
-		setGenomeRefsById((prev) => {
-			const next = pairLabGenomeCompanionRef(Object.values(prev), ref)
-			return Object.fromEntries(next.map((genome) => [genome.id, genome]))
-		})
-		setGenomes((prev) => pairCompanionFile(prev, file, kind))
+		setGenomes((prev) => pairLabGenomeCompanionRef(prev, ref))
 	}, [addAssay])
 
 	const ingestMany = useCallback(
@@ -202,68 +190,19 @@ export default function LabScreen() {
 	}, [ingestMany, trackEvent])
 
 	useEffect(() => {
-		if (Platform.OS !== 'web') return
-		let depth = 0
-		const hasFiles = (e: DragEvent) =>
-			Array.from(e.dataTransfer?.types ?? []).includes('Files')
-		const stop = (e: Event) => {
-			e.preventDefault()
-			e.stopPropagation()
-		}
-		const onEnter = (e: DragEvent) => {
-			if (!hasFiles(e)) return
-			stop(e)
-			depth += 1
-			setDragActive(true)
-		}
-		const onOver = (e: DragEvent) => {
-			if (!hasFiles(e)) return
-			stop(e)
-			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-		}
-		const onLeave = (e: DragEvent) => {
-			if (!hasFiles(e)) return
-			stop(e)
-			depth = Math.max(0, depth - 1)
-			if (depth === 0) setDragActive(false)
-		}
-		const onDrop = (e: DragEvent) => {
-			stop(e)
-			depth = 0
-			setDragActive(false)
-			const files = Array.from(e.dataTransfer?.files ?? [])
-			ingestMany(files)
-		}
-		window.addEventListener('dragenter', onEnter)
-		window.addEventListener('dragover', onOver)
-		window.addEventListener('dragleave', onLeave)
-		window.addEventListener('drop', onDrop)
-		return () => {
-			window.removeEventListener('dragenter', onEnter)
-			window.removeEventListener('dragover', onOver)
-			window.removeEventListener('dragleave', onLeave)
-			window.removeEventListener('drop', onDrop)
-		}
+		return filePickerRef.current.subscribeToFileDrops({
+			onActiveChange: setDragActive,
+			onFiles: ingestMany,
+		})
 	}, [ingestMany])
 
-	const openPicker = useCallback(() => {
-		if (Platform.OS !== 'web') return
-		const input = document.createElement('input')
-		input.type = 'file'
-		input.multiple = true
-		input.style.display = 'none'
-		input.onchange = () => {
-			const files = Array.from(input.files ?? [])
-			ingestMany(files)
-			document.body.removeChild(input)
-		}
-		document.body.appendChild(input)
-		input.click()
+	const openPicker = useCallback(async () => {
+		const files = await filePickerRef.current.pickFiles()
+		if (files.length) ingestMany(files)
 	}, [ingestMany])
 
 	const reset = useCallback(() => {
 		setGenomes([])
-		setGenomeRefsById({})
 		setAssays([])
 		setUnknowns([])
 		setSelectedGenomeId(null)
@@ -273,7 +212,6 @@ export default function LabScreen() {
 
 	const removeGenome = useCallback((id: string) => {
 		setGenomes((prev) => prev.filter((g) => g.id !== id))
-		setGenomeRefsById((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id)))
 		setSelectedGenomeId((curr) => (curr === id ? null : curr))
 	}, [])
 
@@ -294,24 +232,23 @@ export default function LabScreen() {
 		() => assays.find((a) => a.id === selectedAssayId) ?? null,
 		[assays, selectedAssayId],
 	)
-	const selectedGenomeRef = selectedGenome ? genomeRefsById[selectedGenome.id] ?? null : null
 
 	const runDisabledReason = useMemo(
 		() => {
-			if (!selectedGenomeRef) return 'Pick a genome above.'
+			if (!selectedGenome) return 'Pick a genome above.'
 			if (!selectedAssay) return 'Pick an assay above.'
-			if (!isLabGenomeComplete(selectedGenomeRef)) {
-				return `Genome is missing: ${missingLabGenomeSlots(selectedGenomeRef).join(', ')}`
+			if (!isLabGenomeComplete(selectedGenome)) {
+				return `Genome is missing: ${missingLabGenomeSlots(selectedGenome).join(', ')}`
 			}
 			return null
 		},
-		[selectedAssay, selectedGenomeRef],
+		[selectedAssay, selectedGenome],
 	)
 
 	const runBlocked = runDisabledReason !== null || run.status === 'running'
 
 	const executeRun = useCallback(async () => {
-		if (!selectedGenome || !selectedGenomeRef || !selectedAssay) return
+		if (!selectedGenome || !selectedAssay) return
 		setRun({ status: 'running' })
 		trackEvent('lab_run_started', {
 			assayLanguage: selectedAssay.language,
@@ -322,7 +259,7 @@ export default function LabScreen() {
 			const assayRef = fileAdapterRef.current.fromPlatformFiles([selectedAssay.file], selectedAssay.source ? 'url' : 'local')[0]
 			if (!assayRef) throw new Error(`Could not create assay ref for ${selectedAssay.name}`)
 			const success = await runLabAssayRef(
-				selectedGenomeRef,
+				selectedGenome,
 				createLabAssayRef(assayRef, selectedAssay.language, selectedAssay.source),
 				fileAdapterRef.current,
 			)
@@ -344,7 +281,7 @@ export default function LabScreen() {
 				error: message,
 			})
 		}
-	}, [selectedAssay, selectedGenome, selectedGenomeRef, trackEvent])
+	}, [selectedAssay, selectedGenome, trackEvent])
 
 	// === Render ==============================================================
 
@@ -466,7 +403,7 @@ export default function LabScreen() {
 							</OMText>
 							<OMText variant="body" style={styles.runSummaryText}>
 								{selectedGenome
-									? `Genome: ${genomeDisplayName(selectedGenome)}`
+									? `Genome: ${labGenomeDisplayName(selectedGenome)}`
 									: 'No genome picked'}
 								{selectedAssay ? ` · Assay: ${selectedAssay.name}` : ' · No assay picked'}
 							</OMText>
@@ -744,13 +681,13 @@ function GenomeCard({
 	onSelect,
 	onRemove,
 }: {
-	genome: Genome
+	genome: LabGenomeRef
 	selected: boolean
 	onSelect: () => void
 	onRemove: () => void
 }) {
-	const complete = isGenomeComplete(genome)
-	const missing = missingGenomeSlots(genome)
+	const complete = isLabGenomeComplete(genome)
+	const missing = missingLabGenomeSlots(genome)
 	return (
 		<Pressable
 			onPress={onSelect}
@@ -760,7 +697,7 @@ function GenomeCard({
 				<View style={styles.cardTitleRow}>
 					<OMText variant="subtitle" style={styles.cardTitle}>
 						{selected ? '● ' : '○ '}
-						{genomeDisplayName(genome)}
+						{labGenomeDisplayName(genome)}
 					</OMText>
 					<StatusPill ok={complete} />
 				</View>
@@ -771,7 +708,7 @@ function GenomeCard({
 				</Pressable>
 			</View>
 			<OMText variant="caption" style={styles.cardKind}>
-				{genomeKindLabel(genome)} · {humanLabSize(genomeBytesTotal(genome))}
+				{labGenomeKindLabel(genome)} · {humanLabSize(labGenomeBytesTotal(genome))}
 			</OMText>
 
 			{genome.kind === 'cram' ? (
@@ -805,7 +742,7 @@ function SlotRow({
 	required,
 }: {
 	label: string
-	file?: File
+	file?: LabFileRef
 	required?: boolean
 }) {
 	const filled = Boolean(file)

@@ -1,0 +1,12 @@
+export type FileKind =
+	| 'cram'
+	| 'crai'
+	| 'fasta'
+	| 'fai'
+	| 'vcf_gz'
+	| 'tbi'
+	| 'genotype_text'
+	| 'zip'
+	| 'assay_python'
+	| 'assay_yaml'
+	| 'unknown'

@@ -1,6 +1,6 @@
-import { classifyLabFile, makeLabId, stripGenomeSuffix } from '@/lib/lab/file-model'
+import { classifyLabFile, makeLabId, stripGenomeSuffix } from '@/lib/lab/core/file-utils'
+import type { FileKind } from '@/lib/lab/core/file-kind'
 import type { LabFileRef } from '@/lib/lab/core/files'
-import type { FileKind } from '@/lib/lab/types'
 
 export type LabFileGroupPlan = {
 	groupId: string

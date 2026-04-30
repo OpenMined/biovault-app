@@ -27,6 +27,7 @@ import {
 } from '@/lib/lab/assay-catalog'
 import { normalizeLabSearchParam } from '@/lib/lab/assay-loader'
 import { createWebLabFileAdapter } from '@/lib/lab/adapters/file-adapter.web'
+import { createLabFilePickerAdapter } from '@/lib/lab/adapters/file-picker'
 import {
 	buildLabFileGroupPlan,
 	isPrimaryGenomeFileKind,
@@ -452,6 +453,7 @@ export default function LabScreen() {
 	const params = useLocalSearchParams<{ run?: string | string[] }>()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const fileAdapterRef = useRef(createWebLabFileAdapter())
+	const filePickerRef = useRef(createLabFilePickerAdapter())
 
 	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
@@ -689,46 +691,12 @@ export default function LabScreen() {
 	}, [])
 
 	useEffect(() => {
-		if (Platform.OS !== 'web') return
-		let depth = 0
-		const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
-		const stop = (e: Event) => {
-			e.preventDefault()
-			e.stopPropagation()
-		}
-		const onEnter = (e: DragEvent) => {
-			if (!hasFiles(e)) return
-			stop(e)
-			depth += 1
-			setDragActive(true)
-		}
-		const onOver = (e: DragEvent) => {
-			if (!hasFiles(e)) return
-			stop(e)
-			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-		}
-		const onLeave = (e: DragEvent) => {
-			if (!hasFiles(e)) return
-			stop(e)
-			depth = Math.max(0, depth - 1)
-			if (depth === 0) setDragActive(false)
-		}
-		const onDrop = (e: DragEvent) => {
-			stop(e)
-			depth = 0
-			setDragActive(false)
-			void ingestDroppedItems(e.dataTransfer?.items, Array.from(e.dataTransfer?.files ?? []))
-		}
-		window.addEventListener('dragenter', onEnter)
-		window.addEventListener('dragover', onOver)
-		window.addEventListener('dragleave', onLeave)
-		window.addEventListener('drop', onDrop)
-		return () => {
-			window.removeEventListener('dragenter', onEnter)
-			window.removeEventListener('dragover', onOver)
-			window.removeEventListener('dragleave', onLeave)
-			window.removeEventListener('drop', onDrop)
-		}
+		return filePickerRef.current.subscribeToFileDrops({
+			onActiveChange: setDragActive,
+			onFiles: (files, items) => {
+				void ingestDroppedItems(items, files)
+			},
+		})
 	}, [ingestDroppedItems])
 
 	const persistDroppedHandles = useCallback(async () => {
@@ -942,19 +910,9 @@ export default function LabScreen() {
 		setHandlePersistMessage(null)
 	}, [refreshSavedHandles])
 
-	const openPicker = useCallback(() => {
-		if (Platform.OS !== 'web') return
-		const input = document.createElement('input')
-		input.type = 'file'
-		input.multiple = true
-		input.style.display = 'none'
-		input.onchange = () => {
-			const files = Array.from(input.files ?? [])
-			ingestMany(files)
-			document.body.removeChild(input)
-		}
-		document.body.appendChild(input)
-		input.click()
+	const openPicker = useCallback(async () => {
+		const files = await filePickerRef.current.pickFiles()
+		if (files.length) ingestMany(files)
 	}, [ingestMany])
 
 	const clearGenome = useCallback(() => {

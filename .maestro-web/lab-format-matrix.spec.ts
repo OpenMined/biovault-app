@@ -3,7 +3,7 @@ import path from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { zipSync, strToU8 } from 'fflate'
 import { test, expect, type Page } from '@playwright/test'
-import { labFormatMatrixScenarios } from '../lib/lab/core/test-scenarios'
+import { labFormatMatrixScenarios } from '../tests/lab-scenarios'
 
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:8081'
 const REPO_ROOT = path.resolve(__dirname, '..')

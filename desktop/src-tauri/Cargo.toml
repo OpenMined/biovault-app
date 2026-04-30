@@ -8,14 +8,18 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9.34"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 axum = { version = "0.7", features = ["ws"] }
 futures-util = "0.3"
+bioscript-ffi = { path = "../../bioscript/rust/bioscript-ffi" }
+reqwest = { version = "0.13.2", features = ["blocking"] }
+zip = "2.4.2"
 
 # Reuse existing Rust crates. Uncomment as you wire commands up.
-# bioscript-core = { path = "../../bioscript/rust/bioscript-core" }
 # bioscript-runtime = { path = "../../bioscript/rust/bioscript-runtime" }
 
 [features]

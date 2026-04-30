@@ -1,4 +1,4 @@
-import type { FileKind } from '@/lib/lab/types'
+import type { FileKind } from '@/lib/lab/core/file-kind'
 
 export type LabFileSource = 'bundled' | 'local' | 'url'
 

@@ -1,4 +1,4 @@
-import { makeLabId, stripGenomeSuffix } from '@/lib/lab/file-model'
+import { makeLabId, stripGenomeSuffix } from '@/lib/lab/core/file-utils'
 import type { LabFileRef } from '@/lib/lab/core/files'
 
 export type LabGenomeRef =

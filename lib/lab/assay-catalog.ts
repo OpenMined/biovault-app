@@ -1,4 +1,4 @@
-import type { FileKind } from '@/lib/lab/types'
+import type { FileKind } from '@/lib/lab/core/file-kind'
 import { loadBundledApol1Script } from '@/lib/lab/bundled-assay-assets'
 
 export type AssayCategory = 'risk' | 'pharmacogenomics' | 'ancestry' | 'panel' | 'demo'

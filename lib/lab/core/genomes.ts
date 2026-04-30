@@ -1,5 +1,6 @@
-import type { AssayInputFormat } from '@/lib/lab/assay-catalog'
 import type { LabGenomeRef } from '@/lib/lab/core/refs'
+
+export type AssayInputFormat = 'cram' | 'vcf_gz' | 'genotype_text' | 'zip'
 
 export function labGenomeDisplayName(genome: LabGenomeRef): string {
 	return genome.primary.name

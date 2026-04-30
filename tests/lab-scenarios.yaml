@@ -1,0 +1,189 @@
+# Shared Lab scenario DSL.
+#
+# Platform drivers decide how to execute each step:
+# - web: Playwright DOM/file APIs
+# - desktop: Tauri/Rust commands and path-backed files
+# - mobile: Maestro/document-picker flows
+#
+# The DSL describes what should happen, not how a platform performs it.
+
+fixtures:
+  apol1_python_assay: exvitae/assays/risk/APOL1/apol1.py
+  apol1_text: tests/fixtures/apol1-g0g0.txt
+  apol1_cram:
+    - exvitae/assays/risk/APOL1/test-data/apol1.cram
+    - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+    - exvitae/assays/risk/APOL1/test-data/stub.fa
+    - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+  optional_vcf:
+    - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+    - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+
+scenarios:
+  - id: app-smoke
+    title: App loads and reaches Lab after disclaimer
+    platforms: [web, desktop, ios, android]
+    capabilities: [app_shell, disclaimer, lab_screen]
+    action: app_smoke
+    assert:
+      contains: Lab
+
+  - id: local-file-picker-23andme-zip
+    title: File picker selects 23andMe v5 zip
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, file_picker]
+    action: file_picker
+    genome:
+      source: local
+      kind: zip
+      files:
+        - test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+      expect_display_name: genome_hu50B3F5_v5_Full.zip
+    assert:
+      contains: 23andMe
+
+  - id: local-drag-drop-23andme-zip
+    title: Drag and drop selects 23andMe v5 zip
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, drag_drop]
+    action: drag_drop
+    genome:
+      source: local
+      kind: zip
+      files:
+        - test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+      expect_display_name: genome_hu50B3F5_v5_Full.zip
+    assert:
+      contains: 23andMe
+
+  - id: apol1-text
+    title: Python APOL1 assay runs against genotype text
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, local_assay, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: python
+      path: exvitae/assays/risk/APOL1/apol1.py
+    genome:
+      source: local
+      kind: genotype_text
+      files:
+        - tests/fixtures/apol1-g0g0.txt
+      expect_display_name: apol1-g0g0.txt
+    assert:
+      contains: G0/G0
+      not_contains:
+        - "Invalid exception type: 'Error'"
+        - Run failed
+
+  - id: apol1-zip
+    title: Python APOL1 assay runs against zipped genotype text
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, local_assay, generated_zip, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: python
+      path: exvitae/assays/risk/APOL1/apol1.py
+    genome:
+      source: local
+      kind: zip
+      files: []
+      zip_source_path: tests/fixtures/apol1-g0g0.txt
+      expect_display_name: apol1-g0g0.zip
+    assert:
+      contains: G0/G0
+      not_contains:
+        - "Invalid exception type: 'Error'"
+        - Run failed
+
+  - id: apol1-cram
+    title: Python APOL1 assay runs against indexed CRAM
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, local_assay, indexed_cram, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: python
+      path: exvitae/assays/risk/APOL1/apol1.py
+    genome:
+      source: local
+      kind: cram
+      files:
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+        - exvitae/assays/risk/APOL1/test-data/stub.fa
+        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+      expect_display_name: apol1.cram
+    assert:
+      contains: G0/G0
+      not_contains:
+        - "Invalid exception type: 'Error'"
+        - Run failed
+
+  - id: apol1-cram-smoke
+    title: APOL1 CRAM smoke does not produce runtime exception errors
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, local_assay, indexed_cram, assay_run, runtime_smoke]
+    action: run_assay
+    assay:
+      source: local
+      language: python
+      path: exvitae/assays/risk/APOL1/apol1.py
+    genome:
+      source: local
+      kind: cram
+      files:
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+        - exvitae/assays/risk/APOL1/test-data/stub.fa
+        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+      expect_display_name: apol1.cram
+    assert:
+      contains: G0/G0
+      not_contains:
+        - "Invalid exception type: 'Error'"
+        - Run failed
+
+  - id: apol1-vcf
+    title: Python APOL1 assay runs against indexed VCF when local test-data is present
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, local_assay, indexed_vcf, assay_run]
+    action: run_assay
+    optional: true
+    missing_message: missing optional VCF fixture; run ./tools/fetch_test_data.sh to enable
+    assay:
+      source: local
+      language: python
+      path: exvitae/assays/risk/APOL1/apol1.py
+    genome:
+      source: local
+      kind: vcf
+      files:
+        - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+        - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+      expect_display_name: NA06985.clean.vcf.gz
+    assert:
+      contains: G-/G-
+      not_contains:
+        - "Invalid exception type: 'Error'"
+        - Run failed
+
+  - id: web-persistent-local-handles
+    title: Restores saved local genome handles after refresh
+    platforms: [web]
+    capabilities: [browser_file_system_access, persistent_handles, refresh]
+    action: persistent_handles
+    notes: Chrome/File System Access API specific; desktop uses native paths instead.
+    genome:
+      source: local
+      kind: cram
+      files:
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+        - exvitae/assays/risk/APOL1/test-data/stub.fa
+        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+      expect_display_name: apol1.cram
+    assert:
+      contains: apol1.cram

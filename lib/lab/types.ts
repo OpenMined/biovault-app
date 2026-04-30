@@ -1,47 +1,7 @@
+import type { FileKind } from '@/lib/lab/core/file-kind'
 import type { VariantObservation } from '@/lib/lab/bioscript-runtime'
 
-export type FileKind =
-	| 'cram'
-	| 'crai'
-	| 'fasta'
-	| 'fai'
-	| 'vcf_gz'
-	| 'tbi'
-	| 'genotype_text'
-	| 'zip'
-	| 'assay_python'
-	| 'assay_yaml'
-	| 'unknown'
-
-export type CramGenome = {
-	id: string
-	kind: 'cram'
-	primary: File
-	crai?: File
-	fasta?: File
-	fai?: File
-}
-
-export type VcfGenome = {
-	id: string
-	kind: 'vcf'
-	primary: File
-	tbi?: File
-}
-
-export type TextGenome = {
-	id: string
-	kind: 'text'
-	primary: File
-}
-
-export type ZipGenome = {
-	id: string
-	kind: 'zip'
-	primary: File
-}
-
-export type Genome = CramGenome | VcfGenome | TextGenome | ZipGenome
+export type { FileKind }
 
 export type AssayLang = 'python' | 'yaml'
 

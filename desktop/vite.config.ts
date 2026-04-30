@@ -7,6 +7,7 @@ export default defineConfig({
   clearScreen: false,
   resolve: {
     alias: {
+      '@': path.resolve(__dirname, '..'),
       '@biovault/protocol': path.resolve(__dirname, '../packages/protocol/src'),
       '@biovault/ui-core': path.resolve(__dirname, '../packages/ui-core/src'),
     },

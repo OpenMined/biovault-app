@@ -3,8 +3,21 @@
 mod protocol;
 mod server;
 mod state;
+mod lab;
 
+use protocol::{AppState, Command, ServerMsg};
 use state::Store;
+use tauri::{Emitter, State};
+
+#[tauri::command]
+async fn app_snapshot(store: State<'_, Store>) -> Result<AppState, String> {
+    Ok(store.snapshot().await)
+}
+
+#[tauri::command]
+async fn app_apply_command(store: State<'_, Store>, command: Command) -> Result<AppState, String> {
+    store.apply(command).await
+}
 
 fn main() {
     let store = Store::new();
@@ -19,7 +32,30 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .manage(store.clone())
         .manage(runtime)
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            app_snapshot,
+            app_apply_command,
+            lab::lab_pick_files,
+            lab::lab_stat_paths,
+            lab::lab_read_file_bytes,
+            lab::lab_read_file_text,
+            lab::lab_download_url_file,
+            lab::lab_run_assay
+        ])
+        .setup(move |app| {
+            let app_handle = app.handle().clone();
+            let store = store.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut rx = store.subscribe();
+                while let Ok(ServerMsg::State { state }) = rx.recv().await {
+                    let _ = app_handle.emit("app-state", state);
+                }
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
