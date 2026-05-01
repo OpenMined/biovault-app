@@ -47,10 +47,23 @@ import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-// Unified Bioscript lab — drop any mix of genomic files + assay scripts, pick
-// a genome and an assay, and run. Heavy parsing happens inside the
-// bioscript-wasm Web Worker (CRAM / VCF variant lookups) or Monty's
-// WASI runtime (genotype-text + Python/YAML assays).
+
+function hideNativeDevLoadingView() {
+	if (Platform.OS === 'web') return
+	try {
+		// Expo dev-client can leave the native loading banner visible at
+		// "Downloading 100%..." during Maestro runs, which intercepts taps.
+		// The module only exists in development builds.
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		const DevLoadingView = require('react-native/Libraries/Utilities/DevLoadingView').default
+		DevLoadingView?.hide?.()
+	} catch {
+		// Production builds and some RN versions do not expose DevLoadingView.
+	}
+}
+
+// Unified BioScript lab: collect genomic files + assay scripts, pick a genome
+// and assay, and run through the platform BioScript runtime.
 
 // ts-prune-ignore-next
 export default function LabScreen() {
@@ -95,6 +108,12 @@ export default function LabScreen() {
 		Boolean(requestedExample) &&
 		requestedExample?.id !== dismissedExampleId &&
 		!hasRequestedExampleLoaded
+
+	useEffect(() => {
+		hideNativeDevLoadingView()
+		const id = setTimeout(hideNativeDevLoadingView, 500)
+		return () => clearTimeout(id)
+	}, [])
 
 	const addAssay = useCallback(
 		(file: File, language: Assay['language'], source?: string) => {
@@ -186,6 +205,7 @@ export default function LabScreen() {
 			})
 		} finally {
 			setSamplePresetLoadingId(null)
+			hideNativeDevLoadingView()
 		}
 	}, [ingestMany, trackEvent])
 
@@ -326,6 +346,17 @@ export default function LabScreen() {
 					assayCount={assays.length}
 				/>
 
+				{genomes.length > 0 || assays.length > 0 ? (
+					<RunBar
+						run={run}
+						selectedAssay={selectedAssay}
+						selectedGenome={selectedGenome}
+						runBlocked={runBlocked}
+						runDisabledReason={runDisabledReason}
+						onRun={executeRun}
+					/>
+				) : null}
+
 				<View style={styles.section}>
 					<SectionHeader label="Try examples" count={LAB_SAMPLE_PRESETS.length} />
 					<View style={styles.cardGrid}>
@@ -395,36 +426,6 @@ export default function LabScreen() {
 					</View>
 				) : null}
 
-				{genomes.length > 0 || assays.length > 0 ? (
-					<View style={styles.runBar}>
-						<View style={{ flex: 1 }}>
-							<OMText variant="caption" style={styles.runSummaryLabel}>
-								READY TO RUN
-							</OMText>
-							<OMText variant="body" style={styles.runSummaryText}>
-								{selectedGenome
-									? `Genome: ${labGenomeDisplayName(selectedGenome)}`
-									: 'No genome picked'}
-								{selectedAssay ? ` · Assay: ${selectedAssay.name}` : ' · No assay picked'}
-							</OMText>
-							{runDisabledReason ? (
-								<OMText variant="caption" style={styles.runHint}>
-									{runDisabledReason}
-								</OMText>
-							) : null}
-						</View>
-						<Pressable
-							onPress={() => void executeRun()}
-							disabled={runBlocked}
-							style={[styles.runButton, runBlocked ? styles.runButtonDisabled : null]}
-						>
-							<OMText variant="subtitle" style={styles.runButtonText}>
-								{run.status === 'running' ? 'Running…' : 'Run'}
-							</OMText>
-						</Pressable>
-					</View>
-				) : null}
-
 				{run.status === 'error' && run.error ? (
 					<View style={styles.errorCard}>
 						<OMText variant="subtitle" style={styles.errorTitle}>
@@ -472,20 +473,24 @@ function HeroDrop({
 	genomeCount: number
 	assayCount: number
 }) {
+	const isWeb = Platform.OS === 'web'
 	return (
 		<Pressable
+			testID="lab-add-files"
+			accessibilityLabel={isWeb ? 'Add files by picker or drag and drop' : 'Add files'}
 			onPress={onClick}
 			style={[styles.hero, active ? styles.heroActive : null]}
 		>
 			<OMText variant="h3" style={styles.heroTitle}>
-				Drag and drop files
+				{isWeb ? 'Drag and drop files' : 'Add files'}
 			</OMText>
 			<OMText variant="body" style={styles.heroBody}>
 				23andMe exports · .txt / .csv / .tsv · .zip · .vcf / .vcf.gz · .cram
 			</OMText>
 			<OMText variant="caption" style={styles.heroSubBody}>
-				We&rsquo;ll auto-pair indexes (.crai, .tbi) and references (.fa/.fa.fai). Drop .py
-				or .yaml assays to use as the variant plan. Click here to pick files too.
+				{isWeb
+					? 'We’ll auto-pair indexes (.crai, .tbi) and references (.fa/.fa.fai). Drop .py or .yaml assays to use as the variant plan. Click here to pick files too.'
+					: 'We’ll auto-pair indexes (.crai, .tbi) and references (.fa/.fa.fai). Add .py or .yaml assays to use as the variant plan.'}
 			</OMText>
 			{genomeCount === 0 && assayCount === 0 ? (
 				<OMText variant="caption" style={styles.heroEmpty}>
@@ -498,6 +503,54 @@ function HeroDrop({
 				</OMText>
 			)}
 		</Pressable>
+	)
+}
+
+function RunBar({
+	onRun,
+	run,
+	runBlocked,
+	runDisabledReason,
+	selectedAssay,
+	selectedGenome,
+}: {
+	onRun: () => Promise<void>
+	run: RunResult
+	runBlocked: boolean
+	runDisabledReason: string | null
+	selectedAssay: Assay | null
+	selectedGenome: LabGenomeRef | null
+}) {
+	return (
+		<View style={styles.runBar}>
+			<View style={{ flex: 1 }}>
+				<OMText variant="caption" style={styles.runSummaryLabel}>
+					READY TO RUN
+				</OMText>
+				<OMText variant="body" style={styles.runSummaryText}>
+					{selectedGenome
+						? `Genome: ${labGenomeDisplayName(selectedGenome)}`
+						: 'No genome picked'}
+					{selectedAssay ? ` · Assay: ${selectedAssay.name}` : ' · No assay picked'}
+				</OMText>
+				{runDisabledReason ? (
+					<OMText variant="caption" style={styles.runHint}>
+						{runDisabledReason}
+					</OMText>
+				) : null}
+			</View>
+			<Pressable
+				testID="lab-run-button"
+				accessibilityLabel="Run lab assay"
+				onPress={() => void onRun()}
+				disabled={runBlocked}
+				style={[styles.runButton, runBlocked ? styles.runButtonDisabled : null]}
+			>
+				<OMText variant="subtitle" style={styles.runButtonText}>
+					{run.status === 'running' ? 'Running...' : 'Run'}
+				</OMText>
+			</Pressable>
+		</View>
 	)
 }
 
@@ -542,6 +595,8 @@ function ExamplePrompt({
 					</OMText>
 				</Pressable>
 				<Pressable
+					testID={`lab-load-example-${preset.id}`}
+					accessibilityLabel={`Load example ${preset.title}`}
 					onPress={onLoad}
 					disabled={loading}
 					style={[styles.runButton, loading ? styles.runButtonDisabled : null]}
@@ -650,6 +705,8 @@ function SamplePresetCard({
 				</OMText>
 			) : null}
 			<Pressable
+				testID={`lab-load-sample-${preset.id}`}
+				accessibilityLabel={`Load sample ${preset.title}`}
 				onPress={onLoad}
 				disabled={loading}
 				style={[styles.runButton, loading ? styles.runButtonDisabled : null, styles.sampleButton]}
@@ -865,7 +922,12 @@ function TextOutputCard({ durationMs, text }: { durationMs: number; text: string
 			</OMText>
 			{text ? (
 				<View style={styles.preBlock}>
-					<OMText variant="body" style={styles.preText}>
+					<OMText
+						variant="body"
+						style={styles.preText}
+						testID="lab-output-text"
+						accessibilityLabel={text}
+					>
 						{text}
 					</OMText>
 				</View>
@@ -889,7 +951,7 @@ const styles = StyleSheet.create({
 		// the dashed hero card tucks underneath the chrome on first load.
 		paddingTop: 80,
 		gap: omSpacing.xl,
-		paddingBottom: omSpacing.xxxl,
+		paddingBottom: Platform.OS === 'web' ? omSpacing.xxxl : 180,
 		maxWidth: 960,
 		alignSelf: 'center',
 		width: '100%',

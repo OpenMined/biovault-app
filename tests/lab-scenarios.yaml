@@ -170,6 +170,92 @@ scenarios:
         - "Invalid exception type: 'Error'"
         - Run failed
 
+  - id: yaml-apol1-text
+    title: YAML APOL1 variant assay runs against genotype text
+    platforms: [desktop]
+    capabilities: [local_file, local_assay, yaml_assay, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: yaml
+      path: assets/assays/apol1/variants/rs73885319.yaml
+    genome:
+      source: local
+      kind: genotype_text
+      files:
+        - tests/fixtures/apol1-g0g0.txt
+      expect_display_name: apol1-g0g0.txt
+    assert:
+      contains: APOL1_G1_rs73885319
+      not_contains:
+        - Run failed
+
+  - id: yaml-apol1-zip
+    title: YAML APOL1 variant assay runs against zipped genotype text
+    platforms: [desktop]
+    capabilities: [local_file, local_assay, yaml_assay, generated_zip, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: yaml
+      path: assets/assays/apol1/variants/rs73885319.yaml
+    genome:
+      source: local
+      kind: zip
+      files: []
+      zip_source_path: tests/fixtures/apol1-g0g0.txt
+      expect_display_name: apol1-g0g0.zip
+    assert:
+      contains: APOL1_G1_rs73885319
+      not_contains:
+        - Run failed
+
+  - id: yaml-apol1-cram
+    title: YAML APOL1 variant assay runs against indexed CRAM
+    platforms: [desktop]
+    capabilities: [local_file, local_assay, yaml_assay, indexed_cram, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: yaml
+      path: assets/assays/apol1/variants/rs73885319.yaml
+    genome:
+      source: local
+      kind: cram
+      files:
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram
+        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+        - exvitae/assays/risk/APOL1/test-data/stub.fa
+        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+      expect_display_name: apol1.cram
+    assert:
+      contains: APOL1_G1_rs73885319
+      not_contains:
+        - Run failed
+
+  - id: yaml-apol1-vcf
+    title: YAML APOL1 variant assay runs against indexed VCF when local test-data is present
+    platforms: [desktop]
+    capabilities: [local_file, local_assay, yaml_assay, indexed_vcf, assay_run]
+    action: run_assay
+    optional: true
+    missing_message: missing optional VCF fixture; run ./tools/fetch_test_data.sh to enable
+    assay:
+      source: local
+      language: yaml
+      path: assets/assays/apol1/variants/rs73885319.yaml
+    genome:
+      source: local
+      kind: vcf
+      files:
+        - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+        - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+      expect_display_name: NA06985.clean.vcf.gz
+    assert:
+      contains: APOL1_G1_rs73885319
+      not_contains:
+        - Run failed
+
   - id: web-persistent-local-handles
     title: Restores saved local genome handles after refresh
     platforms: [web]
@@ -187,3 +273,37 @@ scenarios:
       expect_display_name: apol1.cram
     assert:
       contains: apol1.cram
+
+  - id: ios-lab-smoke
+    title: iOS Lab opens from deep link
+    platforms: [ios]
+    capabilities: [app_shell, lab_screen, deep_link]
+    action: app_smoke
+    assert:
+      contains: Try examples
+
+  - id: ios-text-demo-apol1-sample
+    title: iOS Lab runs APOL1 text sample preset
+    platforms: [ios]
+    capabilities: [sample_preset, url_file, url_assay, assay_run]
+    action: sample_preset
+    maestro:
+      presetId: text-demo-apol1
+      expectGenome: biovault_sample_23andme.txt
+      expectAssay: apol1.py
+    assert:
+      contains: G-/G-
+      not_contains:
+        - Run failed
+
+  - id: ios-add-files-picker-opens
+    title: iOS Lab Add Files button opens the native document picker
+    platforms: [ios]
+    capabilities: [file_picker, native_document_picker]
+    action: picker_open
+    maestro:
+      pickerHints: 'Browse|Recents|Cancel'
+    assert:
+      contains: Browse|Recents|Cancel
+      not_contains:
+        - Run failed

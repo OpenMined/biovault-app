@@ -19,8 +19,11 @@ npm run check:bioscript-parity
 echo "==> Running web tests"
 ./test-web.sh
 
-echo "==> Running desktop tests"
+echo "==> Running desktop UI tests"
 ./test-desktop.sh
+
+echo "==> Running native Rust Lab tests"
+./test-lib.sh
 
 if [ -x "${ROOT}/bioscript/test.sh" ]; then
   echo "==> Running bioscript submodule tests"

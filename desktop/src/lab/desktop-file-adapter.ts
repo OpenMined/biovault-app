@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { LabFileAdapter, LabFileRef, LabFileSource } from '@/lib/lab/core/files'
 import { classifyLabFile, makeLabId } from '@/lib/lab/core/file-utils'
+import { wsLabBridge } from './ws-lab-bridge'
 
 export type DesktopPickedFile = {
   lastModified?: number
@@ -37,29 +38,31 @@ export class DesktopLabFileAdapter implements LabFileAdapter<DesktopPickedFile> 
   }
 
   async pickLocalFiles(): Promise<LabFileRef[]> {
-    const files = await invoke<DesktopPickedFile[]>('lab_pick_files')
+    const testPaths = takeBrowserTestPickPaths()
+    if (testPaths.length) return this.statPaths(testPaths)
+    const files = await invokeOrBridge<DesktopPickedFile[]>('lab_pick_files', 'pick_files', {})
     return this.fromPlatformFiles(files)
   }
 
   async statPaths(paths: string[]): Promise<LabFileRef[]> {
-    const files = await invoke<DesktopPickedFile[]>('lab_stat_paths', { paths })
+    const files = await invokeOrBridge<DesktopPickedFile[]>('lab_stat_paths', 'stat_paths', { paths })
     return this.fromPlatformFiles(files)
   }
 
   async downloadUrlFile(url: string, name?: string): Promise<LabFileRef> {
-    const file = await invoke<DesktopPickedFile>('lab_download_url_file', { request: { url, name } })
+    const file = await invokeOrBridge<DesktopPickedFile>('lab_download_url_file', 'download_url_file', { request: { url, name } })
     return this.fromPlatformFiles([file], 'url')[0]
   }
 
   async readBytes(ref: LabFileRef): Promise<Uint8Array> {
     const path = this.requirePath(ref)
-    const bytes = await invoke<number[]>('lab_read_file_bytes', { path })
+    const bytes = await invokeOrBridge<number[]>('lab_read_file_bytes', 'read_file_bytes', { path })
     return Uint8Array.from(bytes)
   }
 
   async readText(ref: LabFileRef): Promise<string> {
     const path = this.requirePath(ref)
-    return invoke<string>('lab_read_file_text', { path })
+    return invokeOrBridge<string>('lab_read_file_text', 'read_file_text', { path })
   }
 
   filePath(ref: LabFileRef): string | null {
@@ -71,4 +74,31 @@ export class DesktopLabFileAdapter implements LabFileAdapter<DesktopPickedFile> 
     if (!path) throw new Error(`No desktop file path registered for ${ref.name}`)
     return path
   }
+}
+
+declare global {
+  interface Window {
+    __BIOVAULT_DESKTOP_TEST_PICK_PATHS__?: string[]
+  }
+}
+
+async function invokeOrBridge<T>(command: string, action: string, payload: unknown): Promise<T> {
+  try {
+    return await invoke<T>(command, payload as Record<string, unknown>)
+  } catch (error) {
+    if (!shouldUseBrowserBridge(error)) throw error
+    return wsLabBridge.request<T>(action, payload)
+  }
+}
+
+function shouldUseBrowserBridge(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /__TAURI__|not.*tauri|ipc|invoke/i.test(message)
+}
+
+function takeBrowserTestPickPaths(): string[] {
+  if (typeof window === 'undefined') return []
+  const paths = window.__BIOVAULT_DESKTOP_TEST_PICK_PATHS__ ?? []
+  window.__BIOVAULT_DESKTOP_TEST_PICK_PATHS__ = []
+  return paths
 }

@@ -1,3 +1,4 @@
+use crate::lab;
 use crate::protocol::{ClientMsg, ServerMsg, AUTH_TOKEN, WS_PORT};
 use crate::state::Store;
 use axum::{
@@ -41,13 +42,16 @@ async fn ws_handler(
 }
 
 async fn handle_socket(socket: WebSocket, store: Store) {
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, mut receiver) = socket.split();
+    let sender = std::sync::Arc::new(tokio::sync::Mutex::new(sender));
     let mut rx = store.subscribe();
 
     let initial = ServerMsg::State {
         state: store.snapshot().await,
     };
     if sender
+        .lock()
+        .await
         .send(Message::Text(serde_json::to_string(&initial).unwrap()))
         .await
         .is_err()
@@ -55,19 +59,27 @@ async fn handle_socket(socket: WebSocket, store: Store) {
         return;
     }
 
+    let sender_for_state = sender.clone();
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
             let text = match serde_json::to_string(&msg) {
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            if sender.send(Message::Text(text)).await.is_err() {
+            if sender_for_state
+                .lock()
+                .await
+                .send(Message::Text(text))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
     });
 
     let store_for_recv = store.clone();
+    let sender_for_recv = sender.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             let Message::Text(text) = msg else { continue };
@@ -76,6 +88,38 @@ async fn handle_socket(socket: WebSocket, store: Store) {
                 Ok(ClientMsg::Command { command }) => {
                     if let Err(err) = store_for_recv.apply(command).await {
                         eprintln!("[biovault] command error: {err}");
+                    }
+                }
+                Ok(ClientMsg::LabRequest {
+                    id,
+                    action,
+                    payload,
+                }) => {
+                    let response = match lab::handle_ws_lab_request(&action, payload).await {
+                        Ok(value) => ServerMsg::LabResponse {
+                            id,
+                            ok: true,
+                            value: Some(value),
+                            error: None,
+                        },
+                        Err(error) => ServerMsg::LabResponse {
+                            id,
+                            ok: false,
+                            value: None,
+                            error: Some(error),
+                        },
+                    };
+                    let Ok(text) = serde_json::to_string(&response) else {
+                        continue;
+                    };
+                    if sender_for_recv
+                        .lock()
+                        .await
+                        .send(Message::Text(text))
+                        .await
+                        .is_err()
+                    {
+                        break;
                     }
                 }
                 Err(e) => {

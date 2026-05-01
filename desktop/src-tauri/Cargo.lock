@@ -275,6 +275,7 @@ dependencies = [
  "bioscript-core",
  "bioscript-formats",
  "bioscript-runtime",
+ "bioscript-schema",
  "jni",
  "monty",
  "serde",
@@ -297,6 +298,17 @@ dependencies = [
  "bioscript-core",
  "bioscript-formats",
  "monty",
+]
+
+[[package]]
+name = "bioscript-schema"
+version = "0.1.0"
+dependencies = [
+ "bioscript-core",
+ "serde",
+ "serde_yaml",
+ "sha2",
+ "url",
 ]
 
 [[package]]

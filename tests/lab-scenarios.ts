@@ -6,7 +6,7 @@ import { parse } from 'yaml'
 
 export type LabTestGenomeKind = 'genotype_text' | 'zip' | 'cram' | 'vcf'
 export type LabTestPlatform = 'web' | 'desktop' | 'ios' | 'android'
-export type LabTestAction = 'run_assay' | 'persistent_handles' | 'app_smoke' | 'file_picker' | 'drag_drop'
+export type LabTestAction = 'run_assay' | 'persistent_handles' | 'app_smoke' | 'file_picker' | 'drag_drop' | 'sample_preset'
 export type LabTestSource = 'local' | 'url'
 
 export type SharedLabTestScenario = {
@@ -27,6 +27,11 @@ export type SharedLabTestScenario = {
 		expectDisplayName: string
 		zipSourcePath?: string
 	} | null
+	maestro?: {
+		presetId?: string
+		expectGenome?: string
+		expectAssay?: string
+	}
 	assert: {
 		contains: string
 		notContains?: string[]
@@ -64,6 +69,7 @@ type RawScenario = {
 		expect_display_name: string
 		zip_source_path?: string
 	}
+	maestro?: SharedLabTestScenario['maestro']
 	assert: {
 		contains: string
 		not_contains?: string[]
@@ -91,6 +97,7 @@ export const sharedLabTestScenarios: SharedLabTestScenario[] = doc.scenarios.map
 				zipSourcePath: scenario.genome.zip_source_path,
 			}
 		: null,
+	maestro: scenario.maestro,
 	assert: {
 		contains: scenario.assert.contains,
 		notContains: scenario.assert.not_contains,

@@ -35,7 +35,7 @@ import {
 } from '@/lib/lab/core/refs'
 import { humanLabSize } from '@/lib/lab/core/file-utils'
 import { DesktopLabFileAdapter } from './lab/desktop-file-adapter'
-import { runDesktopAssay } from './lab/desktop-runtime'
+import { runDesktopAssay, type DesktopVariantObservation } from './lab/desktop-runtime'
 import { send, useAppState } from './store'
 
 type LabIngestState = {
@@ -181,7 +181,11 @@ export function App() {
     setIsRunning(true)
     try {
       const result = await runDesktopAssay(selectedGenome, selectedAssay, fileAdapter)
-      setRunOutput(result.outputText || 'Assay completed without text output.')
+      setRunOutput(
+        result.observations
+          ? formatVariantObservations(result.observations)
+          : result.outputText || 'Assay completed without text output.',
+      )
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
@@ -314,6 +318,13 @@ export function App() {
         actionLabel={isPicking ? 'Choosing…' : 'Choose Files'}
         disabled={isPicking}
         onAction={pickFiles}
+        onPathDrop={(paths) => {
+          setIsDragActive(false)
+          fileAdapter
+            .statPaths(paths)
+            .then(ingestRefs)
+            .catch((nextError) => setError(nextError instanceof Error ? nextError.message : String(nextError)))
+        }}
         active={isDragActive}
       />
 
@@ -422,4 +433,25 @@ export function App() {
       </section>
     </Screen>
   )
+}
+
+function formatVariantObservations(observations: DesktopVariantObservation[]): string {
+  if (observations.length === 0) return 'No variant observations produced.'
+  return observations
+    .map((obs) => {
+      const parts = [
+        obs.name,
+        obs.matchedRsid,
+        obs.assembly?.toUpperCase(),
+        obs.backend,
+        obs.genotype ? `genotype ${obs.genotype}` : null,
+        obs.depth !== undefined ? `depth ${obs.depth}` : null,
+        obs.refCount !== undefined ? `ref ${obs.refCount}` : null,
+        obs.altCount !== undefined ? `alt ${obs.altCount}` : null,
+        obs.decision,
+      ].filter(Boolean)
+      const evidence = obs.evidence.length ? `\n  ${obs.evidence.join('\n  ')}` : ''
+      return `${parts.join(' · ')}${evidence}`
+    })
+    .join('\n\n')
 }

@@ -17,7 +17,9 @@ export type Command =
   | { type: 'reset' }
 
 export type ClientMsg = { type: 'command'; command: Command }
+  | { type: 'lab_request'; id: string; action: string; payload: unknown }
 
 export type ServerMsg =
   | { type: 'state'; state: AppState }
+  | { type: 'lab_response'; id: string; ok: boolean; value?: unknown; error?: string }
   | { type: 'error'; message: string }

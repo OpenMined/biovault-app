@@ -49,4 +49,4 @@ export {
   type VariantObservation,
   type VariantSpec,
   type VcfVariantLookupInput,
-} from './BioscriptWasm';
+} from './BioscriptLookup';

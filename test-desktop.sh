@@ -132,16 +132,6 @@ else
 fi
 
 echo ""
-echo "==> Running shared Lab scenarios through desktop Rust runtime"
-if cargo test --manifest-path "$DESKTOP_DIR/src-tauri/Cargo.toml" desktop_lab_runs_shared_ -- --test-threads=1; then
-  echo ""
-  echo "✅ Desktop Lab scenario tests PASSED"
-else
-  echo ""
-  echo "❌ Desktop Lab scenario tests FAILED"
-  RESULT=1
-fi
-
 if [ "$KEEP_OPEN" = "1" ] && kill -0 "$TAURI_PID" 2>/dev/null; then
   echo ""
   echo "==> Leaving Tauri running (PID $TAURI_PID). Ctrl-C to stop."

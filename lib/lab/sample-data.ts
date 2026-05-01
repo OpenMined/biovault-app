@@ -1,4 +1,5 @@
 import type { FileKind } from '@/lib/lab/types'
+import { createLabMemoryFile } from '@/lib/lab/platform-file'
 
 export type LabSamplePreset = {
 	id: string
@@ -55,7 +56,7 @@ export const LAB_SAMPLE_PRESETS: LabSamplePreset[] = [
 			},
 			{
 				name: 'apol1.py',
-				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/apol1.py'),
+				url: rawGitHubUrl('/assets/assays/apol1/apol1.py'),
 				kind: 'assay_python',
 			},
 		],
@@ -76,7 +77,7 @@ export const LAB_SAMPLE_PRESETS: LabSamplePreset[] = [
 			},
 			{
 				name: 'apol1.py',
-				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/apol1.py'),
+				url: rawGitHubUrl('/assets/assays/apol1/apol1.py'),
 				kind: 'assay_python',
 			},
 		],
@@ -102,9 +103,11 @@ async function fetchEntries(entries: LabSampleFile[]): Promise<File[]> {
 				throw new Error(`Failed to fetch ${entry.name}: ${response.status}`)
 			}
 			const bytes = await response.arrayBuffer()
-			return new File([bytes], entry.name, {
-				type: guessMimeType(entry.name),
-			})
+			return createLabMemoryFile(
+				entry.name,
+				new Uint8Array(bytes),
+				response.headers.get('content-type') ?? guessMimeType(entry.name),
+			)
 		}),
 	)
 }
