@@ -8,6 +8,7 @@ import {
 
 import type { LabFileAdapter, LabFileRef } from '@/lib/lab/core/files'
 import type { LabAssayRef, LabGenomeRef } from '@/lib/lab/core/refs'
+import { prepareLabRuntimeRoot } from '@/lib/lab/runtime-root'
 import type { LabRunProgress, LabRunSuccess } from '@/lib/lab/types'
 
 type LabRunProgressCallback = (progress: LabRunProgress) => void
@@ -53,6 +54,10 @@ function requirePlatformFile(files: LabRunFileAdapter, ref: LabFileRef, label: s
 		throw new Error(`${label} requires a platform file handle for the current BioScript runtime`)
 	}
 	return files.getFile(ref)
+}
+
+function sanitizeRuntimeFileName(name: string): string {
+	return name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'input'
 }
 
 function genomeFileNames(genome: LabGenomeRef): string[] {
@@ -197,15 +202,28 @@ export async function runLabAssayRef(
 	const scriptContents = await files.readText(selectedAssay.file)
 	const descriptor: GenomeDescriptor = await buildGenomeDescriptorFromRef(selectedGenome, files)
 	const genomeKey = selectedGenome.primary.name
+	const runtimeInputFile = `inputs/${sanitizeRuntimeFileName(genomeKey)}`
+	const outputFileName = 'assay-output.tsv'
+	const runtimeRoot = await prepareLabRuntimeRoot(outputFileName)
+	const scriptPath = selectedAssay.file.name
+	// Bioscript's native runtime injects `participant_id` as a Python global —
+	// scripts like apol1.py reference it inside main(). Without it the
+	// interpreter raises NameError at the first reference, which masks the
+	// later "G1_SITE_1 is not defined" cascade. Always pass a non-empty value.
+	const participantId = sanitizeRuntimeFileName(genomeKey) || 'participant'
 	const result = await runtime.runFile({
-		scriptPath: selectedAssay.file.name,
+		scriptPath,
 		scriptContents,
-		inputFile: genomeKey,
+		fileContents: { [scriptPath]: scriptContents },
+		root: runtimeRoot?.root,
+		cacheDir: runtimeRoot?.cacheDir,
+		inputFile: runtimeInputFile,
 		inputContents:
 			descriptor.kind === 'text'
 				? descriptor.text
 				: undefined,
-		outputFile: 'assay-output.tsv',
+		outputFile: runtimeRoot?.outputFile ?? outputFileName,
+		participantId,
 		inputFormat: 'text',
 		genomes: { [genomeKey]: descriptor },
 		maxDurationMs: 180_000,
@@ -214,12 +232,15 @@ export async function runLabAssayRef(
 		maxRecursionDepth: 512,
 	})
 
+	const fallbackText = result.outputText ?? result.outputFiles?.[outputFileName] ?? ''
+	const textOutput = fallbackText || (runtimeRoot ? await runtimeRoot.readOutputText() : '')
+
 	return {
 		kind: 'text_output',
 		result: {
 			status: 'done',
 			durationMs: Date.now() - startedAt,
-			textOutput: result.outputText ?? result.outputFiles?.['assay-output.tsv'] ?? '',
+			textOutput,
 		},
 	}
 }

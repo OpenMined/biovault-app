@@ -1,5 +1,6 @@
 import type { FileKind } from '@/lib/lab/core/file-kind'
 import { loadBundledApol1Script } from '@/lib/lab/bundled-assay-assets'
+import { createLabMemoryFile } from '@/lib/lab/platform-file'
 
 export type AssayCategory = 'risk' | 'pharmacogenomics' | 'ancestry' | 'panel' | 'demo'
 
@@ -177,12 +178,12 @@ async function fetchToFile(name: string, url: string): Promise<File> {
 	const response = await fetch(url)
 	if (!response.ok) throw new Error(`Failed to fetch ${name}: ${response.status}`)
 	const bytes = await response.arrayBuffer()
-	return new File([bytes], name, { type: guessMimeType(name) })
+	return createLabMemoryFile(name, new Uint8Array(bytes), guessMimeType(name))
 }
 
 export async function loadAssayFile(assay: LabAssay): Promise<File> {
 	if (assay.id === 'apol1') {
-		return new File([await loadBundledApol1Script()], 'apol1.py', { type: 'text/x-python' })
+		return createLabMemoryFile('apol1.py', await loadBundledApol1Script(), 'text/x-python')
 	}
 	const name = assay.url.split('/').pop() ?? `${assay.id}.${assay.language === 'python' ? 'py' : 'yaml'}`
 	return fetchToFile(name, assay.url)

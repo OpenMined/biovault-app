@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Phase-aware iOS smoke runner. No arg = run the whole sequence locally. In
+# Phase-aware iOS Lab runner. No arg = run the whole sequence locally. In
 # CI, each phase is its own workflow step so timing shows up per-phase:
 #
 #   ./test-ios.sh boot-sim
@@ -13,20 +13,56 @@ set -euo pipefail
 #   ./test-ios.sh devmenu
 #   ./test-ios.sh maestro
 #
+# By default the Maestro phase generates a flow from tests/lab-scenarios.yaml
+# so iOS exercises the shared Lab scenario DSL. Use FLOW=.maestro/smoke.yaml
+# for the older shell-only smoke flow.
+#
 # FORCE_CLEAN=1 wipes ios/ + DerivedData before starting — cheap escape hatch
 # when caches go stale. The common path stays fast.
 
 BUNDLE_ID="${BUNDLE_ID:-org.openmined.biovault.dev}"
 SIM_NAME="${SIM_NAME:-iPhone 16}"
-FLOW="${FLOW:-.maestro/smoke.yaml}"
+FLOW="${FLOW:-tests/lab-scenarios.yaml}"
 LOG_DIR=".maestro/logs"
+GENERATED_FLOW_DIR=".maestro/generated"
 REPO_ROOT="${REPO_ROOT:-$PWD}"
-IOS_SCHEME="${IOS_SCHEME:-BioVaultDev}"
-IOS_WORKSPACE_REL="${IOS_WORKSPACE_REL:-ios/BioVaultDev.xcworkspace}"
+# Auto-detect the workspace expo prebuild produced. The project name comes
+# from app.config.ts `name` slugified — depending on Expo SDK version the
+# Dev variant ends up as "BioVault" or "BioVaultDev", and the prod variant
+# is just "BioVault". Pick whatever .xcworkspace is sitting in ios/, falling
+# back to BioVault for first-time runs before prebuild has happened.
+detect_ios_scheme() {
+  if [ -n "${IOS_SCHEME:-}" ]; then
+    echo "$IOS_SCHEME"; return 0
+  fi
+  if [ -d "$REPO_ROOT/ios" ]; then
+    local ws
+    ws=$(ls -1d "$REPO_ROOT"/ios/*.xcworkspace 2>/dev/null | head -1)
+    if [ -n "$ws" ]; then
+      basename "$ws" .xcworkspace
+      return 0
+    fi
+  fi
+  echo "BioVault"
+}
+IOS_SCHEME="$(detect_ios_scheme)"
+IOS_WORKSPACE_REL="${IOS_WORKSPACE_REL:-ios/${IOS_SCHEME}.xcworkspace}"
 IOS_DERIVED_DATA_REL="${IOS_DERIVED_DATA_REL:-ios/build}"
 IOS_WORKSPACE="$REPO_ROOT/$IOS_WORKSPACE_REL"
 IOS_DERIVED_DATA="$REPO_ROOT/$IOS_DERIVED_DATA_REL"
-APP_PATH="$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/${IOS_SCHEME}.app"
+# PRODUCT_NAME can differ from the scheme name (the Dev variant in
+# app.config.ts produces scheme=BioVault but PRODUCT_NAME=BioVaultDev).
+# Resolve at call time so first-run (before build) and post-build both work.
+resolve_app_path() {
+  local products="$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator"
+  local found
+  if [ -d "$products" ]; then
+    found=$(ls -1d "$products"/*.app 2>/dev/null | head -1)
+    if [ -n "$found" ]; then echo "$found"; return; fi
+  fi
+  echo "$products/${IOS_SCHEME}.app"
+}
+APP_PATH="$(resolve_app_path)"
 METRO_PID_FILE="$LOG_DIR/metro.pid"
 
 mkdir -p "$LOG_DIR"
@@ -44,6 +80,26 @@ resolve_udid() {
     return 1
   fi
   echo "$udid"
+}
+
+resolve_dev_server_url() {
+  if [ -n "${EXPO_DEV_SERVER_URL:-}" ]; then
+    echo "$EXPO_DEV_SERVER_URL"
+    return 0
+  fi
+  local iface ip
+  iface=$(route get default 2>/dev/null | awk '/interface:/{print $2; exit}' || true)
+  if [ -n "$iface" ]; then
+    ip=$(ipconfig getifaddr "$iface" 2>/dev/null || true)
+  fi
+  if [ -z "${ip:-}" ]; then
+    ip=$(ifconfig 2>/dev/null | awk '/inet / && $2 !~ /^127\\./ {print $2; exit}' || true)
+  fi
+  if [ -n "${ip:-}" ]; then
+    echo "http://$ip:8081"
+  else
+    echo "http://127.0.0.1:8081"
+  fi
 }
 
 phase_force_clean() {
@@ -99,22 +155,24 @@ phase_rust_ios() {
   # prepare_command during `pod install`. When we skip pod install (fast
   # path), the xcframework may be missing from the cached ios/ directory
   # because it lives outside ios/ (modules/expo-bioscript/ios/Artifacts/).
-  # Rebuild if missing; cargo's incremental + Rust cache make it fast.
+  # The script itself stamps Cargo manifests + Rust sources so it no-ops
+  # when nothing changed.
   local script="modules/expo-bioscript/scripts/build-rust-ios.sh"
   local xcf="modules/expo-bioscript/ios/Artifacts/BioscriptFFI.xcframework"
   if [ ! -f "$script" ]; then
     echo "==> build-rust-ios.sh not found, skipping rust-ios phase"
     return 0
   fi
-  if [ -d "$xcf/ios-arm64-simulator" ] && [ -d "$xcf/ios-arm64" ]; then
-    echo "==> BioscriptFFI.xcframework slices present, skipping rust-ios build"
-    return 0
-  fi
-  echo "==> build-rust-ios.sh (streaming + tee to $LOG_DIR/rust-ios.log)"
-  sh "$script" 2>&1 | tee "$LOG_DIR/rust-ios.log"
+  # Sim-only by default for test-ios.sh (we only run on the simulator).
+  # Override: BIOSCRIPT_SIM_ONLY=0 to also build the device slice.
+  local sim_only="${BIOSCRIPT_SIM_ONLY:-1}"
+  echo "==> build-rust-ios.sh (sim_only=$sim_only, streaming + tee to $LOG_DIR/rust-ios.log)"
+  EXPO_BIOSCRIPT_SIM_ONLY="$sim_only" sh "$script" 2>&1 | tee "$LOG_DIR/rust-ios.log"
   echo "==> xcframework slices after build:"
   ls -la "$xcf" 2>&1 || true
-  for slice in ios-arm64 ios-arm64-simulator; do
+  local slices="ios-arm64-simulator"
+  [ "$sim_only" = "0" ] && slices="ios-arm64 ios-arm64-simulator"
+  for slice in $slices; do
     if [ -f "$xcf/$slice/libbioscript_ffi.a" ]; then
       echo "-- $slice/libbioscript_ffi.a:"
       ls -la "$xcf/$slice/libbioscript_ffi.a"
@@ -123,17 +181,27 @@ phase_rust_ios() {
       echo "-- $slice/libbioscript_ffi.a MISSING"
     fi
   done
-  # Force xcodebuild to re-copy the xcframework and re-link the app. With
-  # ios/ (and therefore ios/build) cached across runs, Xcode's build manifest
-  # treats XCFrameworkIntermediates/ExpoBioscript as up-to-date and skips
-  # "[CP] Copy XCFrameworks" — even after we just rebuilt the xcframework.
-  # That leaves the linker reading stale/empty content (undefined symbols).
-  # Nuking Products + the build manifest costs a re-link (~10s) but keeps
-  # compile intermediates cached (sqlite3.c, React-Core, etc.) so xcodebuild
-  # stays fast.
+  # Force xcodebuild to re-copy the xcframework and re-link the app only
+  # when the stamp file says we actually rebuilt. With ios/ (and therefore
+  # ios/build) cached across runs, Xcode's build manifest treats
+  # XCFrameworkIntermediates/ExpoBioscript as up-to-date and skips "[CP]
+  # Copy XCFrameworks" — even after we just rebuilt the xcframework. Only
+  # invalidate if the xcframework was actually re-emitted (mtime newer
+  # than the build product), so warm runs stay fast.
   if [ -d "$IOS_DERIVED_DATA" ]; then
-    echo "==> Invalidating Products + XCBuildData to force re-link"
-    rm -rf "$IOS_DERIVED_DATA/Build/Products" "$IOS_DERIVED_DATA/XCBuildData" || true
+    local manifest="$IOS_DERIVED_DATA/XCBuildData"
+    local need_invalidate=0
+    if [ ! -d "$manifest" ]; then
+      need_invalidate=0
+    elif [ "$xcf" -nt "$manifest" ]; then
+      need_invalidate=1
+    fi
+    if [ "$need_invalidate" = "1" ]; then
+      echo "==> xcframework newer than build manifest — invalidating Products + XCBuildData to force re-link"
+      rm -rf "$IOS_DERIVED_DATA/Build/Products" "$IOS_DERIVED_DATA/XCBuildData" || true
+    else
+      echo "==> xcframework unchanged — keeping Products + XCBuildData warm"
+    fi
   fi
 }
 
@@ -145,12 +213,24 @@ phase_build() {
   local UDID
   UDID=$(resolve_udid) || exit 1
   echo "==> xcodebuild (streaming + tee to $LOG_DIR/build.log)"
-  # CI speed flags:
-  # - COMPILER_INDEX_STORE_ENABLE=NO: skip source indexing (only for IDE)
-  # - -skipPackagePluginValidation / -skipMacroValidation: skip SPM prompts
-  # - NSUnbufferedIO=YES: don't buffer xcodebuild output line-by-line
-  # Stream full output so the actual error (e.g. linker failure) is visible in
-  # CI logs — redirecting to a file + tailing 50 lines was hiding real errors.
+  # Speed flags:
+  # - COMPILER_INDEX_STORE_ENABLE=NO: skip source indexing (only used by the IDE).
+  # - -skipPackagePluginValidation / -skipMacroValidation: skip SPM prompts.
+  # - NSUnbufferedIO=YES: don't buffer xcodebuild output line-by-line.
+  # - ONLY_ACTIVE_ARCH=YES + ARCHS=arm64: build a single sim arch — host is
+  #   arm64 macOS so we never need x86_64 here.
+  # - CODE_SIGNING_*=NO: simulator builds don't need a real cert; explicit
+  #   skips trim the entitlements/codesign step.
+  # - Xcode 26 compilation cache + explicit modules: caches Clang/Swift
+  #   module compilation across builds. CAS lives under
+  #   $IOS_DERIVED_DATA/CompilationCache so it survives rust-ios
+  #   re-links. Pre-warming the modules graph is what makes the second
+  #   xcodebuild invocation drop from minutes to ~tens of seconds.
+  # Stream full output so the actual error (e.g. linker failure) is visible
+  # in CI logs — redirecting to a file + tailing 50 lines was hiding real
+  # errors.
+  local cache_dir="$IOS_DERIVED_DATA/CompilationCache"
+  mkdir -p "$cache_dir"
   env NSUnbufferedIO=YES xcodebuild \
     -workspace "$IOS_WORKSPACE" \
     -scheme "$IOS_SCHEME" \
@@ -159,8 +239,17 @@ phase_build() {
     -derivedDataPath "$IOS_DERIVED_DATA" \
     -skipPackagePluginValidation \
     -skipMacroValidation \
+    -clonedSourcePackagesDirPath "$IOS_DERIVED_DATA/SourcePackages" \
     COMPILER_INDEX_STORE_ENABLE=NO \
+    ONLY_ACTIVE_ARCH=YES \
+    ARCHS=arm64 \
+    SWIFT_ENABLE_EXPLICIT_MODULES=YES \
+    CLANG_ENABLE_EXPLICIT_MODULES=YES \
+    COMPILATION_CACHE_ENABLE_CACHING=YES \
+    COMPILATION_CACHE_CAS_PATH="$cache_dir" \
+    DEBUG_INFORMATION_FORMAT=dwarf \
     build 2>&1 | tee "$LOG_DIR/build.log"
+  APP_PATH="$(resolve_app_path)"
   if [ ! -d "$APP_PATH" ]; then
     echo "Built app not found at $APP_PATH" >&2
     tail -50 "$LOG_DIR/build.log" >&2 || true
@@ -201,6 +290,7 @@ phase_metro_stop() {
 }
 
 phase_install_launch() {
+  APP_PATH="$(resolve_app_path)"
   if [ ! -d "$APP_PATH" ]; then
     echo "Built app not found at $APP_PATH — run build first" >&2
     exit 1
@@ -225,8 +315,14 @@ phase_maestro() {
   command -v maestro >/dev/null || { echo "maestro not found; run npm run install-maestro" >&2; exit 1; }
   local UDID
   UDID=$(resolve_udid) || exit 1
-  echo "==> Running Maestro flow: $FLOW"
-  if maestro --device "$UDID" test "$FLOW"; then
+  local flow="$FLOW"
+  if [ "${LAB_SCENARIOS:-}" = "1" ] || [ "$flow" = "tests/lab-scenarios.yaml" ]; then
+    mkdir -p "$GENERATED_FLOW_DIR"
+    echo "==> Generating Maestro flow from shared Lab scenarios"
+    flow=$(PLATFORM=ios BUNDLE_ID="$BUNDLE_ID" EXPO_DEV_SERVER_URL="$(resolve_dev_server_url)" OUT="$GENERATED_FLOW_DIR/lab-ios.yaml" node scripts/generate-maestro-lab-flow.mjs)
+  fi
+  echo "==> Running Maestro flow: $flow"
+  if maestro --device "$UDID" test "$flow"; then
     echo "✅ iOS test PASSED"
   else
     echo "❌ iOS test FAILED"
@@ -241,19 +337,12 @@ phase_all() {
   phase_pods
   phase_rust_ios
   phase_metro_start
-  if [ -n "${CI:-}" ]; then
-    phase_build
-    phase_install_launch
-  else
-    local UDID
-    UDID=$(resolve_udid) || exit 1
-    echo "==> Building & installing app on $UDID (local, via expo run:ios, logs: $LOG_DIR/build.log)"
-    npx expo run:ios --device "$UDID" >"$LOG_DIR/build.log" 2>&1 || {
-      echo "Build failed. Last 50 lines:" >&2
-      tail -50 "$LOG_DIR/build.log" >&2
-      exit 1
-    }
-  fi
+  # Use the optimized phase_build path (Xcode 26 explicit modules + compile
+  # cache + sim-only arch + skipped codesign) on both local and CI runs.
+  # By this point prebuild + pods have ensured ios/ and Pods/ exist, so the
+  # one-shot expo run:ios flow is no longer needed.
+  phase_build
+  phase_install_launch
   phase_devmenu
   phase_maestro
   phase_metro_stop

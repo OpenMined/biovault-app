@@ -1,4 +1,5 @@
 import { fetchRemoteAssayFileFromUrl } from '@/lib/github-assay-packages'
+import { createLabMemoryFile } from '@/lib/lab/platform-file'
 import type { AssayLang } from '@/lib/lab/types'
 
 const ALLOWED_REMOTE_ASSAY_HOSTS = new Set(['github.com', 'raw.githubusercontent.com'])
@@ -26,9 +27,11 @@ export async function loadRemoteAssayFile(url: string): Promise<{
 
 	const remote = await fetchRemoteAssayFileFromUrl(url)
 	return {
-		file: new File([remote.contents], remote.name, {
-			type: remote.language === 'python' ? 'text/x-python' : 'application/yaml',
-		}),
+		file: createLabMemoryFile(
+			remote.name,
+			remote.contents,
+			remote.language === 'python' ? 'text/x-python' : 'application/yaml',
+		),
 		language: remote.language,
 		source: remote.source,
 	}

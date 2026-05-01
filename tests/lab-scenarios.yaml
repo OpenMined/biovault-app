@@ -273,3 +273,37 @@ scenarios:
       expect_display_name: apol1.cram
     assert:
       contains: apol1.cram
+
+  - id: ios-lab-smoke
+    title: iOS Lab opens from deep link
+    platforms: [ios]
+    capabilities: [app_shell, lab_screen, deep_link]
+    action: app_smoke
+    assert:
+      contains: Try examples
+
+  - id: ios-text-demo-apol1-sample
+    title: iOS Lab runs APOL1 text sample preset
+    platforms: [ios]
+    capabilities: [sample_preset, url_file, url_assay, assay_run]
+    action: sample_preset
+    maestro:
+      presetId: text-demo-apol1
+      expectGenome: biovault_sample_23andme.txt
+      expectAssay: apol1.py
+    assert:
+      contains: G-/G-
+      not_contains:
+        - Run failed
+
+  - id: ios-add-files-picker-opens
+    title: iOS Lab Add Files button opens the native document picker
+    platforms: [ios]
+    capabilities: [file_picker, native_document_picker]
+    action: picker_open
+    maestro:
+      pickerHints: 'Browse|Recents|Cancel'
+    assert:
+      contains: Browse|Recents|Cancel
+      not_contains:
+        - Run failed

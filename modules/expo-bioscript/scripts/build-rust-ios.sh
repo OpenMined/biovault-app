@@ -8,9 +8,17 @@ ARTIFACTS_DIR="$IOS_DIR/Artifacts"
 HEADERS_DIR="$ARTIFACTS_DIR/include"
 XCFRAMEWORK_NAME="BioscriptFFI.xcframework"
 XCFRAMEWORK_PATH="$ARTIFACTS_DIR/$XCFRAMEWORK_NAME"
+STAMP_FILE="$ARTIFACTS_DIR/.build-stamp"
 DEVICE_TARGET="aarch64-apple-ios"
 SIM_TARGET="aarch64-apple-ios-sim"
 IOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.1}"
+
+# When building only for the iOS Simulator (e.g. ./test-ios.sh on macOS),
+# skip the device target. Cuts Rust compile time roughly in half. Set
+# EXPO_BIOSCRIPT_SIM_ONLY=1 to enable. The resulting xcframework will
+# only contain the simulator slice — fine for simulator-only workflows,
+# not for shipping to a real device.
+SIM_ONLY="${EXPO_BIOSCRIPT_SIM_ONLY:-0}"
 
 if [ -n "${BIOSCRIPT_ROOT:-}" ]; then
   RESOLVED_BIOSCRIPT_ROOT="$BIOSCRIPT_ROOT"
@@ -45,7 +53,13 @@ if ! command -v xcrun >/dev/null 2>&1; then
   exit 1
 fi
 
-for RUST_TARGET in "$DEVICE_TARGET" "$SIM_TARGET"; do
+if [ "$SIM_ONLY" = "1" ]; then
+  REQUIRED_TARGETS="$SIM_TARGET"
+else
+  REQUIRED_TARGETS="$DEVICE_TARGET $SIM_TARGET"
+fi
+
+for RUST_TARGET in $REQUIRED_TARGETS; do
   if rustup target list --installed | grep -q "^$RUST_TARGET$"; then
     continue
   fi
@@ -54,6 +68,42 @@ for RUST_TARGET in "$DEVICE_TARGET" "$SIM_TARGET"; do
   echo "Install it with: rustup target add $RUST_TARGET"
   exit 1
 done
+
+compute_source_stamp() {
+  # Hash of cargo manifests + Rust sources + this build script. The slice
+  # set is checked separately so a previously-built "both slices" output
+  # still satisfies a sim-only request without an unnecessary rebuild.
+  {
+    echo "deployment=$IOS_DEPLOYMENT_TARGET"
+    if [ -d "$RESOLVED_BIOSCRIPT_ROOT/rust" ]; then
+      find "$RESOLVED_BIOSCRIPT_ROOT/rust" \
+        -path '*/target' -prune -o \
+        -type f \( -name 'Cargo.toml' -o -name 'Cargo.lock' -o -name '*.rs' -o -name 'build.rs' \) \
+        -print 2>/dev/null | sort | xargs shasum 2>/dev/null
+    fi
+    shasum "$0" 2>/dev/null
+  } | shasum | awk '{print $1}'
+}
+
+EXPECTED_STAMP="$(compute_source_stamp)"
+if [ -f "$STAMP_FILE" ] && [ -d "$XCFRAMEWORK_PATH" ]; then
+  CURRENT_STAMP="$(cat "$STAMP_FILE" 2>/dev/null || true)"
+  if [ "$CURRENT_STAMP" = "$EXPECTED_STAMP" ]; then
+    if [ "$SIM_ONLY" = "1" ]; then
+      # Sim-only is satisfied by a sim slice in the existing xcframework,
+      # regardless of whether the device slice is also present.
+      if [ -d "$XCFRAMEWORK_PATH/ios-arm64-simulator" ]; then
+        echo "==> Bioscript Rust artifacts up to date (stamp matches, sim slice present), skipping rebuild"
+        exit 0
+      fi
+    else
+      if [ -d "$XCFRAMEWORK_PATH/ios-arm64" ] && [ -d "$XCFRAMEWORK_PATH/ios-arm64-simulator" ]; then
+        echo "==> Bioscript Rust artifacts up to date (stamp matches), skipping rebuild"
+        exit 0
+      fi
+    fi
+  fi
+fi
 
 IOS_SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 SIM_SDKROOT="$(xcrun --sdk iphonesimulator --show-sdk-path)"
@@ -133,15 +183,27 @@ MODULEMAP
 }
 
 cd "$RUST_WORKSPACE_DIR"
-build_target "$DEVICE_TARGET" "$IOS_SDKROOT" "$IOS_CC" "$IOS_CXX" "$IOS_AR" "$IOS_RANLIB"
-build_target "$SIM_TARGET" "$SIM_SDKROOT" "$SIM_CC" "$SIM_CXX" "$SIM_AR" "$SIM_RANLIB"
+
+if [ "$SIM_ONLY" = "1" ]; then
+  build_target "$SIM_TARGET" "$SIM_SDKROOT" "$SIM_CC" "$SIM_CXX" "$SIM_AR" "$SIM_RANLIB"
+else
+  build_target "$DEVICE_TARGET" "$IOS_SDKROOT" "$IOS_CC" "$IOS_CXX" "$IOS_AR" "$IOS_RANLIB"
+  build_target "$SIM_TARGET" "$SIM_SDKROOT" "$SIM_CC" "$SIM_CXX" "$SIM_AR" "$SIM_RANLIB"
+fi
 
 DEVICE_LIB="$RUST_WORKSPACE_DIR/target/$DEVICE_TARGET/release/libbioscript_ffi.a"
 SIM_LIB="$RUST_WORKSPACE_DIR/target/$SIM_TARGET/release/libbioscript_ffi.a"
 
-if [ ! -f "$DEVICE_LIB" ] || [ ! -f "$SIM_LIB" ]; then
-  echo "Missing Rust build artifacts for Bioscript iOS packaging"
-  exit 1
+if [ "$SIM_ONLY" = "1" ]; then
+  if [ ! -f "$SIM_LIB" ]; then
+    echo "Missing Rust build artifacts for Bioscript iOS packaging (sim-only)"
+    exit 1
+  fi
+else
+  if [ ! -f "$DEVICE_LIB" ] || [ ! -f "$SIM_LIB" ]; then
+    echo "Missing Rust build artifacts for Bioscript iOS packaging"
+    exit 1
+  fi
 fi
 
 mkdir -p "$ARTIFACTS_DIR"
@@ -149,7 +211,15 @@ rm -rf "$XCFRAMEWORK_PATH"
 rm -f "$ARTIFACTS_DIR/libbioscript_ios.a" "$ARTIFACTS_DIR/libbioscript_sim.a"
 write_headers
 
-xcodebuild -create-xcframework \
-  -library "$DEVICE_LIB" -headers "$HEADERS_DIR" \
-  -library "$SIM_LIB" -headers "$HEADERS_DIR" \
-  -output "$XCFRAMEWORK_PATH"
+if [ "$SIM_ONLY" = "1" ]; then
+  xcodebuild -create-xcframework \
+    -library "$SIM_LIB" -headers "$HEADERS_DIR" \
+    -output "$XCFRAMEWORK_PATH"
+else
+  xcodebuild -create-xcframework \
+    -library "$DEVICE_LIB" -headers "$HEADERS_DIR" \
+    -library "$SIM_LIB" -headers "$HEADERS_DIR" \
+    -output "$XCFRAMEWORK_PATH"
+fi
+
+echo "$EXPECTED_STAMP" > "$STAMP_FILE"

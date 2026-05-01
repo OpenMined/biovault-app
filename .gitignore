@@ -141,6 +141,7 @@ data/*
 brand.openmined.org/
 
 # Maestro test artifacts
+.maestro/generated/
 .maestro/logs/
 .maestro/screenshots/
 screenshots/
