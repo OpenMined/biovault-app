@@ -3,7 +3,11 @@ import {
 	lookupCramVariants,
 	lookupGenotypeBytesVariants,
 	lookupVcfVariants,
+	runPackageReportBytes,
 	runFile,
+	type BioscriptPackageFile,
+	type BioscriptPackageReportOptions,
+	type BioscriptPackageReportResult,
 	type CramVariantLookupInput,
 	type CramVariantLookupResult,
 	type GenomeDescriptor,
@@ -21,6 +25,9 @@ export type {
 	RunFileResult,
 	VariantObservation,
 	VariantSpec,
+	BioscriptPackageFile,
+	BioscriptPackageReportOptions,
+	BioscriptPackageReportResult,
 }
 
 export type LabBioscriptRuntime = {
@@ -32,6 +39,13 @@ export type LabBioscriptRuntime = {
 		variants: VariantSpec[],
 	) => Promise<VariantLookupResult>
 	lookupVcfVariants: (input: VcfVariantLookupInput) => Promise<VariantLookupResult>
+	runPackageReportBytes: (
+		manifestPath: string,
+		packageFiles: BioscriptPackageFile[],
+		inputName: string,
+		inputBytes: Uint8Array,
+		options?: BioscriptPackageReportOptions,
+	) => Promise<BioscriptPackageReportResult>
 	runFile: (request: RunFileRequest) => Promise<RunFileResult>
 }
 
@@ -40,5 +54,6 @@ export const expoBioscriptRuntime: LabBioscriptRuntime = {
 	lookupCramVariants,
 	lookupGenotypeBytesVariants,
 	lookupVcfVariants,
+	runPackageReportBytes,
 	runFile,
 }

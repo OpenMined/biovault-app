@@ -35,6 +35,20 @@ export function lookupGenotypeBytesVariants(name: string, bytes: Uint8Array, var
 export function lookupVcfVariants(vcf_read_at: Function, vcf_len: number, tbi_bytes: Uint8Array, variants_json: string): string;
 
 /**
+ * Resolve a BioScript package release YAML into the package zip artifact URL.
+ */
+export function resolvePackageReleaseText(source_url: string, name: string, text: string): string;
+
+/**
+ * Resolve a BioScript package zip from bytes.
+ *
+ * This mirrors the CLI package importer enough for browser/mobile callers:
+ * path safety, package size limits, descriptor/entrypoint discovery, and
+ * resource classification all stay in Rust.
+ */
+export function resolvePackageZipBytes(source_url: string, name: string, bytes: Uint8Array): string;
+
+/**
  * Classify a fetched remote resource and return dependency requirements.
  *
  * Network access stays in the host app so each platform can prompt before
@@ -43,20 +57,31 @@ export function lookupVcfVariants(vcf_read_at: Function, vcf_len: number, tbi_by
  */
 export function resolveRemoteResourceText(source_url: string, name: string, text: string): string;
 
+export function runPackageReportBytes(manifest_path: string, package_files_json: string, input_name: string, input_bytes: Uint8Array, options_json?: string | null): string;
+
 export function start(): void;
+
+/**
+ * Verify package artifact bytes against a package-release sha256 value.
+ */
+export function verifyPackageArtifactSha256(name: string, bytes: Uint8Array, expected: string): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly resolvePackageReleaseText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly resolvePackageZipBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly verifyPackageArtifactSha256: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly start: () => void;
+    readonly runPackageReportBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly lookupGenotypeBytesRsids: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupVcfVariants: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly start: () => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

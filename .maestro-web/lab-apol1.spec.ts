@@ -20,6 +20,7 @@ const CRAM = path.join(REPO_ROOT, labTestFixtures.apol1Cram[0])
 const CRAI = path.join(REPO_ROOT, labTestFixtures.apol1Cram[1])
 const FASTA = path.join(REPO_ROOT, labTestFixtures.apol1Cram[2])
 const FAI = path.join(REPO_ROOT, labTestFixtures.apol1Cram[3])
+const APOL1 = path.join(REPO_ROOT, 'exvitae/assays/risk/APOL1/apol1.py')
 
 async function dismissDisclaimer(page: Page) {
 	// The app gates with a "I understand and want to continue" screen on first
@@ -32,7 +33,7 @@ async function dismissDisclaimer(page: Page) {
 	}
 }
 
-const ALL_FIXTURES = [CRAM, CRAI, FASTA, FAI]
+const ALL_FIXTURES = [APOL1, CRAM, CRAI, FASTA, FAI]
 const missingFixture = ALL_FIXTURES.find((p) => !fs.existsSync(p))
 
 test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', async ({ page }) => {
@@ -67,10 +68,10 @@ test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', as
 		page.waitForEvent('filechooser'),
 		page.getByText('Drop a genome', { exact: false }).click(),
 	])
-	await chooser.setFiles([CRAM, CRAI, FASTA, FAI])
+	await chooser.setFiles([APOL1, CRAM, CRAI, FASTA, FAI])
 
 	await expect(page.getByText('Genome complete').first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText('APOL1 kidney risk', { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('apol1.py', { exact: false }).first()).toBeVisible({ timeout: 30_000 })
 
 	await page.screenshot({
 		path: '.maestro-web/screenshots/lab-apol1-01-loaded.png',

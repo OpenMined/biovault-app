@@ -165,7 +165,7 @@ scenarios:
         - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
       expect_display_name: NA06985.clean.vcf.gz
     assert:
-      contains: G-/G-
+      contains: G0/G0
       not_contains:
         - "Invalid exception type: 'Error'"
         - Run failed

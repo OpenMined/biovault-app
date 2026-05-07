@@ -27,8 +27,16 @@ export type LabRunProgress = {
 	total: number | null
 }
 
+export type LabRunArtifact = {
+	mimeType: string
+	name: string
+	path?: string
+	text: string
+}
+
 export type RunResult = {
 	status: RunStatus
+	artifacts?: LabRunArtifact[]
 	error?: string
 	durationMs?: number
 	observations?: VariantObservation[]

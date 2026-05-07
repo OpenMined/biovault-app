@@ -10,11 +10,18 @@ import type { LabFileAdapter, LabFileRef } from '@/lib/lab/core/files'
 import type { LabAssayRef, LabGenomeRef } from '@/lib/lab/core/refs'
 import { prepareLabRuntimeRoot } from '@/lib/lab/runtime-root'
 import type { LabRunProgress, LabRunSuccess } from '@/lib/lab/types'
+import type { BioscriptPackageFile } from '@/modules/expo-bioscript'
 
 type LabRunProgressCallback = (progress: LabRunProgress) => void
 type GenomeAssembly = 'grch37' | 'grch38'
 type LabRunFileAdapter = Pick<LabFileAdapter, 'readBytes' | 'readText'> & {
 	getFile?: (ref: LabFileRef) => File
+}
+
+function yieldToBrowser(): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, 0)
+	})
 }
 
 export async function buildGenomeDescriptorFromRef(
@@ -234,11 +241,17 @@ export async function runLabAssayRef(
 
 	const fallbackText = result.outputText ?? result.outputFiles?.[outputFileName] ?? ''
 	const textOutput = fallbackText || (runtimeRoot ? await runtimeRoot.readOutputText() : '')
+	const artifacts = Object.entries(result.outputFiles ?? {}).map(([name, text]) => ({
+		mimeType: name.toLowerCase().endsWith('.html') ? 'text/html' : 'text/plain',
+		name,
+		text,
+	}))
 
 	return {
 		kind: 'text_output',
 		result: {
 			status: 'done',
+			artifacts,
 			durationMs: Date.now() - startedAt,
 			textOutput,
 		},
@@ -269,10 +282,11 @@ export async function runLabVariantYamlRefs(
 		const fileName = file?.name || `variant-${index + 1}.yaml`
 		onProgress?.({
 			completed: index,
-			label: `Compiling ${fileName}`,
-			phase: 'compiling',
+			label: `Preparing variant ${index + 1} of ${files.length}: ${fileName}`,
+			phase: 'preparing',
 			total: files.length,
 		})
+		await yieldToBrowser()
 		compiledFiles.push({
 			fileName,
 			variants: selectPreferredAssemblyVariantsForNames(
@@ -285,31 +299,31 @@ export async function runLabVariantYamlRefs(
 	const observations: VariantObservation[] = []
 	if (selectedGenome.kind === 'text' || selectedGenome.kind === 'zip') {
 		const bytes = await fileAdapter.readBytes(selectedGenome.primary)
-		for (const [index, compiled] of compiledFiles.entries()) {
-			onProgress?.({
-				completed: index,
-				label: `Running ${compiled.fileName}`,
-				phase: 'running',
-				total: compiledFiles.length,
-			})
-			try {
-				const result = await runtime.lookupGenotypeBytesVariants(
-					selectedGenome.primary.name,
-					bytes,
-					compiled.variants,
-				)
-				observations.push(...result.observations)
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
-				throw new Error(`${compiled.fileName}: ${message}`)
-			}
-			onProgress?.({
-				completed: index + 1,
-				label: `Completed ${index + 1} of ${compiledFiles.length}`,
-				phase: index + 1 === compiledFiles.length ? 'complete' : 'running',
-				total: compiledFiles.length,
-			})
+		const variants = compiledFiles.flatMap((compiled) => compiled.variants)
+		onProgress?.({
+			completed: 0,
+			label: `Running ${variants.length} variant${variants.length === 1 ? '' : 's'}`,
+			phase: 'running',
+			total: variants.length,
+		})
+		await yieldToBrowser()
+		try {
+			const result = await runtime.lookupGenotypeBytesVariants(
+				selectedGenome.primary.name,
+				bytes,
+				variants,
+			)
+			observations.push(...result.observations)
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			throw new Error(`Panel genotype lookup: ${message}`)
 		}
+		onProgress?.({
+			completed: variants.length,
+			label: `Completed ${variants.length} variant${variants.length === 1 ? '' : 's'}`,
+			phase: 'complete',
+			total: variants.length,
+		})
 		return {
 			kind: 'variant_lookup',
 			result: {
@@ -333,6 +347,7 @@ export async function runLabVariantYamlRefs(
 				phase: 'running',
 				total: compiledFiles.length,
 			})
+			await yieldToBrowser()
 			try {
 				const result = await runtime.lookupCramVariants({
 					cramFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome'),
@@ -377,6 +392,7 @@ export async function runLabVariantYamlRefs(
 			phase: 'running',
 			total: compiledFiles.length,
 		})
+		await yieldToBrowser()
 		try {
 			const result = await runtime.lookupVcfVariants({
 				vcfFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'VCF genome'),
@@ -406,6 +422,59 @@ export async function runLabVariantYamlRefs(
 			status: 'done',
 			durationMs: Date.now() - startedAt,
 			observations,
+		},
+	}
+}
+
+export async function runLabPackageReportRef(
+	selectedGenome: LabGenomeRef,
+	manifestPath: string,
+	packageFiles: BioscriptPackageFile[],
+	fileAdapter: LabRunFileAdapter,
+	onProgress?: LabRunProgressCallback,
+	runtime: LabBioscriptRuntime = expoBioscriptRuntime,
+): Promise<LabRunSuccess> {
+	onProgress?.({
+		completed: 0,
+		label: 'Preparing BioScript package report',
+		phase: 'preparing',
+		total: null,
+	})
+	await yieldToBrowser()
+	if (selectedGenome.kind !== 'text' && selectedGenome.kind !== 'zip') {
+		throw new Error('BioScript package reports currently require a text genotype file or ZIP genotype export.')
+	}
+	const inputBytes = await fileAdapter.readBytes(selectedGenome.primary)
+	onProgress?.({
+		completed: 0,
+		label: 'Running BioScript report',
+		phase: 'running',
+		total: null,
+	})
+	await yieldToBrowser()
+	const report = await runtime.runPackageReportBytes(
+		manifestPath,
+		packageFiles,
+		selectedGenome.primary.name,
+		inputBytes,
+		{
+			analysisMaxDurationMs: 30_000,
+			detectSex: true,
+		},
+	)
+	onProgress?.({
+		completed: 1,
+		label: 'BioScript report complete',
+		phase: 'complete',
+		total: 1,
+	})
+	return {
+		kind: 'text_output',
+		result: {
+			status: 'done',
+			artifacts: report.artifacts,
+			durationMs: report.durationMs,
+			textOutput: report.textOutput,
 		},
 	}
 }

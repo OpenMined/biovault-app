@@ -204,6 +204,74 @@ export function lookupVcfVariants(vcf_read_at, vcf_len, tbi_bytes, variants_json
 }
 
 /**
+ * Resolve a BioScript package release YAML into the package zip artifact URL.
+ * @param {string} source_url
+ * @param {string} name
+ * @param {string} text
+ * @returns {string}
+ */
+export function resolvePackageReleaseText(source_url, name, text) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(source_url, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.resolvePackageReleaseText(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
+ * Resolve a BioScript package zip from bytes.
+ *
+ * This mirrors the CLI package importer enough for browser/mobile callers:
+ * path safety, package size limits, descriptor/entrypoint discovery, and
+ * resource classification all stay in Rust.
+ * @param {string} source_url
+ * @param {string} name
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function resolvePackageZipBytes(source_url, name, bytes) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(source_url, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.resolvePackageZipBytes(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * Classify a fetched remote resource and return dependency requirements.
  *
  * Network access stays in the host app so each platform can prompt before
@@ -239,8 +307,64 @@ export function resolveRemoteResourceText(source_url, name, text) {
     }
 }
 
+/**
+ * @param {string} manifest_path
+ * @param {string} package_files_json
+ * @param {string} input_name
+ * @param {Uint8Array} input_bytes
+ * @param {string | null} [options_json]
+ * @returns {string}
+ */
+export function runPackageReportBytes(manifest_path, package_files_json, input_name, input_bytes, options_json) {
+    let deferred7_0;
+    let deferred7_1;
+    try {
+        const ptr0 = passStringToWasm0(manifest_path, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(package_files_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        var ptr4 = isLikeNone(options_json) ? 0 : passStringToWasm0(options_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len4 = WASM_VECTOR_LEN;
+        const ret = wasm.runPackageReportBytes(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var ptr6 = ret[0];
+        var len6 = ret[1];
+        if (ret[3]) {
+            ptr6 = 0; len6 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred7_0 = ptr6;
+        deferred7_1 = len6;
+        return getStringFromWasm0(ptr6, len6);
+    } finally {
+        wasm.__wbindgen_free(deferred7_0, deferred7_1, 1);
+    }
+}
+
 export function start() {
     wasm.start();
+}
+
+/**
+ * Verify package artifact bytes against a package-release sha256 value.
+ * @param {string} name
+ * @param {Uint8Array} bytes
+ * @param {string} expected
+ */
+export function verifyPackageArtifactSha256(name, bytes, expected) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(expected, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.verifyPackageArtifactSha256(ptr0, len0, ptr1, len1, ptr2, len2);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 //#endregion
@@ -284,6 +408,9 @@ function __wbg_get_imports() {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
         }, arguments); },
+        __wbg_getRandomValues_1c61fac11405ffdc: function() { return handleError(function (arg0, arg1) {
+            globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
+        }, arguments); },
         __wbg_length_32ed9a279acd054c: function() { return logError(function (arg0) {
             const ret = arg0.length;
             _assertNum(ret);
@@ -291,6 +418,10 @@ function __wbg_get_imports() {
         }, arguments); },
         __wbg_new_8a6f238a6ece86ea: function() { return logError(function () {
             const ret = new Error();
+            return ret;
+        }, arguments); },
+        __wbg_now_a3af9a2f4bbaa4d1: function() { return logError(function () {
+            const ret = Date.now();
             return ret;
         }, arguments); },
         __wbg_prototypesetcall_bdcdcc5842e4d77d: function() { return logError(function (arg0, arg1, arg2) {

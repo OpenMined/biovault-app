@@ -29,15 +29,15 @@ async function loadGenomeFiles(page: Page, files: string[]) {
 	await chooser.setFiles(files)
 }
 
-async function runApol1AndExpectStatus(page: Page, genomeName: string, expectedStatus: string) {
+async function runApol1AndExpectStatus(page: Page, genomeName: string, assayName: string, expectedStatus: string) {
 	await expect(page.getByText(genomeName, { exact: false })).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText('APOL1 kidney risk', { exact: false })).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText(assayName, { exact: false })).toBeVisible({ timeout: 30_000 })
 	await expect(page.getByText('Run assay', { exact: true }).first()).toBeVisible({ timeout: 120_000 })
 
 	await page.getByText('Run assay', { exact: true }).first().click()
 
 	await expect(page.getByText('LATEST RESULT')).toBeVisible({ timeout: 120_000 })
-	await expect(page.getByText('APOL1 kidney risk', { exact: false }).first()).toBeVisible()
+	await expect(page.getByText(assayName, { exact: false }).first()).toBeVisible()
 	const body = await page.textContent('body')
 	expect(body ?? '').not.toContain("Invalid exception type: 'Error'")
 	expect(body ?? '').not.toContain('Run failed')
@@ -71,8 +71,13 @@ test.describe('lab format matrix — web', () => {
 			const files = zipSourcePath
 				? [createZipFixture(zipSourcePath, testInfo.outputDir)]
 				: fixturePaths
-			await loadGenomeFiles(page, files)
-			await runApol1AndExpectStatus(page, scenario.expectedGenomeName, scenario.expectedStatus)
+			const assayPath = scenario.assayPath ? fixturePath(scenario.assayPath) : null
+			if (assayPath) {
+				test.skip(!fs.existsSync(assayPath), `missing assay fixture: ${assayPath}`)
+			}
+			const uploadFiles = assayPath ? [assayPath, ...files] : files
+			await loadGenomeFiles(page, uploadFiles)
+			await runApol1AndExpectStatus(page, scenario.expectedGenomeName, assayPath ? path.basename(assayPath) : 'Run assay', scenario.expectedStatus)
 		})
 	}
 })

@@ -21,7 +21,11 @@ const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
 	inspectBytes: (name: string, bytes: Uint8Array, optionsJson: string | null) => string
 	lookupGenotypeBytesRsids: (name: string, bytes: Uint8Array, rsidsJson: string) => string
 	lookupGenotypeBytesVariants: (name: string, bytes: Uint8Array, variantsJson: string) => string
+	resolvePackageReleaseText: (sourceUrl: string, name: string, text: string) => string
+	resolvePackageZipBytes: (sourceUrl: string, name: string, bytes: Uint8Array) => string
 	resolveRemoteResourceText: (sourceUrl: string, name: string, text: string) => string
+	runPackageReportBytes: (manifestPath: string, packageFilesJson: string, inputName: string, inputBytes: Uint8Array, optionsJson: string | null) => string
+	verifyPackageArtifactSha256: (name: string, bytes: Uint8Array, expected: string) => void
 }
 let wasmPromise: Promise<typeof wasmJsModule> | null = null
 
@@ -63,6 +67,7 @@ export type BioscriptInspection = {
 }
 
 export type BioscriptInspectOptions = {
+	detectSex?: boolean
 	inputIndex?: string
 	referenceFile?: string
 	referenceIndex?: string
@@ -80,6 +85,7 @@ export async function inspectBytes(
 			input_index: options.inputIndex ?? null,
 			reference_file: options.referenceFile ?? null,
 			reference_index: options.referenceIndex ?? null,
+			detectSex: options.detectSex ?? false,
 		})
 		: ''
 	const json = mod.inspectBytes(name, bytes, optionsJson || null)
@@ -105,6 +111,54 @@ export type BioscriptRemoteResourceResolution = {
 	version?: string | null
 }
 
+export type BioscriptPackageFile = {
+	contents: string
+	path: string
+	source_url: string
+}
+
+export type BioscriptPackageResource = {
+	contents: string
+	path: string
+	resolution: BioscriptRemoteResourceResolution
+}
+
+export type BioscriptPackageResolution = {
+	entrypoint: string
+	files: BioscriptPackageFile[]
+	name?: string | null
+	resources: BioscriptPackageResource[]
+}
+
+export type BioscriptPackageRelease = {
+	artifactSha256?: string | null
+	artifactSizeBytes?: number | null
+	artifactUrl: string
+	entrypoint?: string | null
+	name?: string | null
+	title: string
+	version?: string | null
+}
+
+export type BioscriptReportArtifact = {
+	mimeType: string
+	name: string
+	path: string
+	text: string
+}
+
+export type BioscriptPackageReportOptions = {
+	analysisMaxDurationMs?: number
+	detectSex?: boolean
+	filters?: string[]
+}
+
+export type BioscriptPackageReportResult = {
+	artifacts: BioscriptReportArtifact[]
+	durationMs: number
+	textOutput: string
+}
+
 export async function resolveRemoteResourceText(
 	sourceUrl: string,
 	name: string,
@@ -112,6 +166,57 @@ export async function resolveRemoteResourceText(
 ): Promise<BioscriptRemoteResourceResolution> {
 	const mod = await loadBioscriptWasm()
 	return JSON.parse(mod.resolveRemoteResourceText(sourceUrl, name, text)) as BioscriptRemoteResourceResolution
+}
+
+export async function resolvePackageZipBytes(
+	sourceUrl: string,
+	name: string,
+	bytes: Uint8Array,
+): Promise<BioscriptPackageResolution> {
+	const mod = await loadBioscriptWasm()
+	return JSON.parse(mod.resolvePackageZipBytes(sourceUrl, name, bytes)) as BioscriptPackageResolution
+}
+
+export async function resolvePackageReleaseText(
+	sourceUrl: string,
+	name: string,
+	text: string,
+): Promise<BioscriptPackageRelease> {
+	const mod = await loadBioscriptWasm()
+	return JSON.parse(mod.resolvePackageReleaseText(sourceUrl, name, text)) as BioscriptPackageRelease
+}
+
+export async function verifyPackageArtifactSha256(
+	name: string,
+	bytes: Uint8Array,
+	expected: string,
+): Promise<void> {
+	const mod = await loadBioscriptWasm()
+	mod.verifyPackageArtifactSha256(name, bytes, expected)
+}
+
+export async function runPackageReportBytes(
+	manifestPath: string,
+	packageFiles: BioscriptPackageFile[],
+	inputName: string,
+	inputBytes: Uint8Array,
+	options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	const mod = await loadBioscriptWasm()
+	const optionsJson = JSON.stringify({
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		detectSex: options.detectSex ?? false,
+		filters: options.filters ?? [],
+	})
+	return JSON.parse(
+		mod.runPackageReportBytes(
+			manifestPath,
+			JSON.stringify(packageFiles),
+			inputName,
+			inputBytes,
+			optionsJson,
+		),
+	) as BioscriptPackageReportResult
 }
 
 // === Variant lookup (CRAM + VCF, both via the same Worker) ==================

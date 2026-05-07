@@ -1,0 +1,32 @@
+{
+	"assays": [
+		{
+			"id": "pgx-1",
+			"title": "PGx-1 Panel",
+			"subtitle": "BioScript package",
+			"description": "Loads the PGx-1 BioScript package release from GitHub.",
+			"category": "panel",
+			"language": "yaml",
+			"url": "https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml",
+			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml",
+			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
+			"tags": ["pgx", "panel", "remote", "bioscript-package"]
+		}
+	],
+	"testFiles": [
+		{
+			"id": "biovault-23andme-sample",
+			"title": "Sample 23andMe ZIP",
+			"description": "A 23andMe v5 genome export from biovault-data. Downloads through the URL flow and caches in this browser if small enough.",
+			"format": "zip",
+			"remoteUrl": "https://github.com/OpenMined/biovault-data/blob/main/snp/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip",
+			"files": [
+				{
+					"name": "genome_hu50B3F5_v5_Full.zip",
+					"url": "https://github.com/OpenMined/biovault-data/blob/main/snp/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip",
+					"kind": "zip"
+				}
+			]
+		}
+	]
+}

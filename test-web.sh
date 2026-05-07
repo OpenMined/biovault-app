@@ -65,7 +65,7 @@ if ! env -u NO_COLOR -u FORCE_COLOR npx playwright install chromium; then
   exit 1
 fi
 
-SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-apol1.spec.ts .maestro-web/lab-format-matrix.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
+SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-pgx.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
 echo "==> Running Playwright specs: ${SPECS[*]}"
 if WEB_URL="$WEB_URL" env -u NO_COLOR -u FORCE_COLOR npx playwright test \
     --config=.maestro-web/playwright.config.ts \
