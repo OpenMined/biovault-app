@@ -1,6 +1,8 @@
 import initBioscriptWasm, {
 	lookupCramVariants,
 	lookupVcfVariants,
+	runPackageReportFromCram,
+	runPackageReportFromVcf,
 } from '../bioscript-wasm/bioscript_wasm.js'
 
 declare class FileReaderSync {
@@ -33,7 +35,38 @@ type WarmupMessage = {
 	wasmUrl: string
 }
 
-type LookupMessage = LookupCramMessage | LookupVcfMessage | WarmupMessage
+type ReportFromCramMessage = {
+	type: 'reportFromCram'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	cramFile: File
+	craiBytes: Uint8Array
+	fastaFile: File
+	faiBytes: Uint8Array
+	optionsJson: string
+}
+
+type ReportFromVcfMessage = {
+	type: 'reportFromVcf'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	vcfFile: File
+	tbiBytes: Uint8Array
+	optionsJson: string
+}
+
+type LookupMessage =
+	| LookupCramMessage
+	| LookupVcfMessage
+	| WarmupMessage
+	| ReportFromCramMessage
+	| ReportFromVcfMessage
 
 let wasmReady: Promise<void> | null = null
 
@@ -82,6 +115,52 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 				message.fastaFile.size,
 				message.faiBytes,
 				message.variantsJson,
+			)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson,
+				durationMs: Date.now() - startedAt,
+			})
+			return
+		}
+
+		if (message.type === 'reportFromCram') {
+			const cramReadAt = makeReadAt(message.cramFile, fileReader)
+			const fastaReadAt = makeReadAt(message.fastaFile, fileReader)
+			const startedAt = Date.now()
+			const resultJson = runPackageReportFromCram(
+				message.manifestPath,
+				message.packageFilesJson,
+				message.inputName,
+				cramReadAt,
+				message.cramFile.size,
+				message.craiBytes,
+				fastaReadAt,
+				message.fastaFile.size,
+				message.faiBytes,
+				message.optionsJson,
+			)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson,
+				durationMs: Date.now() - startedAt,
+			})
+			return
+		}
+
+		if (message.type === 'reportFromVcf') {
+			const vcfReadAt = makeReadAt(message.vcfFile, fileReader)
+			const startedAt = Date.now()
+			const resultJson = runPackageReportFromVcf(
+				message.manifestPath,
+				message.packageFilesJson,
+				message.inputName,
+				vcfReadAt,
+				message.vcfFile.size,
+				message.tbiBytes,
+				message.optionsJson,
 			)
 			self.postMessage({
 				type: 'done',

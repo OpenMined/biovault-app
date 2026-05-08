@@ -245,9 +245,12 @@ fn run_assay_blocking(request: DesktopRunAssayRequest) -> Result<DesktopRunAssay
 
     run_file_request(RunFileRequest {
         script_path: assay_path.display().to_string(),
+        script_contents: None,
         root: Some(root.display().to_string()),
         input_file: Some(root_relative_path(&root, &genome_path)),
+        input_contents: None,
         output_file: Some(root_relative_path(&root, &output_path)),
+        file_contents: None,
         participant_id: Some("desktop".to_owned()),
         trace_report_path: None,
         timing_report_path: None,

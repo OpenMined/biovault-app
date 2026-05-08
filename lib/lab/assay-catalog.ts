@@ -1,6 +1,6 @@
 import type { FileKind } from '@/lib/lab/core/file-kind'
-import { loadBundledApol1Script } from '@/lib/lab/bundled-assay-assets'
 import { createLabMemoryFile } from '@/lib/lab/platform-file'
+import exampleResources from './example-resources.json'
 
 export type AssayCategory = 'risk' | 'pharmacogenomics' | 'ancestry' | 'panel' | 'demo'
 
@@ -28,6 +28,7 @@ export type LabAssay = {
 	description: string
 	category: AssayCategory
 	language: 'python' | 'yaml'
+	remoteResourceUrl?: string
 	url: string
 	inputFormats: AssayInputFormat[]
 	tags?: string[]
@@ -42,32 +43,13 @@ export type LabTestFileBundle = {
 	remoteUrl?: string
 }
 
-const REPO_RAW_BASE = 'https://raw.githubusercontent.com/OpenMined/biovault-app/main'
-
-function rawGitHubUrl(path: string) {
-	return `${REPO_RAW_BASE}${path}`
-}
-
 // ---------------------------------------------------------------------------
 // Assay catalog — grows to 100s of entries. Keep entries lean; heavy metadata
 // lives in the assay file itself. Search + category filters are what scales
 // this surface, not inline descriptions.
 // ---------------------------------------------------------------------------
 
-export const LAB_ASSAYS: LabAssay[] = [
-	{
-		id: 'apol1',
-		title: 'APOL1 kidney risk',
-		subtitle: 'G1 / G2 variants',
-		description:
-			'Detects the APOL1 G1 and G2 high-risk variants associated with chronic kidney disease.',
-		category: 'risk',
-		language: 'python',
-		url: rawGitHubUrl('/exvitae/assays/risk/APOL1/apol1.py'),
-		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
-		tags: ['kidney', 'APOL1', 'G1', 'G2', 'nephropathy'],
-	},
-]
+export const LAB_ASSAYS: LabAssay[] = exampleResources.assays as LabAssay[]
 
 // ---------------------------------------------------------------------------
 // Test file bundles — a small curated set so people without data can try
@@ -75,50 +57,7 @@ export const LAB_ASSAYS: LabAssay[] = [
 // curated and large files are expensive to host.
 // ---------------------------------------------------------------------------
 
-export const LAB_TEST_FILES: LabTestFileBundle[] = [
-	{
-		id: 'apol1-cram',
-		title: 'APOL1 sample CRAM',
-		description: 'Tiny CRAM bundle spanning the APOL1 region, plus reference and indexes.',
-		format: 'cram',
-		files: [
-			{
-				name: 'apol1.cram',
-				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/apol1.cram'),
-				kind: 'cram',
-			},
-			{
-				name: 'apol1.cram.crai',
-				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/apol1.cram.crai'),
-				kind: 'crai',
-			},
-			{
-				name: 'stub.fa',
-				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/stub.fa'),
-				kind: 'fasta',
-			},
-			{
-				name: 'stub.fa.fai',
-				url: rawGitHubUrl('/exvitae/assays/risk/APOL1/test-data/stub.fa.fai'),
-				kind: 'fai',
-			},
-		],
-	},
-	{
-		id: 'biovault-23andme-sample',
-		title: 'Sample 23andMe ZIP',
-		description: 'A 23andMe v5 genome export from biovault-data. Downloads through the URL flow and caches in this browser if small enough.',
-		format: 'zip',
-		remoteUrl: 'https://github.com/OpenMined/biovault-data/blob/main/snp/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
-		files: [
-			{
-				name: 'genome_hu50B3F5_v5_Full.zip',
-				url: 'https://github.com/OpenMined/biovault-data/blob/main/snp/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
-				kind: 'zip',
-			},
-		],
-	},
-]
+export const LAB_TEST_FILES: LabTestFileBundle[] = exampleResources.testFiles as LabTestFileBundle[]
 
 // ---------------------------------------------------------------------------
 // Lookup + search helpers
@@ -182,9 +121,6 @@ async function fetchToFile(name: string, url: string): Promise<File> {
 }
 
 export async function loadAssayFile(assay: LabAssay): Promise<File> {
-	if (assay.id === 'apol1') {
-		return createLabMemoryFile('apol1.py', await loadBundledApol1Script(), 'text/x-python')
-	}
 	const name = assay.url.split('/').pop() ?? `${assay.id}.${assay.language === 'python' ? 'py' : 'yaml'}`
 	return fetchToFile(name, assay.url)
 }

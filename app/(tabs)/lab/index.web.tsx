@@ -49,19 +49,18 @@ import {
 	humanLabSize,
 	stripGenomeSuffix,
 } from '@/lib/lab/file-model'
+import { runLabPackageReportRef } from '@/lib/lab/runner'
 import {
-	runLabAssayRef,
-	runLabVariantYamlRefs,
-} from '@/lib/lab/runner'
-import {
-	createLabAssayRef,
 	createLabGenomeRefFromPrimary,
 	pairLabGenomeCompanionRef,
 	type LabGenomeRef,
 } from '@/lib/lab/core/refs'
+import { clearAllAppStorage } from '@/lib/clear-app-storage'
 import {
 	deleteRemoteResourceCache,
+	listResolvedCachedRemotePackages,
 	listResolvedCachedRemoteResources,
+	resolveRemotePackage,
 	resolveRemoteResource,
 	resourceKindLabel,
 	type ResolvedRemoteResource,
@@ -75,15 +74,16 @@ import {
 	remoteLabFileName,
 	type RemoteLabFile,
 } from '@/lib/remote-lab-file'
-import type { AssayLang, LabRunProgress, RunResult, UnknownEntry } from '@/lib/lab/types'
+import type { AssayLang, LabRunArtifact, LabRunProgress, LabRunSuccess, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
-import { warmupMontyRuntime, type VariantObservation } from '@/modules/expo-bioscript'
+import { warmupMontyRuntime, type BioscriptPackageFile } from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
 import { labPalettes, type LabPalette } from '@/styles/lab-theme'
 import { Asset } from 'expo-asset'
 import { useLocalSearchParams } from 'expo-router'
 import {
 	createContext,
+	createElement,
 	useCallback,
 	useContext,
 	useEffect,
@@ -91,6 +91,9 @@ import {
 	useRef,
 	useState,
 } from 'react'
+// @ts-expect-error react-dom ships types via @types/react-dom which isn't a
+// dependency here; the runtime module is fine on web.
+import { createPortal } from 'react-dom'
 import {
 	ActivityIndicator,
 	Platform,
@@ -140,6 +143,9 @@ type SourceViewerState = {
 type SessionLabAssay = LabAssay & {
 	dependencyUrls: string[]
 	file: File
+	packageEntrypoint?: string
+	packageFiles?: BioscriptPackageFile[]
+	packageSourceUrl?: string
 	remoteKind: ResolvedRemoteResource['kind']
 }
 type PendingPersistentHandle = {
@@ -248,8 +254,24 @@ function assayKindIcon(kind: ReturnType<typeof assayDisplayKind>) {
 }
 
 function mergeAssayList(assays: LabAssay[]): LabAssay[] {
+	// URLs that a session assay arrived via a package release for. Catalog
+	// entries with matching `url` are hidden so the resolved package replaces
+	// the example entry instead of doubling it.
+	const claimedPackageSourceUrls = new Set<string>()
+	for (const assay of assays) {
+		if (isSessionLabAssay(assay) && assay.packageSourceUrl) {
+			claimedPackageSourceUrls.add(normalizeRemoteAssayUrl(assay.packageSourceUrl))
+		}
+	}
 	const byKey = new Map<string, LabAssay>()
 	for (const assay of assays) {
+		if (
+			!isSessionLabAssay(assay) &&
+			assay.url &&
+			claimedPackageSourceUrls.has(normalizeRemoteAssayUrl(assay.url))
+		) {
+			continue
+		}
 		const key = assayStableKey(assay)
 		byKey.set(key, assay)
 	}
@@ -257,10 +279,11 @@ function mergeAssayList(assays: LabAssay[]): LabAssay[] {
 }
 
 function assayStableKey(assay: LabAssay): string {
+	if (assay.url) return `url:${normalizeRemoteAssayUrl(assay.url)}`
 	if (isSessionLabAssay(assay)) {
-		return `remote:${assay.remoteKind}:${normalizeRemoteAssayUrl(assay.url)}`
+		return `remote:${assay.remoteKind}:${assay.title}`
 	}
-	return `catalog:${assay.id || assay.url || assay.title}`
+	return `catalog:${assay.id || assay.title}`
 }
 
 function normalizeRemoteAssayUrl(url: string): string {
@@ -953,9 +976,12 @@ export default function LabScreen() {
 		[ingestMany, trackEvent],
 	)
 
-	const addResolvedSessionAssays = useCallback((resources: ResolvedRemoteResource[]) => {
+	const addResolvedSessionAssays = useCallback((
+		resources: ResolvedRemoteResource[],
+		packageInfo?: { entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
+	) => {
 		const assays = resources
-			.filter((resource) => resource.kind === 'panel' || resource.kind === 'variant' || resource.kind === 'python')
+			.filter((resource) => resource.kind === 'panel' || resource.kind === 'assay' || resource.kind === 'variant' || resource.kind === 'python')
 			.map((resource): SessionLabAssay => {
 				const language = resource.kind === 'python' ? 'python' : 'yaml'
 				return {
@@ -976,25 +1002,44 @@ export default function LabScreen() {
 						type: language === 'python' ? 'text/x-python' : 'application/yaml',
 					}),
 					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
+					packageEntrypoint: packageInfo?.entrypoint,
+					packageFiles: packageInfo?.files,
+					packageSourceUrl: packageInfo?.sourceUrl,
 					remoteKind: resource.kind,
 				}
 			})
 		if (!assays.length) return
 		setSessionAssays((prev) => {
 			const byKey = new Map(prev.map((assay) => [assayStableKey(assay), assay]))
-			for (const assay of assays) byKey.set(assayStableKey(assay), assay)
+			for (const assay of assays) {
+				const key = assayStableKey(assay)
+				const existing = byKey.get(key)
+				byKey.set(key, existing && !assay.packageFiles?.length ? {
+					...assay,
+					packageEntrypoint: existing.packageEntrypoint,
+					packageFiles: existing.packageFiles,
+					packageSourceUrl: existing.packageSourceUrl,
+				} : assay)
+			}
 			return Array.from(byKey.values()).sort((left, right) => left.title.localeCompare(right.title))
 		})
 	}, [])
 
 	useEffect(() => {
 		let cancelled = false
-		void listResolvedCachedRemoteResources()
-			.then((resources) => {
-				if (cancelled || !resources.length) return
-				addResolvedSessionAssays(resources)
+		void Promise.all([
+			listResolvedCachedRemoteResources(),
+			listResolvedCachedRemotePackages(),
+		])
+			.then(([resources, packages]) => {
+				if (cancelled) return
+				for (const pkg of packages) {
+					addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+				}
+				if (resources.length) addResolvedSessionAssays(resources)
 				logPersistentHandleDebug('remote cache rehydrated', {
 					count: resources.length,
+					packageCount: packages.length,
 					resources: resources.map((resource) => ({
 						kind: resource.kind,
 						sourceUrl: resource.sourceUrl,
@@ -1057,6 +1102,31 @@ export default function LabScreen() {
 		trackEvent('lab_remote_intent_fetch_requested', { source: intent.source })
 		try {
 			if (isRemoteLabFile) {
+				if (intentFileKind === 'zip') {
+					try {
+						const pkg = await resolveRemotePackage(intent.url)
+						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+						const resource =
+							pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
+							pkg.resources[0]
+						if (!resource) {
+							throw new Error(`Package ${pkg.name ?? pkg.sourceUrl} did not contain runnable BioScript resources.`)
+						}
+						setRemoteIntent({
+							dependencies: pkg.resources.filter((candidate) => candidate.sourceUrl !== resource.sourceUrl),
+							intent,
+							resource,
+							status: 'resolved',
+						})
+						trackEvent('lab_remote_package_resolved', {
+							resourceCount: pkg.resources.length,
+							source: intent.source,
+						})
+						return
+					} catch (error) {
+						console.warn('[lab] remote zip was not a BioScript package; falling back to lab file', error)
+					}
+				}
 				const remoteFile = await fetchRemoteLabFile(intent.url)
 				ingestMany([remoteFile.file], 'url')
 				if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
@@ -1071,6 +1141,27 @@ export default function LabScreen() {
 				return
 			}
 			const resource = await resolveRemoteResource(intent.url)
+			if (resource.schema === 'bioscript:package-release:1.0') {
+				const pkg = await resolveRemotePackage(intent.url)
+				addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+				const entrypointResource =
+					pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
+					pkg.resources[0]
+				if (!entrypointResource) {
+					throw new Error(`Package ${pkg.name ?? pkg.sourceUrl} did not contain runnable BioScript resources.`)
+				}
+				setRemoteIntent({
+					dependencies: pkg.resources.filter((candidate) => candidate.sourceUrl !== entrypointResource.sourceUrl),
+					intent,
+					resource: entrypointResource,
+					status: 'resolved',
+				})
+				trackEvent('lab_remote_package_resolved', {
+					resourceCount: pkg.resources.length,
+					source: intent.source,
+				})
+				return
+			}
 			addResolvedSessionAssays([resource])
 			setRemoteIntent({ dependencies: [], intent, resource, status: 'resolved' })
 			trackEvent('lab_remote_intent_resolved', {
@@ -1140,6 +1231,19 @@ export default function LabScreen() {
 				}
 			}
 
+			// Catalog entries that came from example-resources.json have a github
+			// `blob` URL that can't be raw-fetched directly. Route them through
+			// resolveRemoteResource so we get the resolved File content.
+			if (!isSessionLabAssay(catalogAssay) && catalogAssay.url) {
+				const resolved = await resolveRemoteResource(catalogAssay.url)
+				return [{
+					language: catalogAssay.language,
+					name: resolved.name,
+					source: catalogAssay.url,
+					text: resolved.contents,
+				}]
+			}
+
 			if (isSessionLabAssay(catalogAssay) && catalogAssay.remoteKind === 'panel') {
 				const panel = await sourceFromAssay(catalogAssay)
 				const variants = await Promise.all(panelVariantAssays(catalogAssay, sessionAssays).map(sourceFromAssay))
@@ -1186,34 +1290,46 @@ export default function LabScreen() {
 					genomeKind: activeGenomeRef.kind,
 				})
 
-				const success =
-					isSessionLabAssay(catalogAssay) && catalogAssay.remoteKind === 'panel'
-						? await (async () => {
-								const panelFiles = panelVariantAssays(catalogAssay, sessionAssays).map((assay) => assay.file)
-								const onProgress = (progress: LabRunProgress) => {
-									setRuns((prev) =>
-										prev.map((r) =>
-											r.id === runId && r.result.status === 'running'
-												? { ...r, result: { ...r.result, progress } }
-												: r,
-										),
-									)
-								}
-								const panelRefs = fileAdapterRef.current.fromPlatformFiles(panelFiles, 'url')
-								return runLabVariantYamlRefs(activeGenomeRef, panelRefs, fileAdapterRef.current, onProgress)
-							})()
-						: await (async () => {
-								const assayFile = isSessionLabAssay(catalogAssay)
-									? catalogAssay.file
-									: await loadAssayFile(catalogAssay)
-								const assayRef = fileAdapterRef.current.fromPlatformFiles([assayFile], 'bundled')[0]
-								if (!assayRef) throw new Error(`Could not create assay ref for ${assayFile.name}`)
-								return runLabAssayRef(
-									activeGenomeRef,
-									createLabAssayRef(assayRef, catalogAssay.language, catalogAssay.url),
-									fileAdapterRef.current,
-								)
-							})()
+				const onProgress = (progress: LabRunProgress) => {
+					setRuns((prev) =>
+						prev.map((r) =>
+							r.id === runId && r.result.status === 'running'
+								? { ...r, result: { ...r.result, progress } }
+								: r,
+						),
+					)
+				}
+				const session = isSessionLabAssay(catalogAssay) ? catalogAssay : null
+				let packageEntrypoint = session?.packageEntrypoint
+				let packageFiles = session?.packageFiles
+				// If the user is running a catalog entry that hasn't been resolved
+				// to a package yet (or whose cache was cleared / refresh raced the
+				// rehydrate effect), resolve on-the-fly so they don't need a
+				// separate "Load" click. resolveRemotePackage handles both
+				// package-release manifests and panel/assay YAMLs that declare a
+				// `package: { artifact: ... }` field, so we don't gate on schema.
+				if ((!packageFiles?.length || !packageEntrypoint) && catalogAssay.url) {
+					try {
+						const pkg = await resolveRemotePackage(catalogAssay.url)
+						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+						packageEntrypoint = pkg.entrypoint
+						packageFiles = pkg.files
+					} catch (resolveError) {
+						console.warn('[lab] auto-resolve package failed', resolveError)
+					}
+				}
+				if (!packageFiles?.length || !packageEntrypoint) {
+					throw new Error(
+						'This assay was not loaded as a package — load it as a .zip so the rust report path runs (no fallback).',
+					)
+				}
+				const success: LabRunSuccess = await runLabPackageReportRef(
+					activeGenomeRef,
+					packageEntrypoint,
+					packageFiles,
+					fileAdapterRef.current,
+					onProgress,
+				)
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
 				)
@@ -1305,7 +1421,10 @@ export default function LabScreen() {
 						<OMText variant="caption" style={styles.brandMark}>
 							BIOVAULT LAB
 						</OMText>
-						<WebThemeToggle scheme={scheme} />
+						<View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+							<ClearAllButton />
+							<WebThemeToggle scheme={scheme} />
+						</View>
 					</View>
 
 					<RemoteIntentCard
@@ -2328,6 +2447,8 @@ function CategoryChip({
 function RunCard({ onViewSource, record }: { onViewSource: () => void; record: RunRecord }) {
 	const { palette, styles } = useTheme()
 	const { assay, result } = record
+	const [resultOpen, setResultOpen] = useState(false)
+	const artifactCount = result.status === 'done' ? result.artifacts?.length ?? 0 : 0
 	return (
 		<View style={styles.runCard}>
 			<View style={styles.runCardHead}>
@@ -2354,6 +2475,17 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 				{result.status === 'running' ? (
 					<ActivityIndicator size="small" color={palette.accent} />
 				) : null}
+				{result.status === 'done' && artifactCount > 0 ? (
+					<Pressable
+						accessibilityRole="button"
+						onPress={() => setResultOpen(true)}
+						style={styles.textButton}
+					>
+						<OMText variant="subtitle" style={styles.textButtonText}>
+							View result
+						</OMText>
+					</Pressable>
+				) : null}
 				<Pressable accessibilityRole="button" onPress={onViewSource} style={styles.textButton}>
 					<OMText variant="subtitle" style={styles.textButtonText}>
 						View source
@@ -2365,20 +2497,14 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 				<RunProgress progress={result.progress} />
 			) : null}
 
-			{result.status === 'done' && result.observations ? (
-				<ObservationTable observations={result.observations} />
-			) : null}
-
-			{result.status === 'done' && result.textOutput !== undefined ? (
-				result.textOutput ? (
-					<View style={styles.preBlock}>
-						<OMText variant="body" style={styles.preText}>
-							{result.textOutput}
-						</OMText>
-					</View>
+			{result.status === 'done' ? (
+				artifactCount > 0 ? (
+					<OMText variant="caption" style={styles.runCardHint}>
+						{artifactCount} result artifact{artifactCount === 1 ? '' : 's'} saved locally.
+					</OMText>
 				) : (
 					<OMText variant="caption" style={styles.runCardHint}>
-						No output produced.
+						No rust HTML report. Load the assay/panel as a package zip — every run must go through `bioscript report`.
 					</OMText>
 				)
 			) : null}
@@ -2391,8 +2517,268 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 					</OMText>
 				</View>
 			) : null}
+
+			{resultOpen ? (
+				<ResultViewer record={record} onClose={() => setResultOpen(false)} />
+			) : null}
 		</View>
 	)
+}
+
+function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => void }) {
+	const { result, assay } = record
+	const html = result.status === 'done' ? htmlArtifactForResult(result) : null
+	const artifacts = result.status === 'done' ? result.artifacts ?? [] : []
+	// Use a blob URL instead of srcDoc so in-document hash navigation
+	// (the rust report's #observations / #analysis anchors) works correctly.
+	const [htmlBlobUrl, setHtmlBlobUrl] = useState<string | null>(null)
+	useEffect(() => {
+		if (!html) {
+			setHtmlBlobUrl(null)
+			return
+		}
+		const url = URL.createObjectURL(new Blob([html.text], { type: 'text/html' }))
+		setHtmlBlobUrl(url)
+		return () => URL.revokeObjectURL(url)
+	}, [html])
+	const openInNewTab = useCallback(() => {
+		if (!htmlBlobUrl) return
+		window.open(htmlBlobUrl, '_blank', 'noopener,noreferrer')
+	}, [htmlBlobUrl])
+	// Portal to document.body so the fixed-position overlay escapes the
+	// ScrollView's stacking context.
+	return createPortal(createElement('div', {
+		style: {
+			alignItems: 'center',
+			background: 'rgba(15, 23, 42, 0.55)',
+			bottom: 0,
+			display: 'flex',
+			justifyContent: 'center',
+			left: 0,
+			padding: 24,
+			position: 'fixed',
+			right: 0,
+			top: 0,
+			zIndex: 60,
+		},
+		onClick: (event: { target: unknown; currentTarget: unknown }) => {
+			if (event.target === event.currentTarget) onClose()
+		},
+		children: createElement('div', {
+			style: {
+				background: '#fff',
+				borderRadius: 12,
+				boxShadow: '0 24px 64px rgba(15,23,42,0.4)',
+				display: 'flex',
+				flexDirection: 'column',
+				height: '92vh',
+				maxWidth: 1280,
+				overflow: 'hidden',
+				width: '100%',
+			},
+			children: [
+				createElement('div', {
+					key: 'head',
+					style: {
+						alignItems: 'center',
+						borderBottom: '1px solid #d8dee6',
+						display: 'flex',
+						gap: 12,
+						padding: '12px 16px',
+					},
+					children: [
+						createElement('div', {
+							key: 'title',
+							style: { flex: 1, fontFamily: 'system-ui, sans-serif', fontSize: 14, fontWeight: 600 },
+							children: `RESULT — ${assay.title}`,
+						}),
+						htmlBlobUrl ? createElement('button', {
+							key: 'open',
+							onClick: openInNewTab,
+							style: {
+								background: '#fff',
+								border: '1px solid #cbd5df',
+								borderRadius: 6,
+								color: '#1f2933',
+								cursor: 'pointer',
+								fontFamily: 'system-ui, sans-serif',
+								fontSize: 12,
+								padding: '6px 12px',
+							},
+							children: 'Open in new tab',
+						}) : null,
+						createElement('button', {
+							key: 'close',
+							onClick: onClose,
+							style: {
+								background: '#1f2933',
+								border: 'none',
+								borderRadius: 6,
+								color: '#fff',
+								cursor: 'pointer',
+								fontFamily: 'system-ui, sans-serif',
+								fontSize: 12,
+								padding: '6px 12px',
+							},
+							children: 'Close',
+						}),
+					],
+				}),
+				artifacts.length > 0
+					? createElement(ArtifactLinks, { key: 'artifacts', artifacts })
+					: null,
+				html && htmlBlobUrl
+					? createElement('div', {
+							key: 'frame',
+							style: { flex: 1, padding: '0 12px 12px' },
+							children: createElement('iframe', {
+								src: htmlBlobUrl,
+								title: html.name,
+								sandbox: 'allow-scripts allow-same-origin',
+								style: {
+									background: '#fff',
+									border: '1px solid #cbd5df',
+									borderRadius: 6,
+									height: '100%',
+									width: '100%',
+								},
+							}),
+						})
+					: createElement('div', {
+							key: 'empty',
+							style: {
+								color: '#475467',
+								fontFamily: 'system-ui, sans-serif',
+								fontSize: 12,
+								padding: 16,
+							},
+							children: 'No rust HTML report. Load the assay/panel as a package zip.',
+						}),
+			],
+		}),
+	}), document.body)
+}
+
+function ClearAllButton() {
+	const [confirming, setConfirming] = useState(false)
+	const [busy, setBusy] = useState(false)
+	const onClick = useCallback(() => setConfirming(true), [])
+	const onCancel = useCallback(() => setConfirming(false), [])
+	const onConfirm = useCallback(async () => {
+		setBusy(true)
+		try {
+			await clearAllAppStorage()
+		} finally {
+			window.location.reload()
+		}
+	}, [])
+	return createElement('div', {
+		children: [
+			createElement('button', {
+				key: 'btn',
+				onClick,
+				style: {
+					background: '#fff',
+					border: '1px solid #cbd5df',
+					borderRadius: 6,
+					color: '#1f2933',
+					cursor: 'pointer',
+					fontFamily: 'system-ui, sans-serif',
+					fontSize: 12,
+					padding: '6px 12px',
+				},
+				children: 'Clear all',
+			}),
+			confirming
+				? createPortal(createElement('div', {
+						key: 'modal',
+						style: {
+							alignItems: 'center',
+							background: 'rgba(15, 23, 42, 0.55)',
+							bottom: 0,
+							display: 'flex',
+							justifyContent: 'center',
+							left: 0,
+							position: 'fixed',
+							right: 0,
+							top: 0,
+							zIndex: 70,
+						},
+						onClick: (event: { target: unknown; currentTarget: unknown }) => {
+							if (!busy && event.target === event.currentTarget) onCancel()
+						},
+						children: createElement('div', {
+							style: {
+								background: '#fff',
+								borderRadius: 12,
+								boxShadow: '0 24px 64px rgba(15,23,42,0.4)',
+								maxWidth: 420,
+								padding: 24,
+								width: '100%',
+							},
+							children: [
+								createElement('div', {
+									key: 'title',
+									style: { fontFamily: 'system-ui, sans-serif', fontSize: 16, fontWeight: 700, marginBottom: 8 },
+									children: 'Clear all stored data?',
+								}),
+								createElement('div', {
+									key: 'body',
+									style: {
+										color: '#475467',
+										fontFamily: 'system-ui, sans-serif',
+										fontSize: 13,
+										lineHeight: 1.4,
+										marginBottom: 16,
+									},
+									children:
+										'This wipes cached remote resources, package releases, persisted file handles, and remote-file blobs from this browser. The page will reload and re-fetch wasm/JS bundles. This cannot be undone.',
+								}),
+								createElement('div', {
+									key: 'actions',
+									style: { display: 'flex', gap: 8, justifyContent: 'flex-end' },
+									children: [
+										createElement('button', {
+											key: 'cancel',
+											onClick: onCancel,
+											disabled: busy,
+											style: {
+												background: '#fff',
+												border: '1px solid #cbd5df',
+												borderRadius: 6,
+												color: '#1f2933',
+												cursor: busy ? 'default' : 'pointer',
+												fontFamily: 'system-ui, sans-serif',
+												fontSize: 12,
+												padding: '6px 12px',
+											},
+											children: 'Cancel',
+										}),
+										createElement('button', {
+											key: 'confirm',
+											onClick: onConfirm,
+											disabled: busy,
+											style: {
+												background: '#c53b3b',
+												border: 'none',
+												borderRadius: 6,
+												color: '#fff',
+												cursor: busy ? 'default' : 'pointer',
+												fontFamily: 'system-ui, sans-serif',
+												fontSize: 12,
+												fontWeight: 600,
+												padding: '6px 12px',
+											},
+											children: busy ? 'Clearing…' : 'Clear all',
+										}),
+									],
+								}),
+							],
+						}),
+					}), document.body)
+				: null,
+		],
+	})
 }
 
 function RunProgress({ progress }: { progress: RunResult['progress'] }) {
@@ -2417,270 +2803,110 @@ function RunProgress({ progress }: { progress: RunResult['progress'] }) {
 				<View style={styles.runProgressTrack}>
 					<View style={[styles.runProgressFill, { backgroundColor: palette.accent, width: `${ratio * 100}%` }]} />
 				</View>
-			) : null}
+			) : (
+				// `runPackageReportBytes` is a single opaque wasm call so we don't
+				// know how many variants are left. Show an indeterminate animated
+				// bar instead of nothing so users know work is happening.
+				<IndeterminateProgressBar accent={palette.accent} />
+			)}
 		</View>
 	)
 }
 
-function ObservationTable({ observations }: { observations: VariantObservation[] }) {
-	const { styles } = useTheme()
-	const showCounts = observations.some((obs) => obs.depth !== undefined || obs.refCount !== undefined || obs.altCount !== undefined)
-	const showEvidence = showCounts && observations.some((obs) => obs.evidence.length > 0 || Object.keys(obs.rawCounts).length > 0)
-	return (
-		<View style={styles.obsTableWrap}>
-			<View style={styles.obsTableTitleRow}>
-				<OMText variant="caption" style={styles.sectionKicker}>
-					OBSERVATIONS
-				</OMText>
-				<OMText variant="caption" style={styles.runCardHint}>
-					{observations.length} row{observations.length === 1 ? '' : 's'}
-				</OMText>
-			</View>
-			<ScrollView horizontal showsHorizontalScrollIndicator>
-				<View style={styles.obsTable}>
-					<ObservationTableRow header showCounts={showCounts} showEvidence={showEvidence} />
-					{observations.map((obs, index) => (
-						<ObservationTableRow
-							key={`${obs.name}-${obs.matchedRsid ?? 'no-rsid'}-${index}`}
-							obs={obs}
-							showCounts={showCounts}
-							showEvidence={showEvidence}
-						/>
-					))}
-				</View>
-			</ScrollView>
-		</View>
-	)
+function IndeterminateProgressBar({ accent }: { accent: string }) {
+	return createElement('div', {
+		style: {
+			background: 'transparent',
+			borderRadius: 999,
+			height: 6,
+			marginTop: 6,
+			overflow: 'hidden',
+			position: 'relative',
+			width: '100%',
+		},
+		children: [
+			createElement('style', {
+				key: 'kf',
+				children: '@keyframes biovault-indeterm{0%{left:-40%;width:40%}50%{left:30%;width:50%}100%{left:100%;width:30%}}',
+			}),
+			createElement('div', {
+				key: 'track',
+				style: {
+					background: 'rgba(0,0,0,0.06)',
+					borderRadius: 999,
+					height: '100%',
+					left: 0,
+					position: 'absolute',
+					right: 0,
+					top: 0,
+				},
+			}),
+			createElement('div', {
+				key: 'fill',
+				style: {
+					animation: 'biovault-indeterm 1.6s ease-in-out infinite',
+					background: accent,
+					borderRadius: 999,
+					height: '100%',
+					position: 'absolute',
+					top: 0,
+				},
+			}),
+		],
+	})
 }
 
-function ObservationTableRow({
-	header,
-	obs,
-	showCounts,
-	showEvidence,
-}: {
-	header?: boolean
-	obs?: VariantObservation
-	showCounts: boolean
-	showEvidence: boolean
-}) {
-	const { styles } = useTheme()
-	const [evidenceExpanded, setEvidenceExpanded] = useState(false)
-	if (header) {
-		return (
-			<View style={[styles.obsTableRow, styles.obsTableHeaderRow]}>
-				<ObsCell width={110} header value="RSID" />
-				<ObsCell width={92} header value="Ref->Alt" />
-				<ObsCell width={120} header value="Genotype" />
-				<ObsCell width={110} header value="Decision" />
-				<ObsCell width={220} header value="Variant" />
-				<ObsCell width={90} header value="Assembly" />
-				<ObsCell width={120} header value="Backend" />
-				{showCounts ? (
-					<>
-						<ObsCell width={80} header value="Depth" />
-						<ObsCell width={90} header value="ref_count" />
-						<ObsCell width={90} header value="alt_count" />
-					</>
-				) : null}
-				{showEvidence ? <ObsCell width={320} header value="Evidence" /> : null}
-			</View>
-		)
-	}
-	if (!obs) return null
-	const hasAltSupport = observationHasFoundSignal(obs)
-	const alleles = parseObservationAlleles(obs)
-	return (
-		<View style={[styles.obsTableRow, hasAltSupport ? styles.obsTableAltRow : null]}>
-			<RsidCell width={110} rsid={obs.matchedRsid} />
-			<ObsCell width={92} value={formatObservationAlleles(obs, alleles)} strong />
-			<GenotypeCell width={120} obs={obs} />
-			<ObsCell width={110} value={formatObservationDecision(obs)} />
-			<ObsCell width={220} value={obs.name} />
-			<ObsCell width={90} value={obs.assembly?.toUpperCase() ?? '—'} />
-			<ObsCell width={120} value={obs.backend} />
-			{showCounts ? (
-				<>
-					<ObsCell width={80} value={formatOptionalNumber(obs.depth)} />
-					<ObsCell width={90} value={formatOptionalNumber(obs.refCount)} />
-					<ObsCell width={90} value={formatOptionalNumber(obs.altCount)} />
-				</>
-			) : null}
-			{showEvidence ? (
-				<EvidenceCell
-					expanded={evidenceExpanded}
-					onToggle={() => setEvidenceExpanded((value) => !value)}
-					value={obs.evidence.length ? obs.evidence.join(' · ') : formatRawCounts(obs.rawCounts)}
-					width={320}
-				/>
-			) : null}
-		</View>
-	)
+function htmlArtifactForResult(result: RunResult): LabRunArtifact | null {
+	const list = result.artifacts ?? []
+	const htmls = list.filter((a) => a.mimeType === 'text/html' || a.name.toLowerCase().endsWith('.html'))
+	const named = htmls.find((a) => {
+		const path = (a.path ?? '').toLowerCase()
+		return a.name.toLowerCase() === 'index.html' || path === 'index.html' || path.endsWith('/index.html')
+	})
+	return named ?? htmls[0] ?? null
 }
 
-function GenotypeCell({ obs, width }: { obs: VariantObservation; width: number }) {
-	const { styles } = useTheme()
-	const genotype = obs.genotype ?? '—'
-	const alleles = parseObservationAlleles(obs)
-	const hasAltSupport = observationHasFoundSignal(obs)
-	if (!alleles || genotype === '—') {
-		return (
-			<View style={[styles.obsCell, { width }]}>
-				<View style={[styles.obsGenotypePill, hasAltSupport ? styles.obsGenotypePillAlt : null]}>
-					<OMText variant="caption" numberOfLines={1} style={hasAltSupport ? styles.obsGenotypeAltText : styles.obsGenotypeRefText}>
-						{genotype}
-					</OMText>
-				</View>
-			</View>
-		)
-	}
-
-	const canSplitBases = alleles.ref.length === 1 && alleles.alt.length === 1 && genotype.length <= 2
-	return (
-		<View style={[styles.obsCell, { width }]}>
-			<View style={[styles.obsGenotypePill, hasAltSupport ? styles.obsGenotypePillAlt : null]}>
-				{canSplitBases ? (
-					<OMText variant="caption" style={styles.obsGenotypeText}>
-						{genotype.split('').map((base, index) => {
-							const normalized = base.toUpperCase()
-							const isAlt = normalized === alleles.alt.toUpperCase()
-							const isRef = normalized === alleles.ref.toUpperCase()
-							return (
-								<OMText
-									key={`${base}-${index}`}
-									variant="caption"
-									style={isAlt ? styles.obsGenotypeAltText : isRef ? styles.obsGenotypeRefText : styles.obsGenotypeText}
-								>
-									{base}
-								</OMText>
-							)
-						})}
-					</OMText>
-				) : (
-					<OMText variant="caption" numberOfLines={1} style={hasAltSupport ? styles.obsGenotypeAltText : styles.obsGenotypeRefText}>
-						{genotype}
-					</OMText>
-				)}
-			</View>
-		</View>
-	)
-}
-
-function RsidCell({ rsid, width }: { rsid?: string; width: number }) {
-	const { styles } = useTheme()
-	if (!rsid) return <ObsCell width={width} value="—" />
-	const normalizedRsid = rsid.trim()
-	const href = `https://www.ncbi.nlm.nih.gov/snp/${normalizedRsid}`
-	return (
-		<View style={[styles.obsCell, { width }]}>
-			<Pressable
-				accessibilityRole="link"
-				onPress={() => {
-					window.open(href, '_blank', 'noopener,noreferrer')
-				}}
-			>
-				<OMText numberOfLines={1} variant="caption" style={styles.obsLinkText}>
-					{normalizedRsid}
-				</OMText>
-			</Pressable>
-		</View>
-	)
-}
-
-function EvidenceCell({
-	expanded,
-	onToggle,
-	value,
-	width,
-}: {
-	expanded: boolean
-	onToggle: () => void
-	value: string
-	width: number
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={[styles.obsCell, { width }]}>
-			<OMText
-				numberOfLines={expanded ? undefined : 2}
-				variant="caption"
-				style={expanded ? styles.obsEvidenceExpandedText : styles.obsCellText}
-			>
-				{value}
-			</OMText>
-			{value.length > 120 ? (
-				<Pressable accessibilityRole="button" onPress={onToggle} style={styles.obsEvidenceToggle}>
-					<OMText variant="caption" style={styles.obsLinkText}>
-						{expanded ? 'Show less' : 'Full evidence'}
-					</OMText>
-				</Pressable>
-			) : null}
-		</View>
-	)
-}
-
-function ObsCell({
-	header,
-	strong,
-	value,
-	width,
-}: {
-	header?: boolean
-	strong?: boolean
-	value: string
-	width: number
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={[styles.obsCell, { width }]}>
-			<OMText
-				numberOfLines={header ? 1 : 2}
-				variant="caption"
-				style={header ? styles.obsCellHeaderText : strong ? styles.obsCellStrongText : styles.obsCellText}
-			>
-				{value}
-			</OMText>
-		</View>
-	)
-}
-
-function formatObservationDecision(obs: VariantObservation): string {
-	return obs.decision ?? (obs.genotype ? 'called' : 'not found')
-}
-
-function formatObservationAlleles(
-	obs: VariantObservation,
-	parsedAlleles: { ref: string; alt: string } | null = parseObservationAlleles(obs),
-): string {
-	const ref = obs.ref ?? parsedAlleles?.ref
-	const alt = obs.alt ?? parsedAlleles?.alt
-	return ref && alt ? `${ref}->${alt}` : '—'
-}
-
-function observationHasFoundSignal(obs: VariantObservation): boolean {
-	if ((obs.altCount ?? 0) > 0) return true
-	if (obs.altCount !== undefined || obs.refCount !== undefined) return false
-	const genotype = obs.genotype?.trim()
-	return Boolean(genotype && genotype !== '—' && genotype !== '--')
-}
-
-function parseObservationAlleles(obs: VariantObservation): { ref: string; alt: string } | null {
-	const text = obs.decision ?? ''
-	const snpMatch = text.match(/\bfor\s+([ACGT]+)>([ACGT]+)\b/i)
-	if (snpMatch?.[1] && snpMatch[2]) return { ref: snpMatch[1], alt: snpMatch[2] }
-	const indelMatch = text.match(/\bfor\s+([ACGT]+)->([ACGT]+)\b/i)
-	if (indelMatch?.[1] && indelMatch[2]) return { ref: indelMatch[1], alt: indelMatch[2] }
-	return null
-}
-
-function formatOptionalNumber(value: number | undefined): string {
-	return value === undefined ? '—' : String(value)
-}
-
-function formatRawCounts(rawCounts: Record<string, number>): string {
-	const entries = Object.entries(rawCounts)
-	if (!entries.length) return '—'
-	return entries.map(([allele, count]) => `${allele}:${count}`).join(' · ')
+function ArtifactLinks({ artifacts }: { artifacts: LabRunArtifact[] }) {
+	return createElement('div', {
+		style: { display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 12px' },
+		children: [
+			createElement('div', {
+				key: 'kicker',
+				style: {
+					color: '#475467',
+					fontFamily: 'system-ui, sans-serif',
+					fontSize: 11,
+					fontWeight: 700,
+					letterSpacing: 1,
+				},
+				children: 'ARTIFACTS',
+			}),
+			createElement('div', {
+				key: 'row',
+				style: { display: 'flex', flexWrap: 'wrap', gap: 8 },
+				children: artifacts.map((artifact, index) => {
+					const blob = new Blob([artifact.text], { type: artifact.mimeType || 'application/octet-stream' })
+					const href = URL.createObjectURL(blob)
+					return createElement('a', {
+						key: `${artifact.path ?? artifact.name}-${index}`,
+						href,
+						download: artifact.name,
+						style: {
+							padding: '4px 10px',
+							border: '1px solid #cbd5df',
+							borderRadius: 6,
+							background: '#fff',
+							color: '#1f2933',
+							fontSize: 12,
+							textDecoration: 'none',
+							fontFamily: 'system-ui, sans-serif',
+						},
+						children: artifact.name,
+					})
+				}),
+			}),
+		],
+	})
 }
 
 function MetaChip({ label }: { label: string }) {

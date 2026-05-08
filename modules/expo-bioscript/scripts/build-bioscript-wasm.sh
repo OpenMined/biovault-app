@@ -25,6 +25,7 @@ fi
 
 PROFILE="${BIOSCRIPT_WASM_PROFILE:-dev}"
 echo "[build-bioscript-wasm] building (${PROFILE}, target=web)"
+export RUSTFLAGS="${RUSTFLAGS:-} --cfg getrandom_backend=\"wasm_js\""
 if [ "${PROFILE}" = "release" ]; then
   (cd "${CRATE_DIR}" && wasm-pack build --target web --release --out-dir pkg)
 else

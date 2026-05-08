@@ -44,6 +44,7 @@ export type SharedLabTestScenario = {
 export type LabFormatMatrixScenario = {
 	id: string
 	title: string
+	assayPath: string | null
 	genomeKind: LabTestGenomeKind
 	fixturePaths: string[]
 	expectedGenomeName: string
@@ -136,6 +137,7 @@ export const webPersistentHandleScenarios = sharedLabTestScenarios.filter(
 export const labFormatMatrixScenarios: LabFormatMatrixScenario[] = webLabRunScenarios.map((scenario) => ({
 	id: scenario.id,
 	title: scenario.title,
+	assayPath: scenario.assay?.path ?? null,
 	genomeKind: scenario.genome?.kind ?? 'genotype_text',
 	fixturePaths: scenario.genome?.files ?? [],
 	expectedGenomeName: scenario.genome?.expectDisplayName ?? '',
