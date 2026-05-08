@@ -122,4 +122,28 @@ export async function runPackageReportBytes(
 	nativeOnly('runPackageReportBytes')
 }
 
+export async function runPackageReportFromCramFile(
+	_manifestPath: string,
+	_packageFiles: BioscriptPackageFile[],
+	_inputName: string,
+	_cramFile: File,
+	_craiBytes: Uint8Array,
+	_fastaFile: File,
+	_faiBytes: Uint8Array,
+	_options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	nativeOnly('runPackageReportFromCramFile')
+}
+
+export async function runPackageReportFromVcfFile(
+	_manifestPath: string,
+	_packageFiles: BioscriptPackageFile[],
+	_inputName: string,
+	_vcfFile: File,
+	_tbiBytes: Uint8Array,
+	_options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	nativeOnly('runPackageReportFromVcfFile')
+}
+
 export async function warmupBioscriptLookupWorker(): Promise<void> {}

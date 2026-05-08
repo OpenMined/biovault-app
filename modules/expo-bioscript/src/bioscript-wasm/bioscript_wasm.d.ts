@@ -59,6 +59,25 @@ export function resolveRemoteResourceText(source_url: string, name: string, text
 
 export function runPackageReportBytes(manifest_path: string, package_files_json: string, input_name: string, input_bytes: Uint8Array, options_json?: string | null): string;
 
+/**
+ * Mirrors `runPackageReportBytes` but for CRAM input. The CRAM body and
+ * FASTA reference are streamed via JS-supplied `readAt` callbacks so the
+ * browser doesn't have to load multi-GB genomes into wasm memory. The CRAI
+ * and FAI indexes are passed inline.
+ *
+ * Analyses run against the observations produced from the CRAM lookup. The
+ * per-script Python interpreter still receives `input_bytes` as a virtual
+ * file; for CRAM that's an empty buffer because typical PGx analysis scripts
+ * (apoe, mthfr, apol1, …) read observation rows rather than raw genome bytes.
+ */
+export function runPackageReportFromCram(manifest_path: string, package_files_json: string, input_name: string, cram_read_at: Function, cram_len: number, crai_bytes: Uint8Array, fasta_read_at: Function, fasta_len: number, fai_bytes: Uint8Array, options_json?: string | null): string;
+
+/**
+ * Mirrors `runPackageReportBytes` but for a bgzipped, tabix-indexed VCF
+ * streamed via JS-supplied `readAt` callbacks. The TBI is passed inline.
+ */
+export function runPackageReportFromVcf(manifest_path: string, package_files_json: string, input_name: string, vcf_read_at: Function, vcf_len: number, tbi_bytes: Uint8Array, options_json?: string | null): string;
+
 export function start(): void;
 
 /**
@@ -78,6 +97,8 @@ export interface InitOutput {
     readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly start: () => void;
     readonly runPackageReportBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly runPackageReportFromCram: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number) => [number, number, number, number];
+    readonly runPackageReportFromVcf: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly lookupGenotypeBytesRsids: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];

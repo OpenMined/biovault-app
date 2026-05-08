@@ -441,9 +441,90 @@ export async function runLabPackageReportRef(
 		total: null,
 	})
 	await yieldToBrowser()
-	if (selectedGenome.kind !== 'text' && selectedGenome.kind !== 'zip') {
-		throw new Error('BioScript package reports currently require a text genotype file or ZIP genotype export.')
+	const reportOptions = {
+		analysisMaxDurationMs: 30_000,
+		detectSex: true,
 	}
+	if (selectedGenome.kind === 'cram') {
+		if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
+			throw new Error('CRAM genome incomplete: needs .cram + .crai + .fasta + .fai')
+		}
+		const cramFile = requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome')
+		const fastaFile = requirePlatformFile(fileAdapter, selectedGenome.fasta, 'CRAM reference FASTA')
+		const craiBytes = await fileAdapter.readBytes(selectedGenome.crai)
+		const faiBytes = await fileAdapter.readBytes(selectedGenome.fai)
+		onProgress?.({
+			completed: 0,
+			label: 'Running BioScript report (CRAM)',
+			phase: 'running',
+			total: null,
+		})
+		await yieldToBrowser()
+		const report = await runtime.runPackageReportFromCramFile(
+			manifestPath,
+			packageFiles,
+			selectedGenome.primary.name,
+			cramFile,
+			craiBytes,
+			fastaFile,
+			faiBytes,
+			reportOptions,
+		)
+		onProgress?.({
+			completed: 1,
+			label: 'BioScript report complete',
+			phase: 'complete',
+			total: 1,
+		})
+		return {
+			kind: 'text_output',
+			result: {
+				status: 'done',
+				artifacts: report.artifacts,
+				durationMs: report.durationMs,
+				textOutput: report.textOutput,
+			},
+		}
+	}
+	if (selectedGenome.kind === 'vcf') {
+		if (!selectedGenome.tbi) {
+			throw new Error('VCF genome incomplete: needs .vcf.gz + .tbi tabix index')
+		}
+		const vcfFile = requirePlatformFile(fileAdapter, selectedGenome.primary, 'VCF genome')
+		const tbiBytes = await fileAdapter.readBytes(selectedGenome.tbi)
+		onProgress?.({
+			completed: 0,
+			label: 'Running BioScript report (VCF)',
+			phase: 'running',
+			total: null,
+		})
+		await yieldToBrowser()
+		const report = await runtime.runPackageReportFromVcfFile(
+			manifestPath,
+			packageFiles,
+			selectedGenome.primary.name,
+			vcfFile,
+			tbiBytes,
+			reportOptions,
+		)
+		onProgress?.({
+			completed: 1,
+			label: 'BioScript report complete',
+			phase: 'complete',
+			total: 1,
+		})
+		return {
+			kind: 'text_output',
+			result: {
+				status: 'done',
+				artifacts: report.artifacts,
+				durationMs: report.durationMs,
+				textOutput: report.textOutput,
+			},
+		}
+	}
+	// Falls through to text/zip path; LabGenomeRef's kind union is exhausted
+	// by the cram/vcf branches above so TS narrows this to text|zip.
 	const inputBytes = await fileAdapter.readBytes(selectedGenome.primary)
 	onProgress?.({
 		completed: 0,
@@ -457,10 +538,7 @@ export async function runLabPackageReportRef(
 		packageFiles,
 		selectedGenome.primary.name,
 		inputBytes,
-		{
-			analysisMaxDurationMs: 30_000,
-			detectSex: true,
-		},
+		reportOptions,
 	)
 	onProgress?.({
 		completed: 1,

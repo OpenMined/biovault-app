@@ -304,6 +304,32 @@ type WorkerWarmupRequest = {
 	wasmUrl: string
 }
 
+type WorkerReportFromCramRequest = {
+	type: 'reportFromCram'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	cramFile: File
+	craiBytes: Uint8Array
+	fastaFile: File
+	faiBytes: Uint8Array
+	optionsJson: string
+}
+
+type WorkerReportFromVcfRequest = {
+	type: 'reportFromVcf'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	vcfFile: File
+	tbiBytes: Uint8Array
+	optionsJson: string
+}
+
 type WorkerResponseDone = { type: 'done'; requestId: number; resultJson: string; durationMs: number }
 type WorkerResponseError = { type: 'error'; requestId: number; error: string }
 type WorkerResponse = WorkerResponseDone | WorkerResponseError
@@ -312,7 +338,10 @@ let sharedWorker: Worker | null = null
 let nextLookupRequestId = 1
 const pendingLookupRequests = new Map<
 	number,
-	{ resolve: (r: VariantLookupResult) => void; reject: (err: Error) => void }
+	{
+		resolve: (r: { resultJson: string; durationMs: number }) => void
+		reject: (err: Error) => void
+	}
 >()
 let lookupWorkerWarmupPromise: Promise<void> | null = null
 
@@ -333,10 +362,7 @@ function ensureLookupWorker(): Worker {
 		if (!pending) return
 		pendingLookupRequests.delete(msg.requestId)
 		if (msg.type === 'done') {
-			pending.resolve({
-				observations: JSON.parse(msg.resultJson) as VariantObservation[],
-				durationMs: msg.durationMs,
-			})
+			pending.resolve({ resultJson: msg.resultJson, durationMs: msg.durationMs })
 		} else {
 			if (isWasmMemoryTrap(msg.error)) {
 				console.warn('[BioscriptWasm] resetting lookup worker after wasm memory trap')
@@ -428,7 +454,19 @@ export async function lookupCramVariants(
 	const requestId = nextLookupRequestId++
 	const variantsJson = serializeVariants(input.variants)
 	return new Promise<VariantLookupResult>((resolve, reject) => {
-		pendingLookupRequests.set(requestId, { resolve, reject })
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve({
+						observations: JSON.parse(raw.resultJson) as VariantObservation[],
+						durationMs: raw.durationMs,
+					})
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
 		const req: WorkerLookupCramRequest = {
 			type: 'lookupCram',
 			requestId,
@@ -438,6 +476,104 @@ export async function lookupCramVariants(
 			fastaFile: input.fastaFile,
 			faiBytes: input.faiBytes,
 			variantsJson,
+		}
+		worker.postMessage(req)
+	})
+}
+
+/**
+ * Run the rust report against a CRAM input + FASTA reference. Same worker
+ * plumbing as `lookupCramVariants` but produces the full 4-artifact report
+ * (observations.tsv, analysis.jsonl, reports.jsonl, index.html) by walking
+ * the package manifest and calling the rust observation pipeline.
+ */
+export async function runPackageReportFromCramFile(
+	manifestPath: string,
+	packageFiles: BioscriptPackageFile[],
+	inputName: string,
+	cramFile: File,
+	craiBytes: Uint8Array,
+	fastaFile: File,
+	faiBytes: Uint8Array,
+	options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	const optionsJson = JSON.stringify({
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		detectSex: options.detectSex ?? false,
+		filters: options.filters ?? [],
+	})
+	return new Promise<BioscriptPackageReportResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve(JSON.parse(raw.resultJson) as BioscriptPackageReportResult)
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
+		const req: WorkerReportFromCramRequest = {
+			type: 'reportFromCram',
+			requestId,
+			wasmUrl,
+			manifestPath,
+			packageFilesJson: JSON.stringify(packageFiles),
+			inputName,
+			cramFile,
+			craiBytes,
+			fastaFile,
+			faiBytes,
+			optionsJson,
+		}
+		worker.postMessage(req)
+	})
+}
+
+/**
+ * Run the rust report against a bgzipped, tabix-indexed VCF. Mirrors
+ * `runPackageReportFromCramFile` but for VCF inputs.
+ */
+export async function runPackageReportFromVcfFile(
+	manifestPath: string,
+	packageFiles: BioscriptPackageFile[],
+	inputName: string,
+	vcfFile: File,
+	tbiBytes: Uint8Array,
+	options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	const optionsJson = JSON.stringify({
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		detectSex: options.detectSex ?? false,
+		filters: options.filters ?? [],
+	})
+	return new Promise<BioscriptPackageReportResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve(JSON.parse(raw.resultJson) as BioscriptPackageReportResult)
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
+		const req: WorkerReportFromVcfRequest = {
+			type: 'reportFromVcf',
+			requestId,
+			wasmUrl,
+			manifestPath,
+			packageFilesJson: JSON.stringify(packageFiles),
+			inputName,
+			vcfFile,
+			tbiBytes,
+			optionsJson,
 		}
 		worker.postMessage(req)
 	})
@@ -456,7 +592,19 @@ export async function lookupVcfVariants(
 	const requestId = nextLookupRequestId++
 	const variantsJson = serializeVariants(input.variants)
 	return new Promise<VariantLookupResult>((resolve, reject) => {
-		pendingLookupRequests.set(requestId, { resolve, reject })
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve({
+						observations: JSON.parse(raw.resultJson) as VariantObservation[],
+						durationMs: raw.durationMs,
+					})
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
 		const req: WorkerLookupVcfRequest = {
 			type: 'lookupVcf',
 			requestId,

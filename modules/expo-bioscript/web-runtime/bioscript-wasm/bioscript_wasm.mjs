@@ -344,6 +344,100 @@ export function runPackageReportBytes(manifest_path, package_files_json, input_n
     }
 }
 
+/**
+ * Mirrors `runPackageReportBytes` but for CRAM input. The CRAM body and
+ * FASTA reference are streamed via JS-supplied `readAt` callbacks so the
+ * browser doesn't have to load multi-GB genomes into wasm memory. The CRAI
+ * and FAI indexes are passed inline.
+ *
+ * Analyses run against the observations produced from the CRAM lookup. The
+ * per-script Python interpreter still receives `input_bytes` as a virtual
+ * file; for CRAM that's an empty buffer because typical PGx analysis scripts
+ * (apoe, mthfr, apol1, …) read observation rows rather than raw genome bytes.
+ * @param {string} manifest_path
+ * @param {string} package_files_json
+ * @param {string} input_name
+ * @param {Function} cram_read_at
+ * @param {number} cram_len
+ * @param {Uint8Array} crai_bytes
+ * @param {Function} fasta_read_at
+ * @param {number} fasta_len
+ * @param {Uint8Array} fai_bytes
+ * @param {string | null} [options_json]
+ * @returns {string}
+ */
+export function runPackageReportFromCram(manifest_path, package_files_json, input_name, cram_read_at, cram_len, crai_bytes, fasta_read_at, fasta_len, fai_bytes, options_json) {
+    let deferred8_0;
+    let deferred8_1;
+    try {
+        const ptr0 = passStringToWasm0(manifest_path, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(package_files_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(crai_bytes, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray8ToWasm0(fai_bytes, wasm.__wbindgen_malloc);
+        const len4 = WASM_VECTOR_LEN;
+        var ptr5 = isLikeNone(options_json) ? 0 : passStringToWasm0(options_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len5 = WASM_VECTOR_LEN;
+        const ret = wasm.runPackageReportFromCram(ptr0, len0, ptr1, len1, ptr2, len2, cram_read_at, cram_len, ptr3, len3, fasta_read_at, fasta_len, ptr4, len4, ptr5, len5);
+        var ptr7 = ret[0];
+        var len7 = ret[1];
+        if (ret[3]) {
+            ptr7 = 0; len7 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred8_0 = ptr7;
+        deferred8_1 = len7;
+        return getStringFromWasm0(ptr7, len7);
+    } finally {
+        wasm.__wbindgen_free(deferred8_0, deferred8_1, 1);
+    }
+}
+
+/**
+ * Mirrors `runPackageReportBytes` but for a bgzipped, tabix-indexed VCF
+ * streamed via JS-supplied `readAt` callbacks. The TBI is passed inline.
+ * @param {string} manifest_path
+ * @param {string} package_files_json
+ * @param {string} input_name
+ * @param {Function} vcf_read_at
+ * @param {number} vcf_len
+ * @param {Uint8Array} tbi_bytes
+ * @param {string | null} [options_json]
+ * @returns {string}
+ */
+export function runPackageReportFromVcf(manifest_path, package_files_json, input_name, vcf_read_at, vcf_len, tbi_bytes, options_json) {
+    let deferred7_0;
+    let deferred7_1;
+    try {
+        const ptr0 = passStringToWasm0(manifest_path, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(package_files_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(tbi_bytes, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        var ptr4 = isLikeNone(options_json) ? 0 : passStringToWasm0(options_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len4 = WASM_VECTOR_LEN;
+        const ret = wasm.runPackageReportFromVcf(ptr0, len0, ptr1, len1, ptr2, len2, vcf_read_at, vcf_len, ptr3, len3, ptr4, len4);
+        var ptr6 = ret[0];
+        var len6 = ret[1];
+        if (ret[3]) {
+            ptr6 = 0; len6 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred7_0 = ptr6;
+        deferred7_1 = len6;
+        return getStringFromWasm0(ptr6, len6);
+    } finally {
+        wasm.__wbindgen_free(deferred7_0, deferred7_1, 1);
+    }
+}
+
 export function start() {
     wasm.start();
 }

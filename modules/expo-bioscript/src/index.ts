@@ -39,6 +39,8 @@ export {
   resolvePackageZipBytes,
   resolvePackageReleaseText,
   runPackageReportBytes,
+  runPackageReportFromCramFile,
+  runPackageReportFromVcfFile,
   warmupBioscriptLookupWorker,
   type BioscriptPackageFile,
   type BioscriptPackageReportOptions,

@@ -4,6 +4,8 @@ import {
 	lookupGenotypeBytesVariants,
 	lookupVcfVariants,
 	runPackageReportBytes,
+	runPackageReportFromCramFile,
+	runPackageReportFromVcfFile,
 	runFile,
 	type BioscriptPackageFile,
 	type BioscriptPackageReportOptions,
@@ -46,6 +48,24 @@ export type LabBioscriptRuntime = {
 		inputBytes: Uint8Array,
 		options?: BioscriptPackageReportOptions,
 	) => Promise<BioscriptPackageReportResult>
+	runPackageReportFromCramFile: (
+		manifestPath: string,
+		packageFiles: BioscriptPackageFile[],
+		inputName: string,
+		cramFile: File,
+		craiBytes: Uint8Array,
+		fastaFile: File,
+		faiBytes: Uint8Array,
+		options?: BioscriptPackageReportOptions,
+	) => Promise<BioscriptPackageReportResult>
+	runPackageReportFromVcfFile: (
+		manifestPath: string,
+		packageFiles: BioscriptPackageFile[],
+		inputName: string,
+		vcfFile: File,
+		tbiBytes: Uint8Array,
+		options?: BioscriptPackageReportOptions,
+	) => Promise<BioscriptPackageReportResult>
 	runFile: (request: RunFileRequest) => Promise<RunFileResult>
 }
 
@@ -55,5 +75,7 @@ export const expoBioscriptRuntime: LabBioscriptRuntime = {
 	lookupGenotypeBytesVariants,
 	lookupVcfVariants,
 	runPackageReportBytes,
+	runPackageReportFromCramFile,
+	runPackageReportFromVcfFile,
 	runFile,
 }

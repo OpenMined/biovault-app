@@ -1323,11 +1323,6 @@ export default function LabScreen() {
 						'This assay was not loaded as a package — load it as a .zip so the rust report path runs (no fallback).',
 					)
 				}
-				if (activeGenomeRef.kind !== 'text' && activeGenomeRef.kind !== 'zip') {
-					throw new Error(
-						`Genome kind '${activeGenomeRef.kind}' is not yet supported by the rust report path. Use a 23andMe-style text or genotype zip.`,
-					)
-				}
 				const success: LabRunSuccess = await runLabPackageReportRef(
 					activeGenomeRef,
 					packageEntrypoint,
