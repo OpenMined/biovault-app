@@ -6,13 +6,14 @@ const autoWorkers = typeof os.availableParallelism === 'function'
 	: os.cpus().length
 const workers = Number(process.env.PW_WORKERS ?? autoWorkers)
 const headed = process.argv.includes('--headed') || process.env.PWDEBUG === '1'
-const fullyParallel = headed ? false : process.env.PW_FULLY_PARALLEL !== '0'
+const headedParallel = headed && process.env.PW_HEADED_PARALLEL === '1'
+const fullyParallel = headed && !headedParallel ? false : process.env.PW_FULLY_PARALLEL !== '0'
 
 export default defineConfig({
 	testDir: '.',
 	timeout: 120_000,
 	retries: 0,
-	workers: headed ? 1 : workers,
+	workers: headed && !headedParallel ? 1 : workers,
 	fullyParallel,
 	reporter: [['list']],
 	use: {

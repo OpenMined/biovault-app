@@ -76,6 +76,7 @@ type CachedRemotePackage = {
 
 const GITHUB_BLOB_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/
 const ALLOWED_REMOTE_RESOURCE_HOSTS = new Set(['github.com', 'raw.githubusercontent.com'])
+const DEV_REMOTE_RESOURCE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 const PACKAGE_CACHE_PREFIX = 'biovault-remote-package:'
 
 function fileNameFromUrl(url: URL): string {
@@ -95,6 +96,12 @@ function toFetchableUrl(input: string): string {
 
 function normalizeSourceUrl(input: string): string {
 	return input.trim()
+}
+
+function isAllowedRemoteResourceHost(hostname: string): boolean {
+	return ALLOWED_REMOTE_RESOURCE_HOSTS.has(hostname) ||
+		DEV_REMOTE_RESOURCE_HOSTS.has(hostname) ||
+		hostname.endsWith('.biovault.test')
 }
 
 function hasLocalStorage(): boolean {
@@ -270,8 +277,8 @@ function resolvedFromPackageResource(
 export async function fetchRemoteResource(input: string): Promise<FetchedRemoteResource> {
 	const sourceUrl = normalizeSourceUrl(input)
 	const parsedSource = new URL(sourceUrl)
-	if (!ALLOWED_REMOTE_RESOURCE_HOSTS.has(parsedSource.hostname)) {
-		throw new Error('Remote resources must come from github.com or raw.githubusercontent.com.')
+	if (!isAllowedRemoteResourceHost(parsedSource.hostname)) {
+		throw new Error('Remote resources must come from github.com, raw.githubusercontent.com, or an allowed local test host.')
 	}
 
 	const cached = await getCachedRemoteResource(sourceUrl)
@@ -339,8 +346,8 @@ export async function resolveRemoteResource(input: string): Promise<ResolvedRemo
 export async function resolveRemotePackage(input: string): Promise<ResolvedRemotePackage> {
 	const sourceUrl = normalizeSourceUrl(input)
 	const parsedSource = new URL(sourceUrl)
-	if (!ALLOWED_REMOTE_RESOURCE_HOSTS.has(parsedSource.hostname)) {
-		throw new Error('Remote resources must come from github.com or raw.githubusercontent.com.')
+	if (!isAllowedRemoteResourceHost(parsedSource.hostname)) {
+		throw new Error('Remote resources must come from github.com, raw.githubusercontent.com, or an allowed local test host.')
 	}
 
 	const name = fileNameFromUrl(parsedSource)

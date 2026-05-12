@@ -3,6 +3,7 @@ import { createLabMemoryFile } from '@/lib/lab/platform-file'
 import type { AssayLang } from '@/lib/lab/types'
 
 const ALLOWED_REMOTE_ASSAY_HOSTS = new Set(['github.com', 'raw.githubusercontent.com'])
+const DEV_REMOTE_ASSAY_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 export function normalizeLabSearchParam(value: string | string[] | undefined): string | null {
 	if (Array.isArray(value)) return value[0]?.trim() || null
@@ -21,8 +22,8 @@ export async function loadRemoteAssayFile(url: string): Promise<{
 		throw new Error('Enter a valid assay URL.')
 	}
 
-	if (!ALLOWED_REMOTE_ASSAY_HOSTS.has(parsed.hostname)) {
-		throw new Error('Remote assay URLs must come from github.com or raw.githubusercontent.com.')
+	if (!ALLOWED_REMOTE_ASSAY_HOSTS.has(parsed.hostname) && !isAllowedDevRemoteAssayHost(parsed.hostname)) {
+		throw new Error('Remote assay URLs must come from github.com, raw.githubusercontent.com, or an allowed local test host.')
 	}
 
 	const remote = await fetchRemoteAssayFileFromUrl(url)
@@ -35,6 +36,10 @@ export async function loadRemoteAssayFile(url: string): Promise<{
 		language: remote.language,
 		source: remote.source,
 	}
+}
+
+function isAllowedDevRemoteAssayHost(hostname: string): boolean {
+	return DEV_REMOTE_ASSAY_HOSTS.has(hostname) || hostname.endsWith('.biovault.test')
 }
 
 export function getRemoteAssaySourceHost(url: string): string {

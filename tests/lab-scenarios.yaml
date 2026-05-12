@@ -274,6 +274,34 @@ scenarios:
     assert:
       contains: apol1.cram
 
+  - id: web-pgx-1-report-browser-matrix
+    title: Browser PGx-1 report matrix matches expected artifacts
+    platforms: [web]
+    capabilities: [local_file, drag_drop, file_picker, pgx_panel, browser_report, report_artifacts]
+    action: report_matrix
+    notes: Runs ExVitae PGx-1 report samples through the Lab web page itself. Samples at or below WEB_REPORT_MAX_DRAG_BYTES use drag/drop; larger samples use the browser file picker so Playwright can pass filesystem paths directly.
+    report_matrix:
+      samples_file: exvitae/samples.yaml
+      private_samples_file: exvitae/samples.private.yaml
+      assay_manifest: exvitae/assays/pgx/pgx-1/manifest.yaml
+      package_zip: exvitae/assays/pgx/pgx-1/pgx-1.zip
+      package_url: https://local.biovault.test/assays/pgx/pgx-1/pgx-1.zip
+      max_drag_bytes: 52428800
+      require_artifacts:
+        - observations.tsv
+        - analysis.jsonl
+        - reports.jsonl
+        - index.html
+      html_contains:
+        - observation(s)
+        - analysis output(s)
+        - PGx
+      report_status:
+        - complete
+        - partial
+    assert:
+      contains: PGx-1 Panel
+
   - id: ios-lab-smoke
     title: iOS Lab opens from deep link
     platforms: [ios]

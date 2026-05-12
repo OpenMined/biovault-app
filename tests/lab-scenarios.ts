@@ -6,7 +6,7 @@ import { parse } from 'yaml'
 
 export type LabTestGenomeKind = 'genotype_text' | 'zip' | 'cram' | 'vcf'
 export type LabTestPlatform = 'web' | 'desktop' | 'ios' | 'android'
-export type LabTestAction = 'run_assay' | 'persistent_handles' | 'app_smoke' | 'file_picker' | 'drag_drop' | 'sample_preset'
+export type LabTestAction = 'run_assay' | 'persistent_handles' | 'app_smoke' | 'file_picker' | 'drag_drop' | 'sample_preset' | 'report_matrix'
 export type LabTestSource = 'local' | 'url'
 
 export type SharedLabTestScenario = {
@@ -31,6 +31,17 @@ export type SharedLabTestScenario = {
 		presetId?: string
 		expectGenome?: string
 		expectAssay?: string
+	}
+	reportMatrix?: {
+		samplesFile: string
+		privateSamplesFile?: string
+		assayManifest?: string
+		packageZip: string
+		packageUrl: string
+		maxDragBytes?: number
+		requireArtifacts?: string[]
+		htmlContains?: string[]
+		reportStatus?: string[]
 	}
 	assert: {
 		contains: string
@@ -71,6 +82,17 @@ type RawScenario = {
 		zip_source_path?: string
 	}
 	maestro?: SharedLabTestScenario['maestro']
+	report_matrix?: {
+		samples_file: string
+		private_samples_file?: string
+		assay_manifest?: string
+		package_zip: string
+		package_url: string
+		max_drag_bytes?: number
+		require_artifacts?: string[]
+		html_contains?: string[]
+		report_status?: string[]
+	}
 	assert: {
 		contains: string
 		not_contains?: string[]
@@ -99,6 +121,19 @@ export const sharedLabTestScenarios: SharedLabTestScenario[] = doc.scenarios.map
 			}
 		: null,
 	maestro: scenario.maestro,
+	reportMatrix: scenario.report_matrix
+		? {
+				samplesFile: scenario.report_matrix.samples_file,
+				privateSamplesFile: scenario.report_matrix.private_samples_file,
+				assayManifest: scenario.report_matrix.assay_manifest,
+				packageZip: scenario.report_matrix.package_zip,
+				packageUrl: scenario.report_matrix.package_url,
+				maxDragBytes: scenario.report_matrix.max_drag_bytes,
+				requireArtifacts: scenario.report_matrix.require_artifacts,
+				htmlContains: scenario.report_matrix.html_contains,
+				reportStatus: scenario.report_matrix.report_status,
+			}
+		: undefined,
 	assert: {
 		contains: scenario.assert.contains,
 		notContains: scenario.assert.not_contains,
@@ -132,6 +167,10 @@ export const desktopLabRunScenarios = sharedLabTestScenarios.filter(
 
 export const webPersistentHandleScenarios = sharedLabTestScenarios.filter(
 	(scenario) => scenario.platforms.includes('web') && scenario.action === 'persistent_handles',
+)
+
+export const webReportMatrixScenarios = sharedLabTestScenarios.filter(
+	(scenario) => scenario.platforms.includes('web') && scenario.action === 'report_matrix' && scenario.reportMatrix,
 )
 
 export const labFormatMatrixScenarios: LabFormatMatrixScenario[] = webLabRunScenarios.map((scenario) => ({

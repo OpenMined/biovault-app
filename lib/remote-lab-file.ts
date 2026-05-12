@@ -4,7 +4,7 @@ import type { FileKind } from '@/lib/lab/types'
 export const REMOTE_LAB_FILE_CACHE_MAX_BYTES = 100 * 1024 * 1024
 
 export type RemoteLabFile = {
-	cacheStatus: 'hit' | 'miss' | 'stored' | 'too-large'
+	cacheStatus: 'hit' | 'miss' | 'stored' | 'too-large' | 'uncached'
 	file: File
 	fileKind: FileKind
 	sourceUrl: string
@@ -24,6 +24,7 @@ const DB_VERSION = 1
 const STORE_NAME = 'files'
 const GITHUB_BLOB_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/
 const ALLOWED_REMOTE_FILE_HOSTS = new Set(['github.com', 'raw.githubusercontent.com'])
+const DEV_REMOTE_FILE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -72,9 +73,13 @@ function fileNameFromUrl(input: string): string {
 
 function assertAllowedRemoteFile(input: string) {
 	const parsed = new URL(input)
-	if (!ALLOWED_REMOTE_FILE_HOSTS.has(parsed.hostname)) {
-		throw new Error('Remote files must come from github.com or raw.githubusercontent.com.')
+	if (!ALLOWED_REMOTE_FILE_HOSTS.has(parsed.hostname) && !isAllowedDevRemoteHost(parsed.hostname)) {
+		throw new Error('Remote files must come from github.com, raw.githubusercontent.com, or an allowed local test host.')
 	}
+}
+
+function isAllowedDevRemoteHost(hostname: string): boolean {
+	return DEV_REMOTE_FILE_HOSTS.has(hostname) || hostname.endsWith('.biovault.test')
 }
 
 function getCachedRemoteLabFile(sourceUrl: string): Promise<CachedRemoteLabFile | null> {
@@ -154,15 +159,20 @@ export async function fetchRemoteLabFile(input: string): Promise<RemoteLabFile> 
 	const contentType = response.headers.get('content-type') ?? blob.type ?? ''
 	const file = new File([blob], name, { type: contentType })
 	if (blob.size <= REMOTE_LAB_FILE_CACHE_MAX_BYTES) {
-		await putCachedRemoteLabFile({
-			blob,
-			cachedAt: new Date().toISOString(),
-			contentType,
-			name,
-			size: blob.size,
-			sourceUrl,
-		})
-		return { cacheStatus: 'stored', file, fileKind, sourceUrl }
+		try {
+			await putCachedRemoteLabFile({
+				blob,
+				cachedAt: new Date().toISOString(),
+				contentType,
+				name,
+				size: blob.size,
+				sourceUrl,
+			})
+			return { cacheStatus: 'stored', file, fileKind, sourceUrl }
+		} catch (error) {
+			console.warn('[remote-lab-file] failed to write remote file cache', error)
+			return { cacheStatus: 'uncached', file, fileKind, sourceUrl }
+		}
 	}
 	return { cacheStatus: 'too-large', file, fileKind, sourceUrl }
 }

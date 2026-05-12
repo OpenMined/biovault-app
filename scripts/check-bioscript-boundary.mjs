@@ -33,12 +33,18 @@ const riskyPatterns = [
 ]
 
 function listFiles() {
-	const result = spawnSync('rg', ['--files', ...scanRoots], {
+	let result = spawnSync('rg', ['--files', ...scanRoots], {
 		cwd: root,
 		encoding: 'utf8',
 	})
 	if (result.status !== 0) {
-		throw new Error(`rg --files failed:\n${result.stderr}`)
+		result = spawnSync('git', ['ls-files', ...scanRoots], {
+			cwd: root,
+			encoding: 'utf8',
+		})
+	}
+	if (result.status !== 0) {
+		throw new Error(`file listing failed:\n${result.stderr}`)
 	}
 	return result.stdout
 		.trim()
