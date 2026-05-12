@@ -13,6 +13,7 @@ const protocol = useHttps ? 'https' : 'http';
 const port = Number(process.env.DEV_WEB_PORT ?? (useHttps ? '443' : '80'));
 const expoPort = Number(process.env.EXPO_WEB_PORT ?? '8081');
 const expoHost = process.env.EXPO_WEB_HOST ?? 'localhost';
+const publicOrigin = `${protocol}://${publicHost}${(protocol === 'https' && port === 443) || (protocol === 'http' && port === 80) ? '' : `:${port}`}`;
 const DEV_NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
   Pragma: 'no-cache',
@@ -112,7 +113,6 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 server.listen(port, listenHost, () => {
-  const publicOrigin = `${protocol}://${publicHost}${(protocol === 'https' && port === 443) || (protocol === 'http' && port === 80) ? '' : `:${port}`}`;
   console.log(`[dev-web] root landing page: ${publicOrigin}/`);
   console.log(`[dev-web] Expo web app:      ${publicOrigin}/web/`);
   console.log(`[dev-web] proxying to Expo:  http://${expoHost}:${expoPort}/`);
@@ -137,6 +137,7 @@ function proxyHttp(clientRequest, clientResponse) {
     origin: `http://${expoHost}:${expoPort}`,
     pragma: 'no-cache',
     referer: `http://${expoHost}:${expoPort}/`,
+    'accept-encoding': 'identity',
   };
   const upstream = http.request(
     {
@@ -152,12 +153,31 @@ function proxyHttp(clientRequest, clientResponse) {
         ...DEV_NO_STORE_HEADERS,
       };
       delete responseHeaders.etag;
-      clientResponse.writeHead(
-        upstreamResponse.statusCode ?? 502,
-        upstreamResponse.statusMessage,
-        responseHeaders,
-      );
-      upstreamResponse.pipe(clientResponse);
+      if (!shouldRewriteResponse(upstreamResponse)) {
+        clientResponse.writeHead(
+          upstreamResponse.statusCode ?? 502,
+          upstreamResponse.statusMessage,
+          responseHeaders,
+        );
+        upstreamResponse.pipe(clientResponse);
+        return;
+      }
+
+      const chunks = [];
+      upstreamResponse.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      upstreamResponse.on('end', () => {
+        const rewritten = rewriteDevServerUrls(Buffer.concat(chunks).toString('utf8'));
+        delete responseHeaders['content-length'];
+        delete responseHeaders['Content-Length'];
+        delete responseHeaders['content-encoding'];
+        delete responseHeaders['Content-Encoding'];
+        clientResponse.writeHead(
+          upstreamResponse.statusCode ?? 502,
+          upstreamResponse.statusMessage,
+          responseHeaders,
+        );
+        clientResponse.end(rewritten);
+      });
       upstreamResponse.on('error', (error) => {
         logUnexpectedSocketError('upstream response error', error);
         destroyQuietly(clientResponse);
@@ -182,4 +202,28 @@ function proxyHttp(clientRequest, clientResponse) {
   });
 
   clientRequest.pipe(upstream);
+}
+
+function shouldRewriteResponse(upstreamResponse) {
+  const contentType = String(upstreamResponse.headers['content-type'] ?? '').toLowerCase();
+  if (!contentType || contentType.includes('text/event-stream')) return false;
+  return (
+    contentType.includes('javascript') ||
+    contentType.includes('json') ||
+    contentType.includes('text/') ||
+    contentType.includes('application/x-metro')
+  );
+}
+
+function rewriteDevServerUrls(text) {
+  const hosts = new Set([
+    `http://${expoHost}:${expoPort}`,
+    `http://localhost:${expoPort}`,
+    `http://127.0.0.1:${expoPort}`,
+  ]);
+  let rewritten = text;
+  for (const host of hosts) {
+    rewritten = rewritten.split(host).join(publicOrigin);
+  }
+  return rewritten;
 }
