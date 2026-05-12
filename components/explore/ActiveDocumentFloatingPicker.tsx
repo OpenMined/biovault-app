@@ -69,7 +69,6 @@ const styles = StyleSheet.create({
 		width: '100%',
 		alignItems: 'center',
 		zIndex: 20,
-		elevation: 20,
 		overflow: 'visible',
 	},
 	chromeHidden: {
@@ -92,6 +91,5 @@ const styles = StyleSheet.create({
 		top: '100%',
 		paddingTop: omSpacing.s,
 		zIndex: 21,
-		elevation: 21,
 	},
 })

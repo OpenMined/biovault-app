@@ -1,5 +1,8 @@
 import type { ColorScheme } from '@/lib/color-theme'
 
+/** Matches BioVault landing `:root`/body fill (prepare-cloudflare-web-assets `index.html`). */
+export const LAB_LANDING_PAGE_FILL = '#272532'
+
 export type LabPalette = {
 	pageBg: string
 	surface: string
@@ -64,37 +67,37 @@ const light: LabPalette = {
 }
 
 // ---------------------------------------------------------------------------
-// Dark — deeper warm-slate page, OPAQUE surfaces (not rgba overlays) so cards
-// feel like real material rather than frosted glass. Slightly softer white
-// for body text (easier on the eyes). Accent brighter on dark for pop.
+// Dark — aligned with BioVault landing (prepare-cloudflare-web-assets /
+// index.html): #272532 base, teal radial veil, warm off-white headline text,
+// #d8d3df secondary, soft borders like rgba(255,255,255,0.08–0.14).
 // ---------------------------------------------------------------------------
 const dark: LabPalette = {
-	pageBg: '#0e1018',           // deep slate — warmer than near-black
-	surface: '#1a1d26',          // opaque card — no rgba overlay muddiness
-	surfaceRaised: '#21242f',    // for nested cards (observation inside run)
-	surfaceSunken: '#07080d',    // code/result preBlocks, darker than page
-	surfaceSolid: '#1a1d26',     // matches surface; onboarding info card
-	border: 'rgba(255,255,255,0.08)',
-	borderStrong: 'rgba(255,255,255,0.16)',
-	text: '#f4f5f8',             // soft white — not pure #fff
-	textMuted: '#c4c2d0',        // clearly secondary, still legible
-	textFaint: '#8e8ca3',        // tertiary, passes 3:1 against pageBg
-	accent: '#53bea9',           // same brand green as light
-	accentStrong: '#6dd5c0',     // brighter on dark for readable text/icons
-	accentSoft: 'rgba(83,190,169,0.12)',
-	accentBorder: 'rgba(83,190,169,0.4)',
-	accentTint: 'rgba(83,190,169,0.08)',
+	pageBg: LAB_LANDING_PAGE_FILL, // landing :root / body tint stack
+	surface: '#353243', // grayscale750 — inset panels / lists (home screens)
+	surfaceRaised: '#3a364c', // one step elevated from surface
+	surfaceSunken: '#1f1d29', // code wells, dipped regions
+	surfaceSolid: '#353243', // explorer column, grouped panels
+	border: 'rgba(255,255,255,0.1)', // landing .platforms / footer separators
+	borderStrong: 'rgba(255,255,255,0.14)',
+	text: '#f7f4ef', // landing :root foreground
+	textMuted: '#d8d3df', // landing hero <p>
+	textFaint: 'rgba(247,244,239,0.52)', // landing .footer-note
+	accent: '#53bea9', // landing .brand / CTA fill
+	accentStrong: '#53bea9', // BIOVAULT kicker / links — matches landing teal
+	accentSoft: 'rgba(83,190,169,0.14)',
+	accentBorder: 'rgba(83,190,169,0.32)',
+	accentTint: 'rgba(83,190,169,0.1)',
 	warningBg: 'rgba(255,200,80,0.1)',
 	warningText: '#ffd87a',
 	warningBorder: 'rgba(255,200,80,0.3)',
 	dangerBg: 'rgba(255,107,107,0.12)',
 	dangerText: '#ff9a9a',
 	dangerBorder: 'rgba(255,107,107,0.35)',
-	overlayBg: 'rgba(10,12,19,0.88)',
+	overlayBg: 'rgba(39,37,50,0.92)',
 	overlayCardBg: 'rgba(83,190,169,0.14)',
-	invertText: '#0e1018',       // dark text on green CTA button
-	iconNeutral: '#c4c2d0',
-	shadow: 'rgba(0,0,0,0.4)',
+	invertText: '#17161d', // landing .primary-action strong (on teal)
+	iconNeutral: '#cfcdd6',
+	shadow: 'rgba(83,190,169,0.24)',
 }
 
 export const labPalettes: Record<ColorScheme, LabPalette> = { light, dark }

@@ -7,7 +7,7 @@ interface Env {
 }
 
 const SECURITY_HEADERS = {
-	'Cross-Origin-Embedder-Policy': 'require-corp',
+	'Cross-Origin-Embedder-Policy': 'credentialless',
 	'Cross-Origin-Opener-Policy': 'same-origin',
 	'Permissions-Policy': 'cross-origin-isolated=(self)',
 	'X-Content-Type-Options': 'nosniff',

@@ -148,11 +148,6 @@ function WizardStep({ step }: WizardStepProps) {
 					backgroundColor: theme.surface,
 					borderRadius: 20,
 					padding: 20,
-					shadowColor: '#000',
-					shadowOffset: { width: 0, height: 4 },
-					shadowOpacity: 0.1,
-					shadowRadius: 12,
-					elevation: 6,
 				}}
 			>
 				{/* Icon or Logo */}

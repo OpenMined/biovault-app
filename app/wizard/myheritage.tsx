@@ -45,11 +45,6 @@ export default function MyHeritageWizard() {
 						width: '100%',
 						maxWidth: 400,
 						alignItems: 'center',
-						shadowColor: '#000',
-						shadowOffset: { width: 0, height: 4 },
-						shadowOpacity: 0.1,
-						shadowRadius: 12,
-						elevation: 6,
 					}}
 				>
 					<View

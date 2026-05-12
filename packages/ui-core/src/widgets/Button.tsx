@@ -29,10 +29,8 @@ export function Button({
         fontSize: omTypography.body.fontSize,
         fontWeight: 600,
         letterSpacing: 0.2,
-        boxShadow: enabled
-          ? '0 12px 24px rgba(0,0,0,0.28)'
-          : 'none',
-        transition: 'transform 120ms ease, box-shadow 120ms ease',
+        boxShadow: 'none',
+        transition: 'transform 120ms ease',
         ...style,
       }}
       onMouseDown={(e) => enabled && (e.currentTarget.style.transform = 'scale(0.98)')}

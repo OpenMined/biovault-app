@@ -88,11 +88,6 @@ export const onboardingStyles = StyleSheet.create({
 		paddingVertical: 16,
 		borderRadius: 16,
 		alignItems: 'center',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 4 },
-		shadowOpacity: 0.15,
-		shadowRadius: 8,
-		elevation: 4,
 	},
 	nextButtonText: {
 		color: colors.surface,

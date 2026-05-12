@@ -83,11 +83,6 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: 'rgba(255,255,255,0.08)',
 		padding: omSpacing.xs,
-		shadowColor: '#000000',
-		shadowOpacity: 0.18,
-		shadowRadius: 18,
-		shadowOffset: { width: 0, height: 10 },
-		elevation: 8,
 	},
 	dropdownShell: {},
 	stack: {

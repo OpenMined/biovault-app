@@ -26,23 +26,26 @@ installGlobalErrorHandler()
 applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})
 
+/** TEMP: skip onboarding + disclaimer gate on web (remove when flow is web-ready). */
+const WEB_SKIPS_ONBOARDING = Platform.OS === 'web'
+
 function RootNavigator() {
 	const pathname = usePathname()
 	const router = useRouter()
 	const [completedOnboarding, setCompletedOnboarding] = useState(
-		() => getAppPreferenceSync('hasCompletedOnboarding') === 'true'
+		() => WEB_SKIPS_ONBOARDING || getAppPreferenceSync('hasCompletedOnboarding') === 'true'
 	)
 	const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(
-		() => getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+		() => WEB_SKIPS_ONBOARDING || getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
 	)
 	const canAccessApp = completedOnboarding && acceptedDisclaimer
 
 	useEffect(() => {
 		const unsubscribeCompleted = subscribeToAppPreference('hasCompletedOnboarding', (value) => {
-			setCompletedOnboarding(value === 'true')
+			setCompletedOnboarding(WEB_SKIPS_ONBOARDING || value === 'true')
 		})
 		const unsubscribeDisclaimer = subscribeToAppPreference('hasAcceptedResearchDisclaimer', (value) => {
-			setAcceptedDisclaimer(value === 'true')
+			setAcceptedDisclaimer(WEB_SKIPS_ONBOARDING || value === 'true')
 		})
 
 		return () => {
