@@ -70,14 +70,14 @@ function subscribeToFileDrops(subscription: LabFileDropSubscription): () => void
 		subscription.onFiles(files, ENABLE_CHROME_DROPPED_FILE_HANDLES ? event.dataTransfer?.items : undefined)
 	}
 
-	window.addEventListener('dragenter', onEnter)
-	window.addEventListener('dragover', onOver)
-	window.addEventListener('dragleave', onLeave)
-	window.addEventListener('drop', onDrop)
+	window.addEventListener('dragenter', onEnter, true)
+	window.addEventListener('dragover', onOver, true)
+	window.addEventListener('dragleave', onLeave, true)
+	window.addEventListener('drop', onDrop, true)
 	return () => {
-		window.removeEventListener('dragenter', onEnter)
-		window.removeEventListener('dragover', onOver)
-		window.removeEventListener('dragleave', onLeave)
-		window.removeEventListener('drop', onDrop)
+		window.removeEventListener('dragenter', onEnter, true)
+		window.removeEventListener('dragover', onOver, true)
+		window.removeEventListener('dragleave', onLeave, true)
+		window.removeEventListener('drop', onDrop, true)
 	}
 }

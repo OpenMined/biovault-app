@@ -62,11 +62,14 @@ test('lab: PGx-1 package runs against default 23andMe ZIP in browser', async ({ 
 	await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' })
 	await dismissDisclaimer(page)
 	await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
-	await expect(page.getByText(/Drop a genome|Drop a different genome/)).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('Import genome', { exact: true })).toBeVisible({ timeout: 30_000 })
 
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
-		page.getByText(/Drop a genome|Drop a different genome/).first().click(),
+		(async () => {
+			await page.getByText('Import genome', { exact: true }).click()
+			await page.getByLabel('Choose genome files').click()
+		})(),
 	])
 	await chooser.setFiles(GENOME_23ANDME)
 	await expect(page.getByText('Genome complete').first()).toBeVisible({ timeout: 30_000 })

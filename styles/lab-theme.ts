@@ -69,7 +69,7 @@ const light: LabPalette = {
 // ---------------------------------------------------------------------------
 // Dark — aligned with BioVault landing (prepare-cloudflare-web-assets /
 // index.html): #272532 base, teal radial veil, warm off-white headline text,
-// #d8d3df secondary, soft borders like rgba(255,255,255,0.08–0.14).
+// #d8d3df secondary, soft borders like rgba(255,255,255,0.08-0.14).
 // ---------------------------------------------------------------------------
 const dark: LabPalette = {
 	pageBg: LAB_LANDING_PAGE_FILL, // landing :root / body tint stack

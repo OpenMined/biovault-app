@@ -353,29 +353,12 @@ function genomeRelatedFileNames(genome: LabGenomeRef): string[] {
 	return [genome.primary.name]
 }
 
-type GenomeFileSlot = {
-	key: string
-	label: string
-	name?: string
-	required: boolean
-}
-
-function genomeFileSlots(genome: LabGenomeRef): GenomeFileSlot[] {
-	if (genome.kind === 'cram') {
-		return [
-			{ key: 'primary', label: 'CRAM', name: genome.primary.name, required: true },
-			{ key: 'crai', label: 'CRAI index', name: genome.crai?.name, required: true },
-			{ key: 'fasta', label: 'Reference FASTA', name: genome.fasta?.name, required: true },
-			{ key: 'fai', label: 'FASTA index', name: genome.fai?.name, required: true },
-		]
-	}
-	if (genome.kind === 'vcf') {
-		return [
-			{ key: 'primary', label: 'VCF', name: genome.primary.name, required: true },
-			{ key: 'tbi', label: 'TBI index', name: genome.tbi?.name, required: true },
-		]
-	}
-	return [{ key: 'primary', label: labGenomeKindLabel(genome), name: genome.primary.name, required: true }]
+function genomeSidebarMeta(genome: LabGenomeRef): string {
+	const base = `${labGenomeKindLabel(genome)} · ${humanLabSize(labGenomeBytesTotal(genome))}`
+	if (isLabGenomeComplete(genome)) return base
+	const missing = missingLabGenomeSlots(genome)
+	if (missing.length === 1) return `${base} · Needs ${missing[0]}`
+	return `${base} · Needs ${missing.length} files`
 }
 
 function safeGenomicExtension(name: string): string {
@@ -700,7 +683,14 @@ export default function LabScreen() {
 	const { width: layoutWidth } = useWindowDimensions()
 	/** Wide browser layout: genome setup left, assays + runs right */
 	const LAB_WIDE_TWO_COL_MIN = 1100
+	const LAB_SIDEBAR_DRAWER_MAX = 920
 	const useWideSplit = layoutWidth >= LAB_WIDE_TWO_COL_MIN && Boolean(activeGenomeRef)
+	const useSidebarDrawer = layoutWidth < LAB_SIDEBAR_DRAWER_MAX
+	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+	const sidebarVisible = useSidebarDrawer ? mobileSidebarOpen : true
+	useEffect(() => {
+		if (!useSidebarDrawer) setMobileSidebarOpen(false)
+	}, [useSidebarDrawer])
 
 	const ingestRef = useCallback((ref: LabFileRef) => {
 		const file = fileAdapterRef.current.getFile(ref)
@@ -897,6 +887,7 @@ export default function LabScreen() {
 	const ingestDroppedItems = useCallback(
 		async (items: DataTransferItemList | undefined, fallbackFiles: File[]) => {
 			const files = fallbackFiles
+			if (!files.length) return
 			const refs = fileAdapterRef.current.fromPlatformFiles(files, 'local')
 			ingestManyRefs(refs)
 			const handles = await buildPendingHandlesForLocalFiles(files, refs, items, 'drop')
@@ -969,7 +960,12 @@ export default function LabScreen() {
 			},
 			onFiles: (files, items) => {
 				setImportGenomeModalOpen(true)
-				void ingestDroppedItems(items, files)
+				if (!files.length) return
+				setImportGenomeModalOpen(false)
+				void ingestDroppedItems(items, files).catch((error) => {
+					const message = error instanceof Error ? error.message : String(error)
+					setSavedHandlesError(`Could not import dropped files. ${message}`)
+				})
 			},
 		})
 	}, [ingestDroppedItems])
@@ -1090,15 +1086,20 @@ export default function LabScreen() {
 			retryByName.delete(documentId.replace(/^lab-drop:/, ''))
 		}
 		const retryWithPicker = Array.from(retryByName.values())
-		setPendingHandles(retryWithPicker)
 		const failedMessage = failed.length ? ` Failed: ${failed.join(' · ')}` : ''
-		setHandlePersistMessage(
-			saved
-				? `Saved persistent access for ${saved} ${saved === 1 ? 'file' : 'files'} (${storedRows.join(', ')}).${failedMessage}`
-				: retryWithPicker.length
-					? `Chrome's dropped handle could not be reopened. Click "Select files to persist" and choose the same ${retryWithPicker.length === 1 ? 'file' : 'files'}.${failedMessage}`
-					: `Persistent access was not saved.${failedMessage}`,
-		)
+		if (saved > 0 && !failed.length && !retryWithPicker.length) {
+			setPendingHandles([])
+			setHandlePersistMessage(null)
+		} else {
+			setPendingHandles(retryWithPicker)
+			setHandlePersistMessage(
+				retryWithPicker.length
+					? `Chrome could not keep access from the drop. Choose the same ${retryWithPicker.length === 1 ? 'file' : 'files'} to remember ${retryWithPicker.length === 1 ? 'it' : 'them'}.${failedMessage}`
+					: saved
+						? `Remembered ${saved} ${saved === 1 ? 'file' : 'files'}, but some files need attention.${failedMessage}`
+						: `Files were not remembered.${failedMessage}`,
+			)
+		}
 		setSavedHandlesError(null)
 		trackEvent('lab_persistent_handles_saved', { saved, offered: handlesToPersist.length })
 	}, [pendingHandles, refreshSavedHandles, trackEvent])
@@ -1759,6 +1760,10 @@ export default function LabScreen() {
 			animated: true,
 		})
 	}, [activeGenomeRef])
+	const toggleSidebar = useCallback(() => {
+		setMobileSidebarOpen((value) => !value)
+	}, [])
+	const closeSidebarDrawer = useCallback(() => setMobileSidebarOpen(false), [])
 
 	const labWorkBlocks = (
 		<>
@@ -1839,6 +1844,24 @@ export default function LabScreen() {
 			</View>
 		</>
 	)
+	const labSidebar = (
+		<LabExplorerSidebar
+			activeGenome={activeGenomeRef}
+			sessionGenomes={genomes}
+			onSelectSessionGenome={setSelectedGenomeId}
+			cachedRemoteFiles={cachedRemoteFiles}
+			dragActive={dragActive}
+			onChooseGenomeFiles={() => setImportGenomeModalOpen(true)}
+			onRequestClose={useSidebarDrawer ? closeSidebarDrawer : undefined}
+			savedHandlesError={savedHandlesError}
+			savedHandlesLoading={savedHandlesLoading}
+			savedHandleGroups={savedHandles}
+			onRemoveCachedRemote={removeCachedRemoteFile}
+			onRemoveSavedHandle={removeSavedHandle}
+			onRestoreCachedRemote={restoreCachedRemoteFile}
+			onRestoreSavedHandle={restoreSavedHandle}
+		/>
+	)
 
 	return (
 		<ThemeCtx.Provider value={themeValue}>
@@ -1846,25 +1869,21 @@ export default function LabScreen() {
 				{dragActive ? <DragOverlay /> : null}
 
 				<View style={styles.workspaceShell}>
-					<LabExplorerSidebar
-						activeGenome={activeGenomeRef}
-						sessionGenomes={genomes}
-						onSelectSessionGenome={setSelectedGenomeId}
-						cachedRemoteFiles={cachedRemoteFiles}
-						dragActive={dragActive}
-						onChooseGenomeFiles={() => setImportGenomeModalOpen(true)}
-						sampleBundles={LAB_TEST_FILES}
-						sampleLoadError={sampleLoadError}
-						sampleLoadingId={sampleLoadingId}
-						savedHandlesError={savedHandlesError}
-						savedHandlesLoading={savedHandlesLoading}
-						savedHandleGroups={savedHandles}
-						onPickSample={pickSample}
-						onRemoveCachedRemote={removeCachedRemoteFile}
-						onRemoveSavedHandle={removeSavedHandle}
-						onRestoreCachedRemote={restoreCachedRemoteFile}
-						onRestoreSavedHandle={restoreSavedHandle}
-					/>
+					{sidebarVisible ? (
+						useSidebarDrawer ? (
+							<View style={styles.labExplorerDrawerLayer}>
+								<Pressable
+									accessibilityLabel="Close data sidebar"
+									accessibilityRole="button"
+									onPress={closeSidebarDrawer}
+									style={styles.labExplorerDrawerBackdrop}
+								/>
+								<View style={styles.labExplorerDrawerPanel}>{labSidebar}</View>
+							</View>
+						) : (
+							labSidebar
+						)
+					) : null}
 					<ScrollView
 						ref={scrollRef}
 						style={[styles.scroll, styles.mainWorkspaceScroll]}
@@ -1897,6 +1916,9 @@ export default function LabScreen() {
 													? 'Genome complete'
 													: `Missing ${missingLabGenomeSlots(activeGenomeRef).join(' · ')}`}
 											</OMText>
+											{activeGenomeRef.kind === 'cram' || activeGenomeRef.kind === 'vcf' ? (
+												<GenomeSlotStrip genome={activeGenomeRef} />
+											) : null}
 										</>
 									) : (
 										<>
@@ -1913,11 +1935,13 @@ export default function LabScreen() {
 									)}
 								</View>
 								<View style={styles.heroHeaderAside}>
-									{activeGenomeRef &&
-									(activeGenomeRef.kind === 'cram' || activeGenomeRef.kind === 'vcf') ? (
-										<GenomeSlotStrip genome={activeGenomeRef} />
-									) : null}
 									<View style={styles.headerTools}>
+										{useSidebarDrawer ? (
+											<SidebarToggleButton
+												open={mobileSidebarOpen}
+												onPress={toggleSidebar}
+											/>
+										) : null}
 										<View style={styles.headerNavCluster}>
 											<GettingStartedButton onPress={openGettingStarted} />
 											<GithubButton />
@@ -1978,11 +2002,18 @@ export default function LabScreen() {
 					assayUrlInput={assayUrlInput}
 					dragActive={dragActive}
 					open={importGenomeModalOpen}
+					sampleBundles={LAB_TEST_FILES}
+					sampleLoadError={sampleLoadError}
+					sampleLoadingId={sampleLoadingId}
 					shareAssayUrl={shareAssayUrl}
-					onChooseGenomeFiles={openPicker}
+					onChooseGenomeFiles={() => {
+						setImportGenomeModalOpen(false)
+						openPicker()
+					}}
 					onClose={() => setImportGenomeModalOpen(false)}
 					onCopyShareAssayUrl={copyShareAssayUrl}
 					onLoadAssayUrl={loadAssayUrl}
+					onPickSample={pickSample}
 					onUrlInputChange={setAssayUrlInput}
 				/>
 			</SafeAreaView>
@@ -2302,14 +2333,14 @@ function PersistentHandlePrompt({
 					</View>
 					<View style={styles.intentText}>
 						<OMText variant="caption" style={styles.intentKicker}>
-							PERSISTENT FILE ACCESS
+							REMEMBER FILES
 						</OMText>
 						<OMText variant="headline" style={styles.intentTitle}>
-							Keep access after refresh?
+							Remember these files?
 						</OMText>
 						<OMText variant="caption" style={styles.intentUrl}>
 							{message ??
-								`${pendingHandles.length} dropped ${pendingHandles.length === 1 ? 'file can' : 'files can'} be upgraded to persistent browser handles.`}
+								`BioVault can ask Chrome to keep access to ${pendingHandles.length === 1 ? 'this file' : 'these files'} so you can reopen ${pendingHandles.length === 1 ? 'it' : 'them'} after refresh.`}
 						</OMText>
 					</View>
 					<Pressable onPress={onDismiss} style={styles.intentClose}>
@@ -2321,7 +2352,7 @@ function PersistentHandlePrompt({
 						{pendingHandles.slice(0, 6).map((item) => (
 							<OMText key={item.id} variant="caption" style={styles.intentDependency}>
 								{item.fileName}
-								{item.needsPicker || !item.handle ? ' (select again to persist)' : ''}
+								{item.needsPicker || !item.handle ? ' (choose again to remember)' : ''}
 								{item.lastError ? ` - ${item.lastError}` : ''}
 							</OMText>
 						))}
@@ -2342,8 +2373,8 @@ function PersistentHandlePrompt({
 						<Pressable onPress={onSave} style={styles.intentPrimaryButton}>
 							<OMText variant="subtitle" style={styles.primaryButtonText}>
 								{pendingHandles.some((item) => item.needsPicker || !item.handle)
-									? 'Select files to persist'
-									: 'Keep access'}
+									? 'Choose files'
+									: 'Remember'}
 							</OMText>
 						</Pressable>
 					</View>
@@ -2361,8 +2392,12 @@ function ImportGenomeModal({
 	onClose,
 	onCopyShareAssayUrl,
 	onLoadAssayUrl,
+	onPickSample,
 	onUrlInputChange,
 	open,
+	sampleBundles,
+	sampleLoadError,
+	sampleLoadingId,
 	shareAssayUrl,
 }: {
 	assayUrlCopied: boolean
@@ -2372,8 +2407,12 @@ function ImportGenomeModal({
 	onClose: () => void
 	onCopyShareAssayUrl: () => void
 	onLoadAssayUrl: (url: string) => void
+	onPickSample: (bundle: LabTestFileBundle) => void
 	onUrlInputChange: (url: string) => void
 	open: boolean
+	sampleBundles: LabTestFileBundle[]
+	sampleLoadError: string | null
+	sampleLoadingId: string | null
 	shareAssayUrl: string
 }) {
 	const { styles, mutedIconTone } = useTheme()
@@ -2382,9 +2421,9 @@ function ImportGenomeModal({
 		<LabModalChrome
 			accessibilityLabel="Import genome dialog"
 			onBackdropDismiss={onClose}
-			panelStyle={styles.importGenomeModalPanel}
+			panelStyle={[styles.importGenomeModalPanel, dragActive ? styles.importGenomeModalPanelActive : null] as object}
 		>
-			<View style={styles.importGenomeModalChrome}>
+			<View style={[styles.importGenomeModalChrome, dragActive ? styles.importGenomeModalChromeActive : null]}>
 				<View style={styles.intentHeader}>
 					<View style={styles.intentIcon}>
 						<OMIcon name="cloud-upload-outline" tone="accent" size={18} />
@@ -2397,7 +2436,7 @@ function ImportGenomeModal({
 							Add genome data
 						</OMText>
 						<OMText variant="caption" style={styles.intentUrl}>
-							Choose local files, paste a URL, or drop genome files anywhere on this page.
+							Choose local files, paste a URL, or drop genome files anywhere in this dialog.
 						</OMText>
 					</View>
 					<Pressable onPress={onClose} style={styles.intentClose}>
@@ -2405,28 +2444,69 @@ function ImportGenomeModal({
 					</Pressable>
 				</View>
 
-				<View style={[styles.importGenomeDropArea, dragActive ? styles.importGenomeDropAreaActive : null]}>
-					<PlatformSvgUri uri={microscopeIconUri} width={26} height={26} color={dragActive ? '#fff' : undefined} />
+				<Pressable
+					onPress={onChooseGenomeFiles}
+					style={[styles.importGenomeDropArea, dragActive ? styles.importGenomeDropAreaActive : null]}
+					accessibilityRole="button"
+					accessibilityLabel="Choose genome files"
+				>
+					<PlatformSvgUri uri={microscopeIconUri} width={26} height={26} color={dragActive ? '#fff' : '#53bea9'} />
 					<OMText variant="subtitle" style={styles.importGenomeDropTitle}>
-						{dragActive ? 'Release files to import' : 'Drop genome files here'}
+						{dragActive ? 'Release anywhere in this dialog to import' : 'Drop files here or click to choose'}
 					</OMText>
 					<OMText variant="caption" style={styles.importGenomeDropBody}>
 						CRAM/VCF companion files are paired automatically when dropped together.
 					</OMText>
-				</View>
+				</Pressable>
 
 				<View style={styles.importGenomeActionGrid}>
-					<Pressable onPress={onChooseGenomeFiles} style={styles.importGenomeActionCard}>
-						<OMIcon name="folder-open-outline" tone="accent" size={18} />
-						<View style={styles.labExplorerRowText}>
-							<OMText variant="subtitle" style={styles.importGenomeActionTitle}>
-								Choose files
+					<View style={styles.importGenomeSampleCard}>
+						<View style={styles.importGenomeSectionHead}>
+							<OMText variant="caption" style={styles.labExplorerSectionTitle}>
+								Sample data
 							</OMText>
-							<OMText variant="caption" style={styles.importGenomeActionBody}>
-								Select local .zip, .txt, .vcf.gz, .cram, and companion files.
+							<OMText variant="caption" style={styles.importGenomeSectionHint}>
+								Try assays without finding your own genome file first.
 							</OMText>
 						</View>
-					</Pressable>
+						<View style={styles.labExplorerList}>
+							{sampleBundles.map((bundle) => {
+								const loading = sampleLoadingId === bundle.id
+								const ctaLabel = loading ? 'Loading...' : bundle.remoteUrl ? 'Download' : 'Import'
+								return (
+									<Pressable
+										key={bundle.id}
+										disabled={loading}
+										onPress={() => {
+											onPickSample(bundle)
+											onClose()
+										}}
+										style={[styles.labExplorerSampleRow, loading ? styles.labExplorerSampleRowMuted : null]}
+									>
+										<View style={styles.labExplorerSampleGlyph}>
+											<OMIcon name="document-text-outline" tone="accent" size={14} />
+										</View>
+										<View style={styles.labExplorerRowText}>
+											<OMText variant="body" style={styles.labExplorerRowTitle} numberOfLines={2}>
+												{bundle.title}
+											</OMText>
+											<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={2}>
+												{ASSAY_INPUT_FORMAT_LABELS[bundle.format]} · {bundle.description}
+											</OMText>
+										</View>
+										<OMText variant="caption" style={styles.labExplorerSampleCta}>
+											{ctaLabel}
+										</OMText>
+									</Pressable>
+								)
+							})}
+						</View>
+						{sampleLoadError ? (
+							<OMText variant="caption" style={[styles.errorInline, styles.labExplorerSampleError]}>
+								{sampleLoadError}
+							</OMText>
+						) : null}
+					</View>
 					<View style={styles.importGenomeUrlCard}>
 						<UrlLoadBox
 							narrow={false}
@@ -2452,15 +2532,12 @@ function LabExplorerSidebar({
 	cachedRemoteFiles,
 	dragActive,
 	onChooseGenomeFiles,
-	onPickSample,
 	onRemoveCachedRemote,
 	onRemoveSavedHandle,
+	onRequestClose,
 	onRestoreCachedRemote,
 	onRestoreSavedHandle,
 	onSelectSessionGenome,
-	sampleBundles,
-	sampleLoadError,
-	sampleLoadingId,
 	savedHandlesError,
 	savedHandlesLoading,
 	savedHandleGroups,
@@ -2472,15 +2549,12 @@ function LabExplorerSidebar({
 	cachedRemoteFiles: RemoteLabFile[]
 	dragActive: boolean
 	onChooseGenomeFiles: () => void
-	sampleBundles: LabTestFileBundle[]
-	sampleLoadError: string | null
-	sampleLoadingId: string | null
 	savedHandlesError: string | null
 	savedHandlesLoading: boolean
 	savedHandleGroups: SavedHandleGroup[]
-	onPickSample: (bundle: LabTestFileBundle) => void
 	onRemoveCachedRemote: (remoteFile: RemoteLabFile) => void
 	onRemoveSavedHandle: (group: SavedHandleGroup) => void
+	onRequestClose?: () => void
 	onRestoreCachedRemote: (remoteFile: RemoteLabFile) => void
 	onRestoreSavedHandle: (group: SavedHandleGroup) => void
 }) {
@@ -2490,11 +2564,27 @@ function LabExplorerSidebar({
 		const sessionPrimaryNames = new Set(sessionGenomes.map((g) => g.primary.name))
 		return cachedRemoteFiles.filter((r) => !sessionPrimaryNames.has(r.file.name))
 	}, [cachedRemoteFiles, sessionGenomes])
-	const hasPins = savedHandleGroups.length > 0 || cachedRemotePickers.length > 0
-	const hasAnyListContent = sessionGenomes.length > 0 || hasPins || Boolean(savedHandlesError)
 	const activeIsSessionRow = activeGenomeOwnedBySessionRow(activeGenome, sessionGenomes)
 	return (
-		<View style={styles.labExplorerRoot}>
+		<View style={[styles.labExplorerRoot, onRequestClose ? styles.labExplorerRootInDrawer : null]}>
+			<View style={styles.labExplorerChromeHead}>
+				<View>
+					<OMText variant="caption" style={styles.labExplorerSectionTitle}>
+						Genome files
+					</OMText>
+				</View>
+				{onRequestClose ? (
+					<Pressable
+						accessibilityLabel="Close data sidebar"
+						accessibilityRole="button"
+						hitSlop={8}
+						onPress={onRequestClose}
+						style={styles.labExplorerChromeClose}
+					>
+						<OMIcon name="close-outline" tone="muted" size={18} />
+					</Pressable>
+				) : null}
+			</View>
 			<ScrollView
 				showsVerticalScrollIndicator={Platform.OS !== 'web'}
 				style={styles.labExplorerScroll}
@@ -2502,11 +2592,6 @@ function LabExplorerSidebar({
 				keyboardShouldPersistTaps="handled"
 			>
 				<View testID="saved-local-files" style={styles.labExplorerSavedBlock}>
-					<View style={styles.labExplorerSectionHeading}>
-						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
-							Saved local files
-						</OMText>
-					</View>
 					{savedHandlesError ? (
 						<View style={[styles.errorInlineBlock, styles.labExplorerErrorPad]}>
 							<OMIcon name="alert-circle-outline" tone="danger" size={14} />
@@ -2515,9 +2600,13 @@ function LabExplorerSidebar({
 							</OMText>
 						</View>
 					) : null}
+					<View style={[styles.labExplorerAddDataStack, styles.labExplorerInlineImportAction]}>
+						<ImportGenomeButton dragActive={dragActive} onPress={onChooseGenomeFiles} />
+					</View>
 					<View style={styles.labExplorerList}>
 						{sessionGenomes.map((genome) => {
 							const rowSelected = Boolean(activeGenome && activeGenome.id === genome.id)
+							const rowComplete = isLabGenomeComplete(genome)
 							return (
 								<View
 									key={genome.id}
@@ -2538,29 +2627,21 @@ function LabExplorerSidebar({
 									>
 										<OMIcon name="layers-outline" tone="accent" size={15} />
 										<View style={styles.labExplorerRowText}>
-											<OMText variant="body" style={styles.labExplorerRowTitle} numberOfLines={2}>
+											<OMText variant="body" style={styles.labExplorerRowTitle} numberOfLines={1}>
 												{labGenomeDisplayName(genome)}
 											</OMText>
-											<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={2}>
-												{labGenomeKindLabel(genome)} · {humanLabSize(labGenomeBytesTotal(genome))}
-												{isLabGenomeComplete(genome) ? ' · Ready' : ' · Incomplete'}
+											<OMText
+												variant="caption"
+												style={[styles.labExplorerRowMeta, rowComplete ? null : styles.labExplorerRowMetaWarn]}
+												numberOfLines={1}
+											>
+												{genomeSidebarMeta(genome)}
 											</OMText>
-											<GenomeSlotChecklist genome={genome} />
 										</View>
 									</Pressable>
 								</View>
 							)
 						})}
-						{sessionGenomes.length === 0 && hasPins ? (
-							<OMText variant="caption" style={styles.labExplorerEmpty}>
-								No genome loaded this session.
-							</OMText>
-						) : null}
-						{!hasAnyListContent ? (
-							<OMText variant="caption" style={styles.labExplorerEmpty}>
-								Nothing here yet.
-							</OMText>
-						) : null}
 						{savedHandleGroups.map((group) => {
 							const pinnedSelected =
 								Boolean(activeGenome) &&
@@ -2597,10 +2678,9 @@ function LabExplorerSidebar({
 											testID="saved-local-file-meta"
 											variant="caption"
 											style={styles.labExplorerRowMeta}
-											numberOfLines={2}
+											numberOfLines={1}
 										>
-											{group.summary} · {group.rows.length} persisted{' '}
-											{group.rows.length === 1 ? 'file' : 'files'}
+											Remembered local {group.rows.length === 1 ? 'file' : 'files'} · {group.summary}
 										</OMText>
 									</View>
 								</Pressable>
@@ -2655,9 +2735,9 @@ function LabExplorerSidebar({
 											testID="saved-local-file-meta"
 											variant="caption"
 											style={styles.labExplorerRowMeta}
-											numberOfLines={2}
+											numberOfLines={1}
 										>
-											Cached URL file · {remoteFile.fileKind} · {humanLabSize(remoteFile.file.size)}
+											Cached download · {remoteFile.fileKind} · {humanLabSize(remoteFile.file.size)}
 										</OMText>
 									</View>
 								</Pressable>
@@ -2677,52 +2757,8 @@ function LabExplorerSidebar({
 							)
 						})}
 					</View>
-					<View style={[styles.labExplorerAddDataStack, styles.labExplorerInlineImportAction]}>
-						<ImportGenomeButton dragActive={dragActive} onPress={onChooseGenomeFiles} />
-					</View>
 				</View>
 
-				<View style={[styles.labExplorerSavedBlock, styles.labExplorerSamplesBlock]}>
-					<View style={styles.labExplorerSectionHeading}>
-						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
-							Sample files
-						</OMText>
-					</View>
-					<View style={styles.labExplorerList}>
-						{sampleBundles.map((bundle) => {
-							const loading = sampleLoadingId === bundle.id
-							const ctaLabel = loading ? 'Loading…' : bundle.remoteUrl ? 'Download' : 'Import'
-							return (
-								<Pressable
-									key={bundle.id}
-									disabled={loading}
-									onPress={() => onPickSample(bundle)}
-									style={[styles.labExplorerSampleRow, loading ? styles.labExplorerSampleRowMuted : null]}
-								>
-									<View style={styles.labExplorerSampleGlyph}>
-										<OMIcon name="document-text-outline" tone="accent" size={14} />
-									</View>
-									<View style={styles.labExplorerRowText}>
-										<OMText variant="body" style={styles.labExplorerRowTitle} numberOfLines={2}>
-											{bundle.title}
-										</OMText>
-										<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={2}>
-											{ASSAY_INPUT_FORMAT_LABELS[bundle.format]} · {bundle.description}
-										</OMText>
-									</View>
-									<OMText variant="caption" style={styles.labExplorerSampleCta}>
-										{ctaLabel}
-									</OMText>
-								</Pressable>
-							)
-						})}
-					</View>
-					{sampleLoadError ? (
-						<OMText variant="caption" style={[styles.errorInline, styles.labExplorerSampleError]}>
-							{sampleLoadError}
-						</OMText>
-					) : null}
-				</View>
 			</ScrollView>
 		</View>
 	)
@@ -3669,38 +3705,6 @@ function MetaChip({ label }: { label: string }) {
 	)
 }
 
-function GenomeSlotChecklist({ genome }: { genome: LabGenomeRef }) {
-	const { styles } = useTheme()
-	const slots = genomeFileSlots(genome)
-	return (
-		<View style={styles.genomeSlotChecklist}>
-			{slots.map((slot) => {
-				const present = Boolean(slot.name)
-				return (
-					<View
-						key={slot.key}
-						style={[
-							styles.genomeSlotChip,
-							present ? styles.genomeSlotChipPresent : styles.genomeSlotChipMissing,
-						]}
-					>
-						<OMText
-							variant="caption"
-							style={[
-								styles.genomeSlotChipText,
-								present ? styles.genomeSlotChipTextPresent : styles.genomeSlotChipTextMissing,
-							]}
-							numberOfLines={1}
-						>
-							{present ? `${slot.label}: ${slot.name}` : `Missing ${slot.label}`}
-						</OMText>
-					</View>
-				)
-			})}
-		</View>
-	)
-}
-
 // === Unknown files alert (modal) ===========================================
 
 function UnknownFilesAlert({
@@ -4149,6 +4153,32 @@ function openGithub() {
 	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
 }
 
+function SidebarToggleButton({
+	open,
+	onPress,
+}: {
+	open: boolean
+	onPress: () => void
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	return (
+		<Pressable
+			accessibilityLabel={open ? 'Close data sidebar' : 'Open data sidebar'}
+			accessibilityRole="button"
+			accessibilityState={{ expanded: open }}
+			hitSlop={8}
+			onPress={onPress}
+			style={({ pressed }) => [
+				styles.headerSidebarToggle,
+				open ? styles.headerSidebarToggleOpen : null,
+				pressed && styles.headerSettingsTriggerPressed,
+			]}
+		>
+			<OMIcon name={open ? 'close-outline' : 'menu-outline'} size={22} tone={mutedIconTone} />
+		</Pressable>
+	)
+}
+
 function GettingStartedButton({ onPress }: { onPress: () => void }) {
 	const { styles, mutedIconTone } = useTheme()
 	return (
@@ -4380,7 +4410,7 @@ function makeStyles(p: LabPalette) {
 			flexGrow: 1,
 			flexShrink: 1,
 			minWidth: 240,
-			maxWidth: 720,
+			maxWidth: 640,
 			gap: omSpacing.s,
 		},
 		heroEyebrow: {
@@ -4430,6 +4460,23 @@ function makeStyles(p: LabPalette) {
 			gap: 8,
 			flexShrink: 0,
 			flexWrap: 'wrap',
+		},
+		headerSidebarToggle: {
+			width: 40,
+			height: 40,
+			borderRadius: omRadius.full,
+			borderWidth: 1,
+			borderColor: p.border,
+			backgroundColor: p.surfaceRaised,
+			alignItems: 'center',
+			justifyContent: 'center',
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+		headerSidebarToggleOpen: {
+			backgroundColor: p.accentTint,
+			borderColor: p.accentBorder,
 		},
 		headerNavCluster: {
 			flexDirection: 'row',
@@ -4750,6 +4797,60 @@ function makeStyles(p: LabPalette) {
 			borderRightWidth: StyleSheet.hairlineWidth,
 			borderRightColor: p.border,
 		},
+		labExplorerRootInDrawer: {
+			width: '100%',
+			height: '100%',
+		},
+		labExplorerDrawerLayer: {
+			...(Platform.OS === 'web' ? ({ position: 'fixed' } as object) : { position: 'absolute' as const }),
+			left: 0,
+			right: 0,
+			top: 0,
+			bottom: 0,
+			zIndex: 80,
+			flexDirection: 'row',
+			alignItems: 'stretch',
+		},
+		labExplorerDrawerBackdrop: {
+			...(Platform.OS === 'web' ? ({ position: 'fixed' } as object) : { position: 'absolute' as const }),
+			left: 0,
+			right: 0,
+			top: 0,
+			bottom: 0,
+			backgroundColor: 'rgba(0,0,0,0.42)',
+		} as object,
+		labExplorerDrawerPanel: {
+			width: 'min(88vw, 360px)' as any,
+			maxWidth: 360,
+			height: '100%',
+			zIndex: 1,
+			backgroundColor: p.surfaceSolid,
+			borderRightWidth: StyleSheet.hairlineWidth,
+			borderRightColor: p.border,
+		},
+		labExplorerChromeHead: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: omSpacing.s,
+			paddingHorizontal: omSpacing.m,
+			paddingTop: omSpacing.m,
+			paddingBottom: omSpacing.s,
+			borderBottomWidth: StyleSheet.hairlineWidth,
+			borderBottomColor: p.border,
+		},
+		labExplorerChromeClose: {
+			width: 34,
+			height: 34,
+			borderRadius: 17,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.surfaceRaised,
+			borderWidth: 1,
+			borderColor: p.border,
+			cursor: 'pointer',
+			userSelect: 'none',
+		} as object,
 		labExplorerScroll: { flex: 1 },
 		labExplorerScrollContent: {
 			paddingHorizontal: omSpacing.m,
@@ -4775,7 +4876,7 @@ function makeStyles(p: LabPalette) {
 			marginBottom: omSpacing.s,
 		},
 		labExplorerList: {
-			gap: 6,
+			gap: 8,
 		},
 		labExplorerAddDataStack: {
 			alignSelf: 'stretch',
@@ -4783,13 +4884,11 @@ function makeStyles(p: LabPalette) {
 		},
 		labExplorerInlineImportAction: {
 			marginTop: omSpacing.s,
+			marginBottom: omSpacing.m,
 		},
 		labExplorerImportBlock: {
 			gap: omSpacing.xs + 4,
 			marginTop: 2,
-		},
-		labExplorerSamplesBlock: {
-			marginTop: omSpacing.xs,
 		},
 		labExplorerEmpty: {
 			color: p.textFaint,
@@ -4800,15 +4899,15 @@ function makeStyles(p: LabPalette) {
 		labExplorerPinnedRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
-			borderRadius: omRadius.m,
+			borderRadius: omRadius.l,
 			backgroundColor: p.surfaceSunken,
 			overflow: 'hidden',
-			minHeight: 38,
+			minHeight: 58,
 			borderWidth: 1,
 			borderColor: p.border,
 		},
 		labExplorerPinnedRowSelected: {
-			borderRadius: omRadius.m,
+			borderRadius: omRadius.l,
 			backgroundColor: p.overlayCardBg,
 			borderColor: p.accentBorder,
 		},
@@ -4816,10 +4915,10 @@ function makeStyles(p: LabPalette) {
 			flex: 1,
 			flexDirection: 'row',
 			alignItems: 'center',
-			gap: 10,
-			paddingVertical: 10,
+			gap: 12,
+			paddingVertical: 11,
 			paddingLeft: omSpacing.m,
-			paddingRight: 4,
+			paddingRight: omSpacing.m,
 			minWidth: 0,
 			cursor: 'pointer',
 			userSelect: 'none',
@@ -4831,47 +4930,22 @@ function makeStyles(p: LabPalette) {
 		labExplorerRowText: {
 			flex: 1,
 			minWidth: 0,
-			gap: 2,
+			gap: 3,
 		},
 		labExplorerRowTitle: {
 			color: p.text,
-			fontWeight: '500',
+			fontWeight: '700',
+			lineHeight: 18,
+			fontSize: 14,
 		},
 		labExplorerRowMeta: {
 			color: p.textMuted,
-			lineHeight: 16,
+			lineHeight: 15,
+			fontSize: 11,
 		},
-		genomeSlotChecklist: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			gap: 4,
-			marginTop: 4,
-		},
-		genomeSlotChip: {
-			maxWidth: '100%',
-			borderRadius: omRadius.full,
-			borderWidth: 1,
-			paddingHorizontal: 7,
-			paddingVertical: 2,
-		},
-		genomeSlotChipPresent: {
-			backgroundColor: p.surfaceSunken,
-			borderColor: p.border,
-		},
-		genomeSlotChipMissing: {
-			backgroundColor: p.warningBg,
-			borderColor: p.warningBorder,
-		},
-		genomeSlotChipText: {
-			fontSize: 10,
-			lineHeight: 13,
-			fontWeight: '600',
-		},
-		genomeSlotChipTextPresent: {
-			color: p.textMuted,
-		},
-		genomeSlotChipTextMissing: {
+		labExplorerRowMetaWarn: {
 			color: p.warningText,
+			fontWeight: '600',
 		},
 		labExplorerRowGhostHit: {
 			alignSelf: 'stretch',
@@ -4951,9 +5025,9 @@ function makeStyles(p: LabPalette) {
 			paddingHorizontal: omSpacing.m,
 			borderWidth: 1,
 			borderStyle: 'dashed',
-			borderColor: p.accentBorder,
+			borderColor: p.borderStrong,
 			borderRadius: omRadius.l,
-			backgroundColor: p.surfaceRaised,
+			backgroundColor: p.surfaceSunken,
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
@@ -5040,12 +5114,13 @@ function makeStyles(p: LabPalette) {
 
 		heroGenomeSlotStrip: {
 			flexShrink: 1,
-			maxWidth: 420,
+			maxWidth: 640,
+			marginTop: omSpacing.s,
 		},
 
 		// slots
 		slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: omSpacing.xs },
-		heroGenomeSlotGrid: { justifyContent: 'flex-end' },
+		heroGenomeSlotGrid: { justifyContent: 'flex-start' },
 		slotChip: {
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -5676,9 +5751,16 @@ function makeStyles(p: LabPalette) {
 			width: '100%',
 			borderColor: p.accentBorder,
 		},
+		importGenomeModalPanelActive: {
+			borderColor: p.accent,
+			backgroundColor: p.overlayCardBg,
+		},
 		importGenomeModalChrome: {
 			padding: omSpacing.l,
 			gap: omSpacing.l,
+		},
+		importGenomeModalChromeActive: {
+			backgroundColor: p.overlayCardBg,
 		},
 		importGenomeDropArea: {
 			alignItems: 'center',
@@ -5686,12 +5768,15 @@ function makeStyles(p: LabPalette) {
 			gap: omSpacing.s,
 			borderWidth: 1,
 			borderStyle: 'dashed',
-			borderColor: p.borderStrong,
+			borderColor: p.accentBorder,
 			borderRadius: omRadius.l,
 			backgroundColor: p.surfaceSunken,
 			paddingVertical: omSpacing.xl,
 			paddingHorizontal: omSpacing.l,
-		},
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
 		importGenomeDropAreaActive: {
 			backgroundColor: p.accent,
 			borderColor: p.accent,
@@ -5709,24 +5794,19 @@ function makeStyles(p: LabPalette) {
 		importGenomeActionGrid: {
 			gap: omSpacing.m,
 		},
-		importGenomeActionCard: {
-			flexDirection: 'row',
-			alignItems: 'flex-start',
-			gap: omSpacing.m,
+		importGenomeSampleCard: {
 			borderWidth: 1,
 			borderColor: p.border,
 			borderRadius: omRadius.l,
-			backgroundColor: p.surfaceSunken,
+			backgroundColor: p.surface,
 			padding: omSpacing.m,
-			cursor: 'pointer',
-			userSelect: 'none',
-			WebkitTapHighlightColor: 'transparent',
-		} as object,
-		importGenomeActionTitle: {
-			color: p.text,
-			fontWeight: '700',
+			gap: omSpacing.s,
 		},
-		importGenomeActionBody: {
+		importGenomeSectionHead: {
+			gap: 4,
+			marginBottom: 2,
+		},
+		importGenomeSectionHint: {
 			color: p.textMuted,
 			lineHeight: 17,
 		},
@@ -5765,7 +5845,9 @@ function makeStyles(p: LabPalette) {
 			right: 0,
 			top: 0,
 			bottom: 0,
-			backgroundColor: p.overlayBg,
+			backgroundColor: p.pageBg === LAB_LANDING_PAGE_FILL
+				? 'rgba(39,37,50,0.96)'
+				: 'rgba(5, 7, 12, 0.9)',
 		},
 		sourcePanel: {
 			width: '100%',

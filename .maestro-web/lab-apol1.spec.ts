@@ -58,7 +58,7 @@ test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', as
 	await dismissDisclaimer(page)
 
 	await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
-	await expect(page.getByText('Drop a genome', { exact: false })).toBeVisible({
+	await expect(page.getByText('Import genome', { exact: true })).toBeVisible({
 		timeout: 30_000,
 	})
 
@@ -66,7 +66,10 @@ test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', as
 	// classifies them and auto-pairs the companions.
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
-		page.getByText('Drop a genome', { exact: false }).click(),
+		(async () => {
+			await page.getByText('Import genome', { exact: true }).click()
+			await page.getByLabel('Choose genome files').click()
+		})(),
 	])
 	await chooser.setFiles([APOL1, CRAM, CRAI, FASTA, FAI])
 

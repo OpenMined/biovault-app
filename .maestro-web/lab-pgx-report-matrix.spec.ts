@@ -126,7 +126,10 @@ async function dragFilesIntoLab(page: Page, files: string[]) {
 async function chooseFilesIntoLab(page: Page, files: string[]) {
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
-		page.getByText(/Drop a genome|Drop a different genome/).first().click(),
+		(async () => {
+			await page.getByText('Import genome', { exact: true }).click()
+			await page.getByLabel('Choose genome files').click()
+		})(),
 	])
 	await chooser.setFiles(files)
 }
@@ -354,7 +357,7 @@ test.describe('lab PGx-1 report matrix — web scenario', () => {
 			await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
 			await dismissDisclaimer(page)
 			await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
-			await expect(page.getByText(/Drop a genome|Drop a different genome/)).toBeVisible({ timeout: 30_000 })
+			await expect(page.getByText('Import genome', { exact: true })).toBeVisible({ timeout: 30_000 })
 			if (useDragDrop) {
 				await dragFilesIntoLab(page, caseDef.inputFiles)
 			} else {
