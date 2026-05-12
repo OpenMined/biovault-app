@@ -1621,21 +1621,6 @@ export default function LabScreen() {
 
 	const labSetupBlocks = (
 		<>
-			<DropZone
-				compact={Boolean(activeGenomeRef)}
-				dragActive={dragActive}
-				onChoose={openPicker}
-			/>
-
-			<UrlLoadBox
-				urlInput={assayUrlInput}
-				shareUrl={shareAssayUrl}
-				shareUrlCopied={assayUrlCopied}
-				onUrlInputChange={setAssayUrlInput}
-				onLoadUrl={loadAssayUrl}
-				onCopyShareUrl={copyShareAssayUrl}
-			/>
-
 			<PersistentHandlePrompt
 				message={handlePersistMessage}
 				pendingHandles={pendingHandles}
@@ -1724,13 +1709,21 @@ export default function LabScreen() {
 
 				<View style={styles.workspaceShell}>
 					<LabExplorerSidebar
+						assayUrlCopied={assayUrlCopied}
+						assayUrlInput={assayUrlInput}
 						cachedRemoteFiles={cachedRemoteFiles}
+						dragActive={dragActive}
+						onChooseGenomeFiles={openPicker}
+						onCopyShareAssayUrl={copyShareAssayUrl}
+						onLoadAssayUrl={loadAssayUrl}
+						onUrlInputChange={setAssayUrlInput}
 						sampleBundles={LAB_TEST_FILES}
 						sampleLoadError={sampleLoadError}
 						sampleLoadingId={sampleLoadingId}
 						savedHandlesError={savedHandlesError}
 						savedHandlesLoading={savedHandlesLoading}
 						savedHandleGroups={savedHandles}
+						shareAssayUrl={shareAssayUrl}
 						onPickSample={pickSample}
 						onRemoveCachedRemote={removeCachedRemoteFile}
 						onRemoveSavedHandle={removeSavedHandle}
@@ -2136,20 +2129,34 @@ function PersistentHandlePrompt({
 }
 
 function LabExplorerSidebar({
+	assayUrlCopied,
+	assayUrlInput,
 	cachedRemoteFiles,
+	dragActive,
+	onChooseGenomeFiles,
+	onCopyShareAssayUrl,
+	onLoadAssayUrl,
+	onPickSample,
+	onRemoveCachedRemote,
+	onRemoveSavedHandle,
+	onRestoreCachedRemote,
+	onRestoreSavedHandle,
+	onUrlInputChange,
 	sampleBundles,
 	sampleLoadError,
 	sampleLoadingId,
 	savedHandlesError,
 	savedHandlesLoading,
 	savedHandleGroups,
-	onPickSample,
-	onRemoveCachedRemote,
-	onRemoveSavedHandle,
-	onRestoreCachedRemote,
-	onRestoreSavedHandle,
+	shareAssayUrl,
 }: {
+	assayUrlCopied: boolean
+	assayUrlInput: string
 	cachedRemoteFiles: RemoteLabFile[]
+	dragActive: boolean
+	onChooseGenomeFiles: () => void
+	onCopyShareAssayUrl: () => void
+	onLoadAssayUrl: (url: string) => void
 	sampleBundles: LabTestFileBundle[]
 	sampleLoadError: string | null
 	sampleLoadingId: string | null
@@ -2161,6 +2168,8 @@ function LabExplorerSidebar({
 	onRemoveSavedHandle: (group: SavedHandleGroup) => void
 	onRestoreCachedRemote: (remoteFile: RemoteLabFile) => void
 	onRestoreSavedHandle: (group: SavedHandleGroup) => void
+	onUrlInputChange: (url: string) => void
+	shareAssayUrl: string
 }) {
 	const { styles } = useTheme()
 	const hasPins = savedHandleGroups.length > 0 || cachedRemoteFiles.length > 0
@@ -2290,6 +2299,22 @@ function LabExplorerSidebar({
 					</View>
 				</View>
 
+				<View style={styles.labExplorerImportBlock}>
+					<OMText variant="subtitle" style={styles.labExplorerSectionTitle}>
+						Add data
+					</OMText>
+					<DropZone dragActive={dragActive} onChoose={onChooseGenomeFiles} />
+					<UrlLoadBox
+						narrow
+						shareUrl={shareAssayUrl}
+						shareUrlCopied={assayUrlCopied}
+						urlInput={assayUrlInput}
+						onCopyShareUrl={onCopyShareAssayUrl}
+						onLoadUrl={onLoadAssayUrl}
+						onUrlInputChange={onUrlInputChange}
+					/>
+				</View>
+
 				<View style={[styles.labExplorerSavedBlock, styles.labExplorerSamplesBlock]}>
 					<OMText variant="subtitle" style={styles.labExplorerSectionTitle}>
 						Sample files
@@ -2334,62 +2359,39 @@ function LabExplorerSidebar({
 	)
 }
 
-// === Drop zone =============================================================
+// === Drop zone (sidebar explorer only) =====================================
 
-function DropZone({
-	compact,
-	dragActive,
-	onChoose,
-}: {
-	compact: boolean
-	dragActive: boolean
-	onChoose: () => void
-}) {
+function DropZone({ dragActive, onChoose }: { dragActive: boolean; onChoose: () => void }) {
 	const { styles, palette } = useTheme()
-	if (compact) {
-		return (
-			<Pressable
-				onPress={onChoose}
-				style={[styles.dropBar, dragActive ? styles.dropBarActive : null]}
-			>
-				<OMIcon name="add-outline" tone="accent" size={18} />
-				<OMText variant="body" style={styles.dropBarText}>
-					Drop a different genome
-				</OMText>
-				<OMText variant="caption" style={styles.dropBarHint}>
-					.cram · .vcf.gz · .txt · .zip
-				</OMText>
-			</Pressable>
-		)
-	}
 	return (
 		<Pressable
 			onPress={onChoose}
-			style={[styles.dropZone, dragActive ? styles.dropZoneActive : null]}
+			style={[styles.explorerDropPanel, dragActive ? styles.explorerDropPanelActive : null]}
 		>
-			<PlatformSvgUri uri={microscopeIconUri} width={40} height={40} color={palette.accentStrong} />
-			<OMText variant="h3" style={styles.dropZoneTitle}>
+			<PlatformSvgUri uri={microscopeIconUri} width={32} height={32} color={palette.accentStrong} />
+			<OMText variant="headline" style={styles.explorerDropTitle}>
 				Drop a genome
 			</OMText>
-			<OMText variant="body" style={styles.dropZoneBody}>
+			<OMText variant="body" style={styles.explorerDropBody}>
 				Runs locally. Nothing is uploaded.
 			</OMText>
-			<OMText variant="caption" style={styles.dropZoneStat}>
+			<OMText variant="caption" style={styles.explorerDropStat}>
 				An mpileup on a 17 GB CRAM takes about 1.3 seconds.
 			</OMText>
-			<View style={styles.dropZoneButton}>
+			<View style={styles.explorerDropButton}>
 				<OMText variant="subtitle" style={styles.primaryButtonText}>
 					Choose files
 				</OMText>
 			</View>
-			<OMText variant="caption" style={styles.dropZoneHint}>
-				.cram · .vcf.gz · .zip · 23andMe-style .txt. Companion files (.crai, .fa, .fa.fai, .tbi) are paired automatically.
+			<OMText variant="caption" style={styles.explorerDropHint}>
+				{'.cram · .vcf.gz · .zip · 23andMe-style .txt. Companion files (.crai, .fa, .fa.fai, .tbi) are paired automatically.'}
 			</OMText>
 		</Pressable>
 	)
 }
 
 function UrlLoadBox({
+	narrow,
 	onCopyShareUrl,
 	onLoadUrl,
 	onUrlInputChange,
@@ -2397,6 +2399,7 @@ function UrlLoadBox({
 	shareUrlCopied,
 	urlInput,
 }: {
+	narrow?: boolean
 	onCopyShareUrl: () => void
 	onLoadUrl: (url: string) => void
 	onUrlInputChange: (url: string) => void
@@ -2405,21 +2408,24 @@ function UrlLoadBox({
 	urlInput: string
 }) {
 	const { palette, styles } = useTheme()
+	const placeholder = narrow
+		? 'GitHub raw, assay URL, genome zip…'
+		: 'Paste a GitHub/raw assay, panel, genome ZIP, or genotype URL…'
 	return (
-		<View style={styles.urlLoadBox}>
+		<View style={[styles.urlLoadBox, narrow ? styles.urlLoadBoxSidebar : null]}>
 			<View style={styles.urlLoadHeader}>
 				<OMIcon name="link-outline" tone="accent" size={16} />
 				<OMText variant="caption" style={styles.urlLoadTitle}>
 					Or load from URL
 				</OMText>
 			</View>
-			<View style={styles.urlLoadRow}>
+			<View style={[styles.urlLoadRow, narrow ? styles.urlLoadRowSidebar : null]}>
 				<TextInput
 					value={urlInput}
 					onChangeText={onUrlInputChange}
-					placeholder="Paste a GitHub/raw assay, panel, genome ZIP, or genotype URL…"
+					placeholder={placeholder}
 					placeholderTextColor={palette.textFaint}
-					style={styles.urlLoadInput}
+					style={[styles.urlLoadInput, narrow ? styles.urlLoadInputSidebar : null]}
 					autoCapitalize="none"
 					autoCorrect={false}
 					keyboardType="url"
@@ -2429,7 +2435,10 @@ function UrlLoadBox({
 				<Pressable
 					onPress={() => onLoadUrl(urlInput)}
 					disabled={!urlInput.trim()}
-					style={urlInput.trim() ? styles.urlLoadButton : styles.urlLoadButtonDisabled}
+					style={[
+						urlInput.trim() ? styles.urlLoadButton : styles.urlLoadButtonDisabled,
+						narrow ? styles.urlLoadButtonSidebar : null,
+					]}
 				>
 					<OMText
 						variant="subtitle"
@@ -2450,7 +2459,10 @@ function UrlLoadBox({
 					<OMText variant="caption" style={styles.shareLinkText} selectable>
 						{shareUrl}
 					</OMText>
-					<Pressable onPress={onCopyShareUrl} style={styles.intentSecondaryButton}>
+					<Pressable
+						onPress={onCopyShareUrl}
+						style={[styles.intentSecondaryButton, narrow ? styles.urlShareButtonSidebar : null]}
+					>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
 							{shareUrlCopied ? 'Copied' : 'Copy link'}
 						</OMText>
@@ -3722,6 +3734,10 @@ function makeStyles(p: LabPalette) {
 		labExplorerList: {
 			gap: 4,
 		},
+		labExplorerImportBlock: {
+			gap: omSpacing.m,
+			marginTop: omSpacing.xs,
+		},
 		labExplorerSamplesBlock: {
 			marginTop: omSpacing.xs,
 		},
@@ -3841,24 +3857,44 @@ function makeStyles(p: LabPalette) {
 			color: p.text,
 		},
 
-		// drop zone
-		dropZone: {
+		// Sidebar genome drop panel (formerly main-column hero zone)
+		explorerDropPanel: {
+			alignSelf: 'stretch',
 			alignItems: 'center',
-			gap: omSpacing.m,
-			paddingVertical: omSpacing.xxxxl,
-			paddingHorizontal: omSpacing.xl,
+			gap: omSpacing.s,
+			paddingVertical: omSpacing.xl,
+			paddingHorizontal: omSpacing.m,
 			borderRadius: omRadius.l,
 			borderWidth: 2,
 			borderStyle: 'dashed',
 			borderColor: p.accentBorder,
 			backgroundColor: p.accentTint,
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+		explorerDropPanelActive: {
+			borderColor: p.accent,
+			backgroundColor: p.accentSoft,
 		},
-		dropZoneActive: { borderColor: p.accent, backgroundColor: p.accentSoft },
-		dropZoneTitle: { color: p.text, textAlign: 'center' },
-		dropZoneBody: { color: p.text, textAlign: 'center' },
-		dropZoneStat: { color: p.textMuted, textAlign: 'center' },
-		dropZoneButton: {
-			marginTop: omSpacing.s,
+		explorerDropTitle: {
+			color: p.text,
+			textAlign: 'center',
+			fontSize: 17,
+		},
+		explorerDropBody: {
+			color: p.text,
+			textAlign: 'center',
+			lineHeight: 20,
+		},
+		explorerDropStat: {
+			color: p.textMuted,
+			textAlign: 'center',
+			lineHeight: 18,
+			paddingHorizontal: omSpacing.xs,
+		},
+		explorerDropButton: {
+			marginTop: omSpacing.xs,
 			paddingHorizontal: omSpacing.xl,
 			paddingVertical: omSpacing.m,
 			borderRadius: omRadius.full,
@@ -3866,27 +3902,15 @@ function makeStyles(p: LabPalette) {
 			borderWidth: 1,
 			borderColor: p.accentBorder,
 		},
-		dropZoneHint: {
+		explorerDropHint: {
 			color: p.textFaint,
 			textAlign: 'center',
-			marginTop: omSpacing.s,
-			maxWidth: 420,
+			lineHeight: 18,
+			marginTop: omSpacing.xs,
+			alignSelf: 'stretch',
+			paddingHorizontal: 2,
+			fontSize: 11,
 		},
-		dropBar: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.m,
-			paddingHorizontal: omSpacing.l,
-			paddingVertical: omSpacing.m,
-			borderRadius: omRadius.l,
-			borderWidth: 1,
-			borderStyle: 'dashed',
-			borderColor: p.borderStrong,
-			backgroundColor: p.surface,
-		},
-		dropBarActive: { borderColor: p.accent, backgroundColor: p.accentSoft },
-		dropBarText: { color: p.text, flex: 1 },
-		dropBarHint: { color: p.textFaint },
 
 		// genome card
 		loadedRow: {
@@ -4204,6 +4228,33 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.surfaceRaised,
 			borderWidth: 1,
 			borderColor: p.border,
+		},
+		urlLoadBoxSidebar: {
+			paddingHorizontal: omSpacing.s,
+			paddingVertical: omSpacing.m,
+			backgroundColor: p.surfaceRaised,
+			borderRadius: omRadius.m,
+		},
+		urlLoadRowSidebar: {
+			flexDirection: 'column',
+			alignItems: 'stretch',
+			gap: omSpacing.xs,
+		},
+		urlLoadInputSidebar: {
+			flexGrow: 0,
+			width: '100%',
+			alignSelf: 'stretch',
+			minHeight: 40,
+			fontSize: 13,
+		} as object,
+		urlLoadButtonSidebar: {
+			alignSelf: 'stretch',
+			alignItems: 'center',
+			justifyContent: 'center',
+			width: '100%',
+		},
+		urlShareButtonSidebar: {
+			alignSelf: 'stretch',
 		},
 		shareLinkBox: {
 			gap: omSpacing.s,
