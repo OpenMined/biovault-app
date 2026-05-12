@@ -123,6 +123,14 @@ const ENABLE_CHROME_DROPPED_FILE_HANDLES =
 	process.env.EXPO_PUBLIC_ENABLE_CHROME_DROPPED_FILE_HANDLES === '1'
 /** IDE-style pinned files + fixtures column (web Lab only). */
 const LAB_EXPLORER_PANEL_WIDTH = 296
+const LAB_SIDEBAR_MY_FILES_DESC =
+	'Pinned folders and cached files stay in this browser. Reopening dropped folders after a refresh normally needs a Chromium-class browser (Chrome, Edge, Brave, Arc, Opera). Cached genome/URL payloads can reopen in Safari and Firefox too.'
+const LAB_SIDEBAR_DROP_GENOME_DESC =
+	'Everything runs locally—nothing is uploaded. Typical speed: mpileup on a 17 GB CRAM ~1.3 seconds. Accepted: .cram, .vcf.gz, .zip, and 23andMe-style plaintext; companions .crai, reference .fasta (+ .fa.fai / .idx), .tbi/.idx pair automatically when you drop or pick related files.'
+const LAB_SIDEBAR_URL_FETCH_DESC =
+	'URLs are fetched in this browser. Packages are inspected for a supported assay schema before they run when possible. Genome and test resources are downloaded for the session and cached when permitted by limits.'
+const LAB_SIDEBAR_SAMPLE_FILES_DESC =
+	'Starter fixtures you can import to try assays without locating your own data files locally.'
 
 function useTheme(): ThemeValue {
 	const v = useContext(ThemeCtx)
@@ -535,6 +543,20 @@ function groupStoredHandles(rows: StoredHandleBundle[]): SavedHandleGroup[] {
 		.sort((left, right) => left.label.localeCompare(right.label))
 }
 
+function savedHandleGroupMatchesActiveGenome(group: SavedHandleGroup, genome: LabGenomeRef | null): boolean {
+	if (!genome) return false
+	const pn = genome.primary.name
+	if (group.label === pn) return true
+	return group.rows.some(
+		(row) => row.handles.primary?.name === pn || row.handles.reference?.name === pn,
+	)
+}
+
+function cachedRemoteMatchesActiveGenome(remote: RemoteLabFile, genome: LabGenomeRef | null): boolean {
+	if (!genome) return false
+	return remote.file.name === genome.primary.name
+}
+
 function logPersistentHandleDebug(label: string, payload: Record<string, unknown>) {
 	if (typeof console === 'undefined') return
 	console.info(`[lab:persistent-handles] ${label}`, payload)
@@ -698,55 +720,41 @@ export default function LabScreen() {
 		[ingestManyRefs],
 	)
 
-	const refreshSavedHandles = useCallback(async () => {
-		const rows = await listHandles()
-		const labRows = rows.filter((row) => row.documentId.startsWith('lab-drop:'))
-		const groups = groupStoredHandles(labRows)
-		logPersistentHandleDebug('refresh saved rows', {
-			groups: groups.map((group) => ({
-				id: group.id,
-				label: group.label,
-				rows: group.rows.map((row) => row.documentId),
-			})),
-			rowCount: labRows.length,
-			rows: labRows.map((row) => ({
-				documentId: row.documentId,
-				groupId: row.handles.groupId ?? null,
-				groupLabel: row.handles.groupLabel ?? null,
-				primary: row.handles.primary?.name ?? null,
-				reference: row.handles.reference?.name ?? null,
-			})),
-			totalRowCount: rows.length,
+	const mergePendingHandleOffers = useCallback((handles: PendingPersistentHandle[]) => {
+		if (!handles.length) return
+		setPendingHandles((prev) => {
+			const byName = new Map(prev.map((item) => [item.fileName, item]))
+			for (const handle of handles) byName.set(handle.fileName, handle)
+			return Array.from(byName.values())
 		})
-		setSavedHandles(groups)
+		setHandlePersistMessage(null)
 	}, [])
 
-	const refreshCachedRemoteFiles = useCallback(async () => {
-		try {
-			setCachedRemoteFiles(await listCachedRemoteLabFiles())
-		} catch (error) {
-			logPersistentHandleWarning('remote file cache refresh failed', {
-				error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-			})
-		}
-	}, [])
-
-	const ingestDroppedItems = useCallback(
-		async (items: DataTransferItemList | undefined, fallbackFiles: File[]) => {
-			const files = fallbackFiles
-			const refs = fileAdapterRef.current.fromPlatformFiles(files, 'local')
-			ingestManyRefs(refs)
+	const buildPendingHandlesForLocalFiles = useCallback(
+		async (
+			files: File[],
+			refs: LabFileRef[],
+			items: DataTransferItemList | undefined,
+			logLabel: 'drop' | 'picker',
+		): Promise<PendingPersistentHandle[]> => {
 			const groupPlan = buildLabFileGroupPlan(refs)
 			const handles: PendingPersistentHandle[] = []
 			const handledNames = new Set<string>()
 			const itemList = Array.from(items ?? [])
-			logPersistentHandleDebug('drop received', {
-				fileNames: files.map((file) => file.name),
-				itemCount: itemList.length,
-				hasGetAsFileSystemHandle: itemList.map((item) =>
-					typeof (item as DataTransferItem & { getAsFileSystemHandle?: unknown }).getAsFileSystemHandle === 'function'
-				),
-			})
+			if (logLabel === 'drop') {
+				logPersistentHandleDebug('drop received', {
+					fileNames: files.map((file) => file.name),
+					itemCount: itemList.length,
+					hasGetAsFileSystemHandle: itemList.map((item) =>
+						typeof (item as DataTransferItem & { getAsFileSystemHandle?: unknown }).getAsFileSystemHandle ===
+						'function',
+					),
+				})
+			} else {
+				logPersistentHandleDebug('picker received', {
+					fileNames: files.map((file) => file.name),
+				})
+			}
 			if (ENABLE_CHROME_DROPPED_FILE_HANDLES) {
 				for (const item of itemList) {
 					if (item.kind !== 'file') continue
@@ -794,16 +802,53 @@ export default function LabScreen() {
 					id: `upgrade-${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
 				})
 			}
-			if (handles.length) {
-				setPendingHandles((prev) => {
-					const byName = new Map(prev.map((item) => [item.fileName, item]))
-					for (const handle of handles) byName.set(handle.fileName, handle)
-					return Array.from(byName.values())
-				})
-				setHandlePersistMessage(null)
-			}
+			return handles
 		},
-		[ingestManyRefs],
+		[],
+	)
+
+	const refreshSavedHandles = useCallback(async () => {
+		const rows = await listHandles()
+		const labRows = rows.filter((row) => row.documentId.startsWith('lab-drop:'))
+		const groups = groupStoredHandles(labRows)
+		logPersistentHandleDebug('refresh saved rows', {
+			groups: groups.map((group) => ({
+				id: group.id,
+				label: group.label,
+				rows: group.rows.map((row) => row.documentId),
+			})),
+			rowCount: labRows.length,
+			rows: labRows.map((row) => ({
+				documentId: row.documentId,
+				groupId: row.handles.groupId ?? null,
+				groupLabel: row.handles.groupLabel ?? null,
+				primary: row.handles.primary?.name ?? null,
+				reference: row.handles.reference?.name ?? null,
+			})),
+			totalRowCount: rows.length,
+		})
+		setSavedHandles(groups)
+	}, [])
+
+	const refreshCachedRemoteFiles = useCallback(async () => {
+		try {
+			setCachedRemoteFiles(await listCachedRemoteLabFiles())
+		} catch (error) {
+			logPersistentHandleWarning('remote file cache refresh failed', {
+				error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+			})
+		}
+	}, [])
+
+	const ingestDroppedItems = useCallback(
+		async (items: DataTransferItemList | undefined, fallbackFiles: File[]) => {
+			const files = fallbackFiles
+			const refs = fileAdapterRef.current.fromPlatformFiles(files, 'local')
+			ingestManyRefs(refs)
+			const handles = await buildPendingHandlesForLocalFiles(files, refs, items, 'drop')
+			mergePendingHandleOffers(handles)
+		},
+		[ingestManyRefs, buildPendingHandlesForLocalFiles, mergePendingHandleOffers],
 	)
 
 	useEffect(() => {
@@ -1084,15 +1129,12 @@ export default function LabScreen() {
 
 	const openPicker = useCallback(async () => {
 		const files = await filePickerRef.current.pickFiles()
-		if (files.length) ingestMany(files)
-	}, [ingestMany])
-
-	const clearGenome = useCallback(() => {
-		setGenomes([])
-		setSelectedGenomeId(null)
-		setUnknowns([])
-		setRuns([])
-	}, [])
+		if (!files.length) return
+		const refs = fileAdapterRef.current.fromPlatformFiles(files, 'local')
+		ingestManyRefs(refs)
+		const handles = await buildPendingHandlesForLocalFiles(files, refs, undefined, 'picker')
+		mergePendingHandleOffers(handles)
+	}, [ingestManyRefs, buildPendingHandlesForLocalFiles, mergePendingHandleOffers])
 
 	const removeUnknown = useCallback((id: string) => {
 		setUnknowns((prev) => prev.filter((u) => u.id !== id))
@@ -1631,7 +1673,7 @@ export default function LabScreen() {
 				onSave={persistDroppedHandles}
 			/>
 
-			{activeGenomeRef ? <GenomeCard genome={activeGenomeRef} onClear={clearGenome} /> : null}
+			{activeGenomeRef ? <GenomeSlotStrip genome={activeGenomeRef} /> : null}
 
 			{unknowns.length > 0 ? (
 				<UnknownFilesNote unknowns={unknowns} onRemove={removeUnknown} />
@@ -1709,6 +1751,7 @@ export default function LabScreen() {
 
 				<View style={styles.workspaceShell}>
 					<LabExplorerSidebar
+						activeGenome={activeGenomeRef}
 						assayUrlCopied={assayUrlCopied}
 						assayUrlInput={assayUrlInput}
 						cachedRemoteFiles={cachedRemoteFiles}
@@ -1738,22 +1781,51 @@ export default function LabScreen() {
 						<View style={styles.siteHeader}>
 							<View style={styles.heroRow}>
 								<View style={styles.heroTextBlock}>
-									<OMText variant="caption" style={styles.heroEyebrow}>
-										BIOVAULT LAB
-									</OMText>
-									<OMText variant="h4" style={styles.heroTitle}>
-										Run genomics assays in your browser
-									</OMText>
-									<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
-										Load genomic data, pick an assay, and inspect results—using the full width of your
-										display.
-									</OMText>
+									{activeGenomeRef ? (
+										<>
+											<OMText variant="caption" style={styles.heroEyebrow}>
+												BIOVAULT LAB · LOADED GENOME
+											</OMText>
+											<OMText variant="h4" style={styles.heroTitle}>
+												{labGenomeDisplayName(activeGenomeRef)}
+											</OMText>
+											<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
+												{labGenomeKindLabel(activeGenomeRef)} ·{' '}
+												{humanLabSize(labGenomeBytesTotal(activeGenomeRef))}
+											</OMText>
+											<OMText
+												variant="caption"
+												style={
+													isLabGenomeComplete(activeGenomeRef)
+														? styles.heroGenomeStatusOk
+														: styles.heroGenomeStatusWarn
+												}
+											>
+												{isLabGenomeComplete(activeGenomeRef)
+													? 'Genome complete'
+													: `Missing ${missingLabGenomeSlots(activeGenomeRef).join(' · ')}`}
+											</OMText>
+										</>
+									) : (
+										<>
+											<OMText variant="caption" style={styles.heroEyebrow}>
+												BIOVAULT LAB
+											</OMText>
+											<OMText variant="h4" style={styles.heroTitle}>
+												Run genomics assays in your browser
+											</OMText>
+											<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
+												Load genomic data, pick an assay, and inspect results.
+											</OMText>
+										</>
+									)}
 								</View>
 								<View style={styles.headerTools}>
-									<GithubButton scheme={scheme} />
-									<ContactButton scheme={scheme} />
-									<ClearAllButton />
-									<WebThemeToggle scheme={scheme} />
+									<View style={styles.headerNavCluster}>
+										<GithubButton />
+										<ContactButton />
+									</View>
+									<HeaderSettingsMenu scheme={scheme} />
 								</View>
 							</View>
 						</View>
@@ -2129,6 +2201,7 @@ function PersistentHandlePrompt({
 }
 
 function LabExplorerSidebar({
+	activeGenome,
 	assayUrlCopied,
 	assayUrlInput,
 	cachedRemoteFiles,
@@ -2150,6 +2223,7 @@ function LabExplorerSidebar({
 	savedHandleGroups,
 	shareAssayUrl,
 }: {
+	activeGenome: LabGenomeRef | null
 	assayUrlCopied: boolean
 	assayUrlInput: string
 	cachedRemoteFiles: RemoteLabFile[]
@@ -2182,13 +2256,16 @@ function LabExplorerSidebar({
 				keyboardShouldPersistTaps="handled"
 			>
 				<View testID="saved-local-files" style={styles.labExplorerSavedBlock}>
-					<OMText variant="subtitle" style={styles.labExplorerSectionTitle}>
-						My files
-					</OMText>
-					<OMText variant="caption" style={styles.labExplorerFolderHint}>
-						Dropped folders only reopen after reload in Chromium (Chrome, Edge, Brave …). Cached URLs work in
-						any browser.
-					</OMText>
+					<View style={styles.labExplorerSectionHeading}>
+						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
+							Saved local files
+						</OMText>
+						<View style={styles.labExplorerDescBox}>
+							<OMText variant="caption" style={styles.labExplorerDescText}>
+								{LAB_SIDEBAR_MY_FILES_DESC}
+							</OMText>
+						</View>
+					</View>
 					{savedHandlesError ? (
 						<View style={[styles.errorInlineBlock, styles.labExplorerErrorPad]}>
 							<OMIcon name="alert-circle-outline" tone="danger" size={14} />
@@ -2203,8 +2280,18 @@ function LabExplorerSidebar({
 								Nothing here yet.
 							</OMText>
 						) : null}
-						{savedHandleGroups.map((group) => (
-							<View key={group.id} testID="saved-local-file-row" style={styles.labExplorerPinnedRow}>
+						{savedHandleGroups.map((group) => {
+							const pinnedSelected =
+								Boolean(activeGenome) && savedHandleGroupMatchesActiveGenome(group, activeGenome)
+							return (
+							<View
+								key={group.id}
+								testID="saved-local-file-row"
+								style={[
+									styles.labExplorerPinnedRow,
+									pinnedSelected ? styles.labExplorerPinnedRowSelected : null,
+								]}
+							>
 								<Pressable
 									disabled={savedHandlesLoading}
 									onPress={() => onRestoreSavedHandle(group)}
@@ -2247,12 +2334,20 @@ function LabExplorerSidebar({
 									<OMIcon name="trash-outline" tone="muted" size={14} />
 								</Pressable>
 							</View>
-						))}
-						{cachedRemoteFiles.map((remoteFile) => (
+							)
+						})}
+						{cachedRemoteFiles.map((remoteFile) => {
+							const cachedSelected =
+								Boolean(activeGenome) &&
+								cachedRemoteMatchesActiveGenome(remoteFile, activeGenome)
+							return (
 							<View
 								key={remoteFile.sourceUrl}
 								testID="saved-local-file-row"
-								style={styles.labExplorerPinnedRow}
+								style={[
+									styles.labExplorerPinnedRow,
+									cachedSelected ? styles.labExplorerPinnedRowSelected : null,
+								]}
 							>
 								<Pressable
 									disabled={savedHandlesLoading}
@@ -2295,30 +2390,43 @@ function LabExplorerSidebar({
 									<OMIcon name="trash-outline" tone="muted" size={14} />
 								</Pressable>
 							</View>
-						))}
+							)
+						})}
 					</View>
 				</View>
 
 				<View style={styles.labExplorerImportBlock}>
-					<OMText variant="subtitle" style={styles.labExplorerSectionTitle}>
-						Add data
-					</OMText>
-					<DropZone dragActive={dragActive} onChoose={onChooseGenomeFiles} />
-					<UrlLoadBox
-						narrow
-						shareUrl={shareAssayUrl}
-						shareUrlCopied={assayUrlCopied}
-						urlInput={assayUrlInput}
-						onCopyShareUrl={onCopyShareAssayUrl}
-						onLoadUrl={onLoadAssayUrl}
-						onUrlInputChange={onUrlInputChange}
-					/>
+					<View style={styles.labExplorerSectionHeading}>
+						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
+							Add data
+						</OMText>
+					</View>
+					<View style={styles.labExplorerAddDataStack}>
+						<DropZone dragActive={dragActive} onChoose={onChooseGenomeFiles} />
+						<UrlLoadBox
+							narrow
+							composer
+							shareUrl={shareAssayUrl}
+							shareUrlCopied={assayUrlCopied}
+							urlInput={assayUrlInput}
+							onCopyShareUrl={onCopyShareAssayUrl}
+							onLoadUrl={onLoadAssayUrl}
+							onUrlInputChange={onUrlInputChange}
+						/>
+					</View>
 				</View>
 
 				<View style={[styles.labExplorerSavedBlock, styles.labExplorerSamplesBlock]}>
-					<OMText variant="subtitle" style={styles.labExplorerSectionTitle}>
-						Sample files
-					</OMText>
+					<View style={styles.labExplorerSectionHeading}>
+						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
+							Sample files
+						</OMText>
+						<View style={styles.labExplorerDescBox}>
+							<OMText variant="caption" style={styles.labExplorerDescText}>
+								{LAB_SIDEBAR_SAMPLE_FILES_DESC}
+							</OMText>
+						</View>
+					</View>
 					<View style={styles.labExplorerList}>
 						{sampleBundles.map((bundle) => {
 							const loading = sampleLoadingId === bundle.id
@@ -2368,29 +2476,28 @@ function DropZone({ dragActive, onChoose }: { dragActive: boolean; onChoose: () 
 			onPress={onChoose}
 			style={[styles.explorerDropPanel, dragActive ? styles.explorerDropPanelActive : null]}
 		>
-			<PlatformSvgUri uri={microscopeIconUri} width={32} height={32} color={palette.accentStrong} />
-			<OMText variant="headline" style={styles.explorerDropTitle}>
-				Drop a genome
-			</OMText>
-			<OMText variant="body" style={styles.explorerDropBody}>
-				Runs locally. Nothing is uploaded.
-			</OMText>
-			<OMText variant="caption" style={styles.explorerDropStat}>
-				An mpileup on a 17 GB CRAM takes about 1.3 seconds.
-			</OMText>
+			<PlatformSvgUri uri={microscopeIconUri} width={22} height={22} color={palette.accent} />
+			<View style={styles.explorerDropTitleCluster}>
+				<OMText variant="subtitle" style={styles.explorerDropTitle}>
+					Drop a genome
+				</OMText>
+			</View>
+			<View style={[styles.labExplorerDescBox, styles.explorerDropDescBoxInset]}>
+				<OMText variant="caption" style={styles.labExplorerDescText}>
+					{LAB_SIDEBAR_DROP_GENOME_DESC}
+				</OMText>
+			</View>
 			<View style={styles.explorerDropButton}>
-				<OMText variant="subtitle" style={styles.primaryButtonText}>
+				<OMText variant="subtitle" style={styles.explorerDropButtonText}>
 					Choose files
 				</OMText>
 			</View>
-			<OMText variant="caption" style={styles.explorerDropHint}>
-				{'.cram · .vcf.gz · .zip · 23andMe-style .txt. Companion files (.crai, .fa, .fa.fai, .tbi) are paired automatically.'}
-			</OMText>
 		</Pressable>
 	)
 }
 
 function UrlLoadBox({
+	composer,
 	narrow,
 	onCopyShareUrl,
 	onLoadUrl,
@@ -2399,6 +2506,7 @@ function UrlLoadBox({
 	shareUrlCopied,
 	urlInput,
 }: {
+	composer?: boolean
 	narrow?: boolean
 	onCopyShareUrl: () => void
 	onLoadUrl: (url: string) => void
@@ -2411,48 +2519,76 @@ function UrlLoadBox({
 	const placeholder = narrow
 		? 'GitHub raw, assay URL, genome zip…'
 		: 'Paste a GitHub/raw assay, panel, genome ZIP, or genotype URL…'
+	const hasUrl = Boolean(urlInput.trim())
+	const boxStyle = [
+		styles.urlLoadBox,
+		narrow && composer ? styles.urlLoadBoxComposer : null,
+		narrow && !composer ? styles.urlLoadBoxSidebar : null,
+	]
+	const loadButtonStyles =
+		narrow && composer
+			? [
+					styles.urlLoadButtonComposerOutline,
+					hasUrl ? styles.urlLoadButtonComposerOutlineActive : styles.urlLoadButtonComposerOutlineDisabled,
+				]
+			: [hasUrl ? styles.urlLoadButton : styles.urlLoadButtonDisabled, narrow ? styles.urlLoadButtonSidebar : null]
+
+	const loadLabelStyle =
+		narrow && composer
+			? hasUrl
+				? styles.urlLoadButtonComposerOutlineLabel
+				: styles.urlLoadButtonComposerOutlineLabelMuted
+			: hasUrl
+				? styles.pickerActionText
+				: styles.pickerActionMutedText
 	return (
-		<View style={[styles.urlLoadBox, narrow ? styles.urlLoadBoxSidebar : null]}>
-			<View style={styles.urlLoadHeader}>
-				<OMIcon name="link-outline" tone="accent" size={16} />
-				<OMText variant="caption" style={styles.urlLoadTitle}>
-					Or load from URL
+		<View style={boxStyle}>
+			<View style={[styles.urlLoadHeader, composer && narrow ? styles.urlLoadHeaderComposer : null]}>
+				<OMIcon name="link-outline" tone={composer && narrow ? 'muted' : 'accent'} size={composer ? 14 : 16} />
+				<OMText
+					variant="caption"
+					style={[styles.urlLoadTitle, composer && narrow ? styles.urlLoadTitleComposer : null]}
+				>
+					{narrow ? 'Load from URL' : 'Or load from URL'}
 				</OMText>
 			</View>
+			{composer && narrow ? (
+				<View style={styles.labExplorerDescBox}>
+					<OMText variant="caption" style={styles.labExplorerDescText}>
+						{LAB_SIDEBAR_URL_FETCH_DESC}
+					</OMText>
+				</View>
+			) : null}
 			<View style={[styles.urlLoadRow, narrow ? styles.urlLoadRowSidebar : null]}>
 				<TextInput
 					value={urlInput}
 					onChangeText={onUrlInputChange}
 					placeholder={placeholder}
 					placeholderTextColor={palette.textFaint}
-					style={[styles.urlLoadInput, narrow ? styles.urlLoadInputSidebar : null]}
+					style={[
+						styles.urlLoadInput,
+						narrow && composer ? styles.urlLoadInputComposer : null,
+						narrow && !composer ? styles.urlLoadInputSidebar : null,
+					]}
 					autoCapitalize="none"
 					autoCorrect={false}
 					keyboardType="url"
 					returnKeyType="go"
 					onSubmitEditing={() => onLoadUrl(urlInput)}
 				/>
-				<Pressable
-					onPress={() => onLoadUrl(urlInput)}
-					disabled={!urlInput.trim()}
-					style={[
-						urlInput.trim() ? styles.urlLoadButton : styles.urlLoadButtonDisabled,
-						narrow ? styles.urlLoadButtonSidebar : null,
-					]}
-				>
-					<OMText
-						variant="subtitle"
-						style={urlInput.trim() ? styles.pickerActionText : styles.pickerActionMutedText}
-					>
+				<Pressable onPress={() => onLoadUrl(urlInput)} disabled={!urlInput.trim()} style={loadButtonStyles}>
+					<OMText variant="subtitle" style={loadLabelStyle}>
 						Load
 					</OMText>
 				</Pressable>
 			</View>
-			<OMText variant="caption" style={styles.pickerIntro}>
-				Assays are schema-inspected; genome/test files are loaded into the Lab and cached if small enough.
-			</OMText>
+			{narrow && composer ? null : (
+				<OMText variant="caption" style={styles.pickerIntro}>
+					Assays are schema-inspected; genome/test files are loaded into the Lab and cached if small enough.
+				</OMText>
+			)}
 			{shareUrl ? (
-				<View style={styles.shareLinkBox}>
+				<View style={[styles.shareLinkBox, composer && narrow ? styles.shareLinkBoxComposer : null]}>
 					<OMText variant="caption" style={styles.urlLoadTitle}>
 						Shareable lab link
 					</OMText>
@@ -2473,61 +2609,28 @@ function UrlLoadBox({
 	)
 }
 
-// === Genome card ===========================================================
+// === Genome companion file slots (Data · setup column) ======================
 
-function GenomeCard({ genome, onClear }: { genome: LabGenomeRef; onClear: () => void }) {
-	const { styles, mutedIconTone } = useTheme()
-	const complete = isLabGenomeComplete(genome)
-	const missing = missingLabGenomeSlots(genome)
-	const readiness = complete ? 'Genome complete' : `Missing ${missing.join(' · ')}`
+function GenomeSlotStrip({ genome }: { genome: LabGenomeRef }) {
+	const { styles } = useTheme()
+	if (genome.kind !== 'cram' && genome.kind !== 'vcf') return null
 	return (
-		<View style={[styles.loadedRow, complete ? styles.loadedRowOk : styles.loadedRowWarn]}>
-			<View style={styles.loadedRowHead}>
-				<View style={styles.loadedRowIcon}>
-					<OMIcon name="document-text-outline" tone="accent" size={18} />
-				</View>
-				<View style={styles.loadedRowText}>
-					<OMText variant="caption" style={styles.loadedRowKicker}>
-						LOADED GENOME
-					</OMText>
-					<OMText variant="headline" style={styles.loadedRowTitle}>
-						{labGenomeDisplayName(genome)}
-					</OMText>
-					<OMText variant="caption" style={styles.loadedRowMeta}>
-						{labGenomeKindLabel(genome)} · {humanLabSize(labGenomeBytesTotal(genome))}
-					</OMText>
-					<OMText
-						variant="caption"
-						style={complete ? styles.loadedRowStatusOk : styles.loadedRowStatusWarn}
-					>
-						{readiness}
-					</OMText>
-				</View>
-				<Pressable onPress={onClear} style={styles.removeButton}>
-					<OMIcon name="close-outline" tone={mutedIconTone} size={14} />
-					<OMText variant="subtitle" style={styles.removeButtonText}>
-						Swap
-					</OMText>
-				</Pressable>
+		<View style={styles.genomeSlotStrip}>
+			<View style={styles.slotGrid}>
+				{genome.kind === 'cram' ? (
+					<>
+						<SlotChip label=".cram" file={genome.primary} />
+						<SlotChip label=".cram.crai" file={genome.crai} />
+						<SlotChip label=".fa" file={genome.fasta} />
+						<SlotChip label=".fa.fai" file={genome.fai} />
+					</>
+				) : (
+					<>
+						<SlotChip label=".vcf.gz" file={genome.primary} />
+						<SlotChip label=".vcf.gz.tbi" file={genome.tbi} />
+					</>
+				)}
 			</View>
-
-			{genome.kind === 'cram' || genome.kind === 'vcf' ? (
-				<View style={styles.slotGrid}>
-					{genome.kind === 'cram' ? (
-						<>
-							<SlotChip label=".cram" file={genome.primary} />
-							<SlotChip label=".cram.crai" file={genome.crai} />
-							<SlotChip label=".fa" file={genome.fasta} />
-							<SlotChip label=".fa.fai" file={genome.fai} />
-						</>
-					) : (
-						<>
-							<SlotChip label=".vcf.gz" file={genome.primary} />
-							<SlotChip label=".vcf.gz.tbi" file={genome.tbi} />
-						</>
-					)}
-				</View>
-			) : null}
 		</View>
 	)
 }
@@ -3021,6 +3124,7 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 }
 
 function ClearAllButton() {
+	const { palette } = useTheme()
 	const [confirming, setConfirming] = useState(false)
 	const [busy, setBusy] = useState(false)
 	const onClick = useCallback(() => setConfirming(true), [])
@@ -3034,28 +3138,32 @@ function ClearAllButton() {
 		}
 	}, [])
 	return createElement('div', {
+		style: { alignSelf: 'stretch' },
 		children: [
 			createElement('button', {
 				key: 'btn',
 				onClick,
 				style: {
-					background: '#fff',
-					border: '1px solid #cbd5df',
-					borderRadius: 6,
-					color: '#1f2933',
+					alignSelf: 'stretch',
+					background: palette.surfaceRaised,
+					border: `1px solid ${palette.borderStrong}`,
+					borderRadius: 8,
+					color: palette.dangerText,
 					cursor: 'pointer',
 					fontFamily: 'system-ui, sans-serif',
-					fontSize: 12,
-					padding: '6px 12px',
+					fontSize: 13,
+					fontWeight: 600,
+					padding: '10px 12px',
+					width: '100%',
 				},
-				children: 'Clear all',
+				children: 'Clear all stored data…',
 			}),
 			confirming
 				? createPortal(createElement('div', {
 						key: 'modal',
 						style: {
 							alignItems: 'center',
-							background: 'rgba(15, 23, 42, 0.55)',
+							background: palette.overlayBg,
 							bottom: 0,
 							display: 'flex',
 							justifyContent: 'center',
@@ -3070,9 +3178,11 @@ function ClearAllButton() {
 						},
 						children: createElement('div', {
 							style: {
-								background: '#fff',
+								background: palette.surfaceSolid,
 								borderRadius: 12,
-								boxShadow: '0 24px 64px rgba(15,23,42,0.4)',
+								border: `1px solid ${palette.border}`,
+								boxShadow: `0 24px 64px ${palette.shadow}`,
+								color: palette.text,
 								maxWidth: 420,
 								padding: 24,
 								width: '100%',
@@ -3080,13 +3190,19 @@ function ClearAllButton() {
 							children: [
 								createElement('div', {
 									key: 'title',
-									style: { fontFamily: 'system-ui, sans-serif', fontSize: 16, fontWeight: 700, marginBottom: 8 },
+									style: {
+										fontFamily: 'system-ui, sans-serif',
+										fontSize: 16,
+										fontWeight: 700,
+										marginBottom: 8,
+										color: palette.text,
+									},
 									children: 'Clear all stored data?',
 								}),
 								createElement('div', {
 									key: 'body',
 									style: {
-										color: '#475467',
+										color: palette.textMuted,
 										fontFamily: 'system-ui, sans-serif',
 										fontSize: 13,
 										lineHeight: 1.4,
@@ -3104,10 +3220,10 @@ function ClearAllButton() {
 											onClick: onCancel,
 											disabled: busy,
 											style: {
-												background: '#fff',
-												border: '1px solid #cbd5df',
+												background: palette.surfaceRaised,
+												border: `1px solid ${palette.borderStrong}`,
 												borderRadius: 6,
-												color: '#1f2933',
+												color: palette.text,
 												cursor: busy ? 'default' : 'pointer',
 												fontFamily: 'system-ui, sans-serif',
 												fontSize: 12,
@@ -3492,30 +3608,21 @@ function openGithub() {
 	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
 }
 
-function GithubButton({ scheme }: { scheme: 'light' | 'dark' }) {
-	const { styles } = useTheme()
+function GithubButton() {
+	const { styles, mutedIconTone } = useTheme()
 	return (
 		<Pressable
 			onPress={() => openGithub()}
 			hitSlop={8}
-			style={[
-				styles.webThemeButton,
-				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
-			]}
+			style={({ pressed }) => [styles.headerNavLink, pressed && styles.headerNavLinkPressed]}
 			accessibilityRole="link"
 			accessibilityLabel="View Biovault on GitHub"
 		>
-			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
-				<OMIcon name="logo-github" size={16} tone="accent" />
+			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
+				<OMIcon name="logo-github" size={18} tone={mutedIconTone} />
 			</View>
 			<View pointerEvents="none">
-				<OMText
-					variant="caption"
-					style={[
-						styles.webThemeButtonText,
-						scheme === 'light' ? styles.webThemeButtonTextLight : styles.webThemeButtonTextDark,
-					]}
-				>
+				<OMText variant="caption" style={styles.headerNavLinkLabel}>
 					GitHub
 				</OMText>
 			</View>
@@ -3523,34 +3630,86 @@ function GithubButton({ scheme }: { scheme: 'light' | 'dark' }) {
 	)
 }
 
-function ContactButton({ scheme }: { scheme: 'light' | 'dark' }) {
-	const { styles } = useTheme()
+function ContactButton() {
+	const { styles, mutedIconTone } = useTheme()
 	return (
 		<Pressable
 			onPress={() => openContactEmail('header')}
 			hitSlop={8}
-			style={[
-				styles.webThemeButton,
-				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
-			]}
+			style={({ pressed }) => [styles.headerNavLink, pressed && styles.headerNavLinkPressed]}
 			accessibilityRole="link"
 			accessibilityLabel={`Contact: ${CONTACT_EMAIL}`}
 		>
-			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
-				<OMIcon name="mail-outline" size={16} tone="accent" />
+			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
+				<OMIcon name="mail-outline" size={18} tone={mutedIconTone} />
 			</View>
 			<View pointerEvents="none">
-				<OMText
-					variant="caption"
-					style={[
-						styles.webThemeButtonText,
-						scheme === 'light' ? styles.webThemeButtonTextLight : styles.webThemeButtonTextDark,
-					]}
-				>
+				<OMText variant="caption" style={styles.headerNavLinkLabel}>
 					Contact
 				</OMText>
 			</View>
 		</Pressable>
+	)
+}
+
+function HeaderSettingsMenu({ scheme }: { scheme: 'light' | 'dark' }) {
+	const { styles, mutedIconTone } = useTheme()
+	const [open, setOpen] = useState(false)
+	const wrapRef = useRef<View | null>(null)
+
+	const close = useCallback(() => setOpen(false), [])
+	const toggle = useCallback(() => setOpen((v) => !v), [])
+
+	useEffect(() => {
+		if (!open || typeof document === 'undefined') return
+		const el = wrapRef.current as unknown as HTMLElement | null
+		const onDocMouseDown = (e: MouseEvent) => {
+			if (el && e.target instanceof Node && !el.contains(e.target)) close()
+		}
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') close()
+		}
+		document.addEventListener('mousedown', onDocMouseDown)
+		window.addEventListener('keydown', onKeyDown)
+		return () => {
+			document.removeEventListener('mousedown', onDocMouseDown)
+			window.removeEventListener('keydown', onKeyDown)
+		}
+	}, [open, close])
+
+	return (
+		<View ref={wrapRef} style={styles.headerSettingsWrap} collapsable={false}>
+			<Pressable
+				onPress={toggle}
+				hitSlop={8}
+				style={({ pressed }) => [
+					styles.headerSettingsTrigger,
+					open && styles.headerSettingsTriggerOpen,
+					pressed && styles.headerSettingsTriggerPressed,
+				]}
+				accessibilityRole="button"
+				accessibilityState={{ expanded: open }}
+				accessibilityLabel="Lab settings: theme and clear stored data"
+			>
+				<OMIcon name="settings-outline" size={22} tone={mutedIconTone} />
+			</Pressable>
+			{open ? (
+				<View style={styles.headerSettingsPopover}>
+					<View style={styles.headerSettingsPopoverSection}>
+						<OMText variant="caption" style={styles.headerSettingsPopoverKicker}>
+							Appearance
+						</OMText>
+						<WebThemeToggle scheme={scheme} />
+					</View>
+					<View style={styles.headerSettingsPopoverSection}>
+						<OMText variant="caption" style={styles.headerSettingsPopoverKicker}>
+							Data
+						</OMText>
+						<ClearAllButton />
+					</View>
+				</View>
+			) : null}
+		</View>
 	)
 }
 
@@ -3656,12 +3815,109 @@ function makeStyles(p: LabPalette) {
 			marginTop: 2,
 			maxWidth: 560,
 		},
+		heroGenomeStatusOk: {
+			color: p.accentStrong,
+			fontSize: 12,
+			marginTop: omSpacing.xs,
+			letterSpacing: 0.3,
+			fontWeight: '600',
+		},
+		heroGenomeStatusWarn: {
+			color: p.warningText,
+			fontSize: 12,
+			marginTop: omSpacing.xs,
+			lineHeight: 18,
+			letterSpacing: 0.2,
+			fontWeight: '600',
+		},
 		headerTools: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: 8,
 			flexShrink: 0,
 			flexWrap: 'wrap',
+		},
+		headerNavCluster: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			flexShrink: 0,
+			flexWrap: 'wrap',
+			columnGap: omSpacing.m,
+			rowGap: 4,
+			marginLeft: omSpacing.xs,
+		},
+		headerNavLink: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 6,
+			paddingVertical: 8,
+			paddingHorizontal: 4,
+			borderRadius: omRadius.s,
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+		headerNavLinkPressed: {
+			opacity: 0.72,
+		} as object,
+		headerNavLinkIcon: {
+			justifyContent: 'center',
+		},
+		headerNavLinkLabel: {
+			color: p.textMuted,
+			fontSize: 14,
+			fontWeight: '500',
+		},
+		headerSettingsWrap: {
+			position: 'relative',
+			zIndex: 40,
+			flexShrink: 0,
+			marginLeft: 4,
+		} as object,
+		headerSettingsTrigger: {
+			width: 40,
+			height: 40,
+			borderRadius: omRadius.full,
+			borderWidth: 1,
+			borderColor: p.border,
+			backgroundColor: 'transparent',
+			alignItems: 'center',
+			justifyContent: 'center',
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+		headerSettingsTriggerOpen: {
+			backgroundColor: p.surfaceRaised,
+			borderColor: p.borderStrong,
+		},
+		headerSettingsTriggerPressed: {
+			opacity: 0.85,
+		} as object,
+		headerSettingsPopover: {
+			position: 'absolute',
+			top: 44,
+			right: 0,
+			minWidth: 248,
+			paddingVertical: omSpacing.m,
+			paddingHorizontal: omSpacing.m,
+			gap: omSpacing.m,
+			backgroundColor: p.surfaceSolid,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.border,
+			borderRadius: omRadius.m,
+			boxShadow: `0 12px 40px ${p.shadow}`,
+		} as object,
+		headerSettingsPopoverSection: {
+			gap: omSpacing.s,
+			alignSelf: 'stretch',
+		},
+		headerSettingsPopoverKicker: {
+			color: p.textFaint,
+			letterSpacing: 1,
+			fontWeight: '600',
+			textTransform: 'uppercase',
+			fontSize: 10,
 		},
 
 		columnKicker: {
@@ -3712,49 +3968,77 @@ function makeStyles(p: LabPalette) {
 		labExplorerScroll: { flex: 1 },
 		labExplorerScrollContent: {
 			paddingHorizontal: omSpacing.m,
-			paddingTop: omSpacing.l,
+			paddingTop: omSpacing.m,
 			paddingBottom: omSpacing.xxxl,
-			gap: omSpacing.xl,
+			gap: omSpacing.xl + 6,
 		},
 		labExplorerSavedBlock: {},
-		labExplorerSectionTitle: {
-			color: p.text,
-			fontWeight: '600',
-			fontSize: 15,
+		labExplorerSectionHeading: {
+			alignSelf: 'stretch',
+			gap: 8,
+			marginBottom: omSpacing.xs + 4,
+			minWidth: 0,
 		},
-		labExplorerFolderHint: {
+		labExplorerSectionTitle: {
+			fontSize: 11,
+			fontWeight: '600',
+			letterSpacing: 1.05,
+			color: p.textFaint,
+			textTransform: 'uppercase',
+		},
+		labExplorerDescBox: {
+			alignSelf: 'stretch',
+			paddingVertical: omSpacing.xs + 1,
+			paddingHorizontal: omSpacing.m,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surfaceSunken,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.border,
+		},
+		labExplorerDescText: {
 			color: p.textMuted,
-			lineHeight: 18,
-			marginTop: omSpacing.xs,
-			marginBottom: omSpacing.s,
+			fontSize: 11,
+			lineHeight: 17,
+		},
+		explorerDropDescBoxInset: {
+			marginTop: 2,
 		},
 		labExplorerErrorPad: {
 			marginBottom: omSpacing.s,
 		},
 		labExplorerList: {
-			gap: 4,
+			gap: 6,
+		},
+		labExplorerAddDataStack: {
+			alignSelf: 'stretch',
+			gap: omSpacing.m + 2,
 		},
 		labExplorerImportBlock: {
-			gap: omSpacing.m,
-			marginTop: omSpacing.xs,
+			gap: omSpacing.xs + 4,
+			marginTop: 2,
 		},
 		labExplorerSamplesBlock: {
 			marginTop: omSpacing.xs,
 		},
 		labExplorerEmpty: {
 			color: p.textFaint,
-			lineHeight: 18,
+			lineHeight: 16,
+			fontSize: 12,
 			paddingVertical: omSpacing.xs,
 		},
 		labExplorerPinnedRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
+			borderRadius: 0,
+			backgroundColor: 'transparent',
+			overflow: 'visible',
+			minHeight: 38,
+			borderWidth: 0,
+			paddingVertical: 2,
+		},
+		labExplorerPinnedRowSelected: {
 			borderRadius: omRadius.m,
-			backgroundColor: p.surfaceRaised,
-			overflow: 'hidden',
-			minHeight: 44,
-			borderWidth: StyleSheet.hairlineWidth,
-			borderColor: p.border,
+			backgroundColor: p.overlayCardBg,
 		},
 		labExplorerRowMain: {
 			flex: 1,
@@ -3799,12 +4083,11 @@ function makeStyles(p: LabPalette) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: 10,
-			paddingVertical: omSpacing.m,
-			paddingHorizontal: omSpacing.m,
-			borderRadius: omRadius.m,
-			borderWidth: StyleSheet.hairlineWidth,
-			borderColor: p.border,
-			backgroundColor: p.surface,
+			paddingVertical: 8,
+			paddingHorizontal: 0,
+			borderRadius: 0,
+			borderWidth: 0,
+			backgroundColor: 'transparent',
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
@@ -3813,16 +4096,14 @@ function makeStyles(p: LabPalette) {
 			opacity: 0.52,
 		},
 		labExplorerSampleGlyph: {
-			width: 30,
-			height: 30,
-			borderRadius: omRadius.m,
-			backgroundColor: p.accentSoft,
+			minWidth: 22,
 			alignItems: 'center',
 			justifyContent: 'center',
 		},
 		labExplorerSampleCta: {
-			color: p.accentStrong,
+			color: p.accent,
 			fontWeight: '600',
+			fontSize: 12,
 			flexShrink: 0,
 		},
 		labExplorerSampleError: {
@@ -3861,57 +4142,53 @@ function makeStyles(p: LabPalette) {
 		explorerDropPanel: {
 			alignSelf: 'stretch',
 			alignItems: 'center',
-			gap: omSpacing.s,
-			paddingVertical: omSpacing.xl,
+			gap: 6,
+			paddingVertical: omSpacing.l,
 			paddingHorizontal: omSpacing.m,
-			borderRadius: omRadius.l,
-			borderWidth: 2,
+			borderWidth: 1,
 			borderStyle: 'dashed',
 			borderColor: p.accentBorder,
-			backgroundColor: p.accentTint,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surfaceRaised,
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
 		} as object,
 		explorerDropPanelActive: {
+			backgroundColor: p.overlayCardBg,
+			borderStyle: 'dashed',
 			borderColor: p.accent,
-			backgroundColor: p.accentSoft,
+		},
+		explorerDropTitleCluster: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: 5,
+			flexWrap: 'wrap',
+			alignSelf: 'center',
+			maxWidth: '100%',
 		},
 		explorerDropTitle: {
 			color: p.text,
 			textAlign: 'center',
-			fontSize: 17,
-		},
-		explorerDropBody: {
-			color: p.text,
-			textAlign: 'center',
-			lineHeight: 20,
-		},
-		explorerDropStat: {
-			color: p.textMuted,
-			textAlign: 'center',
-			lineHeight: 18,
-			paddingHorizontal: omSpacing.xs,
+			fontWeight: '600',
+			fontSize: 15,
+			flexShrink: 1,
 		},
 		explorerDropButton: {
-			marginTop: omSpacing.xs,
+			marginTop: omSpacing.xs + 2,
 			paddingHorizontal: omSpacing.xl,
-			paddingVertical: omSpacing.m,
+			paddingVertical: 10,
 			borderRadius: omRadius.full,
-			backgroundColor: p.accent,
+			backgroundColor: 'transparent',
 			borderWidth: 1,
 			borderColor: p.accentBorder,
 		},
-		explorerDropHint: {
-			color: p.textFaint,
-			textAlign: 'center',
-			lineHeight: 18,
-			marginTop: omSpacing.xs,
-			alignSelf: 'stretch',
-			paddingHorizontal: 2,
-			fontSize: 11,
+		explorerDropButtonText: {
+			color: p.accentStrong,
+			fontWeight: '600',
+			fontSize: 14,
 		},
-
 		// genome card
 		loadedRow: {
 			paddingHorizontal: omSpacing.l,
@@ -3963,6 +4240,11 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.borderStrong,
 		},
 		removeButtonText: { color: p.textMuted },
+
+		genomeSlotStrip: {
+			alignSelf: 'stretch',
+			gap: omSpacing.xs,
+		},
 
 		// slots
 		slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: omSpacing.xs },
@@ -4195,6 +4477,11 @@ function makeStyles(p: LabPalette) {
 			alignItems: 'center',
 			gap: omSpacing.xs,
 		},
+		urlLoadHeaderComposer: {
+			alignSelf: 'stretch',
+			minWidth: 0,
+			flexWrap: 'wrap',
+		},
 		urlLoadTitle: { color: p.accentStrong, letterSpacing: 1.1 },
 		urlLoadRow: {
 			flexDirection: 'row',
@@ -4255,6 +4542,65 @@ function makeStyles(p: LabPalette) {
 		},
 		urlShareButtonSidebar: {
 			alignSelf: 'stretch',
+		},
+		urlLoadBoxComposer: {
+			padding: 0,
+			backgroundColor: 'transparent',
+			borderWidth: 0,
+			borderRadius: 0,
+			gap: omSpacing.xs + 2,
+		},
+		urlLoadTitleComposer: {
+			color: p.textFaint,
+			letterSpacing: 0.85,
+			fontSize: 11,
+			flexGrow: 1,
+			flexShrink: 1,
+			minWidth: 0,
+		},
+		urlLoadInputComposer: {
+			backgroundColor: p.surfaceSolid,
+			borderColor: p.border,
+			fontSize: 13,
+		} as object,
+		urlLoadButtonComposerOutline: {
+			minHeight: 40,
+			paddingVertical: 10,
+			paddingHorizontal: omSpacing.l,
+			borderRadius: omRadius.full,
+			borderWidth: 1,
+			alignSelf: 'stretch',
+			alignItems: 'center',
+			justifyContent: 'center',
+			width: '100%',
+		},
+		urlLoadButtonComposerOutlineActive: {
+			borderColor: p.accentBorder,
+			backgroundColor: 'transparent',
+		},
+		urlLoadButtonComposerOutlineDisabled: {
+			borderColor: p.border,
+			backgroundColor: 'transparent',
+			opacity: 0.55,
+		},
+		urlLoadButtonComposerOutlineLabel: {
+			color: p.accentStrong,
+			fontWeight: '600',
+			fontSize: 14,
+		},
+		urlLoadButtonComposerOutlineLabelMuted: {
+			color: p.textFaint,
+			fontWeight: '600',
+			fontSize: 14,
+		},
+		shareLinkBoxComposer: {
+			backgroundColor: 'transparent',
+			borderWidth: 0,
+			borderRadius: 0,
+			padding: 0,
+			paddingVertical: omSpacing.xs,
+			marginTop: omSpacing.xs,
+			gap: omSpacing.xs,
 		},
 		shareLinkBox: {
 			gap: omSpacing.s,
