@@ -18,14 +18,20 @@ const INDEXED_DB_NAMES = [
 	'biovault-app.db',
 	'biovault-notifications.db',
 ]
+const INDEXED_DB_DELETE_TIMEOUT_MS = 2_000
 
 async function deleteIndexedDb(name: string): Promise<void> {
 	if (typeof indexedDB === 'undefined') return
 	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, INDEXED_DB_DELETE_TIMEOUT_MS)
+		const done = () => {
+			clearTimeout(timer)
+			resolve()
+		}
 		const req = indexedDB.deleteDatabase(name)
-		req.onsuccess = () => resolve()
-		req.onerror = () => resolve()
-		req.onblocked = () => resolve()
+		req.onsuccess = done
+		req.onerror = done
+		req.onblocked = done
 	})
 }
 

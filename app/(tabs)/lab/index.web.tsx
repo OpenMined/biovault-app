@@ -553,6 +553,11 @@ function cachedRemoteMatchesActiveGenome(remote: RemoteLabFile, genome: LabGenom
 	return remote.file.name === genome.primary.name
 }
 
+/** Avoid double “selected” rows when cached URL storage or persisted handles share filenames with this session genome. */
+function activeGenomeOwnedBySessionRow(activeGenome: LabGenomeRef | null, sessionGenomes: LabGenomeRef[]): boolean {
+	return Boolean(activeGenome && sessionGenomes.some((g) => g.id === activeGenome.id))
+}
+
 function logPersistentHandleDebug(label: string, payload: Record<string, unknown>) {
 	if (typeof console === 'undefined') return
 	console.info(`[lab:persistent-handles] ${label}`, payload)
@@ -650,6 +655,7 @@ export default function LabScreen() {
 	const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null)
 	const [runtimeWarmupStatus, setRuntimeWarmupStatus] = useState<RuntimeWarmupStatus>('loading')
 	const [remoteIntent, setRemoteIntent] = useState<RemoteIntentState>({ status: 'idle' })
+	const remoteIntentRequestSeqRef = useRef(0)
 	const [sessionAssays, setSessionAssays] = useState<SessionLabAssay[]>([])
 	const [pendingHandles, setPendingHandles] = useState<PendingPersistentHandle[]>([])
 	const [handlePersistMessage, setHandlePersistMessage] = useState<string | null>(null)
@@ -1304,6 +1310,7 @@ export default function LabScreen() {
 	}, [trackEvent])
 
 	const dismissRemoteIntent = useCallback(() => {
+		remoteIntentRequestSeqRef.current += 1
 		setRemoteIntent({ status: 'idle' })
 	}, [])
 
@@ -1340,42 +1347,20 @@ export default function LabScreen() {
 			intentFileKind !== 'assay_python' &&
 			intentFileKind !== 'assay_yaml' &&
 			intentFileKind !== 'unknown'
+		const requestSeq = remoteIntentRequestSeqRef.current + 1
+		remoteIntentRequestSeqRef.current = requestSeq
+		const isCurrentRemoteIntent = () => remoteIntentRequestSeqRef.current === requestSeq
 		setRemoteIntent({ intent, status: isRemoteLabFile ? 'file-loading' : 'resolving' })
 		trackEvent('lab_remote_intent_fetch_requested', { ...demoProperties, source: intent.source, url: intent.url })
 		try {
 			if (isRemoteLabFile) {
-				if (intentFileKind === 'zip') {
-					try {
-						const pkg = await resolveRemotePackage(intent.url)
-						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
-						const resource =
-							pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
-							pkg.resources[0]
-						if (!resource) {
-							throw new Error(`Package ${pkg.name ?? pkg.sourceUrl} did not contain runnable BioScript resources.`)
-						}
-						setRemoteIntent({
-							dependencies: pkg.resources.filter((candidate) => candidate.sourceUrl !== resource.sourceUrl),
-							intent,
-							resource,
-							status: 'resolved',
-						})
-						trackEvent('lab_remote_package_resolved', {
-							...demoProperties,
-							resourceCount: pkg.resources.length,
-							source: intent.source,
-							url: intent.url,
-						})
-						return
-					} catch (error) {
-						console.warn('[lab] remote zip was not a BioScript package; falling back to lab file', error)
-					}
-				}
 				const remoteFile = await fetchRemoteLabFile(intent.url)
+				if (!isCurrentRemoteIntent()) return
 				ingestMany([remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
 				if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
 					await refreshCachedRemoteFiles()
 				}
+				if (!isCurrentRemoteIntent()) return
 				setRemoteIntent({ file: remoteFile, intent, status: 'file-loaded' })
 				trackEvent('lab_remote_file_loaded', {
 					...demoProperties,
@@ -1388,8 +1373,10 @@ export default function LabScreen() {
 				return
 			}
 			const resource = await resolveRemoteResource(intent.url)
+			if (!isCurrentRemoteIntent()) return
 			if (resource.schema === 'bioscript:package-release:1.0') {
 				const pkg = await resolveRemotePackage(intent.url)
+				if (!isCurrentRemoteIntent()) return
 				addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
 				const entrypointResource =
 					pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
@@ -1412,6 +1399,7 @@ export default function LabScreen() {
 				return
 			}
 			addResolvedSessionAssays([resource])
+			if (!isCurrentRemoteIntent()) return
 			setRemoteIntent({ dependencies: [], intent, resource, status: 'resolved' })
 			trackEvent('lab_remote_intent_resolved', {
 				...demoProperties,
@@ -1422,6 +1410,7 @@ export default function LabScreen() {
 				url: intent.url,
 			})
 		} catch (error) {
+			if (!isCurrentRemoteIntent()) return
 			const message = error instanceof Error ? error.message : String(error)
 			setRemoteIntent({ error: message, intent, status: 'error' })
 			trackEvent('lab_remote_intent_failed', { ...demoProperties, error: message, source: intent.source, url: intent.url })
@@ -1973,7 +1962,7 @@ function RemoteIntentCard({
 
 	if (state.status === 'pending' || state.status === 'resolving' || state.status === 'file-loading' || state.status === 'error') {
 		const busy = state.status === 'resolving' || state.status === 'file-loading'
-		busyBackdrop = busy
+		busyBackdrop = false
 		const fileName = remoteLabFileName(state.intent.url)
 		const fileKind = remoteLabFileKind(state.intent.url)
 		const looksLikeFile = fileKind !== 'assay_python' && fileKind !== 'assay_yaml' && fileKind !== 'unknown'
@@ -2018,9 +2007,9 @@ function RemoteIntentCard({
 					</View>
 				) : null}
 				<View style={styles.intentActions}>
-					<Pressable onPress={onDismiss} disabled={busy} style={styles.intentSecondaryButton}>
+					<Pressable onPress={onDismiss} style={styles.intentSecondaryButton}>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
-							Ignore
+							{busy ? 'Cancel' : 'Ignore'}
 						</OMText>
 					</Pressable>
 					<Pressable onPress={onFetch} disabled={busy} style={styles.intentPrimaryButton}>
@@ -2319,8 +2308,14 @@ function LabExplorerSidebar({
 	shareAssayUrl: string
 }) {
 	const { styles } = useTheme()
-	const hasPins = savedHandleGroups.length > 0 || cachedRemoteFiles.length > 0
+	/** Cached fetch rows duplicate session rows when the same primary is already loaded; keep them out of the picker list. */
+	const cachedRemotePickers = useMemo(() => {
+		const sessionPrimaryNames = new Set(sessionGenomes.map((g) => g.primary.name))
+		return cachedRemoteFiles.filter((r) => !sessionPrimaryNames.has(r.file.name))
+	}, [cachedRemoteFiles, sessionGenomes])
+	const hasPins = savedHandleGroups.length > 0 || cachedRemotePickers.length > 0
 	const hasAnyListContent = sessionGenomes.length > 0 || hasPins || Boolean(savedHandlesError)
+	const activeIsSessionRow = activeGenomeOwnedBySessionRow(activeGenome, sessionGenomes)
 	return (
 		<View style={styles.labExplorerRoot}>
 			<ScrollView
@@ -2389,7 +2384,9 @@ function LabExplorerSidebar({
 						) : null}
 						{savedHandleGroups.map((group) => {
 							const pinnedSelected =
-								Boolean(activeGenome) && savedHandleGroupMatchesActiveGenome(group, activeGenome)
+								Boolean(activeGenome) &&
+								savedHandleGroupMatchesActiveGenome(group, activeGenome) &&
+								!activeIsSessionRow
 							return (
 							<View
 								key={group.id}
@@ -2443,10 +2440,11 @@ function LabExplorerSidebar({
 							</View>
 							)
 						})}
-						{cachedRemoteFiles.map((remoteFile) => {
+						{cachedRemotePickers.map((remoteFile) => {
 							const cachedSelected =
 								Boolean(activeGenome) &&
-								cachedRemoteMatchesActiveGenome(remoteFile, activeGenome)
+								cachedRemoteMatchesActiveGenome(remoteFile, activeGenome) &&
+								!activeIsSessionRow
 							return (
 							<View
 								key={remoteFile.sourceUrl}
@@ -3210,12 +3208,25 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 	}), document.body)
 }
 
+/** Mounted on the fullscreen clear-data dialog portaled under `document.body`. Lab header popover skips outside-dismiss when this subtree is clicked. */
+const CLEAR_STORAGE_CONFIRM_MODAL_DOM_ID = 'biovault-clear-storage-modal'
+
 function ClearAllButton() {
 	const { palette } = useTheme()
 	const [confirming, setConfirming] = useState(false)
 	const [busy, setBusy] = useState(false)
 	const onClick = useCallback(() => setConfirming(true), [])
 	const onCancel = useCallback(() => setConfirming(false), [])
+	useEffect(() => {
+		if (!confirming || typeof document === 'undefined') return
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== 'Escape' || busy) return
+			e.preventDefault()
+			onCancel()
+		}
+		document.addEventListener('keydown', onKey)
+		return () => document.removeEventListener('keydown', onKey)
+	}, [confirming, busy, onCancel])
 	const onConfirm = useCallback(async () => {
 		setBusy(true)
 		try {
@@ -3229,6 +3240,7 @@ function ClearAllButton() {
 		children: [
 			createElement('button', {
 				key: 'btn',
+				type: 'button',
 				onClick,
 				style: {
 					alignSelf: 'stretch',
@@ -3248,6 +3260,7 @@ function ClearAllButton() {
 			confirming
 				? createPortal(createElement('div', {
 						key: 'modal',
+						id: CLEAR_STORAGE_CONFIRM_MODAL_DOM_ID,
 						style: {
 							alignItems: 'center',
 							background: palette.overlayBg,
@@ -3303,6 +3316,7 @@ function ClearAllButton() {
 									children: [
 										createElement('button', {
 											key: 'cancel',
+											type: 'button',
 											onClick: onCancel,
 											disabled: busy,
 											style: {
@@ -3319,6 +3333,7 @@ function ClearAllButton() {
 										}),
 										createElement('button', {
 											key: 'confirm',
+											type: 'button',
 											onClick: onConfirm,
 											disabled: busy,
 											style: {
@@ -3914,10 +3929,15 @@ function HeaderSettingsMenu({ scheme }: { scheme: 'light' | 'dark' }) {
 		if (!open || typeof document === 'undefined') return
 		const el = wrapRef.current as unknown as HTMLElement | null
 		const onDocMouseDown = (e: MouseEvent) => {
-			if (el && e.target instanceof Node && !el.contains(e.target)) close()
+			if (!(e.target instanceof Node)) return
+			const clearModalRoot = document.getElementById(CLEAR_STORAGE_CONFIRM_MODAL_DOM_ID)
+			if (clearModalRoot?.contains(e.target)) return
+			if (el && !el.contains(e.target)) close()
 		}
 		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') close()
+			if (e.key !== 'Escape') return
+			if (document.getElementById(CLEAR_STORAGE_CONFIRM_MODAL_DOM_ID)) return
+			close()
 		}
 		document.addEventListener('mousedown', onDocMouseDown)
 		window.addEventListener('keydown', onKeyDown)

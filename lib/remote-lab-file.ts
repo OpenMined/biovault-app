@@ -2,6 +2,8 @@ import { classifyLabFile, humanLabSize } from '@/lib/lab/file-model'
 import type { FileKind } from '@/lib/lab/types'
 
 export const REMOTE_LAB_FILE_CACHE_MAX_BYTES = 100 * 1024 * 1024
+const REMOTE_LAB_FILE_IDB_TIMEOUT_MS = 2_000
+const REMOTE_LAB_FILE_FETCH_TIMEOUT_MS = 120_000
 
 export type RemoteLabFile = {
 	cacheStatus: 'hit' | 'miss' | 'stored' | 'too-large' | 'uncached'
@@ -28,12 +30,26 @@ const DEV_REMOTE_FILE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
+function timeoutError(label: string, ms: number): Error {
+	return new Error(`${label} timed out after ${Math.round(ms / 1000)}s.`)
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | null = null
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(timeoutError(label, ms)), ms)
+	})
+	return Promise.race([promise, timeout]).finally(() => {
+		if (timer) clearTimeout(timer)
+	})
+}
+
 function openDb(): Promise<IDBDatabase> {
 	if (typeof indexedDB === 'undefined') {
 		return Promise.reject(new Error('IndexedDB is not available in this browser.'))
 	}
 	if (dbPromise) return dbPromise
-	dbPromise = new Promise((resolve, reject) => {
+	const nextPromise = withTimeout(new Promise<IDBDatabase>((resolve, reject) => {
 		const request = indexedDB.open(DB_NAME, DB_VERSION)
 		request.onupgradeneeded = () => {
 			const db = request.result
@@ -43,8 +59,13 @@ function openDb(): Promise<IDBDatabase> {
 		}
 		request.onsuccess = () => resolve(request.result)
 		request.onerror = () => reject(request.error ?? new Error('Failed to open remote file cache.'))
+		request.onblocked = () => reject(new Error('Remote file cache is blocked by another tab.'))
+	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache open').catch((error) => {
+		dbPromise = null
+		throw error
 	})
-	return dbPromise
+	dbPromise = nextPromise
+	return nextPromise
 }
 
 function normalizeSourceUrl(input: string): string {
@@ -83,26 +104,29 @@ function isAllowedDevRemoteHost(hostname: string): boolean {
 }
 
 function getCachedRemoteLabFile(sourceUrl: string): Promise<CachedRemoteLabFile | null> {
-	return openDb().then((db) => new Promise((resolve, reject) => {
+	return openDb().then((db) => withTimeout(new Promise<CachedRemoteLabFile | null>((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readonly')
 		const request = tx.objectStore(STORE_NAME).get(sourceUrl)
 		request.onsuccess = () => resolve((request.result as CachedRemoteLabFile | undefined) ?? null)
 		request.onerror = () => reject(request.error ?? new Error('Failed to read remote file cache.'))
-	}))
+	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache read')).catch((error) => {
+		console.warn('[remote-lab-file] skipping cache read', error)
+		return null
+	})
 }
 
 function putCachedRemoteLabFile(record: CachedRemoteLabFile): Promise<void> {
-	return openDb().then((db) => new Promise((resolve, reject) => {
+	return openDb().then((db) => withTimeout(new Promise<void>((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readwrite')
 		tx.objectStore(STORE_NAME).put(record)
 		tx.oncomplete = () => resolve()
 		tx.onerror = () => reject(tx.error ?? new Error('Failed to write remote file cache.'))
 		tx.onabort = () => reject(tx.error ?? new Error('Remote file cache write was aborted.'))
-	}))
+	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache write'))
 }
 
 export function listCachedRemoteLabFiles(): Promise<RemoteLabFile[]> {
-	return openDb().then((db) => new Promise((resolve, reject) => {
+	return openDb().then((db) => withTimeout(new Promise<RemoteLabFile[]>((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readonly')
 		const request = tx.objectStore(STORE_NAME).getAll()
 		request.onsuccess = () => {
@@ -115,17 +139,22 @@ export function listCachedRemoteLabFiles(): Promise<RemoteLabFile[]> {
 			})))
 		}
 		request.onerror = () => reject(request.error ?? new Error('Failed to list remote file cache.'))
-	}))
+	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache list')).catch((error) => {
+		console.warn('[remote-lab-file] failed to list remote file cache', error)
+		return []
+	})
 }
 
 export function deleteCachedRemoteLabFile(sourceUrl: string): Promise<void> {
-	return openDb().then((db) => new Promise((resolve, reject) => {
+	return openDb().then((db) => withTimeout(new Promise<void>((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readwrite')
 		tx.objectStore(STORE_NAME).delete(sourceUrl)
 		tx.oncomplete = () => resolve()
 		tx.onerror = () => reject(tx.error ?? new Error('Failed to delete remote file cache entry.'))
 		tx.onabort = () => reject(tx.error ?? new Error('Remote file cache delete was aborted.'))
-	}))
+	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache delete')).catch((error) => {
+		console.warn('[remote-lab-file] failed to delete remote file cache entry', error)
+	})
 }
 
 export function remoteLabFileName(input: string): string {
@@ -151,7 +180,19 @@ export async function fetchRemoteLabFile(input: string): Promise<RemoteLabFile> 
 		}
 	}
 
-	const response = await fetch(toFetchableUrl(sourceUrl))
+	const controller = new AbortController()
+	const timer = setTimeout(() => controller.abort(), REMOTE_LAB_FILE_FETCH_TIMEOUT_MS)
+	let response: Response
+	try {
+		response = await fetch(toFetchableUrl(sourceUrl), { signal: controller.signal })
+	} catch (error) {
+		if (error instanceof Error && error.name === 'AbortError') {
+			throw timeoutError('Remote file download', REMOTE_LAB_FILE_FETCH_TIMEOUT_MS)
+		}
+		throw error
+	} finally {
+		clearTimeout(timer)
+	}
 	if (!response.ok) {
 		throw new Error(`Unable to fetch remote file (${response.status}).`)
 	}
