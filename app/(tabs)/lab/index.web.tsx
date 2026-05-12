@@ -353,6 +353,31 @@ function genomeRelatedFileNames(genome: LabGenomeRef): string[] {
 	return [genome.primary.name]
 }
 
+type GenomeFileSlot = {
+	key: string
+	label: string
+	name?: string
+	required: boolean
+}
+
+function genomeFileSlots(genome: LabGenomeRef): GenomeFileSlot[] {
+	if (genome.kind === 'cram') {
+		return [
+			{ key: 'primary', label: 'CRAM', name: genome.primary.name, required: true },
+			{ key: 'crai', label: 'CRAI index', name: genome.crai?.name, required: true },
+			{ key: 'fasta', label: 'Reference FASTA', name: genome.fasta?.name, required: true },
+			{ key: 'fai', label: 'FASTA index', name: genome.fai?.name, required: true },
+		]
+	}
+	if (genome.kind === 'vcf') {
+		return [
+			{ key: 'primary', label: 'VCF', name: genome.primary.name, required: true },
+			{ key: 'tbi', label: 'TBI index', name: genome.tbi?.name, required: true },
+		]
+	}
+	return [{ key: 'primary', label: labGenomeKindLabel(genome), name: genome.primary.name, required: true }]
+}
+
 function safeGenomicExtension(name: string): string {
 	const lower = name.toLowerCase()
 	const knownExtensions = [
@@ -1174,18 +1199,36 @@ export default function LabScreen() {
 	const pickSample = useCallback(
 		async (bundle: LabTestFileBundle) => {
 			if (bundle.remoteUrl) {
+				setSampleLoadingId(bundle.id)
+				setSampleLoadError(null)
 				trackEvent('lab_sample_genome_remote_requested', {
 					...demoBundleAnalyticsProperties(bundle),
 					bundleId: bundle.id,
 				})
-				setRemoteIntent({
-					intent: {
-						kind: 'remote-resource',
-						source: 'demo-catalog',
-						url: bundle.remoteUrl,
-					},
-					status: 'pending',
-				})
+				try {
+					const remoteFile = await fetchRemoteLabFile(bundle.remoteUrl)
+					ingestMany([remoteFile.file], 'bundled', demoBundleAnalyticsProperties(bundle))
+					if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
+						await refreshCachedRemoteFiles()
+					}
+					trackEvent('lab_sample_genome_loaded', {
+						...demoBundleAnalyticsProperties(bundle),
+						bundleId: bundle.id,
+						cacheStatus: remoteFile.cacheStatus,
+						fileKind: remoteFile.fileKind,
+						totalFiles: 1,
+					})
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err)
+					setSampleLoadError(msg)
+					trackEvent('lab_sample_genome_failed', {
+						...demoBundleAnalyticsProperties(bundle),
+						bundleId: bundle.id,
+						error: msg,
+					})
+				} finally {
+					setSampleLoadingId(null)
+				}
 				return
 			}
 			setSampleLoadingId(bundle.id)
@@ -1214,7 +1257,7 @@ export default function LabScreen() {
 				setSampleLoadingId(null)
 			}
 		},
-		[ingestMany, trackEvent],
+		[ingestMany, refreshCachedRemoteFiles, trackEvent],
 	)
 
 	const addResolvedSessionAssays = useCallback((
@@ -1384,12 +1427,7 @@ export default function LabScreen() {
 				if (!entrypointResource) {
 					throw new Error(`Package ${pkg.name ?? pkg.sourceUrl} did not contain runnable BioScript resources.`)
 				}
-				setRemoteIntent({
-					dependencies: pkg.resources.filter((candidate) => candidate.sourceUrl !== entrypointResource.sourceUrl),
-					intent,
-					resource: entrypointResource,
-					status: 'resolved',
-				})
+				setRemoteIntent({ status: 'idle' })
 				trackEvent('lab_remote_package_resolved', {
 					...demoProperties,
 					resourceCount: pkg.resources.length,
@@ -1441,6 +1479,9 @@ export default function LabScreen() {
 	const resolveRemoteDependencies = useCallback(async () => {
 		if (remoteIntent.status !== 'resolved' && remoteIntent.status !== 'dependency-error') return
 		const { intent, resource } = remoteIntent
+		const requestSeq = remoteIntentRequestSeqRef.current + 1
+		remoteIntentRequestSeqRef.current = requestSeq
+		const isCurrentRemoteIntent = () => remoteIntentRequestSeqRef.current === requestSeq
 		setRemoteIntent({ intent, resource, status: 'resolving-dependencies' })
 		trackEvent('lab_remote_dependencies_fetch_requested', {
 			dependencyCount: resource.dependencies.length,
@@ -1451,7 +1492,9 @@ export default function LabScreen() {
 			const dependencies = await Promise.all(
 				resource.dependencies.map((dependency) => resolveRemoteResource(dependency.url)),
 			)
+			if (!isCurrentRemoteIntent()) return
 			addResolvedSessionAssays([resource, ...dependencies])
+			if (!isCurrentRemoteIntent()) return
 			setRemoteIntent({ dependencies, intent, resource, status: 'resolved' })
 			trackEvent('lab_remote_dependencies_resolved', {
 				dependencyCount: dependencies.length,
@@ -1459,6 +1502,7 @@ export default function LabScreen() {
 				url: intent.url,
 			})
 		} catch (error) {
+			if (!isCurrentRemoteIntent()) return
 			const message = error instanceof Error ? error.message : String(error)
 			setRemoteIntent({ error: message, intent, resource, status: 'dependency-error' })
 			trackEvent('lab_remote_dependencies_failed', { error: message, kind: resource.kind, url: intent.url })
@@ -1910,34 +1954,52 @@ export default function LabScreen() {
 	)
 }
 
-function IntentLaunchModalChrome({
-	busyBackdrop,
+function LabModalChrome({
+	accessibilityLabel,
 	children,
+	contentStyle,
+	layerStyle,
 	onBackdropDismiss,
+	panelStyle,
+	scroll = false,
+	scrollContentStyle,
 }: {
-	busyBackdrop: boolean
+	accessibilityLabel?: string
 	children: ReactNode
+	contentStyle?: object
+	layerStyle?: object
 	onBackdropDismiss: () => void
+	panelStyle?: object
+	scroll?: boolean
+	scrollContentStyle?: object
 }) {
 	const { styles } = useTheme()
 	return (
-		<View style={[styles.sourceOverlay, styles.intentModalLayer]}>
+		<View style={[styles.sourceOverlay, styles.labModalLayer, layerStyle]}>
 			<Pressable
 				accessibilityRole="button"
-				accessibilityLabel={busyBackdrop ? undefined : 'Close dialog'}
-				disabled={busyBackdrop}
-				onPress={busyBackdrop ? undefined : onBackdropDismiss}
+				accessibilityLabel="Close dialog"
+				onPress={onBackdropDismiss}
 				style={styles.sourceBackdrop}
 			/>
-			<View style={[styles.sourcePanel, styles.intentModalSheet]}>
-				<ScrollView
-					contentContainerStyle={styles.intentModalScrollContent}
-					keyboardShouldPersistTaps="handled"
-					nestedScrollEnabled
-					style={styles.intentModalScroll}
-				>
-					{children}
-				</ScrollView>
+			<View
+				accessibilityLabel={accessibilityLabel}
+				accessibilityViewIsModal
+				accessible
+				style={[styles.sourcePanel, panelStyle]}
+			>
+				{scroll ? (
+					<ScrollView
+						contentContainerStyle={scrollContentStyle}
+						keyboardShouldPersistTaps="handled"
+						nestedScrollEnabled
+						style={contentStyle}
+					>
+						{children}
+					</ScrollView>
+				) : (
+					children
+				)}
 			</View>
 		</View>
 	)
@@ -1957,12 +2019,10 @@ function RemoteIntentCard({
 	const { styles, mutedIconTone } = useTheme()
 	if (state.status === 'idle') return null
 
-	let busyBackdrop = false
 	let body: ReactNode = null
 
 	if (state.status === 'pending' || state.status === 'resolving' || state.status === 'file-loading' || state.status === 'error') {
 		const busy = state.status === 'resolving' || state.status === 'file-loading'
-		busyBackdrop = false
 		const fileName = remoteLabFileName(state.intent.url)
 		const fileKind = remoteLabFileKind(state.intent.url)
 		const looksLikeFile = fileKind !== 'assay_python' && fileKind !== 'assay_yaml' && fileKind !== 'unknown'
@@ -2064,7 +2124,6 @@ function RemoteIntentCard({
 		const resource = state.resource
 		const resolvingDeps = state.status === 'resolving-dependencies'
 		const resolvedDeps = state.status === 'resolved' ? state.dependencies : []
-		busyBackdrop = resolvingDeps
 		body = (
 			<View style={styles.intentCard}>
 				<View style={styles.intentHeader}>
@@ -2165,9 +2224,17 @@ function RemoteIntentCard({
 	}
 
 	return (
-		<IntentLaunchModalChrome busyBackdrop={busyBackdrop} onBackdropDismiss={onDismiss}>
+		<LabModalChrome
+			accessibilityLabel="Shared resource dialog"
+			contentStyle={styles.intentModalScroll}
+			layerStyle={styles.intentModalLayer}
+			onBackdropDismiss={onDismiss}
+			panelStyle={styles.intentModalSheet}
+			scroll
+			scrollContentStyle={styles.intentModalScrollContent}
+		>
 			{body}
-		</IntentLaunchModalChrome>
+		</LabModalChrome>
 	)
 }
 
@@ -2186,75 +2253,67 @@ function PersistentHandlePrompt({
 	if (!supportsPersistableLocalFileHandles()) return null
 	if (!pendingHandles.length && !message) return null
 	return (
-		<View style={[styles.sourceOverlay, styles.persistentHandleModalLayer]} pointerEvents="box-none">
-			<Pressable
-				accessibilityLabel="Dismiss dialog"
-				accessibilityRole="button"
-				onPress={onDismiss}
-				style={styles.sourceBackdrop}
-			/>
-			<View
-				style={[styles.sourcePanel, styles.persistentHandleModalPanel]}
-				accessible
-				accessibilityViewIsModal
-				accessibilityLabel="Persistent file access dialog"
-			>
-				<View style={styles.persistentHandleModalChrome}>
-					<View style={styles.intentHeader}>
-						<View style={styles.intentIcon}>
-							<OMIcon name="folder-open-outline" tone="accent" size={18} />
-						</View>
-						<View style={styles.intentText}>
-							<OMText variant="caption" style={styles.intentKicker}>
-								PERSISTENT FILE ACCESS
+		<LabModalChrome
+			accessibilityLabel="Persistent file access dialog"
+			layerStyle={styles.persistentHandleModalLayer}
+			onBackdropDismiss={onDismiss}
+			panelStyle={styles.persistentHandleModalPanel}
+		>
+			<View style={styles.persistentHandleModalChrome}>
+				<View style={styles.intentHeader}>
+					<View style={styles.intentIcon}>
+						<OMIcon name="folder-open-outline" tone="accent" size={18} />
+					</View>
+					<View style={styles.intentText}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							PERSISTENT FILE ACCESS
+						</OMText>
+						<OMText variant="headline" style={styles.intentTitle}>
+							Keep access after refresh?
+						</OMText>
+						<OMText variant="caption" style={styles.intentUrl}>
+							{message ??
+								`${pendingHandles.length} dropped ${pendingHandles.length === 1 ? 'file can' : 'files can'} be upgraded to persistent browser handles.`}
+						</OMText>
+					</View>
+					<Pressable onPress={onDismiss} style={styles.intentClose}>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+				{pendingHandles.length ? (
+					<View style={styles.intentDependencyList}>
+						{pendingHandles.slice(0, 6).map((item) => (
+							<OMText key={item.id} variant="caption" style={styles.intentDependency}>
+								{item.fileName}
+								{item.needsPicker || !item.handle ? ' (select again to persist)' : ''}
+								{item.lastError ? ` - ${item.lastError}` : ''}
 							</OMText>
-							<OMText variant="headline" style={styles.intentTitle}>
-								Keep access after refresh?
+						))}
+						{pendingHandles.length > 6 ? (
+							<OMText variant="caption" style={styles.intentDependency}>
+								+{pendingHandles.length - 6} more
 							</OMText>
-							<OMText variant="caption" style={styles.intentUrl}>
-								{message ??
-									`${pendingHandles.length} dropped ${pendingHandles.length === 1 ? 'file can' : 'files can'} be upgraded to persistent browser handles.`}
+						) : null}
+					</View>
+				) : null}
+				{pendingHandles.length ? (
+					<View style={styles.intentActions}>
+						<Pressable onPress={onDismiss} style={styles.intentSecondaryButton}>
+							<OMText variant="subtitle" style={styles.intentSecondaryText}>
+								Not now
 							</OMText>
-						</View>
-						<Pressable onPress={onDismiss} style={styles.intentClose}>
-							<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+						</Pressable>
+						<Pressable onPress={onSave} style={styles.intentPrimaryButton}>
+							<OMText variant="subtitle" style={styles.primaryButtonText}>
+								{pendingHandles.some((item) => item.needsPicker || !item.handle)
+									? 'Select files to persist'
+									: 'Keep access'}
+							</OMText>
 						</Pressable>
 					</View>
-					{pendingHandles.length ? (
-						<View style={styles.intentDependencyList}>
-							{pendingHandles.slice(0, 6).map((item) => (
-								<OMText key={item.id} variant="caption" style={styles.intentDependency}>
-									{item.fileName}
-									{item.needsPicker || !item.handle ? ' (select again to persist)' : ''}
-									{item.lastError ? ` - ${item.lastError}` : ''}
-								</OMText>
-							))}
-							{pendingHandles.length > 6 ? (
-								<OMText variant="caption" style={styles.intentDependency}>
-									+{pendingHandles.length - 6} more
-								</OMText>
-							) : null}
-						</View>
-					) : null}
-					{pendingHandles.length ? (
-						<View style={styles.intentActions}>
-							<Pressable onPress={onDismiss} style={styles.intentSecondaryButton}>
-								<OMText variant="subtitle" style={styles.intentSecondaryText}>
-									Not now
-								</OMText>
-							</Pressable>
-							<Pressable onPress={onSave} style={styles.intentPrimaryButton}>
-								<OMText variant="subtitle" style={styles.primaryButtonText}>
-									{pendingHandles.some((item) => item.needsPicker || !item.handle)
-										? 'Select files to persist'
-										: 'Keep access'}
-								</OMText>
-							</Pressable>
-						</View>
-					) : null}
-				</View>
+				) : null}
 			</View>
-		</View>
+		</LabModalChrome>
 	)
 }
 
@@ -2366,7 +2425,9 @@ function LabExplorerSidebar({
 											</OMText>
 											<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={2}>
 												{labGenomeKindLabel(genome)} · {humanLabSize(labGenomeBytesTotal(genome))}
+												{isLabGenomeComplete(genome) ? ' · Ready' : ' · Incomplete'}
 											</OMText>
+											<GenomeSlotChecklist genome={genome} />
 										</View>
 									</Pressable>
 								</View>
@@ -3508,6 +3569,38 @@ function MetaChip({ label }: { label: string }) {
 	)
 }
 
+function GenomeSlotChecklist({ genome }: { genome: LabGenomeRef }) {
+	const { styles } = useTheme()
+	const slots = genomeFileSlots(genome)
+	return (
+		<View style={styles.genomeSlotChecklist}>
+			{slots.map((slot) => {
+				const present = Boolean(slot.name)
+				return (
+					<View
+						key={slot.key}
+						style={[
+							styles.genomeSlotChip,
+							present ? styles.genomeSlotChipPresent : styles.genomeSlotChipMissing,
+						]}
+					>
+						<OMText
+							variant="caption"
+							style={[
+								styles.genomeSlotChipText,
+								present ? styles.genomeSlotChipTextPresent : styles.genomeSlotChipTextMissing,
+							]}
+							numberOfLines={1}
+						>
+							{present ? `${slot.label}: ${slot.name}` : `Missing ${slot.label}`}
+						</OMText>
+					</View>
+				)
+			})}
+		</View>
+	)
+}
+
 // === Unknown files alert (modal) ===========================================
 
 function UnknownFilesAlert({
@@ -3522,48 +3615,45 @@ function UnknownFilesAlert({
 	const { styles, mutedIconTone } = useTheme()
 	if (!unknowns.length) return null
 	return (
-		<View style={[styles.sourceOverlay, styles.unknownFilesAlertLayer]} pointerEvents="box-none">
-			<Pressable
-				accessibilityLabel="Dismiss alert"
-				accessibilityRole="button"
-				onPress={onDismissAll}
-				style={styles.sourceBackdrop}
-			/>
-			<View style={[styles.sourcePanel, styles.unknownFilesAlertPanel]} accessibilityRole="alert">
-				<View style={styles.unknownAlertChrome}>
-					<View style={styles.unknownAlertHeadRow}>
-						<View style={styles.unknownNoteHead}>
-							<OMIcon name="alert-circle-outline" tone={mutedIconTone} size={18} />
-							<OMText variant="subtitle" style={styles.unknownNoteTitle}>
-								Couldn’t use {unknowns.length} file{unknowns.length === 1 ? '' : 's'}
+		<LabModalChrome
+			accessibilityLabel="Unknown files alert"
+			layerStyle={styles.unknownFilesAlertLayer}
+			onBackdropDismiss={onDismissAll}
+			panelStyle={styles.unknownFilesAlertPanel}
+		>
+			<View style={styles.unknownAlertChrome} accessibilityRole="alert">
+				<View style={styles.unknownAlertHeadRow}>
+					<View style={styles.unknownNoteHead}>
+						<OMIcon name="alert-circle-outline" tone={mutedIconTone} size={18} />
+						<OMText variant="subtitle" style={styles.unknownNoteTitle}>
+							Couldn’t use {unknowns.length} file{unknowns.length === 1 ? '' : 's'}
+						</OMText>
+					</View>
+					<Pressable
+						accessibilityLabel="Dismiss alert"
+						accessibilityRole="button"
+						onPress={onDismissAll}
+						style={styles.intentClose}
+					>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+				<View style={styles.unknownAlertRows}>
+					{unknowns.map((u) => (
+						<View key={u.id} style={styles.unknownRow}>
+							<OMText variant="caption" style={styles.unknownRowName} numberOfLines={2}>
+								{u.file.name}
 							</OMText>
-						</View>
-						<Pressable
-							accessibilityLabel="Dismiss alert"
-							accessibilityRole="button"
-							onPress={onDismissAll}
-							style={styles.intentClose}
-						>
-							<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
-						</Pressable>
-					</View>
-					<View style={styles.unknownAlertRows}>
-						{unknowns.map((u) => (
-							<View key={u.id} style={styles.unknownRow}>
-								<OMText variant="caption" style={styles.unknownRowName} numberOfLines={2}>
-									{u.file.name}
+							<Pressable onPress={() => onRemove(u.id)} style={styles.textButton}>
+								<OMText variant="subtitle" style={styles.textButtonText}>
+									Remove
 								</OMText>
-								<Pressable onPress={() => onRemove(u.id)} style={styles.textButton}>
-									<OMText variant="subtitle" style={styles.textButtonText}>
-										Remove
-									</OMText>
-								</Pressable>
-							</View>
-						))}
-					</View>
+							</Pressable>
+						</View>
+					))}
 				</View>
 			</View>
-		</View>
+		</LabModalChrome>
 	)
 }
 
@@ -3578,72 +3668,69 @@ function SourceViewer({
 	const [selectedIndex, setSelectedIndex] = useState(0)
 	const selected = viewer.files[Math.min(selectedIndex, viewer.files.length - 1)] ?? viewer.files[0]
 	return (
-		<View style={styles.sourceOverlay}>
-			<Pressable accessibilityRole="button" onPress={onClose} style={styles.sourceBackdrop} />
-			<View style={styles.sourcePanel}>
-				<View style={styles.sourceHead}>
-					<View style={{ flex: 1, gap: 2 }}>
-						<OMText variant="caption" style={styles.sectionKicker}>
-							SOURCE FILES
-						</OMText>
-						<OMText variant="headline" style={styles.sourceTitle}>
-							{viewer.title}
+		<LabModalChrome accessibilityLabel="Source files dialog" onBackdropDismiss={onClose}>
+			<View style={styles.sourceHead}>
+				<View style={{ flex: 1, gap: 2 }}>
+					<OMText variant="caption" style={styles.sectionKicker}>
+						SOURCE FILES
+					</OMText>
+					<OMText variant="headline" style={styles.sourceTitle}>
+						{viewer.title}
+					</OMText>
+					<OMText variant="caption" style={styles.runCardHint}>
+						{viewer.files.length} file{viewer.files.length === 1 ? '' : 's'} used by this assay/report
+					</OMText>
+				</View>
+				<Pressable accessibilityRole="button" onPress={onClose} style={styles.iconButton}>
+					<OMIcon name="close-outline" tone="muted" size={18} />
+				</Pressable>
+			</View>
+
+			{viewer.files.length > 1 ? (
+				<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourceTabsScroll}>
+					<View style={styles.sourceTabs}>
+						{viewer.files.map((file, index) => (
+							<Pressable
+								key={`${file.name}-${index}`}
+								onPress={() => setSelectedIndex(index)}
+								style={[styles.sourceTab, selectedIndex === index ? styles.sourceTabActive : null]}
+							>
+								<OMText
+									variant="caption"
+									style={selectedIndex === index ? styles.sourceTabTextActive : styles.sourceTabText}
+									numberOfLines={1}
+								>
+									{file.name}
+								</OMText>
+							</Pressable>
+						))}
+					</View>
+				</ScrollView>
+			) : null}
+
+			{selected ? (
+				<View style={styles.sourceBody}>
+					<View style={styles.sourceMetaRow}>
+						<OMText variant="caption" style={styles.sourceFileName}>
+							{selected.name}
 						</OMText>
 						<OMText variant="caption" style={styles.runCardHint}>
-							{viewer.files.length} file{viewer.files.length === 1 ? '' : 's'} used by this assay/report
+							{selected.language.toUpperCase()}
 						</OMText>
 					</View>
-					<Pressable accessibilityRole="button" onPress={onClose} style={styles.iconButton}>
-						<OMIcon name="close-outline" tone="muted" size={18} />
-					</Pressable>
-				</View>
-
-				{viewer.files.length > 1 ? (
-					<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourceTabsScroll}>
-						<View style={styles.sourceTabs}>
-							{viewer.files.map((file, index) => (
-								<Pressable
-									key={`${file.name}-${index}`}
-									onPress={() => setSelectedIndex(index)}
-									style={[styles.sourceTab, selectedIndex === index ? styles.sourceTabActive : null]}
-								>
-									<OMText
-										variant="caption"
-										style={selectedIndex === index ? styles.sourceTabTextActive : styles.sourceTabText}
-										numberOfLines={1}
-									>
-										{file.name}
-									</OMText>
-								</Pressable>
-							))}
-						</View>
-					</ScrollView>
-				) : null}
-
-				{selected ? (
-					<View style={styles.sourceBody}>
-						<View style={styles.sourceMetaRow}>
-							<OMText variant="caption" style={styles.sourceFileName}>
-								{selected.name}
-							</OMText>
-							<OMText variant="caption" style={styles.runCardHint}>
-								{selected.language.toUpperCase()}
-							</OMText>
-						</View>
-						{selected.source ? (
-							<OMText variant="caption" style={styles.runCardHint} numberOfLines={1}>
-								{selected.source}
-							</OMText>
-						) : null}
-						<ScrollView style={styles.sourceCodeScroll}>
-							<ScrollView horizontal>
-								<HighlightedSourceCode file={selected} />
-							</ScrollView>
+					{selected.source ? (
+						<OMText variant="caption" style={styles.runCardHint} numberOfLines={1}>
+							{selected.source}
+						</OMText>
+					) : null}
+					<ScrollView style={styles.sourceCodeScroll}>
+						<ScrollView horizontal>
+							<HighlightedSourceCode file={selected} />
 						</ScrollView>
-					</View>
-				) : null}
-			</View>
-		</View>
+					</ScrollView>
+				</View>
+			) : null}
+		</LabModalChrome>
 	)
 }
 
@@ -4491,6 +4578,38 @@ function makeStyles(p: LabPalette) {
 			color: p.textMuted,
 			lineHeight: 16,
 		},
+		genomeSlotChecklist: {
+			flexDirection: 'row',
+			flexWrap: 'wrap',
+			gap: 4,
+			marginTop: 4,
+		},
+		genomeSlotChip: {
+			maxWidth: '100%',
+			borderRadius: omRadius.full,
+			borderWidth: 1,
+			paddingHorizontal: 7,
+			paddingVertical: 2,
+		},
+		genomeSlotChipPresent: {
+			backgroundColor: p.surfaceSunken,
+			borderColor: p.border,
+		},
+		genomeSlotChipMissing: {
+			backgroundColor: p.warningBg,
+			borderColor: p.warningBorder,
+		},
+		genomeSlotChipText: {
+			fontSize: 10,
+			lineHeight: 13,
+			fontWeight: '600',
+		},
+		genomeSlotChipTextPresent: {
+			color: p.textMuted,
+		},
+		genomeSlotChipTextMissing: {
+			color: p.warningText,
+		},
 		labExplorerRowGhostHit: {
 			alignSelf: 'stretch',
 			justifyContent: 'center',
@@ -5308,6 +5427,9 @@ function makeStyles(p: LabPalette) {
 			alignItems: 'center',
 			justifyContent: 'center',
 			padding: omSpacing.xl,
+		},
+		labModalLayer: {
+			zIndex: 60,
 		},
 		sourceBackdrop: {
 			...(Platform.OS === 'web' ? ({ position: 'fixed' } as any) : null),
