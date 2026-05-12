@@ -79,12 +79,12 @@ function ensureRybbitScript(): Promise<void> {
 	})
 }
 
-export function identifyBioVaultWebUser(appVariant = 'development') {
+export function identifyBioVaultWebUser(appVariant?: string) {
 	const userId = getOrCreateBioVaultAnalyticsUserId()
 	if (!userId) return
 	const config = getBioVaultAnalyticsConfig()
 	const traits = {
-		...getAnalyticsClientContext(appVariant),
+		...getAnalyticsClientContext(appVariant ?? config.variant),
 		analytics_id_source: 'localstorage',
 		username: `BioVault ${shortDisplayId(userId)}`,
 	}

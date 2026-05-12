@@ -46,6 +46,33 @@ export interface BioVaultAnalyticsConfig {
 	variant: string
 }
 
+function getWebRuntimeHostname(): string | null {
+	if (Platform.OS !== 'web' || typeof window === 'undefined') return null
+	return window.location.hostname || null
+}
+
+function getWebRuntimeMetricsTarget():
+	| { appDomain: string; siteId: string; variant: string }
+	| null {
+	const hostname = getWebRuntimeHostname()
+	if (!hostname) return null
+	if (hostname === DEFAULT_PROD_METRICS_DOMAIN) {
+		return {
+			appDomain: DEFAULT_PROD_METRICS_DOMAIN,
+			siteId: DEFAULT_PROD_METRICS_SITE_ID,
+			variant: 'production',
+		}
+	}
+	if (hostname === DEFAULT_DEV_METRICS_DOMAIN || hostname === 'localhost' || hostname === '127.0.0.1') {
+		return {
+			appDomain: DEFAULT_DEV_METRICS_DOMAIN,
+			siteId: DEFAULT_DEV_METRICS_SITE_ID,
+			variant: 'development',
+		}
+	}
+	return null
+}
+
 export class Analytics {
 	private siteId: string
 	private apiEndpoint: string
@@ -502,18 +529,22 @@ function readAnalyticsExtra(): Partial<BioVaultAnalyticsConfig> {
 
 export function getBioVaultAnalyticsConfig(options: AnalyticsOptions = {}): BioVaultAnalyticsConfig {
 	const extra = readAnalyticsExtra()
+	const runtimeTarget = getWebRuntimeMetricsTarget()
 	const variant =
+		runtimeTarget?.variant ??
 		process.env.EXPO_PUBLIC_APP_VARIANT ??
 		(typeof extra.variant === 'string' ? extra.variant : undefined) ??
 		'development'
 	const isProduction = variant === 'production'
 	const siteId =
 		options.siteId ??
+		runtimeTarget?.siteId ??
 		process.env.EXPO_PUBLIC_BIOVAULT_METRICS_SITE_ID ??
 		(typeof extra.siteId === 'string' ? extra.siteId : undefined) ??
 		(isProduction ? DEFAULT_PROD_METRICS_SITE_ID : DEFAULT_DEV_METRICS_SITE_ID)
 	const appDomain =
 		options.appDomain ??
+		runtimeTarget?.appDomain ??
 		process.env.EXPO_PUBLIC_BIOVAULT_METRICS_DOMAIN ??
 		(typeof extra.appDomain === 'string' ? extra.appDomain : undefined) ??
 		(isProduction ? DEFAULT_PROD_METRICS_DOMAIN : DEFAULT_DEV_METRICS_DOMAIN)
