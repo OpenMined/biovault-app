@@ -92,7 +92,6 @@ import {
 	useCallback,
 	useContext,
 	useEffect,
-	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -100,8 +99,6 @@ import {
 // @ts-expect-error react-dom ships types via @types/react-dom which isn't a
 // dependency here; the runtime module is fine on web.
 import { createPortal } from 'react-dom'
-// @ts-expect-error react-dom/client typings optional in this repo
-import { createRoot } from 'react-dom/client'
 import {
 	ActivityIndicator,
 	Linking,
@@ -127,19 +124,9 @@ const ENABLE_CHROME_DROPPED_FILE_HANDLES =
 	process.env.EXPO_PUBLIC_ENABLE_CHROME_DROPPED_FILE_HANDLES === '1'
 /** IDE-style pinned files + fixtures column (web Lab only). */
 const LAB_EXPLORER_PANEL_WIDTH = 296
-const LAB_SIDEBAR_MY_FILES_DESC =
-	'Pinned folders and cached files stay in this browser. Reopening dropped folders after a refresh normally needs a Chromium-class browser (Chrome, Edge, Brave, Arc, Opera). Cached genome/URL payloads can reopen in Safari and Firefox too.'
-const LAB_SIDEBAR_DROP_GENOME_DESC =
-	'Everything runs locally—nothing is uploaded. Typical speed: mpileup on a 17 GB CRAM ~1.3 seconds. Accepted: .cram, .vcf.gz, .zip, and 23andMe-style plaintext; companions .crai, reference .fasta (+ .fa.fai / .idx), .tbi/.idx pair automatically when you drop or pick related files.'
-const LAB_SIDEBAR_URL_FETCH_DESC =
-	'URLs are fetched in this browser. Packages are inspected for a supported assay schema before they run when possible. Genome and test resources are downloaded for the session and cached when permitted by limits.'
-const LAB_SIDEBAR_SAMPLE_FILES_DESC =
-	'Starter fixtures you can import to try assays without locating your own data files locally.'
-/** Placeholder walkthrough — swap for a real Lab tutorial embed when ready. */
-const LAB_GETTING_STARTED_VIDEO_ID = 'dQw4w9WgXcQ'
-/** nocookie + modest UI; avoids some third-party cookie / embed quirks vs www. */
-const LAB_GETTING_STARTED_VIDEO_EMBED = `https://www.youtube-nocookie.com/embed/${LAB_GETTING_STARTED_VIDEO_ID}?rel=0&modestbranding=1`
-const LAB_GETTING_STARTED_VIDEO_WATCH = `https://www.youtube.com/watch?v=${LAB_GETTING_STARTED_VIDEO_ID}`
+/** Self-hosted walkthrough asset. Put the mp4 under the web public asset root. */
+const LAB_PUBLIC_BASE_URL = process.env.EXPO_BASE_URL ?? ''
+const LAB_GETTING_STARTED_VIDEO_SRC = `${LAB_PUBLIC_BASE_URL}/videos/lab-getting-started.mp4`
 
 function useTheme(): ThemeValue {
 	const v = useContext(ThemeCtx)
@@ -670,6 +657,7 @@ export default function LabScreen() {
 	const [savedHandlesLoading, setSavedHandlesLoading] = useState(false)
 	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
 	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
+	const [pendingDemoRunAssayId, setPendingDemoRunAssayId] = useState<string | null>(null)
 
 	const activeGenomeRef = useMemo(
 		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
@@ -1668,6 +1656,21 @@ export default function LabScreen() {
 		void runAssay(assay)
 	}, [activeGenomeRef, runningAssayId, runAssay, runtimeWarmupStatus])
 
+	useEffect(() => {
+		if (!pendingDemoRunAssayId) return
+		if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
+		if (runningAssayId) return
+		const assay = getAssayById(pendingDemoRunAssayId)
+		if (!assay) {
+			setPendingDemoRunAssayId(null)
+			return
+		}
+		if (!isAssayCompatible(assay, activeGenomeRef)) return
+		if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(assay, activeGenomeRef)) return
+		setPendingDemoRunAssayId(null)
+		void runAssay(assay)
+	}, [activeGenomeRef, pendingDemoRunAssayId, runningAssayId, runAssay, runtimeWarmupStatus])
+
 	// Auto-scroll to latest run when it starts / completes
 	const scrollRef = useRef<ScrollView>(null)
 	const runsYRef = useRef<number>(0)
@@ -1698,6 +1701,9 @@ export default function LabScreen() {
 	const latestRun = runs[0] ?? null
 	const previousRuns = runs.slice(1)
 	const firstDemoBundle = LAB_TEST_FILES[0]
+	const firstDemoAssay = firstDemoBundle
+		? LAB_ASSAYS.find((assay) => assay.inputFormats.includes(firstDemoBundle.format)) ?? null
+		: null
 
 	const labWorkBlocks = (
 		<>
@@ -1725,16 +1731,15 @@ export default function LabScreen() {
 						GETTING STARTED
 					</OMText>
 					<LabGettingStartedPanel
-						onChooseFiles={() => {
-							void openPicker()
-						}}
-						onTrySample={
-							firstDemoBundle
+						onTryDemoRun={
+							firstDemoBundle && firstDemoAssay
 								? () => {
+										setPendingDemoRunAssayId(firstDemoAssay.id)
 										void pickSample(firstDemoBundle)
 									}
 								: undefined
 						}
+						assayTitle={firstDemoAssay?.title}
 						sampleTitle={firstDemoBundle?.title}
 					/>
 				</>
@@ -2329,11 +2334,6 @@ function LabExplorerSidebar({
 						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
 							Saved local files
 						</OMText>
-						<View style={styles.labExplorerDescBox}>
-							<OMText variant="caption" style={styles.labExplorerDescText}>
-								{LAB_SIDEBAR_MY_FILES_DESC}
-							</OMText>
-						</View>
 					</View>
 					{savedHandlesError ? (
 						<View style={[styles.errorInlineBlock, styles.labExplorerErrorPad]}>
@@ -2528,11 +2528,6 @@ function LabExplorerSidebar({
 						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
 							Sample files
 						</OMText>
-						<View style={styles.labExplorerDescBox}>
-							<OMText variant="caption" style={styles.labExplorerDescText}>
-								{LAB_SIDEBAR_SAMPLE_FILES_DESC}
-							</OMText>
-						</View>
 					</View>
 					<View style={styles.labExplorerList}>
 						{sampleBundles.map((bundle) => {
@@ -2588,15 +2583,8 @@ function DropZone({ dragActive, onChoose }: { dragActive: boolean; onChoose: () 
 				<OMText variant="subtitle" style={styles.explorerDropTitle}>
 					Drop a genome
 				</OMText>
-			</View>
-			<View style={[styles.labExplorerDescBox, styles.explorerDropDescBoxInset]}>
-				<OMText variant="caption" style={styles.labExplorerDescText}>
-					{LAB_SIDEBAR_DROP_GENOME_DESC}
-				</OMText>
-			</View>
-			<View style={styles.explorerDropButton}>
-				<OMText variant="subtitle" style={styles.explorerDropButtonText}>
-					Choose files
+				<OMText variant="caption" style={styles.explorerDropSubtitle}>
+					Or open the picker
 				</OMText>
 			</View>
 		</Pressable>
@@ -2659,13 +2647,6 @@ function UrlLoadBox({
 					{narrow ? 'Load from URL' : 'Or load from URL'}
 				</OMText>
 			</View>
-			{composer && narrow ? (
-				<View style={styles.labExplorerDescBox}>
-					<OMText variant="caption" style={styles.labExplorerDescText}>
-						{LAB_SIDEBAR_URL_FETCH_DESC}
-					</OMText>
-				</View>
-			) : null}
 			<View style={[styles.urlLoadRow, narrow ? styles.urlLoadRowSidebar : null]}>
 				<TextInput
 					value={urlInput}
@@ -3740,60 +3721,35 @@ function GettingStartedStep({ children, n, title }: { children: ReactNode; n: nu
 	)
 }
 
-/** Mount YouTube with a react-dom root so RN Web never stomps the iframe subtree. */
-function WebYoutubeEmbed({ embedSrc, title }: { embedSrc: string; title: string }) {
+function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 	const { styles } = useTheme()
-	const [host, setHost] = useState<HTMLDivElement | null>(null)
+	if (Platform.OS !== 'web') return null
 
-	useLayoutEffect(() => {
-		if (Platform.OS !== 'web' || !host) return
-
-		const root = createRoot(host)
-		root.render(
-			createElement('iframe', {
-				allow:
-					'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share',
-				allowFullScreen: true,
-				src: embedSrc,
+	return (
+		<View style={styles.gettingStartedVideoPlayerHost}>
+			{createElement('video', {
+				controls: true,
+				playsInline: true,
+				preload: 'metadata',
+				src,
 				style: {
-					border: '0',
 					display: 'block',
 					height: '100%',
-					left: 0,
-					position: 'absolute',
-					top: 0,
 					width: '100%',
 				},
 				title,
-			}),
-		)
-
-		return () => {
-			root.unmount()
-		}
-	}, [host, embedSrc, title])
-
-	return (
-		<View
-			collapsable={false}
-			ref={(node) => {
-				setHost((prev) => {
-					const next = node ? (node as unknown as HTMLDivElement) : null
-					return prev === next ? prev : next
-				})
-			}}
-			style={styles.gettingStartedVideoIframeHost}
-		/>
+			})}
+		</View>
 	)
 }
 
 function LabGettingStartedPanel({
-	onChooseFiles,
-	onTrySample,
+	assayTitle,
+	onTryDemoRun,
 	sampleTitle,
 }: {
-	onChooseFiles: () => void
-	onTrySample?: () => void
+	assayTitle?: string
+	onTryDemoRun?: () => void
 	sampleTitle?: string
 }) {
 	const { styles, mutedIconTone } = useTheme()
@@ -3801,39 +3757,74 @@ function LabGettingStartedPanel({
 		<View style={styles.gettingStartedWrap}>
 			<View style={styles.gettingStartedCard}>
 				<OMText variant="h4" style={styles.gettingStartedTitle}>
-					Load data from the left panel
+					Madhava Walkthrough?
 				</OMText>
 				<OMText variant="body" style={styles.gettingStartedLead}>
 					BioVault Lab runs entirely in your browser. Add a genome first; then assays and results show up
 					in this column.
 				</OMText>
+				{onTryDemoRun ? (
+					<View style={styles.tryNowCard}>
+						<View style={styles.tryNowIcon}>
+							<OMIcon name="flash-outline" size={22} tone="accent" />
+						</View>
+						<View style={styles.tryNowBody}>
+							<OMText variant="caption" style={styles.tryNowKicker}>
+								TRY IT NOW
+							</OMText>
+							<OMText variant="headline" style={styles.tryNowTitle}>
+								Load sample data and run an assay
+							</OMText>
+							<OMText variant="body" style={styles.tryNowText}>
+								Click once to load {sampleTitle ?? 'sample data'} and queue {assayTitle ?? 'a demo assay'}.
+								It runs locally in this browser using WebAssembly and web workers; no genome data is uploaded.
+							</OMText>
+							<Pressable
+								onPress={onTryDemoRun}
+								style={({ pressed }) => [
+									styles.intentPrimaryButton,
+									styles.tryNowButton,
+									pressed && styles.gettingStartedBtnPressed,
+								]}
+								accessibilityRole="button"
+								accessibilityLabel="Load sample data and run a demo assay locally"
+							>
+								<OMIcon name="flask-outline" size={18} tone="inverse" />
+								<OMText variant="subtitle" style={styles.primaryButtonText}>
+									Load sample and run assay
+								</OMText>
+							</Pressable>
+						</View>
+					</View>
+				) : null}
 				<View style={styles.gettingStartedVideoBlock}>
 					<OMText variant="caption" style={styles.gettingStartedVideoKicker}>
-						VIDEO WALKTHROUGH · PLACEHOLDER
+						VIDEO WALKTHROUGH
 					</OMText>
 					<View style={styles.gettingStartedVideoFrame}>
 						{Platform.OS === 'web' ? (
-							<WebYoutubeEmbed embedSrc={LAB_GETTING_STARTED_VIDEO_EMBED} title="BioVault Lab walkthrough (placeholder video)" />
+							<WebVideoPlayer src={LAB_GETTING_STARTED_VIDEO_SRC} title="BioVault Lab walkthrough" />
 						) : null}
 					</View>
 					<Pressable
 						onPress={() => {
-							void Linking.openURL(LAB_GETTING_STARTED_VIDEO_WATCH)
+							void Linking.openURL(LAB_GETTING_STARTED_VIDEO_SRC)
 						}}
 						style={styles.gettingStartedVideoLink}
 						accessibilityRole="link"
-						accessibilityLabel="Open walkthrough video on YouTube"
+						accessibilityLabel="Open walkthrough video"
 					>
-						<OMIcon name="logo-youtube" size={16} tone={mutedIconTone} />
+						<OMIcon name="play-circle-outline" size={16} tone={mutedIconTone} />
 						<OMText variant="caption" style={styles.gettingStartedVideoLinkText}>
-							Open on YouTube
+							Open video
 						</OMText>
 					</Pressable>
 				</View>
 				<View style={styles.gettingStartedSteps}>
 					<GettingStartedStep n={1} title="Add genome files">
-						Drop files on the sidebar, or use Choose files. CRAM/VCF, 23andMe-style text, or ZIP packages;
-						companions (e.g. CRAI, reference FASTA) pair when you drop them together.
+						Use the sidebar: drop genome files onto the dashed zone, or open the file picker there. CRAM/VCF,
+						23andMe-style text, or ZIP packages; companions (e.g. CRAI, reference FASTA) pair when you drop
+						them together.
 					</GettingStartedStep>
 					<GettingStartedStep n={2} title="Or try sample data">
 						Use Sample files in the sidebar for the full list, or the Try sample button below for a one-click demo load.
@@ -3844,38 +3835,6 @@ function LabGettingStartedPanel({
 					<GettingStartedStep n={4} title="Run an assay">
 						When the header shows an active genome, search the catalog here and run — results appear below.
 					</GettingStartedStep>
-				</View>
-				<View style={styles.gettingStartedActions}>
-					<Pressable
-						onPress={onChooseFiles}
-						style={({ pressed }) => [styles.intentPrimaryButton, pressed && styles.gettingStartedBtnPressed]}
-						accessibilityRole="button"
-						accessibilityLabel="Choose genome files from your computer"
-					>
-						<OMIcon name="folder-open-outline" size={18} tone="inverse" />
-						<OMText variant="subtitle" style={styles.primaryButtonText}>
-							Choose files
-						</OMText>
-					</Pressable>
-					{onTrySample ? (
-						<Pressable
-							onPress={onTrySample}
-							style={({ pressed }) => [
-								styles.intentSecondaryButton,
-								styles.gettingStartedSecondaryAction,
-								pressed && styles.gettingStartedBtnPressed,
-							]}
-							accessibilityRole="button"
-							accessibilityLabel={
-								sampleTitle ? `Load sample data: ${sampleTitle}` : 'Load sample genome from the catalog'
-							}
-						>
-							<OMIcon name="flask-outline" size={18} tone={mutedIconTone} />
-							<OMText variant="subtitle" style={styles.intentSecondaryText}>
-								{sampleTitle ? `Try “${sampleTitle}”` : 'Try sample'}
-							</OMText>
-						</Pressable>
-					) : null}
 				</View>
 			</View>
 		</View>
@@ -4037,7 +3996,7 @@ function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 			hitSlop={8}
 			style={[styles.webThemeButton, scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark]}
 			accessibilityRole="button"
-			accessibilityLabel={`Color theme: ${label}. Tap to toggle.`}
+			accessibilityLabel={`Color theme: ${label}. Press to toggle.`}
 		>
 			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
 				<OMIcon name={icon} size={16} tone="accent" />
@@ -4261,6 +4220,49 @@ function makeStyles(p: LabPalette) {
 			color: p.textMuted,
 			lineHeight: 22,
 		},
+		tryNowCard: {
+			alignSelf: 'stretch',
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
+			padding: omSpacing.m,
+			borderRadius: omRadius.m,
+			backgroundColor: p.accentTint,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+		},
+		tryNowIcon: {
+			width: 42,
+			height: 42,
+			borderRadius: 21,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.accentSoft,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+			flexShrink: 0,
+		},
+		tryNowBody: {
+			flex: 1,
+			minWidth: 0,
+			gap: omSpacing.xs,
+		},
+		tryNowKicker: {
+			color: p.accentStrong,
+			letterSpacing: 1.2,
+			fontWeight: '700',
+		},
+		tryNowTitle: {
+			color: p.text,
+		},
+		tryNowText: {
+			color: p.textMuted,
+			lineHeight: 21,
+		},
+		tryNowButton: {
+			alignSelf: 'flex-start',
+			marginTop: omSpacing.xs,
+		},
 		gettingStartedVideoBlock: {
 			alignSelf: 'stretch',
 			gap: omSpacing.s,
@@ -4281,7 +4283,7 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.border,
 			position: 'relative',
 		} as object,
-		gettingStartedVideoIframeHost: {
+		gettingStartedVideoPlayerHost: {
 			position: 'absolute',
 			left: 0,
 			top: 0,
@@ -4340,18 +4342,6 @@ function makeStyles(p: LabPalette) {
 			lineHeight: 20,
 			fontSize: 14,
 		},
-		gettingStartedActions: {
-			flexDirection: 'row',
-			flexWrap: 'wrap',
-			alignItems: 'center',
-			gap: omSpacing.s,
-			marginTop: omSpacing.s,
-		},
-		gettingStartedSecondaryAction: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.xs,
-		},
 		gettingStartedBtnPressed: {
 			opacity: 0.88,
 		} as object,
@@ -4399,7 +4389,7 @@ function makeStyles(p: LabPalette) {
 			paddingHorizontal: omSpacing.m,
 			paddingTop: omSpacing.m,
 			paddingBottom: omSpacing.xxxl,
-			gap: omSpacing.xl + 6,
+			gap: omSpacing.l,
 		},
 		labExplorerSavedBlock: {},
 		labExplorerSectionHeading: {
@@ -4414,23 +4404,6 @@ function makeStyles(p: LabPalette) {
 			letterSpacing: 1.05,
 			color: p.textFaint,
 			textTransform: 'uppercase',
-		},
-		labExplorerDescBox: {
-			alignSelf: 'stretch',
-			paddingVertical: omSpacing.xs + 1,
-			paddingHorizontal: omSpacing.m,
-			borderRadius: omRadius.m,
-			backgroundColor: p.surfaceSunken,
-			borderWidth: StyleSheet.hairlineWidth,
-			borderColor: p.border,
-		},
-		labExplorerDescText: {
-			color: p.textMuted,
-			fontSize: 11,
-			lineHeight: 17,
-		},
-		explorerDropDescBoxInset: {
-			marginTop: 2,
 		},
 		labExplorerErrorPad: {
 			marginBottom: omSpacing.s,
@@ -4571,8 +4544,8 @@ function makeStyles(p: LabPalette) {
 		explorerDropPanel: {
 			alignSelf: 'stretch',
 			alignItems: 'center',
-			gap: 6,
-			paddingVertical: omSpacing.l,
+			gap: omSpacing.s,
+			paddingVertical: omSpacing.m,
 			paddingHorizontal: omSpacing.m,
 			borderWidth: 1,
 			borderStyle: 'dashed',
@@ -4589,11 +4562,10 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.accent,
 		},
 		explorerDropTitleCluster: {
-			flexDirection: 'row',
+			flexDirection: 'column',
 			alignItems: 'center',
 			justifyContent: 'center',
-			gap: 5,
-			flexWrap: 'wrap',
+			gap: 0,
 			alignSelf: 'center',
 			maxWidth: '100%',
 		},
@@ -4604,19 +4576,13 @@ function makeStyles(p: LabPalette) {
 			fontSize: 15,
 			flexShrink: 1,
 		},
-		explorerDropButton: {
-			marginTop: omSpacing.xs + 2,
-			paddingHorizontal: omSpacing.xl,
-			paddingVertical: 10,
-			borderRadius: omRadius.full,
-			backgroundColor: 'transparent',
-			borderWidth: 1,
-			borderColor: p.accentBorder,
-		},
-		explorerDropButtonText: {
-			color: p.accentStrong,
-			fontWeight: '600',
-			fontSize: 14,
+		explorerDropSubtitle: {
+			marginTop: 4,
+			color: p.textMuted,
+			textAlign: 'center',
+			fontSize: 12,
+			lineHeight: 16,
+			fontWeight: '500',
 		},
 		// genome card
 		loadedRow: {
