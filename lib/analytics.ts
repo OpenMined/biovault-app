@@ -1,6 +1,7 @@
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import { getAppPreferenceSync, setAppPreference, setAppPreferenceSync } from '@/lib/app-preferences'
+import { getOrCreateBioVaultAnalyticsUserId } from '@/lib/analytics-user-id'
 import { Dimensions, Platform } from 'react-native'
 
 const DEFAULT_METRICS_ENDPOINT = 'https://metrics.syftbox.net/api'
@@ -26,6 +27,7 @@ interface AnalyticsEvent {
 	properties?: string
 	// Browser-like fields to avoid bot detection
 	user_agent?: string
+	user_id?: string
 	// Session tracking
 	visitor_id?: string
 	session_id?: string
@@ -239,6 +241,10 @@ export class Analytics {
 		return Platform.OS === 'web' ? undefined : this.getUserAgent()
 	}
 
+	private getPayloadUserId(): string | undefined {
+		return Platform.OS === 'web' ? (getOrCreateBioVaultAnalyticsUserId() ?? undefined) : undefined
+	}
+
 	private getPayloadVisitorId(): string | undefined {
 		return Platform.OS === 'web' ? undefined : this.visitorId || undefined
 	}
@@ -278,6 +284,7 @@ export class Analytics {
 				type: event.type,
 				pathname: event.pathname,
 				site_id: this.siteId,
+				user_id: event.user_id,
 				visitor_id: event.visitor_id,
 				session_id: event.session_id,
 				endpoint: `${this.apiEndpoint}/track`,
@@ -341,6 +348,7 @@ export class Analytics {
 			_bs: this.getWebBotScore(),
 			properties: JSON.stringify(this.getProperties(properties)),
 			user_agent: this.getPayloadUserAgent(),
+			user_id: this.getPayloadUserId(),
 			visitor_id: this.getPayloadVisitorId(),
 			session_id: this.getPayloadSessionId(),
 		})
@@ -363,6 +371,7 @@ export class Analytics {
 			_bs: this.getWebBotScore(),
 			properties: JSON.stringify(eventProperties),
 			user_agent: this.getPayloadUserAgent(),
+			user_id: this.getPayloadUserId(),
 			visitor_id: this.getPayloadVisitorId(),
 			session_id: this.getPayloadSessionId(),
 		})
@@ -388,6 +397,7 @@ export class Analytics {
 				...context,
 			})),
 			user_agent: this.getPayloadUserAgent(),
+			user_id: this.getPayloadUserId(),
 		})
 	}
 
@@ -412,6 +422,7 @@ export class Analytics {
 			_bs: this.getWebBotScore(),
 			properties: JSON.stringify(this.getProperties()),
 			user_agent: this.getPayloadUserAgent(),
+			user_id: this.getPayloadUserId(),
 		})
 	}
 
@@ -433,6 +444,7 @@ export class Analytics {
 			_bs: this.getWebBotScore(),
 			properties: JSON.stringify(this.getProperties()),
 			user_agent: this.getPayloadUserAgent(),
+			user_id: this.getPayloadUserId(),
 		})
 
 		// For persistent sessions, just update the timestamp

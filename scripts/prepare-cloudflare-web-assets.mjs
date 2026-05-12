@@ -1,4 +1,4 @@
-import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, cpSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,7 +13,6 @@ export function prepareCloudflareWebAssets() {
   mkdirSync(webDir, { recursive: true });
   cpSync(sourceDir, webDir, { recursive: true });
   writeFileSync(join(deployDir, 'index.html'), landingPageHtml());
-  injectMetricsScript(join(webDir, 'index.html'));
 
   let splitCount = 0;
 
@@ -32,27 +31,6 @@ export function prepareCloudflareWebAssets() {
       ? '[prepare-cloudflare-web] no assets needed splitting'
       : `[prepare-cloudflare-web] split ${splitCount} oversized asset(s) into <= ${maxAssetBytes} byte chunks`,
   );
-}
-
-function metricsScriptTag(siteId = metricsSiteId) {
-  return `<script src="https://metrics.syftbox.net/api/script.js" data-site-id="${escapeHtml(siteId)}" defer></script>`;
-}
-
-function injectMetricsScript(htmlPath) {
-  if (!existsSync(htmlPath)) {
-    console.warn(`[prepare-cloudflare-web] ${relative(deployDir, htmlPath)} not found; metrics script was not injected`);
-    return;
-  }
-  const html = readFileSync(htmlPath, 'utf8');
-  if (html.includes('metrics.syftbox.net/api/script.js')) {
-    return;
-  }
-  const tag = metricsScriptTag();
-  const next = html.includes('</head>')
-    ? html.replace('</head>', `  ${tag}\n</head>`)
-    : `${tag}\n${html}`;
-  writeFileSync(htmlPath, next);
-  console.log(`[prepare-cloudflare-web] injected metrics script into ${relative(deployDir, htmlPath)}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

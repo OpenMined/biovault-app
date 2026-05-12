@@ -372,6 +372,23 @@ function genomeRelatedFileExtensions(genome: LabGenomeRef): string[] {
 	return genomeRelatedFileNames(genome).map(safeGenomicExtension).filter(Boolean)
 }
 
+function demoBundleForRemoteUrl(url: string): LabTestFileBundle | null {
+	return LAB_TEST_FILES.find((bundle) => bundle.remoteUrl === url) ?? null
+}
+
+function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string, unknown> {
+	return {
+		data_source: 'demo',
+		demo_bundle_id: bundle.id,
+		demo_file_extensions: bundle.files.map((file) => safeGenomicExtension(file.name)).filter(Boolean),
+		demo_file_kinds: bundle.files.map((file) => file.kind),
+		demo_filename: bundle.files.map((file) => file.name).join(','),
+		demo_title: bundle.title,
+		is_demo_file: true,
+		is_user_supplied_data: false,
+	}
+}
+
 function fileHeuristicAnalyticsProperties(
 	genome: LabGenomeRef,
 	inspection: BioscriptInspection,
@@ -382,7 +399,7 @@ function fileHeuristicAnalyticsProperties(
 		container: inspection.container,
 		detectedKind: inspection.detectedKind,
 		durationMs: inspection.durationMs,
-		evidence: inspection.evidence,
+		evidenceCount: inspection.evidence.length,
 		fileExtension: safeGenomicExtension(inspection.fileName),
 		genomeKind: genome.kind,
 		hasIndex: inspection.hasIndex ?? false,
@@ -393,7 +410,7 @@ function fileHeuristicAnalyticsProperties(
 		relatedFileExtensions: genomeRelatedFileExtensions(genome),
 		selectedEntryExtension: inspection.selectedEntry ? safeGenomicExtension(inspection.selectedEntry) : '',
 		sourceConfidence: inspection.source?.confidence ?? '',
-		sourceEvidence: inspection.source?.evidence ?? [],
+		sourceEvidenceCount: inspection.source?.evidence.length ?? 0,
 		sourceVendor: inspection.source?.vendor ?? '',
 		warnings: inspection.warnings,
 	}
@@ -1075,28 +1092,42 @@ export default function LabScreen() {
 	const pickSample = useCallback(
 		async (bundle: LabTestFileBundle) => {
 			if (bundle.remoteUrl) {
-				trackEvent('lab_sample_genome_remote_requested', { bundleId: bundle.id })
-				if (Platform.OS === 'web') {
-					window.location.hash = `url=${encodeURIComponent(bundle.remoteUrl)}`
-				}
+				trackEvent('lab_sample_genome_remote_requested', {
+					...demoBundleAnalyticsProperties(bundle),
+					bundleId: bundle.id,
+				})
+				setRemoteIntent({
+					intent: {
+						kind: 'remote-resource',
+						source: 'demo-catalog',
+						url: bundle.remoteUrl,
+					},
+					status: 'pending',
+				})
 				return
 			}
 			setSampleLoadingId(bundle.id)
 			setSampleLoadError(null)
-			trackEvent('lab_sample_genome_requested', { bundleId: bundle.id })
+			trackEvent('lab_sample_genome_requested', {
+				...demoBundleAnalyticsProperties(bundle),
+				bundleId: bundle.id,
+			})
 			try {
 				const files = await loadTestFileBundle(bundle)
-				ingestMany(files, 'bundled', {
-					demo_bundle_id: bundle.id,
-					demo_filename: files.map((file) => file.name).join(','),
-					demo_title: bundle.title,
-					is_demo_file: true,
+				ingestMany(files, 'bundled', demoBundleAnalyticsProperties(bundle))
+				trackEvent('lab_sample_genome_loaded', {
+					...demoBundleAnalyticsProperties(bundle),
+					bundleId: bundle.id,
+					totalFiles: files.length,
 				})
-				trackEvent('lab_sample_genome_loaded', { bundleId: bundle.id, totalFiles: files.length })
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
 				setSampleLoadError(msg)
-				trackEvent('lab_sample_genome_failed', { bundleId: bundle.id, error: msg })
+				trackEvent('lab_sample_genome_failed', {
+					...demoBundleAnalyticsProperties(bundle),
+					bundleId: bundle.id,
+					error: msg,
+				})
 			} finally {
 				setSampleLoadingId(null)
 			}
@@ -1226,13 +1257,15 @@ export default function LabScreen() {
 	const fetchRemoteIntent = useCallback(async () => {
 		if (remoteIntent.status !== 'pending' && remoteIntent.status !== 'error') return
 		const { intent } = remoteIntent
+		const demoBundle = intent.source === 'demo-catalog' ? demoBundleForRemoteUrl(intent.url) : null
+		const demoProperties = demoBundle ? demoBundleAnalyticsProperties(demoBundle) : {}
 		const intentFileKind = remoteLabFileKind(intent.url)
 		const isRemoteLabFile =
 			intentFileKind !== 'assay_python' &&
 			intentFileKind !== 'assay_yaml' &&
 			intentFileKind !== 'unknown'
 		setRemoteIntent({ intent, status: isRemoteLabFile ? 'file-loading' : 'resolving' })
-		trackEvent('lab_remote_intent_fetch_requested', { source: intent.source, url: intent.url })
+		trackEvent('lab_remote_intent_fetch_requested', { ...demoProperties, source: intent.source, url: intent.url })
 		try {
 			if (isRemoteLabFile) {
 				if (intentFileKind === 'zip') {
@@ -1252,6 +1285,7 @@ export default function LabScreen() {
 							status: 'resolved',
 						})
 						trackEvent('lab_remote_package_resolved', {
+							...demoProperties,
 							resourceCount: pkg.resources.length,
 							source: intent.source,
 							url: intent.url,
@@ -1262,15 +1296,17 @@ export default function LabScreen() {
 					}
 				}
 				const remoteFile = await fetchRemoteLabFile(intent.url)
-				ingestMany([remoteFile.file], 'url')
+				ingestMany([remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
 				if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
 					await refreshCachedRemoteFiles()
 				}
 				setRemoteIntent({ file: remoteFile, intent, status: 'file-loaded' })
 				trackEvent('lab_remote_file_loaded', {
+					...demoProperties,
 					cacheStatus: remoteFile.cacheStatus,
 					fileKind: remoteFile.fileKind,
 					size: remoteFile.file.size,
+					source: intent.source,
 					url: intent.url,
 				})
 				return
@@ -1292,6 +1328,7 @@ export default function LabScreen() {
 					status: 'resolved',
 				})
 				trackEvent('lab_remote_package_resolved', {
+					...demoProperties,
 					resourceCount: pkg.resources.length,
 					source: intent.source,
 					url: intent.url,
@@ -1301,21 +1338,26 @@ export default function LabScreen() {
 			addResolvedSessionAssays([resource])
 			setRemoteIntent({ dependencies: [], intent, resource, status: 'resolved' })
 			trackEvent('lab_remote_intent_resolved', {
+				...demoProperties,
 				dependencyCount: resource.dependencies.length,
 				kind: resource.kind,
 				schema: resource.schema ?? 'none',
+				source: intent.source,
 				url: intent.url,
 			})
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			setRemoteIntent({ error: message, intent, status: 'error' })
-			trackEvent('lab_remote_intent_failed', { error: message, url: intent.url })
+			trackEvent('lab_remote_intent_failed', { ...demoProperties, error: message, source: intent.source, url: intent.url })
 		}
 	}, [addResolvedSessionAssays, ingestMany, refreshCachedRemoteFiles, remoteIntent, trackEvent])
 
 	const restoreCachedRemoteFile = useCallback((remoteFile: RemoteLabFile) => {
-		ingestMany([remoteFile.file], 'url')
+		const demoBundle = demoBundleForRemoteUrl(remoteFile.sourceUrl)
+		const demoProperties = demoBundle ? demoBundleAnalyticsProperties(demoBundle) : {}
+		ingestMany([remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
 		trackEvent('lab_remote_file_cache_restored', {
+			...demoProperties,
 			fileKind: remoteFile.fileKind,
 			size: remoteFile.file.size,
 			sourceUrl: remoteFile.sourceUrl,

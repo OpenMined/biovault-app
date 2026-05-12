@@ -1,5 +1,6 @@
 export type LaunchIntentSource =
 	| 'desktop-protocol'
+	| 'demo-catalog'
 	| 'native-link'
 	| 'web-fragment'
 	| 'web-query'
@@ -58,4 +59,3 @@ export function getCurrentWebLaunchIntent(): LaunchIntent | null {
 	if (typeof window === 'undefined') return null
 	return parseLaunchIntentFromUrl(window.location.href, 'web-query')
 }
-

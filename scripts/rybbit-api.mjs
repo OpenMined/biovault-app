@@ -95,6 +95,7 @@ async function run(command, options, config) {
 				pathname: options.path ?? '/',
 				hostname: options.hostname ?? config.domain,
 				page_title: options.title,
+				user_id: options.userId,
 			})
 		case 'track-event':
 			requireOption(options, 'name', 'track-event requires --name')
@@ -104,6 +105,7 @@ async function run(command, options, config) {
 				hostname: options.hostname ?? config.domain,
 				event_name: options.name,
 				properties: normalizeProperties(options.props),
+				user_id: options.userId,
 			})
 		case 'get':
 			requireOption(options, '_', 'get requires a path, for example: get /sites/4/overview --minutes 60')
@@ -363,8 +365,8 @@ Commands:
   sessions                       List sessions
   session --id SESSION_ID        Get one session with events
   locations                      Get session location aggregates
-  track-pageview --path /cli-test
-  track-event --name cli_test --props '{"source":"codex"}'
+  track-pageview --path /cli-test --user-id bv_test
+  track-event --name cli_test --props '{"source":"codex"}' --user-id bv_test
   get /sites/4/overview          Call a raw stats path
 
 Common options:
