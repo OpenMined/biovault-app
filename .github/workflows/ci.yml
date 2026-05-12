@@ -29,6 +29,7 @@ jobs:
           git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
           git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
           git -C bioscript checkout --detach FETCH_HEAD
+          git -C bioscript submodule update --init --recursive --depth 1
           rm -rf exvitae
           git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
@@ -78,6 +79,7 @@ jobs:
           git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
           git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
           git -C bioscript checkout --detach FETCH_HEAD
+          git -C bioscript submodule update --init --recursive --depth 1
           rm -rf exvitae
           git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 
@@ -135,6 +137,7 @@ jobs:
           git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
           git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
           git -C bioscript checkout --detach FETCH_HEAD
+          git -C bioscript submodule update --init --recursive --depth 1
           rm -rf exvitae
           git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
 

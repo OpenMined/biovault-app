@@ -16,6 +16,7 @@
 	"exclude": [
 		"node_modules",
 		"bioscript/**",
+		"exvitae/bioscript/**",
 		"desktop/**",
 		"packages/**",
 		"notebooks/**"

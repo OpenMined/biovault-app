@@ -1,3 +1,4 @@
+/* eslint-disable react/no-children-prop */
 import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
@@ -3941,7 +3942,7 @@ function makeStyles(p: LabPalette) {
 
 		// drag overlay
 		dragOverlay: {
-			position: 'fixed',
+			position: 'fixed' as never,
 			top: 0,
 			left: 0,
 			right: 0,

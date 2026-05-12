@@ -25,3 +25,14 @@ zip = "2.4.2"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[patch.crates-io]
+noodles-bam = { path = "../../bioscript/noodles/noodles-bam" }
+noodles-bgzf = { path = "../../bioscript/noodles/noodles-bgzf" }
+noodles-core = { path = "../../bioscript/noodles/noodles-core" }
+noodles-cram = { path = "../../bioscript/noodles/noodles-cram" }
+noodles-csi = { path = "../../bioscript/noodles/noodles-csi" }
+noodles-fasta = { path = "../../bioscript/noodles/noodles-fasta" }
+noodles-sam = { path = "../../bioscript/noodles/noodles-sam" }
+noodles-tabix = { path = "../../bioscript/noodles/noodles-tabix" }
+noodles-vcf = { path = "../../bioscript/noodles/noodles-vcf" }
