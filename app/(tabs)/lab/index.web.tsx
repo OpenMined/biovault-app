@@ -671,6 +671,7 @@ export default function LabScreen() {
 	const [runs, setRuns] = useState<RunRecord[]>([])
 	const [runningAssayId, setRunningAssayId] = useState<string | null>(null)
 	const [dragActive, setDragActive] = useState(false)
+	const [importGenomeModalOpen, setImportGenomeModalOpen] = useState(false)
 	const [query, setQuery] = useState('')
 	const [assayUrlInput, setAssayUrlInput] = useState('')
 	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
@@ -689,6 +690,7 @@ export default function LabScreen() {
 	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
 	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
 	const [pendingDemoRunAssayId, setPendingDemoRunAssayId] = useState<string | null>(null)
+	const [gettingStartedModalOpen, setGettingStartedModalOpen] = useState(false)
 
 	const activeGenomeRef = useMemo(
 		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
@@ -961,8 +963,12 @@ export default function LabScreen() {
 
 	useEffect(() => {
 		return filePickerRef.current.subscribeToFileDrops({
-			onActiveChange: setDragActive,
+			onActiveChange: (active) => {
+				setDragActive(active)
+				if (active) setImportGenomeModalOpen(true)
+			},
 			onFiles: (files, items) => {
+				setImportGenomeModalOpen(true)
 				void ingestDroppedItems(items, files)
 			},
 		})
@@ -1707,6 +1713,7 @@ export default function LabScreen() {
 	// Auto-scroll to latest run when it starts / completes
 	const scrollRef = useRef<ScrollView>(null)
 	const runsYRef = useRef<number>(0)
+	const gettingStartedYRef = useRef<number>(0)
 	const prevRunsCountRef = useRef<number>(0)
 	useEffect(() => {
 		if (runs.length > prevRunsCountRef.current) {
@@ -1737,6 +1744,21 @@ export default function LabScreen() {
 	const firstDemoAssay = firstDemoBundle
 		? LAB_ASSAYS.find((assay) => assay.inputFormats.includes(firstDemoBundle.format)) ?? null
 		: null
+	const startDemoRun = useCallback(() => {
+		if (!firstDemoBundle || !firstDemoAssay) return
+		setPendingDemoRunAssayId(firstDemoAssay.id)
+		void pickSample(firstDemoBundle)
+	}, [firstDemoAssay, firstDemoBundle, pickSample])
+	const openGettingStarted = useCallback(() => {
+		if (activeGenomeRef) {
+			setGettingStartedModalOpen(true)
+			return
+		}
+		scrollRef.current?.scrollTo({
+			y: Math.max(0, gettingStartedYRef.current - 24),
+			animated: true,
+		})
+	}, [activeGenomeRef])
 
 	const labWorkBlocks = (
 		<>
@@ -1763,18 +1785,17 @@ export default function LabScreen() {
 					<OMText variant="caption" style={styles.columnKicker}>
 						GETTING STARTED
 					</OMText>
-					<LabGettingStartedPanel
-						onTryDemoRun={
-							firstDemoBundle && firstDemoAssay
-								? () => {
-										setPendingDemoRunAssayId(firstDemoAssay.id)
-										void pickSample(firstDemoBundle)
-									}
-								: undefined
-						}
-						assayTitle={firstDemoAssay?.title}
-						sampleTitle={firstDemoBundle?.title}
-					/>
+					<View
+						onLayout={(e) => {
+							gettingStartedYRef.current = e.nativeEvent.layout.y
+						}}
+					>
+						<LabGettingStartedPanel
+							onTryDemoRun={firstDemoBundle && firstDemoAssay ? startDemoRun : undefined}
+							assayTitle={firstDemoAssay?.title}
+							sampleTitle={firstDemoBundle?.title}
+						/>
+					</View>
 				</>
 			)}
 
@@ -1829,21 +1850,15 @@ export default function LabScreen() {
 						activeGenome={activeGenomeRef}
 						sessionGenomes={genomes}
 						onSelectSessionGenome={setSelectedGenomeId}
-						assayUrlCopied={assayUrlCopied}
-						assayUrlInput={assayUrlInput}
 						cachedRemoteFiles={cachedRemoteFiles}
 						dragActive={dragActive}
-						onChooseGenomeFiles={openPicker}
-						onCopyShareAssayUrl={copyShareAssayUrl}
-						onLoadAssayUrl={loadAssayUrl}
-						onUrlInputChange={setAssayUrlInput}
+						onChooseGenomeFiles={() => setImportGenomeModalOpen(true)}
 						sampleBundles={LAB_TEST_FILES}
 						sampleLoadError={sampleLoadError}
 						sampleLoadingId={sampleLoadingId}
 						savedHandlesError={savedHandlesError}
 						savedHandlesLoading={savedHandlesLoading}
 						savedHandleGroups={savedHandles}
-						shareAssayUrl={shareAssayUrl}
 						onPickSample={pickSample}
 						onRemoveCachedRemote={removeCachedRemoteFile}
 						onRemoveSavedHandle={removeSavedHandle}
@@ -1904,6 +1919,7 @@ export default function LabScreen() {
 									) : null}
 									<View style={styles.headerTools}>
 										<View style={styles.headerNavCluster}>
+											<GettingStartedButton onPress={openGettingStarted} />
 											<GithubButton />
 											<ContactButton />
 										</View>
@@ -1946,9 +1962,29 @@ export default function LabScreen() {
 					onFetch={fetchRemoteIntent}
 					onResolveDependencies={resolveRemoteDependencies}
 				/>
+				{gettingStartedModalOpen ? (
+					<GettingStartedModal
+						assayTitle={firstDemoAssay?.title}
+						onClose={() => setGettingStartedModalOpen(false)}
+						onTryDemoRun={firstDemoBundle && firstDemoAssay ? startDemoRun : undefined}
+						sampleTitle={firstDemoBundle?.title}
+					/>
+				) : null}
 				{sourceViewer ? (
 					<SourceViewer viewer={sourceViewer} onClose={() => setSourceViewer(null)} />
 				) : null}
+				<ImportGenomeModal
+					assayUrlCopied={assayUrlCopied}
+					assayUrlInput={assayUrlInput}
+					dragActive={dragActive}
+					open={importGenomeModalOpen}
+					shareAssayUrl={shareAssayUrl}
+					onChooseGenomeFiles={openPicker}
+					onClose={() => setImportGenomeModalOpen(false)}
+					onCopyShareAssayUrl={copyShareAssayUrl}
+					onLoadAssayUrl={loadAssayUrl}
+					onUrlInputChange={setAssayUrlInput}
+				/>
 			</SafeAreaView>
 		</ThemeCtx.Provider>
 	)
@@ -2317,22 +2353,111 @@ function PersistentHandlePrompt({
 	)
 }
 
-function LabExplorerSidebar({
-	activeGenome,
+function ImportGenomeModal({
 	assayUrlCopied,
 	assayUrlInput,
+	dragActive,
+	onChooseGenomeFiles,
+	onClose,
+	onCopyShareAssayUrl,
+	onLoadAssayUrl,
+	onUrlInputChange,
+	open,
+	shareAssayUrl,
+}: {
+	assayUrlCopied: boolean
+	assayUrlInput: string
+	dragActive: boolean
+	onChooseGenomeFiles: () => void
+	onClose: () => void
+	onCopyShareAssayUrl: () => void
+	onLoadAssayUrl: (url: string) => void
+	onUrlInputChange: (url: string) => void
+	open: boolean
+	shareAssayUrl: string
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	if (!open) return null
+	return (
+		<LabModalChrome
+			accessibilityLabel="Import genome dialog"
+			onBackdropDismiss={onClose}
+			panelStyle={styles.importGenomeModalPanel}
+		>
+			<View style={styles.importGenomeModalChrome}>
+				<View style={styles.intentHeader}>
+					<View style={styles.intentIcon}>
+						<OMIcon name="cloud-upload-outline" tone="accent" size={18} />
+					</View>
+					<View style={styles.intentText}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							IMPORT GENOME
+						</OMText>
+						<OMText variant="headline" style={styles.intentTitle}>
+							Add genome data
+						</OMText>
+						<OMText variant="caption" style={styles.intentUrl}>
+							Choose local files, paste a URL, or drop genome files anywhere on this page.
+						</OMText>
+					</View>
+					<Pressable onPress={onClose} style={styles.intentClose}>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+
+				<View style={[styles.importGenomeDropArea, dragActive ? styles.importGenomeDropAreaActive : null]}>
+					<PlatformSvgUri uri={microscopeIconUri} width={26} height={26} color={dragActive ? '#fff' : undefined} />
+					<OMText variant="subtitle" style={styles.importGenomeDropTitle}>
+						{dragActive ? 'Release files to import' : 'Drop genome files here'}
+					</OMText>
+					<OMText variant="caption" style={styles.importGenomeDropBody}>
+						CRAM/VCF companion files are paired automatically when dropped together.
+					</OMText>
+				</View>
+
+				<View style={styles.importGenomeActionGrid}>
+					<Pressable onPress={onChooseGenomeFiles} style={styles.importGenomeActionCard}>
+						<OMIcon name="folder-open-outline" tone="accent" size={18} />
+						<View style={styles.labExplorerRowText}>
+							<OMText variant="subtitle" style={styles.importGenomeActionTitle}>
+								Choose files
+							</OMText>
+							<OMText variant="caption" style={styles.importGenomeActionBody}>
+								Select local .zip, .txt, .vcf.gz, .cram, and companion files.
+							</OMText>
+						</View>
+					</Pressable>
+					<View style={styles.importGenomeUrlCard}>
+						<UrlLoadBox
+							narrow={false}
+							shareUrl={shareAssayUrl}
+							shareUrlCopied={assayUrlCopied}
+							urlInput={assayUrlInput}
+							onCopyShareUrl={onCopyShareAssayUrl}
+							onLoadUrl={(url) => {
+								onLoadAssayUrl(url)
+								onClose()
+							}}
+							onUrlInputChange={onUrlInputChange}
+						/>
+					</View>
+				</View>
+			</View>
+		</LabModalChrome>
+	)
+}
+
+function LabExplorerSidebar({
+	activeGenome,
 	cachedRemoteFiles,
 	dragActive,
 	onChooseGenomeFiles,
-	onCopyShareAssayUrl,
-	onLoadAssayUrl,
 	onPickSample,
 	onRemoveCachedRemote,
 	onRemoveSavedHandle,
 	onRestoreCachedRemote,
 	onRestoreSavedHandle,
 	onSelectSessionGenome,
-	onUrlInputChange,
 	sampleBundles,
 	sampleLoadError,
 	sampleLoadingId,
@@ -2340,18 +2465,13 @@ function LabExplorerSidebar({
 	savedHandlesLoading,
 	savedHandleGroups,
 	sessionGenomes,
-	shareAssayUrl,
 }: {
 	activeGenome: LabGenomeRef | null
 	sessionGenomes: LabGenomeRef[]
 	onSelectSessionGenome: (id: string | null) => void
-	assayUrlCopied: boolean
-	assayUrlInput: string
 	cachedRemoteFiles: RemoteLabFile[]
 	dragActive: boolean
 	onChooseGenomeFiles: () => void
-	onCopyShareAssayUrl: () => void
-	onLoadAssayUrl: (url: string) => void
 	sampleBundles: LabTestFileBundle[]
 	sampleLoadError: string | null
 	sampleLoadingId: string | null
@@ -2363,8 +2483,6 @@ function LabExplorerSidebar({
 	onRemoveSavedHandle: (group: SavedHandleGroup) => void
 	onRestoreCachedRemote: (remoteFile: RemoteLabFile) => void
 	onRestoreSavedHandle: (group: SavedHandleGroup) => void
-	onUrlInputChange: (url: string) => void
-	shareAssayUrl: string
 }) {
 	const { styles } = useTheme()
 	/** Cached fetch rows duplicate session rows when the same primary is already loaded; keep them out of the picker list. */
@@ -2559,26 +2677,8 @@ function LabExplorerSidebar({
 							)
 						})}
 					</View>
-				</View>
-
-				<View style={styles.labExplorerImportBlock}>
-					<View style={styles.labExplorerSectionHeading}>
-						<OMText variant="caption" style={styles.labExplorerSectionTitle}>
-							Add data
-						</OMText>
-					</View>
-					<View style={styles.labExplorerAddDataStack}>
-						<DropZone dragActive={dragActive} onChoose={onChooseGenomeFiles} />
-						<UrlLoadBox
-							narrow
-							composer
-							shareUrl={shareAssayUrl}
-							shareUrlCopied={assayUrlCopied}
-							urlInput={assayUrlInput}
-							onCopyShareUrl={onCopyShareAssayUrl}
-							onLoadUrl={onLoadAssayUrl}
-							onUrlInputChange={onUrlInputChange}
-						/>
+					<View style={[styles.labExplorerAddDataStack, styles.labExplorerInlineImportAction]}>
+						<ImportGenomeButton dragActive={dragActive} onPress={onChooseGenomeFiles} />
 					</View>
 				</View>
 
@@ -2630,20 +2730,20 @@ function LabExplorerSidebar({
 
 // === Drop zone (sidebar explorer only) =====================================
 
-function DropZone({ dragActive, onChoose }: { dragActive: boolean; onChoose: () => void }) {
+function ImportGenomeButton({ dragActive, onPress }: { dragActive: boolean; onPress: () => void }) {
 	const { styles, palette } = useTheme()
 	return (
 		<Pressable
-			onPress={onChoose}
+			onPress={onPress}
 			style={[styles.explorerDropPanel, dragActive ? styles.explorerDropPanelActive : null]}
 		>
 			<PlatformSvgUri uri={microscopeIconUri} width={22} height={22} color={palette.accent} />
 			<View style={styles.explorerDropTitleCluster}>
 				<OMText variant="subtitle" style={styles.explorerDropTitle}>
-					Drop a genome
+					Import genome
 				</OMText>
 				<OMText variant="caption" style={styles.explorerDropSubtitle}>
-					Or open the picker
+					Files, URL, or drag and drop
 				</OMText>
 			</View>
 		</Pressable>
@@ -3845,6 +3945,73 @@ function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 	)
 }
 
+function HowItWorksCard({
+	body,
+	icon,
+	title,
+}: {
+	body: string
+	icon: Parameters<typeof OMIcon>[0]['name']
+	title: string
+}) {
+	const { styles } = useTheme()
+	return (
+		<View style={styles.howItWorksCard}>
+			<View style={styles.howItWorksIcon}>
+				<OMIcon name={icon} size={20} tone="accent" />
+			</View>
+			<OMText variant="subtitle" style={styles.howItWorksTitle}>
+				{title}
+			</OMText>
+			<OMText variant="body" style={styles.howItWorksText}>
+				{body}
+			</OMText>
+		</View>
+	)
+}
+
+function GettingStartedModal({
+	assayTitle,
+	onClose,
+	onTryDemoRun,
+	sampleTitle,
+}: {
+	assayTitle?: string
+	onClose: () => void
+	onTryDemoRun?: () => void
+	sampleTitle?: string
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	return (
+		<LabModalChrome
+			accessibilityLabel="Getting started guide"
+			onBackdropDismiss={onClose}
+			panelStyle={styles.gettingStartedModalPanel}
+			scroll
+			scrollContentStyle={styles.gettingStartedModalScrollContent}
+		>
+			<View style={styles.sourceHead}>
+				<View style={{ flex: 1, gap: 2 }}>
+					<OMText variant="caption" style={styles.sectionKicker}>
+						GETTING STARTED
+					</OMText>
+					<OMText variant="headline" style={styles.sourceTitle}>
+						How to use BioVault Lab
+					</OMText>
+				</View>
+				<Pressable accessibilityRole="button" onPress={onClose} style={styles.iconButton}>
+					<OMIcon name="close-outline" tone={mutedIconTone} size={18} />
+				</Pressable>
+			</View>
+			<LabGettingStartedPanel
+				assayTitle={assayTitle}
+				onTryDemoRun={onTryDemoRun}
+				sampleTitle={sampleTitle}
+			/>
+		</LabModalChrome>
+	)
+}
+
 function LabGettingStartedPanel({
 	assayTitle,
 	onTryDemoRun,
@@ -3899,6 +4066,28 @@ function LabGettingStartedPanel({
 						</View>
 					</View>
 				) : null}
+				<View style={styles.howItWorksSection}>
+					<OMText variant="caption" style={styles.gettingStartedVideoKicker}>
+						HOW IT WORKS
+					</OMText>
+					<View style={styles.howItWorksGrid}>
+						<HowItWorksCard
+							icon="lock-closed-outline"
+							title="Local by default"
+							body="Genome files are processed in your browser. They are not uploaded to BioVault to run an assay."
+						/>
+						<HowItWorksCard
+							icon="hardware-chip-outline"
+							title="WASM runtime"
+							body="BioScript and genomics readers run through WebAssembly, with web workers keeping heavy work off the UI thread."
+						/>
+						<HowItWorksCard
+							icon="folder-open-outline"
+							title="You control files"
+							body="Use local files, cached remote resources, or sample data. Browser storage can be cleared from settings."
+						/>
+					</View>
+				</View>
 				<View style={styles.gettingStartedVideoBlock}>
 					<OMText variant="caption" style={styles.gettingStartedVideoKicker}>
 						VIDEO WALKTHROUGH
@@ -3958,6 +4147,28 @@ function openGithub() {
 	getAnalytics()?.trackEvent('lab_github_clicked', { url: GITHUB_URL })
 	if (typeof window === 'undefined') return
 	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
+}
+
+function GettingStartedButton({ onPress }: { onPress: () => void }) {
+	const { styles, mutedIconTone } = useTheme()
+	return (
+		<Pressable
+			onPress={onPress}
+			hitSlop={8}
+			style={({ pressed }) => [styles.headerNavLink, pressed && styles.headerNavLinkPressed]}
+			accessibilityRole="button"
+			accessibilityLabel="Open the getting started guide"
+		>
+			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
+				<OMIcon name="book-outline" size={18} tone={mutedIconTone} />
+			</View>
+			<View pointerEvents="none">
+				<OMText variant="caption" style={styles.headerNavLinkLabel}>
+					Getting Started
+				</OMText>
+			</View>
+		</Pressable>
+	)
 }
 
 function GithubButton() {
@@ -4370,6 +4581,45 @@ function makeStyles(p: LabPalette) {
 			alignSelf: 'flex-start',
 			marginTop: omSpacing.xs,
 		},
+		howItWorksSection: {
+			alignSelf: 'stretch',
+			gap: omSpacing.s,
+		},
+		howItWorksGrid: {
+			flexDirection: 'row',
+			flexWrap: 'wrap',
+			gap: omSpacing.s,
+		},
+		howItWorksCard: {
+			flexGrow: 1,
+			flexShrink: 1,
+			flexBasis: 220,
+			minWidth: 180,
+			gap: 8,
+			padding: omSpacing.m,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surface,
+			borderWidth: 1,
+			borderColor: p.border,
+		},
+		howItWorksIcon: {
+			width: 36,
+			height: 36,
+			borderRadius: 18,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.accentSoft,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+		},
+		howItWorksTitle: {
+			color: p.text,
+		},
+		howItWorksText: {
+			color: p.textMuted,
+			fontSize: 13,
+			lineHeight: 18,
+		},
 		gettingStartedVideoBlock: {
 			alignSelf: 'stretch',
 			gap: omSpacing.s,
@@ -4452,6 +4702,15 @@ function makeStyles(p: LabPalette) {
 		gettingStartedBtnPressed: {
 			opacity: 0.88,
 		} as object,
+		gettingStartedModalPanel: {
+			maxWidth: 980,
+			width: 'min(980px, 94vw)' as any,
+			maxHeight: '88%' as any,
+		},
+		gettingStartedModalScrollContent: {
+			padding: omSpacing.l,
+			gap: omSpacing.m,
+		},
 
 		columnKicker: {
 			color: p.textFaint,
@@ -4522,6 +4781,9 @@ function makeStyles(p: LabPalette) {
 			alignSelf: 'stretch',
 			gap: omSpacing.m + 2,
 		},
+		labExplorerInlineImportAction: {
+			marginTop: omSpacing.s,
+		},
 		labExplorerImportBlock: {
 			gap: omSpacing.xs + 4,
 			marginTop: 2,
@@ -4538,16 +4800,17 @@ function makeStyles(p: LabPalette) {
 		labExplorerPinnedRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
-			borderRadius: 0,
-			backgroundColor: 'transparent',
-			overflow: 'visible',
+			borderRadius: omRadius.m,
+			backgroundColor: p.surfaceSunken,
+			overflow: 'hidden',
 			minHeight: 38,
-			borderWidth: 0,
-			paddingVertical: 2,
+			borderWidth: 1,
+			borderColor: p.border,
 		},
 		labExplorerPinnedRowSelected: {
 			borderRadius: omRadius.m,
 			backgroundColor: p.overlayCardBg,
+			borderColor: p.accentBorder,
 		},
 		labExplorerRowMain: {
 			flex: 1,
@@ -5407,6 +5670,71 @@ function makeStyles(p: LabPalette) {
 		persistentHandleModalChrome: {
 			padding: omSpacing.l,
 			gap: omSpacing.m,
+		},
+		importGenomeModalPanel: {
+			maxWidth: 640,
+			width: '100%',
+			borderColor: p.accentBorder,
+		},
+		importGenomeModalChrome: {
+			padding: omSpacing.l,
+			gap: omSpacing.l,
+		},
+		importGenomeDropArea: {
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: omSpacing.s,
+			borderWidth: 1,
+			borderStyle: 'dashed',
+			borderColor: p.borderStrong,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surfaceSunken,
+			paddingVertical: omSpacing.xl,
+			paddingHorizontal: omSpacing.l,
+		},
+		importGenomeDropAreaActive: {
+			backgroundColor: p.accent,
+			borderColor: p.accent,
+		},
+		importGenomeDropTitle: {
+			color: p.text,
+			textAlign: 'center',
+			fontWeight: '700',
+		},
+		importGenomeDropBody: {
+			color: p.textMuted,
+			textAlign: 'center',
+			lineHeight: 17,
+		},
+		importGenomeActionGrid: {
+			gap: omSpacing.m,
+		},
+		importGenomeActionCard: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
+			borderWidth: 1,
+			borderColor: p.border,
+			borderRadius: omRadius.l,
+			backgroundColor: p.surfaceSunken,
+			padding: omSpacing.m,
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+		importGenomeActionTitle: {
+			color: p.text,
+			fontWeight: '700',
+		},
+		importGenomeActionBody: {
+			color: p.textMuted,
+			lineHeight: 17,
+		},
+		importGenomeUrlCard: {
+			borderWidth: 1,
+			borderColor: p.border,
+			borderRadius: omRadius.l,
+			overflow: 'hidden',
 		},
 		unknownRow: {
 			flexDirection: 'row',
