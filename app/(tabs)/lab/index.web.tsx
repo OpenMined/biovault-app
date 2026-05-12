@@ -105,6 +105,7 @@ import {
 	ScrollView,
 	StyleSheet,
 	TextInput,
+	useWindowDimensions,
 	View,
 } from 'react-native'
 import { Highlight, themes } from 'prism-react-renderer'
@@ -628,6 +629,11 @@ export default function LabScreen() {
 		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
 		[genomes, selectedGenomeId],
 	)
+
+	const { width: layoutWidth } = useWindowDimensions()
+	/** Wide browser layout: genome setup left, assays + runs right */
+	const LAB_WIDE_TWO_COL_MIN = 1100
+	const useWideSplit = layoutWidth >= LAB_WIDE_TWO_COL_MIN && Boolean(activeGenomeRef)
 
 	const ingestRef = useCallback((ref: LabFileRef) => {
 		const file = fileAdapterRef.current.getFile(ref)
@@ -1610,6 +1616,131 @@ export default function LabScreen() {
 	const latestRun = runs[0] ?? null
 	const previousRuns = runs.slice(1)
 
+	const labSetupBlocks = (
+		<>
+			<RemoteIntentCard
+				state={remoteIntent}
+				onDismiss={dismissRemoteIntent}
+				onFetch={fetchRemoteIntent}
+				onResolveDependencies={resolveRemoteDependencies}
+			/>
+
+			<DropZone
+				compact={Boolean(activeGenomeRef)}
+				dragActive={dragActive}
+				onChoose={openPicker}
+			/>
+
+			<UrlLoadBox
+				urlInput={assayUrlInput}
+				shareUrl={shareAssayUrl}
+				shareUrlCopied={assayUrlCopied}
+				onUrlInputChange={setAssayUrlInput}
+				onLoadUrl={loadAssayUrl}
+				onCopyShareUrl={copyShareAssayUrl}
+			/>
+
+			<PersistentHandlePrompt
+				message={handlePersistMessage}
+				pendingHandles={pendingHandles}
+				onDismiss={() => {
+					setPendingHandles([])
+					setHandlePersistMessage(null)
+				}}
+				onSave={persistDroppedHandles}
+			/>
+
+			<SavedLocalFiles
+				cachedRemoteFiles={cachedRemoteFiles}
+				error={savedHandlesError}
+				loading={savedHandlesLoading}
+				rows={savedHandles}
+				onRemoveCachedRemote={removeCachedRemoteFile}
+				onRemove={removeSavedHandle}
+				onRestoreCachedRemote={restoreCachedRemoteFile}
+				onRestore={restoreSavedHandle}
+			/>
+
+			{activeGenomeRef ? (
+				<GenomeCard genome={activeGenomeRef} onClear={clearGenome} />
+			) : (
+				<SampleGenomeList
+					bundles={LAB_TEST_FILES}
+					loadingId={sampleLoadingId}
+					error={sampleLoadError}
+					onPick={pickSample}
+				/>
+			)}
+
+			{unknowns.length > 0 ? (
+				<UnknownFilesNote unknowns={unknowns} onRemove={removeUnknown} />
+			) : null}
+		</>
+	)
+
+	const labWorkBlocks = (
+		<>
+			{activeGenomeRef ? (
+				<AssayPicker
+					genome={activeGenomeRef}
+					query={query}
+					onQueryChange={setQuery}
+					category={category}
+					onCategoryChange={setCategory}
+					categories={categories}
+					results={searchResults}
+					onForgetRemoteAssay={forgetRemoteAssay}
+					runningAssayId={runningAssayId}
+					runtimeWarmupStatus={runtimeWarmupStatus}
+					sessionAssays={sessionAssays}
+					onRun={runAssay}
+					onViewSource={(assay) => {
+						void openAssaySource(assay)
+					}}
+				/>
+			) : null}
+
+			<View
+				style={styles.runsAnchor}
+				onLayout={(e) => {
+					runsYRef.current = e.nativeEvent.layout.y
+				}}
+			>
+				{latestRun ? (
+					<View style={styles.resultSection}>
+						<OMText variant="caption" style={styles.sectionKicker}>
+							LATEST RESULT
+						</OMText>
+						<RunCard
+							record={latestRun}
+							onViewSource={() => {
+								setSourceViewer({ files: latestRun.sourceFiles, title: latestRun.assay.title })
+							}}
+						/>
+					</View>
+				) : null}
+				{previousRuns.length > 0 ? (
+					<View style={styles.resultSection}>
+						<OMText variant="caption" style={styles.sectionKicker}>
+							RECENT RUNS
+						</OMText>
+						<View style={styles.stack}>
+							{previousRuns.map((r) => (
+								<RunCard
+									key={r.id}
+									record={r}
+									onViewSource={() => {
+										setSourceViewer({ files: r.sourceFiles, title: r.assay.title })
+									}}
+								/>
+							))}
+						</View>
+					</View>
+				) : null}
+			</View>
+		</>
+	)
+
 	return (
 		<ThemeCtx.Provider value={themeValue}>
 			<SafeAreaView style={styles.safe} edges={['top']}>
@@ -1620,134 +1751,50 @@ export default function LabScreen() {
 					style={styles.scroll}
 					contentContainerStyle={styles.content}
 				>
-					<View style={styles.headerRow}>
-						<OMText variant="caption" style={styles.brandMark}>
-							BIOVAULT LAB
-						</OMText>
-						<View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-							<GithubButton scheme={scheme} />
-							<ContactButton scheme={scheme} />
-							<ClearAllButton />
-							<WebThemeToggle scheme={scheme} />
+					<View style={styles.siteHeader}>
+						<View style={styles.heroRow}>
+							<View style={styles.heroTextBlock}>
+								<OMText variant="caption" style={styles.heroEyebrow}>
+									BIOVAULT LAB
+								</OMText>
+								<OMText variant="h4" style={styles.heroTitle}>
+									Run genomics assays in your browser
+								</OMText>
+								<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
+									Load genomic data, pick an assay, and inspect results—using the full width of your
+									display.
+								</OMText>
+							</View>
+							<View style={styles.headerTools}>
+								<GithubButton scheme={scheme} />
+								<ContactButton scheme={scheme} />
+								<ClearAllButton />
+								<WebThemeToggle scheme={scheme} />
+							</View>
 						</View>
 					</View>
 
-					<RemoteIntentCard
-						state={remoteIntent}
-						onDismiss={dismissRemoteIntent}
-						onFetch={fetchRemoteIntent}
-						onResolveDependencies={resolveRemoteDependencies}
-					/>
-
-					<DropZone
-						compact={Boolean(activeGenomeRef)}
-						dragActive={dragActive}
-						onChoose={openPicker}
-					/>
-
-					<UrlLoadBox
-						urlInput={assayUrlInput}
-						shareUrl={shareAssayUrl}
-						shareUrlCopied={assayUrlCopied}
-						onUrlInputChange={setAssayUrlInput}
-						onLoadUrl={loadAssayUrl}
-						onCopyShareUrl={copyShareAssayUrl}
-					/>
-
-					<PersistentHandlePrompt
-						message={handlePersistMessage}
-						pendingHandles={pendingHandles}
-						onDismiss={() => {
-							setPendingHandles([])
-							setHandlePersistMessage(null)
-						}}
-						onSave={persistDroppedHandles}
-					/>
-
-					<SavedLocalFiles
-						cachedRemoteFiles={cachedRemoteFiles}
-						error={savedHandlesError}
-						loading={savedHandlesLoading}
-						rows={savedHandles}
-						onRemoveCachedRemote={removeCachedRemoteFile}
-						onRemove={removeSavedHandle}
-						onRestoreCachedRemote={restoreCachedRemoteFile}
-						onRestore={restoreSavedHandle}
-					/>
-
-					{activeGenomeRef ? (
-						<GenomeCard genome={activeGenomeRef} onClear={clearGenome} />
+					{useWideSplit ? (
+						<View style={styles.splitRow}>
+							<View style={[styles.splitPane, styles.splitPanePrimary]}>
+								<OMText variant="caption" style={styles.columnKicker}>
+									DATA · SETUP
+								</OMText>
+								{labSetupBlocks}
+							</View>
+							<View style={[styles.splitPane, styles.splitPaneWork]}>
+								<OMText variant="caption" style={styles.columnKicker}>
+									ASSAYS · OUTPUT
+								</OMText>
+								{labWorkBlocks}
+							</View>
+						</View>
 					) : (
-						<SampleGenomeList
-							bundles={LAB_TEST_FILES}
-							loadingId={sampleLoadingId}
-							error={sampleLoadError}
-							onPick={pickSample}
-						/>
+						<>
+							{labSetupBlocks}
+							{labWorkBlocks}
+						</>
 					)}
-
-					{unknowns.length > 0 ? (
-						<UnknownFilesNote unknowns={unknowns} onRemove={removeUnknown} />
-					) : null}
-
-					{activeGenomeRef ? (
-						<AssayPicker
-							genome={activeGenomeRef}
-							query={query}
-							onQueryChange={setQuery}
-							category={category}
-							onCategoryChange={setCategory}
-							categories={categories}
-							results={searchResults}
-							onForgetRemoteAssay={forgetRemoteAssay}
-							runningAssayId={runningAssayId}
-							runtimeWarmupStatus={runtimeWarmupStatus}
-							sessionAssays={sessionAssays}
-							onRun={runAssay}
-							onViewSource={(assay) => {
-								void openAssaySource(assay)
-							}}
-						/>
-					) : null}
-
-					<View
-						style={styles.runsAnchor}
-						onLayout={(e) => {
-							runsYRef.current = e.nativeEvent.layout.y
-						}}
-					>
-						{latestRun ? (
-							<View style={styles.resultSection}>
-								<OMText variant="caption" style={styles.sectionKicker}>
-									LATEST RESULT
-								</OMText>
-								<RunCard
-									record={latestRun}
-									onViewSource={() => {
-										setSourceViewer({ files: latestRun.sourceFiles, title: latestRun.assay.title })
-									}}
-								/>
-							</View>
-						) : null}
-						{previousRuns.length > 0 ? (
-							<View style={styles.resultSection}>
-								<OMText variant="caption" style={styles.sectionKicker}>
-									RECENT RUNS
-								</OMText>
-								<View style={styles.stack}>
-									{previousRuns.map((r) => (
-										<RunCard
-											key={r.id}
-											record={r}
-											onViewSource={() => {
-												setSourceViewer({ files: r.sourceFiles, title: r.assay.title })
-											}}
-										/>
-									))}
-								</View>
-							</View>
-						) : null}
-					</View>
 
 					<PrivacyFootnote />
 					<FeedbackFooterButton />
@@ -3486,26 +3533,82 @@ function makeStyles(p: LabPalette) {
 		safe: { flex: 1, backgroundColor: p.pageBg },
 		scroll: { flex: 1 },
 		content: {
-			paddingHorizontal: omSpacing.xl,
-			paddingTop: 88,
+			paddingHorizontal: omSpacing.xxxl,
+			paddingTop: omSpacing.xl,
 			paddingBottom: omSpacing.xxxxl,
-			maxWidth: 760,
+			maxWidth: 1440,
 			width: '100%',
 			alignSelf: 'center',
-			gap: omSpacing.m,
+			gap: omSpacing.l,
 		},
 		stack: { gap: omSpacing.s },
-		headerRow: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			justifyContent: 'space-between',
-			gap: omSpacing.m,
+		siteHeader: {
+			width: '100%',
+			paddingBottom: omSpacing.l,
+			marginBottom: omSpacing.m,
+			borderBottomWidth: StyleSheet.hairlineWidth,
+			borderBottomColor: p.border,
 		},
-
-		brandMark: {
+		heroRow: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			justifyContent: 'space-between',
+			gap: omSpacing.xl,
+			flexWrap: 'wrap',
+		},
+		heroTextBlock: {
+			flexGrow: 1,
+			flexShrink: 1,
+			minWidth: 240,
+			maxWidth: 720,
+			gap: omSpacing.s,
+		},
+		heroEyebrow: {
 			color: p.accentStrong,
 			letterSpacing: 1.4,
+		},
+		heroTitle: {
+			color: p.text,
+		},
+		heroLead: {
+			lineHeight: 24,
+			marginTop: 2,
+			maxWidth: 560,
+		},
+		headerTools: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 8,
+			flexShrink: 0,
+			flexWrap: 'wrap',
+		},
+
+		columnKicker: {
+			color: p.textFaint,
+			letterSpacing: 1.4,
+			marginBottom: omSpacing.s,
+		},
+		splitRow: {
+			width: '100%',
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.xxxl,
+		},
+		splitPane: {
+			minWidth: 0,
+		},
+		splitPanePrimary: {
+			flexGrow: 0,
+			flexShrink: 0,
+			flexBasis: 392,
+			width: '100%',
+			maxWidth: 480,
+		},
+		splitPaneWork: {
+			flexGrow: 1,
 			flexShrink: 1,
+			flexBasis: 0,
+			minWidth: 320,
 		},
 		webThemeButton: {
 			flexDirection: 'row',
