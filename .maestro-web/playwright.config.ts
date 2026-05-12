@@ -19,9 +19,11 @@ export default defineConfig({
 	use: {
 		trace: 'on',
 		video: 'on',
+		ignoreHTTPSErrors: process.env.PW_IGNORE_HTTPS_ERRORS === '1',
 		viewport: { width: 1280, height: 800 },
 		launchOptions: {
 			slowMo: Number(process.env.PW_SLOWMO ?? 400),
+			args: process.env.PW_IGNORE_HTTPS_ERRORS === '1' ? ['--ignore-certificate-errors'] : [],
 		},
 	},
 	projects: [

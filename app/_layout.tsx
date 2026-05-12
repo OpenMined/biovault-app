@@ -1,6 +1,9 @@
-import { initAnalytics } from '@/lib/analytics'
+import { initBioVaultAnalytics } from '@/lib/analytics'
+import { installGlobalErrorHandler } from '@/lib/install-global-error-handler'
 import { getAppPreferenceSync, subscribeToAppPreference } from '@/lib/app-preferences'
 import { applyGlobalBrandTypography } from '@/lib/brand-typography'
+import { deferLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
+import { identifyBioVaultWebUser } from '@/lib/rybbit-identify.web'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { warmupBioscriptRuntime } from '@/modules/expo-bioscript'
 import { omColors } from '@/styles/brand'
@@ -18,7 +21,8 @@ import { requireOptionalNativeModule } from 'expo';
 const DevMenuPreferences = requireOptionalNativeModule('DevMenuPreferences');
 DevMenuPreferences?.setPreferencesAsync({ showFloatingActionButton: false });
 
-const analytics = initAnalytics('4', 'https://metrics.syftbox.net/api', 'app.biovault.net')
+const analytics = initBioVaultAnalytics()
+installGlobalErrorHandler()
 applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})
 
@@ -49,8 +53,19 @@ function RootNavigator() {
 
 	useEffect(() => {
 		if (!canAccessApp && pathname !== '/onboarding') {
+			if (Platform.OS === 'web' && typeof window !== 'undefined') {
+				deferLaunchUrlSync(window.location.href)
+			}
 			router.replace('/onboarding')
 			return
+		}
+
+		if (canAccessApp && Platform.OS === 'web' && typeof window !== 'undefined') {
+			const deferredLaunchUrl = getDeferredLaunchUrlSync()
+			if (deferredLaunchUrl) {
+				window.location.replace(deferredLaunchUrl)
+				return
+			}
 		}
 
 		if (canAccessApp && (pathname === '/' || pathname === '/onboarding')) {
@@ -79,6 +94,10 @@ function RootNavigator() {
 				/>
 				<Stack.Screen
 					name="(tabs)"
+					options={{ animation: 'none' }}
+				/>
+				<Stack.Screen
+					name="web/index"
 					options={{ animation: 'none' }}
 				/>
 				<Stack.Screen
@@ -127,6 +146,7 @@ export default function RootLayout() {
 
 	useEffect(() => {
 		if (Platform.OS !== 'web') return
+		identifyBioVaultWebUser()
 
 		void warmupBioscriptRuntime().catch((error) => {
 			console.warn('[bioscript] web runtime warmup failed', error)

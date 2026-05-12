@@ -197,6 +197,8 @@ async function fetchMontyWasmBytes(wasmUrl: string): Promise<ArrayBuffer> {
 }
 
 async function fetchChunkedWasmBytes(wasmUrl: string): Promise<ArrayBuffer | null> {
+  if (process.env.NODE_ENV !== 'production') return null;
+
   const manifestUrl = new URL(wasmUrl);
   if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(manifestUrl.hostname)) return null;
   manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;

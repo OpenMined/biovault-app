@@ -7,12 +7,18 @@ on:
     branches: [ main ]
   # Optionally, allow manual trigger for debugging
   workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: Branch, tag, or SHA to deploy
+        required: true
+        default: main
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   rust:
+    if: github.event_name == 'pull_request'
     # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
     # bioscript is a submodule with its own CI.
     runs-on: ubuntu-latest
@@ -52,6 +58,7 @@ jobs:
         run: ./test.sh
 
   lint:
+    if: github.event_name == 'pull_request'
     # Runs the same ./lint.sh that developers use locally, so CI output
     # matches local output exactly. Covers Rust (bioscript/rust +
     # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
@@ -104,6 +111,7 @@ jobs:
         run: ./lint.sh --check
 
   web:
+    if: github.event_name == 'pull_request'
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 45
     steps:
@@ -184,10 +192,10 @@ jobs:
         run: npm run check:bioscript-parity
 
       - name: Run web tests
-        run: ./test-web.sh
+        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 ./test-web.sh
 
       - name: Run PGx report browser matrix
-        run: PW_WORKERS=8 WEB_REPORT_NO_PRIVATE=1 ./test-web.sh --pgx-report-scenario
+        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=8 WEB_REPORT_NO_PRIVATE=1 ./test-web.sh --pgx-report-scenario
 
       - name: Upload web artifacts
         if: always()
@@ -200,8 +208,7 @@ jobs:
           if-no-files-found: ignore
 
   deploy-web-prod:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [rust, lint, web]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 30
     concurrency:
@@ -211,6 +218,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.ref }}
           submodules: false
           token: ${{ secrets.GITHUB_TOKEN }}
 

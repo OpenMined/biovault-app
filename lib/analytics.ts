@@ -3,6 +3,12 @@ import * as Device from 'expo-device'
 import { getAppPreferenceSync, setAppPreference, setAppPreferenceSync } from '@/lib/app-preferences'
 import { Dimensions, Platform } from 'react-native'
 
+const DEFAULT_METRICS_ENDPOINT = 'https://metrics.syftbox.net/api'
+const DEFAULT_DEV_METRICS_SITE_ID = '4'
+const DEFAULT_PROD_METRICS_SITE_ID = '6'
+const DEFAULT_DEV_METRICS_DOMAIN = 'dev-app.biovault.net'
+const DEFAULT_PROD_METRICS_DOMAIN = 'app.biovault.net'
+
 interface AnalyticsEvent {
 	type: 'pageview' | 'custom_event' | 'performance'
 	site_id: string
@@ -15,18 +21,32 @@ interface AnalyticsEvent {
 	page_title?: string
 	referrer: string
 	event_name?: string
+	_bs?: number
 	// Additional fields for custom events
 	properties?: string
 	// Browser-like fields to avoid bot detection
 	user_agent?: string
-	viewport_width?: number
-	viewport_height?: number
 	// Session tracking
 	visitor_id?: string
 	session_id?: string
 }
 
-class Analytics {
+type AnalyticsProperties = Record<string, any>
+
+export interface AnalyticsOptions {
+	apiEndpoint?: string
+	appDomain?: string
+	siteId?: string
+}
+
+export interface BioVaultAnalyticsConfig {
+	apiEndpoint: string
+	appDomain: string
+	siteId: string
+	variant: string
+}
+
+export class Analytics {
 	private siteId: string
 	private apiEndpoint: string
 	private sessionId: string | null = null
@@ -34,16 +54,21 @@ class Analytics {
 	private lastActivityTime: number = Date.now()
 	private customUserAgent: string | null = null
 	private appDomain: string = 'app.biovault.net'
+	private appVariant: string = 'development'
 
 	constructor(
 		siteId: string,
-		apiEndpoint: string = 'https://metrics.syftbox.net/api',
-		appDomain?: string
+		apiEndpoint: string = DEFAULT_METRICS_ENDPOINT,
+		appDomain?: string,
+		appVariant?: string
 	) {
 		this.siteId = siteId
 		this.apiEndpoint = apiEndpoint
 		if (appDomain) {
 			this.appDomain = appDomain
+		}
+		if (appVariant) {
+			this.appVariant = appVariant
 		}
 		this.initSession()
 		this.initVisitor()
@@ -120,6 +145,10 @@ class Analytics {
 			return this.customUserAgent
 		}
 
+		if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.userAgent) {
+			return navigator.userAgent
+		}
+
 		// Create a realistic mobile browser user agent based on the actual device
 		const platform = Platform.OS
 		const osVersion = Device.osVersion?.replace('.', '_') || '18_0'
@@ -140,6 +169,77 @@ class Analytics {
 		return `Mozilla/5.0 (Mobile; ${Device.osName}/${Device.osVersion}) BioVault/${appVersion}`
 	}
 
+	private getProperties(properties?: AnalyticsProperties): AnalyticsProperties {
+		return {
+			...getAnalyticsClientContext(this.appVariant),
+			...properties,
+		}
+	}
+
+	private getCurrentPathname(): string {
+		if (Platform.OS === 'web' && typeof window !== 'undefined') {
+			return window.location.pathname || '/'
+		}
+		return ''
+	}
+
+	private getCurrentHostname(): string {
+		if (Platform.OS === 'web' && typeof window !== 'undefined') {
+			return window.location.hostname || this.appDomain
+		}
+		return this.appDomain
+	}
+
+	private getCurrentQuerystring(): string {
+		if (Platform.OS === 'web' && typeof window !== 'undefined') {
+			return window.location.search.replace(/^\?/, '')
+		}
+		return ''
+	}
+
+	private getCurrentPageTitle(): string {
+		if (Platform.OS === 'web' && typeof document !== 'undefined') {
+			return document.title || ''
+		}
+		return ''
+	}
+
+	private getWebBotScore(): number | undefined {
+		return Platform.OS === 'web' ? 0 : undefined
+	}
+
+	private getPayloadUserAgent(): string | undefined {
+		return Platform.OS === 'web' ? undefined : this.getUserAgent()
+	}
+
+	private getPayloadVisitorId(): string | undefined {
+		return Platform.OS === 'web' ? undefined : this.visitorId || undefined
+	}
+
+	private getPayloadSessionId(): string | undefined {
+		return Platform.OS === 'web' ? undefined : this.sessionId || undefined
+	}
+
+	private getRequestHeaders(): HeadersInit {
+		if (Platform.OS === 'web') {
+			return {
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/plain, */*',
+			}
+		}
+
+		return {
+			'Content-Type': 'application/json',
+			Origin: `https://${this.appDomain}`,
+			Referer: `https://${this.appDomain}/`,
+			'User-Agent': this.getUserAgent(),
+			Accept: 'application/json, text/plain, */*',
+			'Accept-Language': 'en-US,en;q=0.9',
+			'Cache-Control': 'no-cache',
+			Pragma: 'no-cache',
+		}
+	}
+
 	private async sendEvent(event: AnalyticsEvent) {
 		try {
 			this.checkSession()
@@ -158,16 +258,7 @@ class Analytics {
 
 			const response = await fetch(`${this.apiEndpoint}/track`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Origin: `https://${this.appDomain}`,
-					Referer: `https://${this.appDomain}/`,
-					'User-Agent': this.getUserAgent(),
-					Accept: 'application/json, text/plain, */*',
-					'Accept-Language': 'en-US,en;q=0.9',
-					'Cache-Control': 'no-cache',
-					Pragma: 'no-cache',
-				},
+				headers: this.getRequestHeaders(),
 				body: JSON.stringify(payload),
 			})
 
@@ -209,7 +300,7 @@ class Analytics {
 		await this.sendEvent({
 			type: 'pageview',
 			site_id: this.siteId,
-			hostname: this.appDomain,
+			hostname: this.getCurrentHostname(),
 			pathname: `/${urlPath}`,
 			querystring: '',
 			screenWidth: Math.round(Dimensions.get('window').width || 428),
@@ -220,33 +311,33 @@ class Analytics {
 				: `${screenName} - BioVault`,
 			referrer: properties?.referrer || '',
 			event_name: '',
-			user_agent: this.getUserAgent(),
-			viewport_width: Math.round(Dimensions.get('window').width || 428),
-			viewport_height: Math.round(Dimensions.get('window').height || 926),
-			visitor_id: this.visitorId || undefined,
-			session_id: this.sessionId || undefined,
+			_bs: this.getWebBotScore(),
+			properties: JSON.stringify(this.getProperties(properties)),
+			user_agent: this.getPayloadUserAgent(),
+			visitor_id: this.getPayloadVisitorId(),
+			session_id: this.getPayloadSessionId(),
 		})
 	}
 
 	public async trackEvent(eventName: string, properties?: Record<string, any>) {
+		const eventProperties = this.getProperties(properties)
 		await this.sendEvent({
 			type: 'custom_event',
 			site_id: this.siteId,
-			hostname: this.appDomain,
-			pathname: '',
-			querystring: '',
+			hostname: this.getCurrentHostname(),
+			pathname: this.getCurrentPathname(),
+			querystring: this.getCurrentQuerystring(),
 			screenWidth: Math.round(Dimensions.get('window').width || 428),
 			screenHeight: Math.round(Dimensions.get('window').height || 926),
 			language: 'en-US',
-			page_title: '',
+			page_title: this.getCurrentPageTitle(),
 			referrer: '',
 			event_name: eventName,
-			properties: properties ? JSON.stringify(properties) : undefined,
-			user_agent: this.getUserAgent(),
-			viewport_width: Math.round(Dimensions.get('window').width || 428),
-			viewport_height: Math.round(Dimensions.get('window').height || 926),
-			visitor_id: this.visitorId || undefined,
-			session_id: this.sessionId || undefined,
+			_bs: this.getWebBotScore(),
+			properties: JSON.stringify(eventProperties),
+			user_agent: this.getPayloadUserAgent(),
+			visitor_id: this.getPayloadVisitorId(),
+			session_id: this.getPayloadSessionId(),
 		})
 	}
 
@@ -254,64 +345,67 @@ class Analytics {
 		await this.sendEvent({
 			type: 'custom_event',
 			site_id: this.siteId,
-			hostname: this.appDomain,
-			pathname: '',
-			querystring: '',
+			hostname: this.getCurrentHostname(),
+			pathname: this.getCurrentPathname(),
+			querystring: this.getCurrentQuerystring(),
 			screenWidth: Math.round(Dimensions.get('window').width || 428),
 			screenHeight: Math.round(Dimensions.get('window').height || 926),
 			language: 'en-US',
-			page_title: '',
+			page_title: this.getCurrentPageTitle(),
 			referrer: '',
 			event_name: 'error',
-			properties: JSON.stringify({
+			_bs: this.getWebBotScore(),
+			properties: JSON.stringify(this.getProperties({
 				message: error.message,
 				stack: error.stack,
 				...context,
-			}),
-			user_agent: this.getUserAgent(),
-			viewport_width: Math.round(Dimensions.get('window').width || 428),
-			viewport_height: Math.round(Dimensions.get('window').height || 926),
+			})),
+			user_agent: this.getPayloadUserAgent(),
 		})
 	}
 
 	public async startSession() {
+		if (Platform.OS === 'web') return
+
 		// Session is already initialized and persistent, just send start event
 		console.log('Analytics: Starting session event for persistent session:', this.sessionId)
 
 		await this.sendEvent({
 			type: 'custom_event',
 			site_id: this.siteId,
-			hostname: this.appDomain,
-			pathname: '',
-			querystring: '',
+			hostname: this.getCurrentHostname(),
+			pathname: this.getCurrentPathname(),
+			querystring: this.getCurrentQuerystring(),
 			screenWidth: Math.round(Dimensions.get('window').width || 428),
 			screenHeight: Math.round(Dimensions.get('window').height || 926),
 			language: 'en-US',
-			page_title: '',
+			page_title: this.getCurrentPageTitle(),
 			referrer: '',
 			event_name: 'session_start',
-			user_agent: this.getUserAgent(),
-			viewport_width: Math.round(Dimensions.get('window').width || 428),
-			viewport_height: Math.round(Dimensions.get('window').height || 926),
+			_bs: this.getWebBotScore(),
+			properties: JSON.stringify(this.getProperties()),
+			user_agent: this.getPayloadUserAgent(),
 		})
 	}
 
 	public async endSession() {
+		if (Platform.OS === 'web') return
+
 		await this.sendEvent({
 			type: 'custom_event',
 			site_id: this.siteId,
-			hostname: this.appDomain,
-			pathname: '',
-			querystring: '',
+			hostname: this.getCurrentHostname(),
+			pathname: this.getCurrentPathname(),
+			querystring: this.getCurrentQuerystring(),
 			screenWidth: Math.round(Dimensions.get('window').width || 428),
 			screenHeight: Math.round(Dimensions.get('window').height || 926),
 			language: 'en-US',
-			page_title: '',
+			page_title: this.getCurrentPageTitle(),
 			referrer: '',
 			event_name: 'session_end',
-			user_agent: this.getUserAgent(),
-			viewport_width: Math.round(Dimensions.get('window').width || 428),
-			viewport_height: Math.round(Dimensions.get('window').height || 926),
+			_bs: this.getWebBotScore(),
+			properties: JSON.stringify(this.getProperties()),
+			user_agent: this.getPayloadUserAgent(),
 		})
 
 		// For persistent sessions, just update the timestamp
@@ -327,11 +421,7 @@ type AnalyticsClient = Pick<
 
 let analyticsInstance: AnalyticsClient | null = null
 
-const analyticsDisabled =
-	process.env.EXPO_PUBLIC_DISABLE_ANALYTICS === '1' ||
-	(Platform.OS === 'web' &&
-		typeof window !== 'undefined' &&
-		/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname))
+const analyticsDisabled = process.env.EXPO_PUBLIC_DISABLE_ANALYTICS === '1'
 
 const disabledAnalytics: AnalyticsClient = {
 	setUserAgent() {},
@@ -342,13 +432,18 @@ const disabledAnalytics: AnalyticsClient = {
 	endSession: async () => {},
 }
 
-export const initAnalytics = (siteId: string, apiEndpoint?: string, appDomain?: string) => {
+export const initAnalytics = (
+	siteId: string,
+	apiEndpoint?: string,
+	appDomain?: string,
+	appVariant?: string
+) => {
 	if (analyticsDisabled) {
 		return disabledAnalytics
 	}
 	if (!analyticsInstance) {
 		console.log('Analytics: Initializing new analytics instance')
-		analyticsInstance = new Analytics(siteId, apiEndpoint, appDomain)
+		analyticsInstance = new Analytics(siteId, apiEndpoint, appDomain, appVariant)
 	} else {
 		console.log('Analytics: Using existing analytics instance')
 	}
@@ -357,4 +452,86 @@ export const initAnalytics = (siteId: string, apiEndpoint?: string, appDomain?: 
 
 export const getAnalytics = (): AnalyticsClient | null => {
 	return analyticsInstance
+}
+
+function hasTauriRuntime(): boolean {
+	const globalValue = globalThis as Record<string, unknown>
+	return Boolean(globalValue.__TAURI__ || globalValue.__TAURI_INTERNALS__)
+}
+
+export function getAnalyticsClientContext(appVariant = 'development'): AnalyticsProperties {
+	const appVersion = Constants.expoConfig?.version || '1.0.0'
+	const runtimePlatform = Platform.OS
+	const clientPlatform =
+		runtimePlatform === 'web' && hasTauriRuntime()
+			? 'desktop'
+			: runtimePlatform === 'ios'
+				? 'ios'
+				: runtimePlatform === 'android'
+					? 'android'
+					: 'web'
+	const clientSurface =
+		clientPlatform === 'desktop'
+			? 'desktop_app'
+			: clientPlatform === 'ios' || clientPlatform === 'android'
+				? 'mobile_app'
+				: 'web_app'
+
+	return {
+		app_name: 'biovault',
+		app_version: appVersion,
+		app_variant: appVariant,
+		client_platform: clientPlatform,
+		client_surface: clientSurface,
+		runtime_platform: runtimePlatform,
+		device_os_name: Device.osName ?? runtimePlatform,
+		device_os_version: Device.osVersion ?? '',
+		device_model: Device.modelName ?? '',
+	}
+}
+
+function readExpoExtra(): Record<string, any> {
+	const extra = Constants.expoConfig?.extra
+	return extra && typeof extra === 'object' ? extra : {}
+}
+
+function readAnalyticsExtra(): Partial<BioVaultAnalyticsConfig> {
+	const analytics = readExpoExtra().analytics
+	return analytics && typeof analytics === 'object' ? analytics : {}
+}
+
+export function getBioVaultAnalyticsConfig(options: AnalyticsOptions = {}): BioVaultAnalyticsConfig {
+	const extra = readAnalyticsExtra()
+	const variant =
+		process.env.EXPO_PUBLIC_APP_VARIANT ??
+		(typeof extra.variant === 'string' ? extra.variant : undefined) ??
+		'development'
+	const isProduction = variant === 'production'
+	const siteId =
+		options.siteId ??
+		process.env.EXPO_PUBLIC_BIOVAULT_METRICS_SITE_ID ??
+		(typeof extra.siteId === 'string' ? extra.siteId : undefined) ??
+		(isProduction ? DEFAULT_PROD_METRICS_SITE_ID : DEFAULT_DEV_METRICS_SITE_ID)
+	const appDomain =
+		options.appDomain ??
+		process.env.EXPO_PUBLIC_BIOVAULT_METRICS_DOMAIN ??
+		(typeof extra.appDomain === 'string' ? extra.appDomain : undefined) ??
+		(isProduction ? DEFAULT_PROD_METRICS_DOMAIN : DEFAULT_DEV_METRICS_DOMAIN)
+	const apiEndpoint =
+		options.apiEndpoint ??
+		process.env.EXPO_PUBLIC_BIOVAULT_METRICS_ENDPOINT ??
+		(typeof extra.apiEndpoint === 'string' ? extra.apiEndpoint : undefined) ??
+		DEFAULT_METRICS_ENDPOINT
+
+	return {
+		apiEndpoint,
+		appDomain,
+		siteId,
+		variant,
+	}
+}
+
+export function initBioVaultAnalytics(options: AnalyticsOptions = {}): AnalyticsClient {
+	const config = getBioVaultAnalyticsConfig(options)
+	return initAnalytics(config.siteId, config.apiEndpoint, config.appDomain, config.variant)
 }
