@@ -67,11 +67,6 @@ const styles = StyleSheet.create({
 	containerHighlighted: {
 		backgroundColor: 'rgba(82,168,197,0.12)',
 		borderColor: 'rgba(82,168,197,0.75)',
-		shadowColor: omColors.teal500,
-		shadowOpacity: 0.3,
-		shadowRadius: 20,
-		shadowOffset: { width: 0, height: 0 },
-		elevation: 10,
 	},
 	textRow: {
 		flex: 1,

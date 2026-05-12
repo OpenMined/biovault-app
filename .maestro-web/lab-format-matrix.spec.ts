@@ -16,28 +16,42 @@ async function dismissDisclaimer(page: Page) {
 	}
 }
 
+async function dismissRememberFilesPrompt(page: Page) {
+	const notNow = page.getByText('Not now', { exact: true })
+	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+		await notNow.click()
+	}
+}
+
 async function loadGenomeFiles(page: Page, files: string[]) {
 	await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' })
 	await dismissDisclaimer(page)
 	await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
-	await expect(page.getByText(/Drop a genome|Drop a different genome/)).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('Import genome', { exact: true })).toBeVisible({ timeout: 30_000 })
 
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
-		page.getByText(/Drop a genome|Drop a different genome/).first().click(),
+		(async () => {
+			await page.getByText('Import genome', { exact: true }).click()
+			await page.getByLabel('Choose genome files').click()
+		})(),
 	])
 	await chooser.setFiles(files)
+	await dismissRememberFilesPrompt(page)
 }
 
 async function runApol1AndExpectStatus(page: Page, genomeName: string, assayName: string, expectedStatus: string) {
-	await expect(page.getByText(genomeName, { exact: false })).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText(assayName, { exact: false })).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText('Run assay', { exact: true }).first()).toBeVisible({ timeout: 120_000 })
+	await expect(page.getByTestId('session-genome-row').getByText(genomeName, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+	await page.getByPlaceholder('Search assays…').fill(assayName)
+	const assayRow = page.getByTestId('assay-result-row').filter({ hasText: assayName }).first()
+	await expect(assayRow).toBeVisible({ timeout: 30_000 })
+	await expect(assayRow.getByText('Run assay', { exact: true })).toBeVisible({ timeout: 120_000 })
 
-	await page.getByText('Run assay', { exact: true }).first().click()
+	await assayRow.getByText('Run assay', { exact: true }).click()
 
-	await expect(page.getByText('LATEST RESULT')).toBeVisible({ timeout: 120_000 })
+	await expect(page.getByText('Latest result')).toBeVisible({ timeout: 120_000 })
 	await expect(page.getByText(assayName, { exact: false }).first()).toBeVisible()
+	await expect(page.locator('body')).toContainText(expectedStatus, { timeout: 120_000 })
 	const body = await page.textContent('body')
 	expect(body ?? '').not.toContain("Invalid exception type: 'Error'")
 	expect(body ?? '').not.toContain('Run failed')

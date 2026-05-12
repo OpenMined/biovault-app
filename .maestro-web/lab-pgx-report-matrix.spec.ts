@@ -95,6 +95,13 @@ async function dismissDisclaimer(page: Page) {
 	}
 }
 
+async function dismissRememberFilesPrompt(page: Page) {
+	const notNow = page.getByText('Not now', { exact: true })
+	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+		await notNow.click()
+	}
+}
+
 async function routePgxPackageZipToLocalFile(page: Page, config: ReportMatrixConfig) {
 	const packageZip = resolvePath(config.packageZip)
 	await page.route(config.packageUrl, async (route) => {
@@ -121,14 +128,19 @@ async function dragFilesIntoLab(page: Page, files: string[]) {
 	await page.dispatchEvent('body', 'dragenter', { dataTransfer })
 	await page.dispatchEvent('body', 'dragover', { dataTransfer })
 	await page.dispatchEvent('body', 'drop', { dataTransfer })
+	await dismissRememberFilesPrompt(page)
 }
 
 async function chooseFilesIntoLab(page: Page, files: string[]) {
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
-		page.getByText(/Drop a genome|Drop a different genome/).first().click(),
+		(async () => {
+			await page.getByText('Import genome', { exact: true }).click()
+			await page.getByLabel('Choose genome files').click()
+		})(),
 	])
 	await chooser.setFiles(files)
+	await dismissRememberFilesPrompt(page)
 }
 
 function mimeTypeFor(file: string): string {
@@ -161,7 +173,7 @@ async function runPgxAndOpenResult(page: Page) {
 	const runButton = page.getByText(/Run panel|Run assay/, { exact: true }).first()
 	await expect(runButton).toBeVisible({ timeout: 60_000 })
 	await runButton.click()
-	await expect(page.getByText('LATEST RESULT')).toBeVisible({ timeout: resultTimeout })
+	await expect(page.getByText('Latest result')).toBeVisible({ timeout: resultTimeout })
 	await expect(async () => {
 		const bodyText = await page.locator('body').innerText({ timeout: 10_000 })
 		expect(bodyText).not.toContain('Run failed')
@@ -354,7 +366,7 @@ test.describe('lab PGx-1 report matrix — web scenario', () => {
 			await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
 			await dismissDisclaimer(page)
 			await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
-			await expect(page.getByText(/Drop a genome|Drop a different genome/)).toBeVisible({ timeout: 30_000 })
+			await expect(page.getByText('Import genome', { exact: true })).toBeVisible({ timeout: 30_000 })
 			if (useDragDrop) {
 				await dragFilesIntoLab(page, caseDef.inputFiles)
 			} else {

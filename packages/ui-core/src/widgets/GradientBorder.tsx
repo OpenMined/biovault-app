@@ -21,7 +21,6 @@ export function GradientBorder({
         borderRadius: omRadius.l,
         padding: 1.5,
         background: `linear-gradient(135deg, ${stops})`,
-        boxShadow: '0 8px 18px rgba(0,0,0,0.18)',
         ...style,
       }}
     >
