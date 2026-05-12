@@ -88,6 +88,7 @@ import { useLocalSearchParams } from 'expo-router'
 import {
 	createContext,
 	createElement,
+	type ReactNode,
 	useCallback,
 	useContext,
 	useEffect,
@@ -1620,13 +1621,6 @@ export default function LabScreen() {
 
 	const labSetupBlocks = (
 		<>
-			<RemoteIntentCard
-				state={remoteIntent}
-				onDismiss={dismissRemoteIntent}
-				onFetch={fetchRemoteIntent}
-				onResolveDependencies={resolveRemoteDependencies}
-			/>
-
 			<DropZone
 				compact={Boolean(activeGenomeRef)}
 				dragActive={dragActive}
@@ -1797,11 +1791,50 @@ export default function LabScreen() {
 						<FeedbackFooterButton />
 					</ScrollView>
 				</View>
+				<RemoteIntentCard
+					state={remoteIntent}
+					onDismiss={dismissRemoteIntent}
+					onFetch={fetchRemoteIntent}
+					onResolveDependencies={resolveRemoteDependencies}
+				/>
 				{sourceViewer ? (
 					<SourceViewer viewer={sourceViewer} onClose={() => setSourceViewer(null)} />
 				) : null}
 			</SafeAreaView>
 		</ThemeCtx.Provider>
+	)
+}
+
+function IntentLaunchModalChrome({
+	busyBackdrop,
+	children,
+	onBackdropDismiss,
+}: {
+	busyBackdrop: boolean
+	children: ReactNode
+	onBackdropDismiss: () => void
+}) {
+	const { styles } = useTheme()
+	return (
+		<View style={[styles.sourceOverlay, styles.intentModalLayer]}>
+			<Pressable
+				accessibilityRole="button"
+				accessibilityLabel={busyBackdrop ? undefined : 'Close dialog'}
+				disabled={busyBackdrop}
+				onPress={busyBackdrop ? undefined : onBackdropDismiss}
+				style={styles.sourceBackdrop}
+			/>
+			<View style={[styles.sourcePanel, styles.intentModalSheet]}>
+				<ScrollView
+					contentContainerStyle={styles.intentModalScrollContent}
+					keyboardShouldPersistTaps="handled"
+					nestedScrollEnabled
+					style={styles.intentModalScroll}
+				>
+					{children}
+				</ScrollView>
+			</View>
+		</View>
 	)
 }
 
@@ -1819,12 +1852,16 @@ function RemoteIntentCard({
 	const { styles, mutedIconTone } = useTheme()
 	if (state.status === 'idle') return null
 
+	let busyBackdrop = false
+	let body: ReactNode = null
+
 	if (state.status === 'pending' || state.status === 'resolving' || state.status === 'file-loading' || state.status === 'error') {
 		const busy = state.status === 'resolving' || state.status === 'file-loading'
+		busyBackdrop = busy
 		const fileName = remoteLabFileName(state.intent.url)
 		const fileKind = remoteLabFileKind(state.intent.url)
 		const looksLikeFile = fileKind !== 'assay_python' && fileKind !== 'assay_yaml' && fileKind !== 'unknown'
-		return (
+		body = (
 			<View style={styles.intentCard}>
 				<View style={styles.intentHeader}>
 					<View style={styles.intentIcon}>
@@ -1879,10 +1916,8 @@ function RemoteIntentCard({
 				</View>
 			</View>
 		)
-	}
-
-	if (state.status === 'file-loaded') {
-		return (
+	} else if (state.status === 'file-loaded') {
+		body = (
 			<View style={styles.intentCard}>
 				<View style={styles.intentHeader}>
 					<View style={styles.intentIcon}>
@@ -1920,107 +1955,114 @@ function RemoteIntentCard({
 				</View>
 			</View>
 		)
-	}
-
-	const resource = state.resource
-	const resolvingDeps = state.status === 'resolving-dependencies'
-	const resolvedDeps = state.status === 'resolved' ? state.dependencies : []
-	return (
-		<View style={styles.intentCard}>
-			<View style={styles.intentHeader}>
-				<View style={styles.intentIcon}>
-					<OMIcon name="document-text-outline" tone="accent" size={18} />
-				</View>
-				<View style={styles.intentText}>
-					<OMText variant="caption" style={styles.intentKicker}>
-						{resourceKindLabel(resource.kind).toUpperCase()}
-					</OMText>
-					<OMText variant="headline" style={styles.intentTitle}>
-						{resource.title}
-					</OMText>
-					<OMText variant="caption" style={styles.intentUrl} numberOfLines={2}>
-						{resource.sourceUrl}
-					</OMText>
-				</View>
-				<Pressable onPress={onDismiss} style={styles.intentClose}>
-					<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
-				</Pressable>
-			</View>
-
-			<OMText variant="body" style={styles.intentBody}>
-				{resource.summary}
-			</OMText>
-			<View style={styles.intentMetaRow}>
-				<MetaChip label={`schema: ${resource.schema ?? 'none'}`} />
-				<MetaChip label={`version: ${resource.version ?? 'none'}`} />
-				<MetaChip label={`cache: ${resource.cacheStatus}`} />
-				<MetaChip label={`file: ${resource.name}`} />
-			</View>
-			{resource.cacheStatus === 'updated' ? (
-				<View style={styles.errorInlineBlock}>
-					<OMIcon name="alert-circle-outline" tone="danger" size={14} />
-					<OMText variant="caption" style={styles.errorInline}>
-						This URL differs from the cached copy
-						{resource.previousVersion ? ` (cached version ${resource.previousVersion})` : ''}. Fetching
-						dependencies will use the newly fetched version for this session.
-					</OMText>
-				</View>
-			) : null}
-
-			{resource.dependencies.length ? (
-				<View style={styles.intentDependencyList}>
-					<OMText variant="caption" style={styles.intentKicker}>
-						DEPENDENCIES
-					</OMText>
-					{resource.dependencies.slice(0, 8).map((dependency) => (
-						<OMText key={dependency.url} variant="caption" style={styles.intentDependency}>
-							{dependency.label}: {dependency.url}
+	} else {
+		const resource = state.resource
+		const resolvingDeps = state.status === 'resolving-dependencies'
+		const resolvedDeps = state.status === 'resolved' ? state.dependencies : []
+		busyBackdrop = resolvingDeps
+		body = (
+			<View style={styles.intentCard}>
+				<View style={styles.intentHeader}>
+					<View style={styles.intentIcon}>
+						<OMIcon name="document-text-outline" tone="accent" size={18} />
+					</View>
+					<View style={styles.intentText}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							{resourceKindLabel(resource.kind).toUpperCase()}
 						</OMText>
-					))}
-					{resource.dependencies.length > 8 ? (
-						<OMText variant="caption" style={styles.intentDependency}>
-							+{resource.dependencies.length - 8} more
+						<OMText variant="headline" style={styles.intentTitle}>
+							{resource.title}
 						</OMText>
-					) : null}
+						<OMText variant="caption" style={styles.intentUrl} numberOfLines={2}>
+							{resource.sourceUrl}
+						</OMText>
+					</View>
+					<Pressable onPress={onDismiss} style={styles.intentClose}>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
 				</View>
-			) : null}
 
-			{state.status === 'dependency-error' ? (
-				<View style={styles.errorInlineBlock}>
-					<OMIcon name="alert-circle-outline" tone="danger" size={14} />
-					<OMText variant="caption" style={styles.errorInline}>
-						{state.error}
-					</OMText>
+				<OMText variant="body" style={styles.intentBody}>
+					{resource.summary}
+				</OMText>
+				<View style={styles.intentMetaRow}>
+					<MetaChip label={`schema: ${resource.schema ?? 'none'}`} />
+					<MetaChip label={`version: ${resource.version ?? 'none'}`} />
+					<MetaChip label={`cache: ${resource.cacheStatus}`} />
+					<MetaChip label={`file: ${resource.name}`} />
 				</View>
-			) : null}
+				{resource.cacheStatus === 'updated' ? (
+					<View style={styles.errorInlineBlock}>
+						<OMIcon name="alert-circle-outline" tone="danger" size={14} />
+						<OMText variant="caption" style={styles.errorInline}>
+							This URL differs from the cached copy
+							{resource.previousVersion ? ` (cached version ${resource.previousVersion})` : ''}. Fetching
+							dependencies will use the newly fetched version for this session.
+						</OMText>
+					</View>
+				) : null}
 
-			{resolvedDeps.length ? (
-				<View style={styles.intentDependencyList}>
-					<OMText variant="caption" style={styles.intentKicker}>
-						FETCHED
-					</OMText>
-					<OMText variant="caption" style={styles.intentDependency}>
-						{resolvedDeps.length} dependency {resolvedDeps.length === 1 ? 'file' : 'files'} fetched for this session.
-					</OMText>
-				</View>
-			) : null}
-
-			<View style={styles.intentActions}>
-				<Pressable onPress={onDismiss} disabled={resolvingDeps} style={styles.intentSecondaryButton}>
-					<OMText variant="subtitle" style={styles.intentSecondaryText}>
-						Done
-					</OMText>
-				</Pressable>
 				{resource.dependencies.length ? (
-					<Pressable onPress={onResolveDependencies} disabled={resolvingDeps} style={styles.intentPrimaryButton}>
-						{resolvingDeps ? <ActivityIndicator color="#ffffff" size="small" /> : null}
-						<OMText variant="subtitle" style={styles.primaryButtonText}>
-							{resolvingDeps ? 'Fetching dependencies' : resolvedDeps.length ? 'Refetch dependencies' : 'Fetch dependencies'}
+					<View style={styles.intentDependencyList}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							DEPENDENCIES
+						</OMText>
+						{resource.dependencies.slice(0, 8).map((dependency) => (
+							<OMText key={dependency.url} variant="caption" style={styles.intentDependency}>
+								{dependency.label}: {dependency.url}
+							</OMText>
+						))}
+						{resource.dependencies.length > 8 ? (
+							<OMText variant="caption" style={styles.intentDependency}>
+								+{resource.dependencies.length - 8} more
+							</OMText>
+						) : null}
+					</View>
+				) : null}
+
+				{state.status === 'dependency-error' ? (
+					<View style={styles.errorInlineBlock}>
+						<OMIcon name="alert-circle-outline" tone="danger" size={14} />
+						<OMText variant="caption" style={styles.errorInline}>
+							{state.error}
+						</OMText>
+					</View>
+				) : null}
+
+				{resolvedDeps.length ? (
+					<View style={styles.intentDependencyList}>
+						<OMText variant="caption" style={styles.intentKicker}>
+							FETCHED
+						</OMText>
+						<OMText variant="caption" style={styles.intentDependency}>
+							{resolvedDeps.length} dependency {resolvedDeps.length === 1 ? 'file' : 'files'} fetched for this session.
+						</OMText>
+					</View>
+				) : null}
+
+				<View style={styles.intentActions}>
+					<Pressable onPress={onDismiss} disabled={resolvingDeps} style={styles.intentSecondaryButton}>
+						<OMText variant="subtitle" style={styles.intentSecondaryText}>
+							Done
 						</OMText>
 					</Pressable>
-				) : null}
+					{resource.dependencies.length ? (
+						<Pressable onPress={onResolveDependencies} disabled={resolvingDeps} style={styles.intentPrimaryButton}>
+							{resolvingDeps ? <ActivityIndicator color="#ffffff" size="small" /> : null}
+							<OMText variant="subtitle" style={styles.primaryButtonText}>
+								{resolvingDeps ? 'Fetching dependencies' : resolvedDeps.length ? 'Refetch dependencies' : 'Fetch dependencies'}
+							</OMText>
+						</Pressable>
+					) : null}
+				</View>
 			</View>
-		</View>
+		)
+	}
+
+	return (
+		<IntentLaunchModalChrome busyBackdrop={busyBackdrop} onBackdropDismiss={onDismiss}>
+			{body}
+		</IntentLaunchModalChrome>
 	)
 }
 
@@ -4444,6 +4486,22 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.borderStrong,
 			overflow: 'hidden',
 			boxShadow: `0 24px 70px ${p.shadow}`,
+		},
+		intentModalLayer: {
+			zIndex: 55,
+		},
+		intentModalSheet: {
+			maxWidth: 620,
+			width: '100%',
+		},
+		intentModalScroll: {
+			...(Platform.OS === 'web'
+				? ({ maxHeight: '82vh', width: '100%' } as object)
+				: { maxHeight: 620, width: '100%' }),
+		},
+		intentModalScrollContent: {
+			padding: omSpacing.m,
+			paddingBottom: omSpacing.xl,
 		},
 		sourceHead: {
 			flexDirection: 'row',
