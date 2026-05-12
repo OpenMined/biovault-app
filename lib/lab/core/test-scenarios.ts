@@ -5,6 +5,7 @@ export {
 	sharedLabTestScenarios,
 	webLabRunScenarios,
 	webPersistentHandleScenarios,
+	webReportMatrixScenarios,
 	type LabFormatMatrixScenario as LabTestScenario,
 	type LabTestAction,
 	type LabTestGenomeKind,

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WEB_URL="${WEB_URL:-http://localhost:8081}"
 PORT="${PORT:-8081}"
+WEB_URL_WAS_SET="${WEB_URL+x}"
+WEB_URL="${WEB_URL:-http://localhost:${PORT}}"
 LOG_DIR=".maestro-web/logs"
 FIXTURE_23ANDME="test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip"
 AUTO_WORKERS="$(node -e "const os=require('os'); console.log(os.availableParallelism?.() ?? os.cpus().length)")"
@@ -10,6 +11,7 @@ if [ -n "${FORCE_COLOR:-}" ]; then
   unset NO_COLOR
 fi
 
+MODE="default"
 PW_EXTRA=()
 for arg in "$@"; do
   case "$arg" in
@@ -19,6 +21,12 @@ for arg in "$@"; do
       ;;
     --debug)
       export PWDEBUG=1
+      ;;
+    --scenario|--scenarios)
+      MODE="scenario"
+      ;;
+    --pgx-report-scenario|--pgx-report)
+      MODE="pgx-report"
       ;;
     *)
       PW_EXTRA+=("$arg")
@@ -35,22 +43,57 @@ if [ ! -f "$FIXTURE_23ANDME" ]; then
   exit 1
 fi
 
+curl_web() {
+  curl --max-time 5 -sf "$WEB_URL" >/dev/null 2>&1
+}
+
+port_has_listener() {
+  nc -z -w 1 localhost "$1" >/dev/null 2>&1
+}
+
+if ! curl_web && [ -z "$WEB_URL_WAS_SET" ]; then
+  SELECTED_PORT=$((PORT + 1))
+  while port_has_listener "$SELECTED_PORT"; do
+    SELECTED_PORT=$((SELECTED_PORT + 1))
+  done
+  echo "==> $WEB_URL is not serving; using :$SELECTED_PORT for this run"
+  PORT="$SELECTED_PORT"
+  WEB_URL="http://localhost:${PORT}"
+fi
+
 WEB_PID=""
 cleanup() {
   [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-if ! curl -sf "$WEB_URL" >/dev/null 2>&1; then
-	echo "==> Starting Expo web on :$PORT (logs: $LOG_DIR/web.log)"
-	(EXPO_PUBLIC_DISABLE_ANALYTICS=1 npx expo start --web --port "$PORT" >"$LOG_DIR/web.log" 2>&1) &
-  WEB_PID=$!
-  for _ in {1..90}; do
-    curl -sf "$WEB_URL" >/dev/null 2>&1 && break
-    sleep 1
-  done
-  curl -sf "$WEB_URL" >/dev/null 2>&1 || {
+if ! curl_web; then
+  for _attempt in {1..10}; do
+    echo "==> Starting Expo web on :$PORT (logs: $LOG_DIR/web.log)"
+    (EXPO_PUBLIC_DISABLE_ANALYTICS=1 npx expo start --web --port "$PORT" >"$LOG_DIR/web.log" 2>&1) &
+    WEB_PID=$!
+    for _ in {1..90}; do
+      curl_web && break
+      kill -0 "$WEB_PID" 2>/dev/null || break
+      sleep 1
+    done
+    curl_web && break
+    if ! kill -0 "$WEB_PID" 2>/dev/null; then
+      wait "$WEB_PID" 2>/dev/null || true
+      WEB_PID=""
+      if grep -Eq 'Port .* (is being used|is running)' "$LOG_DIR/web.log"; then
+        PORT=$((PORT + 1))
+        WEB_URL="http://localhost:${PORT}"
+        echo "==> Expo reported a port conflict; retrying on :$PORT"
+        continue
+      fi
+    fi
     echo "Expo web failed to start. Last 50 lines:" >&2
+    tail -50 "$LOG_DIR/web.log" >&2
+    exit 1
+  done
+  curl_web || {
+    echo "Expo web failed to start after trying alternate ports. Last 50 lines:" >&2
     tail -50 "$LOG_DIR/web.log" >&2
     exit 1
   }
@@ -65,7 +108,21 @@ if ! env -u NO_COLOR -u FORCE_COLOR npx playwright install chromium; then
   exit 1
 fi
 
-SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-pgx.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
+case "$MODE" in
+  default)
+    SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-pgx.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
+    ;;
+  scenario)
+    SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
+    ;;
+  pgx-report)
+    SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
+    ;;
+  *)
+    echo "Unknown web test mode: $MODE" >&2
+    exit 2
+    ;;
+esac
 echo "==> Running Playwright specs: ${SPECS[*]}"
 if WEB_URL="$WEB_URL" env -u NO_COLOR -u FORCE_COLOR npx playwright test \
     --config=.maestro-web/playwright.config.ts \

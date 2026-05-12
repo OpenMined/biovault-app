@@ -122,8 +122,8 @@ jobs:
         run: ./lint.sh --check
 
   web:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -178,20 +178,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bioscript/cache/test-data
-          key: bioscript-test-data-web-v2
+          key: bioscript-test-data-web-pgx-v1
           restore-keys: bioscript-test-data-
 
       - name: Install Python test-data parser dependency
         run: python3 -m pip install PyYAML
 
       - name: Fetch web genomic test fixtures
-        run: |
-          BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 23andme --only genome_hu50B3F5_v5_Full.zip
-          BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 1k-genomes --only "NA06985.clean.vcf.gz*"
+        run: ./tools/fetch_test_data.sh --web-pgx-public
 
       - name: Verify web genomic test fixtures
         run: |
+          test -f test-data/23andme/v2/hu0199C8/23data20100526.txt.zip
+          test -f test-data/23andme/v3/huE4DAE4/huE4DAE4_20120522224129.txt.zip
+          test -f test-data/23andme/v4/huE18D82/genome__v4_Full_2016.txt.zip
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f test-data/dynamicdna/100001-synthetic/100001_X_X_GSAv3-DTC_GRCh38-07-12-2025.txt.zip
+          test -f test-data/ancestrydna/huE922FC/AncestryDNA.txt.zip
+          test -f test-data/familytreedna/hu17B792/2017-04-29_Family_Tree_DNA_Data.csv.zip
+          test -f test-data/genesforgood/hu80B047/GFG0_filtered_imputed_genotypes_noY_noMT_23andMe.txt.zip
+          test -f test-data/myheritage/hu33515F/MyHeritage_raw_dna_data.zip
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
           ls -la test-data/23andme/v5/hu50B3F5
@@ -205,6 +211,9 @@ jobs:
 
       - name: Run web tests
         run: ./test-web.sh
+
+      - name: Run PGx report browser matrix
+        run: PW_WORKERS=8 WEB_REPORT_NO_PRIVATE=1 ./test-web.sh --pgx-report-scenario
 
       - name: Upload web artifacts
         if: always()

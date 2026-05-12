@@ -487,7 +487,7 @@ export default function LabScreen() {
 	const [query, setQuery] = useState('')
 	const [assayUrlInput, setAssayUrlInput] = useState('')
 	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
-	const [category, setCategory] = useState<AssayCategory | null>(null)
+	const [category, setCategory] = useState<AssayCategory | null>('panel')
 	const [sampleLoadingId, setSampleLoadingId] = useState<string | null>(null)
 	const [sampleLoadError, setSampleLoadError] = useState<string | null>(null)
 	const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null)
@@ -1596,7 +1596,7 @@ function RemoteIntentCard({
 				</View>
 				<OMText variant="body" style={styles.intentBody}>
 					{looksLikeFile
-						? `BioVault will download ${fileName}, load it into the Lab, and cache it in this browser if it is ${remoteLabFileCacheLimitLabel()} or smaller.`
+						? `BioVault will download ${fileName}, load it into the Lab, and try to cache it in this browser.`
 						: 'BioVault will fetch the target file first, inspect its schema, then ask again before fetching any dependencies it references.'}
 				</OMText>
 				{looksLikeFile ? (
@@ -2279,19 +2279,27 @@ function AssayPicker({
 
 			{categories.length > 1 ? (
 				<View style={styles.chipRow}>
+					{[...categories]
+						.sort((a, b) => {
+							// Surface Panels first; everything else keeps its
+							// catalog order. "All" (null) is appended last.
+							if (a === 'panel') return -1
+							if (b === 'panel') return 1
+							return 0
+						})
+						.map((c) => (
+							<CategoryChip
+								key={c}
+								label={ASSAY_CATEGORY_LABELS[c]}
+								active={category === c}
+								onPress={() => onCategoryChange(category === c ? null : c)}
+							/>
+						))}
 					<CategoryChip
 						label="All"
 						active={category === null}
 						onPress={() => onCategoryChange(null)}
 					/>
-					{categories.map((c) => (
-						<CategoryChip
-							key={c}
-							label={ASSAY_CATEGORY_LABELS[c]}
-							active={category === c}
-							onPress={() => onCategoryChange(category === c ? null : c)}
-						/>
-					))}
 				</View>
 			) : null}
 
@@ -2301,7 +2309,7 @@ function AssayPicker({
 				</OMText>
 			) : (
 				<View style={styles.pickerList}>
-					{results.map((assay) => {
+						{results.map((assay, index) => {
 						const displayKind = assayDisplayKind(assay)
 						const isPanel = isSessionLabAssay(assay) && displayKind === 'panel'
 						const isRemote = isSessionLabAssay(assay)
@@ -2322,9 +2330,9 @@ function AssayPicker({
 							: 'Assay is not compatible with this genome format.'
 						const isRunning = runningAssayId === assay.id
 						const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length)
-						return (
-							<Pressable
-								key={assay.id}
+							return (
+								<Pressable
+									key={`${assay.id}-${index}`}
 								onPress={() => onRun(assay)}
 								disabled={disabled}
 								style={[

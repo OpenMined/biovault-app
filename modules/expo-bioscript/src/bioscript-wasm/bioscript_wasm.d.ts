@@ -89,20 +89,20 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly resolvePackageReleaseText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly resolvePackageZipBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly verifyPackageArtifactSha256: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly start: () => void;
-    readonly runPackageReportBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
-    readonly runPackageReportFromCram: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number) => [number, number, number, number];
-    readonly runPackageReportFromVcf: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly lookupGenotypeBytesRsids: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupVcfVariants: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly runPackageReportBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly runPackageReportFromCram: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number) => [number, number, number, number];
+    readonly runPackageReportFromVcf: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
+    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly resolvePackageReleaseText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly resolvePackageZipBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly verifyPackageArtifactSha256: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

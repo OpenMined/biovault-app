@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Shim that looks like `bioscript/bs` to callers (e.g. exvitae's
+# test_reports.py invoked via `./test.sh --bioscript /path/to/bs-wasm`)
+# but routes the `report` subcommand through the wasm artifact instead of
+# the rust CLI. Used for parity testing.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec node "${SCRIPT_DIR}/bs-wasm.mjs" "$@"
