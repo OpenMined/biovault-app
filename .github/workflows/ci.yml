@@ -22,18 +22,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          git config --global url.https://github.com/.insteadOf git@github.com:
-          git -C bioscript submodule sync --recursive
-          git -C bioscript submodule update --init --recursive --depth 1
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -74,18 +63,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          git config --global url.https://github.com/.insteadOf git@github.com:
-          git -C bioscript submodule sync --recursive
-          git -C bioscript submodule update --init --recursive --depth 1
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -134,18 +112,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          git config --global url.https://github.com/.insteadOf git@github.com:
-          git -C bioscript submodule sync --recursive
-          git -C bioscript submodule update --init --recursive --depth 1
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -243,15 +210,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -338,15 +297,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -430,15 +381,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -599,15 +542,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Initialize CI submodules
-        run: |
-          BIOSCRIPT_SHA="$(git rev-parse HEAD:bioscript)"
-          rm -rf bioscript
-          git init bioscript
-          git -C bioscript remote add origin https://github.com/OpenMined/bioscript.git
-          git -C bioscript fetch --depth 1 origin "$BIOSCRIPT_SHA"
-          git -C bioscript checkout --detach FETCH_HEAD
-          rm -rf exvitae
-          git clone --depth 1 https://github.com/madhavajay/exvitae.git exvitae
+        run: ./scripts/init-ci-submodules.sh
 
       - name: Enable KVM
         run: |
