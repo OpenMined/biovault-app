@@ -11,8 +11,6 @@ env:
 
 jobs:
   rust:
-    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
-    if: false
     # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
     # bioscript is a submodule with its own CI.
     runs-on: ubuntu-latest
@@ -60,8 +58,6 @@ jobs:
         run: ./test.sh
 
   lint:
-    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
-    if: false
     # Runs the same ./lint.sh that developers use locally, so CI output
     # matches local output exactly. Covers Rust (bioscript/rust +
     # desktop/src-tauri) and TypeScript (root, desktop, packages/*).
@@ -150,6 +146,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Cache Rust (bioscript parity)
         uses: Swatinem/rust-cache@v2
         with:
@@ -181,11 +180,8 @@ jobs:
           key: bioscript-test-data-web-pgx-v1
           restore-keys: bioscript-test-data-
 
-      - name: Install Python test-data parser dependency
-        run: python3 -m pip install PyYAML
-
       - name: Fetch web genomic test fixtures
-        run: ./tools/fetch_test_data.sh --web-pgx-public
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
 
       - name: Verify web genomic test fixtures
         run: |
@@ -226,6 +222,8 @@ jobs:
           if-no-files-found: ignore
 
   desktop-linux:
+    # Disabled while focusing CI on rust, lint, and web stability.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -319,6 +317,8 @@ jobs:
           if-no-files-found: ignore
 
   desktop-macos:
+    # Disabled while focusing CI on rust, lint, and web stability.
+    if: false
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -407,6 +407,8 @@ jobs:
           if-no-files-found: ignore
 
   ios:
+    # Disabled while focusing CI on rust, lint, and web stability.
+    if: false
     # Namespace default is now Tahoe 26.3.1 + Xcode 26.3 — matches local
     # dev (Xcode 26.x). Should handle expo-modules-core's Swift concurrency.
     runs-on: namespace-profile-mac-medium
@@ -574,7 +576,7 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    # Temporarily disabled while iterating on iOS CI. Re-enable by removing if: false.
+    # Disabled while focusing CI on rust, lint, and web stability.
     if: false
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 90
