@@ -3,7 +3,14 @@ set -euo pipefail
 
 PORT="${PORT:-8081}"
 WEB_URL_WAS_SET="${WEB_URL+x}"
-WEB_URL="${WEB_URL:-http://localhost:${PORT}}"
+WEB_SECURE_ORIGIN="${WEB_SECURE_ORIGIN:-0}"
+WEB_DOMAIN="${WEB_DOMAIN:-dev-app.biovault.net}"
+WEB_SHELL_PORT="${WEB_SHELL_PORT:-4443}"
+if [[ "$WEB_SECURE_ORIGIN" == "1" && -z "$WEB_URL_WAS_SET" ]]; then
+  WEB_URL="https://${WEB_DOMAIN}:${WEB_SHELL_PORT}/web"
+else
+  WEB_URL="${WEB_URL:-http://localhost:${PORT}}"
+fi
 LOG_DIR=".maestro-web/logs"
 FIXTURE_23ANDME="test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip"
 AUTO_WORKERS="$(node -e "const os=require('os'); console.log(os.availableParallelism?.() ?? os.cpus().length)")"
@@ -44,14 +51,18 @@ if [ ! -f "$FIXTURE_23ANDME" ]; then
 fi
 
 curl_web() {
-  curl --max-time 5 -sf "$WEB_URL" >/dev/null 2>&1
+  local url="$WEB_URL"
+  if [[ "$WEB_SECURE_ORIGIN" == "1" && "$url" == */web ]]; then
+    url="${url}/"
+  fi
+  curl --max-time 5 -Lskf "$url" >/dev/null 2>&1
 }
 
 port_has_listener() {
   nc -z -w 1 localhost "$1" >/dev/null 2>&1
 }
 
-if ! curl_web && [ -z "$WEB_URL_WAS_SET" ]; then
+if ! curl_web && [ -z "$WEB_URL_WAS_SET" ] && [[ "$WEB_SECURE_ORIGIN" != "1" ]]; then
   SELECTED_PORT=$((PORT + 1))
   while port_has_listener "$SELECTED_PORT"; do
     SELECTED_PORT=$((SELECTED_PORT + 1))
@@ -68,35 +79,56 @@ cleanup() {
 trap cleanup EXIT
 
 if ! curl_web; then
-  for _attempt in {1..10}; do
-    echo "==> Starting Expo web on :$PORT (logs: $LOG_DIR/web.log)"
-    (EXPO_PUBLIC_DISABLE_ANALYTICS=1 npx expo start --web --port "$PORT" >"$LOG_DIR/web.log" 2>&1) &
+  if [[ "$WEB_SECURE_ORIGIN" == "1" && -z "$WEB_URL_WAS_SET" ]]; then
+    echo "==> Starting secure web shell on ${WEB_URL} (logs: $LOG_DIR/web.log)"
+    (EXPO_PUBLIC_DISABLE_ANALYTICS=1 \
+      DEV_WEB_OPEN=0 \
+      DEV_WEB_HTTPS=1 \
+      DEV_WEB_ALLOW_SELF_SIGNED=1 \
+      DEV_WEB_DOMAIN="$WEB_DOMAIN" \
+      DEV_WEB_PORT="$WEB_SHELL_PORT" \
+      ./dev-web.sh >"$LOG_DIR/web.log" 2>&1) &
     WEB_PID=$!
     for _ in {1..90}; do
       curl_web && break
       kill -0 "$WEB_PID" 2>/dev/null || break
       sleep 1
     done
-    curl_web && break
+  else
+    for _attempt in {1..10}; do
+      echo "==> Starting Expo web on :$PORT (logs: $LOG_DIR/web.log)"
+      (EXPO_PUBLIC_DISABLE_ANALYTICS=1 BROWSER=none npx expo start --web --localhost --port "$PORT" >"$LOG_DIR/web.log" 2>&1) &
+      WEB_PID=$!
+      for _ in {1..90}; do
+        curl_web && break
+        kill -0 "$WEB_PID" 2>/dev/null || break
+        sleep 1
+      done
+      curl_web && break
+      if ! kill -0 "$WEB_PID" 2>/dev/null; then
+        wait "$WEB_PID" 2>/dev/null || true
+        WEB_PID=""
+        if grep -Eq 'Port .* (is being used|is running)' "$LOG_DIR/web.log"; then
+          PORT=$((PORT + 1))
+          WEB_URL="http://localhost:${PORT}"
+          echo "==> Expo reported a port conflict; retrying on :$PORT"
+          continue
+        fi
+      fi
+      echo "Expo web failed to start. Last 50 lines:" >&2
+      tail -50 "$LOG_DIR/web.log" >&2
+      exit 1
+    done
+  fi
+  if ! curl_web; then
     if ! kill -0 "$WEB_PID" 2>/dev/null; then
       wait "$WEB_PID" 2>/dev/null || true
       WEB_PID=""
-      if grep -Eq 'Port .* (is being used|is running)' "$LOG_DIR/web.log"; then
-        PORT=$((PORT + 1))
-        WEB_URL="http://localhost:${PORT}"
-        echo "==> Expo reported a port conflict; retrying on :$PORT"
-        continue
-      fi
     fi
     echo "Expo web failed to start. Last 50 lines:" >&2
     tail -50 "$LOG_DIR/web.log" >&2
     exit 1
-  done
-  curl_web || {
-    echo "Expo web failed to start after trying alternate ports. Last 50 lines:" >&2
-    tail -50 "$LOG_DIR/web.log" >&2
-    exit 1
-  }
+  fi
 fi
 
 echo "==> Checking monty artifact freshness"

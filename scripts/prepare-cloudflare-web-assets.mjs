@@ -1,33 +1,63 @@
-import { closeSync, cpSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join, relative } from 'node:path';
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const sourceDir = 'dist';
 const deployDir = 'dist-cloudflare';
 const webDir = join(deployDir, 'web');
 const maxAssetBytes = 20 * 1024 * 1024;
+const metricsSiteId = process.env.BIOVAULT_METRICS_SITE_ID ?? '6';
 
-rmSync(deployDir, { force: true, recursive: true });
-mkdirSync(webDir, { recursive: true });
-cpSync(sourceDir, webDir, { recursive: true });
-writeFileSync(join(deployDir, 'index.html'), landingPageHtml());
+export function prepareCloudflareWebAssets() {
+  rmSync(deployDir, { force: true, recursive: true });
+  mkdirSync(webDir, { recursive: true });
+  cpSync(sourceDir, webDir, { recursive: true });
+  writeFileSync(join(deployDir, 'index.html'), landingPageHtml());
+  injectMetricsScript(join(webDir, 'index.html'));
 
-let splitCount = 0;
+  let splitCount = 0;
 
-for (const filePath of walkFiles(deployDir)) {
-  const stat = statSync(filePath);
-  if (stat.size <= maxAssetBytes) continue;
+  for (const filePath of walkFiles(deployDir)) {
+    const stat = statSync(filePath);
+    if (stat.size <= maxAssetBytes) continue;
 
-  const manifest = splitAsset(filePath, stat.size);
-  writeFileSync(`${filePath}.chunks.json`, `${JSON.stringify(manifest)}\n`);
-  rmSync(filePath);
-  splitCount += 1;
+    const manifest = splitAsset(filePath, stat.size);
+    writeFileSync(`${filePath}.chunks.json`, `${JSON.stringify(manifest)}\n`);
+    rmSync(filePath);
+    splitCount += 1;
+  }
+
+  console.log(
+    splitCount === 0
+      ? '[prepare-cloudflare-web] no assets needed splitting'
+      : `[prepare-cloudflare-web] split ${splitCount} oversized asset(s) into <= ${maxAssetBytes} byte chunks`,
+  );
 }
 
-console.log(
-  splitCount === 0
-    ? '[prepare-cloudflare-web] no assets needed splitting'
-    : `[prepare-cloudflare-web] split ${splitCount} oversized asset(s) into <= ${maxAssetBytes} byte chunks`,
-);
+function metricsScriptTag(siteId = metricsSiteId) {
+  return `<script src="https://metrics.syftbox.net/api/script.js" data-site-id="${escapeHtml(siteId)}" defer></script>`;
+}
+
+function injectMetricsScript(htmlPath) {
+  if (!existsSync(htmlPath)) {
+    console.warn(`[prepare-cloudflare-web] ${relative(deployDir, htmlPath)} not found; metrics script was not injected`);
+    return;
+  }
+  const html = readFileSync(htmlPath, 'utf8');
+  if (html.includes('metrics.syftbox.net/api/script.js')) {
+    return;
+  }
+  const tag = metricsScriptTag();
+  const next = html.includes('</head>')
+    ? html.replace('</head>', `  ${tag}\n</head>`)
+    : `${tag}\n${html}`;
+  writeFileSync(htmlPath, next);
+  console.log(`[prepare-cloudflare-web] injected metrics script into ${relative(deployDir, htmlPath)}`);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  prepareCloudflareWebAssets();
+}
 
 function* walkFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -74,13 +104,18 @@ function splitAsset(filePath, totalSize) {
   };
 }
 
-function landingPageHtml() {
+export function landingPageHtml(options = {}) {
+  const pageMetricsSiteId = options.metricsSiteId ?? metricsSiteId;
+  const metricsScriptUrl = options.metricsScriptCacheBust
+    ? `https://metrics.syftbox.net/api/script.js?v=${encodeURIComponent(String(options.metricsScriptCacheBust))}`
+    : 'https://metrics.syftbox.net/api/script.js';
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BioVault</title>
+  <script src="${escapeHtml(metricsScriptUrl)}" data-site-id="${escapeHtml(pageMetricsSiteId)}" defer></script>
   <style>
     :root {
       color-scheme: dark;
@@ -99,21 +134,41 @@ function landingPageHtml() {
       min-height: 100vh;
       margin: 0 auto;
       display: grid;
-      grid-template-rows: 1fr auto;
-      gap: 44px;
+      grid-template-rows: auto 1fr auto;
+      gap: 34px;
       padding: 56px 0;
     }
-    .hero {
-      display: grid;
-      align-content: center;
-      justify-items: start;
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
     }
-    .eyebrow {
+    .brand {
       color: #53bea9;
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0;
       text-transform: uppercase;
+    }
+    .contact-link {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      padding: 0 16px;
+      color: #f7f4ef;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .hero {
+      display: grid;
+      align-content: center;
+      justify-items: start;
     }
     h1 {
       max-width: 760px;
@@ -190,27 +245,66 @@ function landingPageHtml() {
       font-size: 13px;
       font-weight: 700;
     }
+    .footer-note {
+      margin-top: 18px;
+      text-align: center;
+      color: rgba(247, 244, 239, 0.52);
+      font-size: 14px;
+    }
+    .footer-note a {
+      color: #53bea9;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    @media (max-width: 520px) {
+      main {
+        width: min(100% - 28px, 1040px);
+        padding: 28px 0;
+      }
+      .topbar {
+        align-items: flex-start;
+      }
+      .contact-link {
+        padding: 0 12px;
+      }
+    }
   </style>
 </head>
 <body>
   <main>
+    <header class="topbar">
+      <div class="brand">BioVault</div>
+      <a class="contact-link" href="mailto:contact@biovault.net">Contact</a>
+    </header>
     <section class="hero">
-      <div class="eyebrow">BioVault</div>
       <h1>Private genomic analysis on your device.</h1>
       <p>Run genomic analysis locally in your browser. Desktop and mobile apps are coming next.</p>
       <a class="primary-action" href="/web/"><strong>Run in Browser</strong><span>WASM / Rust</span></a>
     </section>
-    <nav class="platforms" aria-label="Coming soon platforms" aria-disabled="true">
-      <div class="platform" aria-disabled="true">${appleIcon()}<span>Mac</span></div>
-      <div class="platform" aria-disabled="true">${windowsIcon()}<span>Windows</span></div>
-      <div class="platform" aria-disabled="true">${linuxIcon()}<span>Linux</span></div>
-      <div class="platform" aria-disabled="true">${phoneIcon()}<span>iOS</span></div>
-      <div class="platform" aria-disabled="true">${androidIcon()}<span>Android</span></div>
-    </nav>
+    <footer>
+      <nav class="platforms" aria-label="Coming soon platforms" aria-disabled="true">
+        <div class="platform" aria-disabled="true">${appleIcon()}<span>Mac</span></div>
+        <div class="platform" aria-disabled="true">${windowsIcon()}<span>Windows</span></div>
+        <div class="platform" aria-disabled="true">${linuxIcon()}<span>Linux</span></div>
+        <div class="platform" aria-disabled="true">${phoneIcon()}<span>iOS</span></div>
+        <div class="platform" aria-disabled="true">${androidIcon()}<span>Android</span></div>
+      </nav>
+      <div class="footer-note">
+        <a href="mailto:contact@biovault.net?subject=BioVault%20Feedback%20or%20Feature%20Request">Feedback or Request a Feature</a>
+      </div>
+    </footer>
   </main>
 </body>
 </html>
 `;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 }
 
 function appleIcon() {

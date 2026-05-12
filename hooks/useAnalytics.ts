@@ -1,7 +1,7 @@
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAnalytics } from '@/lib/analytics';
 import React, { useEffect, useMemo, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 
 interface UseAnalyticsOptions {
   trackScreenView?: boolean;
@@ -41,6 +41,11 @@ export const useAnalytics = (options: UseAnalyticsOptions = {}) => {
 
   useEffect(() => {
     if (!trackAppState || !analytics) return;
+    // On web, AppState is wired to document visibility/focus, which fires on
+    // every Cmd-Tab, DevTools focus, or browser-tab throttle — producing noisy
+    // app_resumed/app_backgrounded pairs that don't correspond to mobile-style
+    // backgrounding. Skip the subscription on web.
+    if (Platform.OS === 'web') return;
 
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {

@@ -1,5 +1,8 @@
 import type { LabFileDropSubscription, LabFilePickerAdapter } from '@/lib/lab/adapters/file-picker'
 
+const ENABLE_CHROME_DROPPED_FILE_HANDLES =
+	process.env.EXPO_PUBLIC_ENABLE_CHROME_DROPPED_FILE_HANDLES === '1'
+
 export function createDomLabFilePickerAdapter(): LabFilePickerAdapter {
 	return {
 		canDropFiles: true,
@@ -63,7 +66,8 @@ function subscribeToFileDrops(subscription: LabFileDropSubscription): () => void
 		stop(event)
 		depth = 0
 		subscription.onActiveChange(false)
-		subscription.onFiles(Array.from(event.dataTransfer?.files ?? []), event.dataTransfer?.items)
+		const files = Array.from(event.dataTransfer?.files ?? [])
+		subscription.onFiles(files, ENABLE_CHROME_DROPPED_FILE_HANDLES ? event.dataTransfer?.items : undefined)
 	}
 
 	window.addEventListener('dragenter', onEnter)

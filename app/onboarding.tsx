@@ -3,6 +3,7 @@ import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
 import { useColorScheme } from '@/lib/color-theme'
+import { getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
 import { setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
 import { omGradients, omRadius, omSpacing } from '@/styles/brand'
 import { labPalettes, type LabPalette } from '@/styles/lab-theme'
@@ -21,6 +22,14 @@ import {
 } from 'react-native'
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
+
+function openOpenMinedWebsite() {
+	if (Platform.OS === 'web' && typeof window !== 'undefined') {
+		window.open('https://www.openmined.org', '_blank', 'noopener,noreferrer')
+		return
+	}
+	void Linking.openURL('https://www.openmined.org')
+}
 
 export default function OnboardingScreen() {
 	const scheme = useColorScheme()
@@ -73,9 +82,14 @@ export default function OnboardingScreen() {
 
 	const handleContinue = () => {
 		if (!hasAgreed) return
+		const deferredLaunchUrl = Platform.OS === 'web' ? getDeferredLaunchUrlSync() : null
 		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
 		setAppPreferenceSync('hasCompletedOnboarding', 'true')
 		setExploreDemoModeEnabledSync(true)
+		if (deferredLaunchUrl && Platform.OS === 'web' && typeof window !== 'undefined') {
+			window.location.replace(deferredLaunchUrl)
+			return
+		}
 		router.replace('/(tabs)' as any)
 	}
 
@@ -148,6 +162,17 @@ export default function OnboardingScreen() {
 									diagnosis or treatment.
 								</OMText>
 							</View>
+
+							<View style={styles.metricsPanel}>
+								<OMText variant="caption" style={styles.metricsKicker}>
+									TELEMETRY
+								</OMText>
+								<OMText variant="body" style={styles.metricsBody}>
+									We collect privacy-preserving usage metrics (such as page views
+									and returning visits) to improve the app. Your genomic data or
+									analysis results are never included.
+								</OMText>
+							</View>
 						</View>
 
 						<View style={styles.footer}>
@@ -171,7 +196,7 @@ export default function OnboardingScreen() {
 							/>
 
 							<Pressable
-								onPress={() => Linking.openURL('https://www.openmined.org')}
+								onPress={openOpenMinedWebsite}
 								style={styles.footerCreditRow}
 							>
 								<OMText variant="caption" style={styles.footerCredit}>
@@ -282,6 +307,25 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		infoCardBorder: {
 			borderRadius: omRadius.l,
 			padding: 1.5,
+		},
+		metricsPanel: {
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.l,
+			paddingVertical: omSpacing.l,
+			borderRadius: omRadius.l,
+			backgroundColor: p.accentSoft,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+			marginBottom: omSpacing.m,
+		},
+		metricsKicker: {
+			color: p.accentStrong,
+			letterSpacing: 1.4,
+		},
+		metricsBody: {
+			color: p.text,
+			fontSize: 15,
+			lineHeight: 22,
 		},
 		infoCard: {
 			margin: 1.5,

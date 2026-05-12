@@ -3,6 +3,7 @@ import { ExpoConfig } from 'expo/config'
 const APP_VARIANT = process.env.APP_VARIANT ?? 'development'
 const IS_DEV = APP_VARIANT === 'development'
 const IS_PREVIEW = process.env.APP_VARIANT === 'preview'
+const IS_PROD = APP_VARIANT === 'production'
 const ANDROID_GOOGLE_SERVICES_FILE = IS_DEV
 	? './google-services-dev.json'
 	: './google-services-prod.json'
@@ -87,6 +88,16 @@ const config: ExpoConfig = {
 	extra: {
 		eas: {
 			projectId: '6e5fc48a-f9db-4c16-8810-21acf9d978b0',
+		},
+		analytics: {
+			variant: APP_VARIANT,
+			apiEndpoint: process.env.BIOVAULT_METRICS_ENDPOINT ?? 'https://metrics.syftbox.net/api',
+			appDomain:
+				process.env.BIOVAULT_METRICS_DOMAIN ??
+				(IS_PROD ? 'app.biovault.net' : 'dev-app.biovault.net'),
+			siteId:
+				process.env.BIOVAULT_METRICS_SITE_ID ??
+				(IS_PROD ? '6' : '4'),
 		},
 	},
 	plugins: [

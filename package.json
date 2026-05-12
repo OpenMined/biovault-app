@@ -23,6 +23,7 @@
     "build-prod": "npx eas build --profile production --platform ios --local --clear-cache",
     "build-preview-android": "npx eas build --profile preview --platform android --local --clear-cache",
     "prepare-cloudflare-web": "node ./scripts/prepare-cloudflare-web-assets.mjs",
+    "rybbit": "node ./scripts/rybbit-api.mjs",
     "deploy-web-prod": "EXPO_BASE_URL=/web npx expo export --platform web && npm run prepare-cloudflare-web && npx --yes wrangler deploy",
     "deploy-preview-android": "npx eas-cli build --profile preview --platform android --clear-cache",
     "deploy-dev": "npx eas-cli build --profile development --platform ios --clear-cache",

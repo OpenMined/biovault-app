@@ -3,7 +3,9 @@ import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
+import { getAnalytics } from '@/lib/analytics'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
+import { clearDeferredLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
 import {
 	deleteHandles,
 	getHandles,
@@ -19,6 +21,7 @@ import {
 	type AssayCategory,
 	getAssayById,
 	type LabAssay,
+	LAB_ASSAYS,
 	LAB_TEST_FILES,
 	type LabTestFileBundle,
 	listAssayCategories,
@@ -77,7 +80,7 @@ import {
 } from '@/lib/remote-lab-file'
 import type { AssayLang, LabRunArtifact, LabRunProgress, LabRunSuccess, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
-import { warmupMontyRuntime, type BioscriptPackageFile } from '@/modules/expo-bioscript'
+import { inspectBytes, warmupMontyRuntime, type BioscriptInspection, type BioscriptPackageFile } from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
 import { labPalettes, type LabPalette } from '@/styles/lab-theme'
 import { Asset } from 'expo-asset'
@@ -114,6 +117,8 @@ type ThemeValue = { palette: LabPalette; styles: Styles; mutedIconTone: 'muted' 
 
 const ThemeCtx = createContext<ThemeValue | null>(null)
 const microscopeIconUri = Asset.fromModule(require('../../../assets/images/microscope.svg')).uri
+const ENABLE_CHROME_DROPPED_FILE_HANDLES =
+	process.env.EXPO_PUBLIC_ENABLE_CHROME_DROPPED_FILE_HANDLES === '1'
 
 function useTheme(): ThemeValue {
 	const v = useContext(ThemeCtx)
@@ -142,6 +147,7 @@ type SourceViewerState = {
 	title: string
 }
 type SessionLabAssay = LabAssay & {
+	analyticsAssayId?: string
 	dependencyUrls: string[]
 	file: File
 	packageEntrypoint?: string
@@ -297,6 +303,102 @@ function normalizeRemoteAssayUrl(url: string): string {
 	}
 }
 
+function assayAnalyticsId(assay: LabAssay): string {
+	if (isSessionLabAssay(assay) && assay.analyticsAssayId) return assay.analyticsAssayId
+	return assay.id
+}
+
+function remoteResourceAnalyticsId(resource: ResolvedRemoteResource, catalogAssays: LabAssay[]): string {
+	const normalizedSourceUrl = normalizeRemoteAssayUrl(resource.sourceUrl)
+	const catalogMatch = catalogAssays.find((assay) => normalizeRemoteAssayUrl(assay.url) === normalizedSourceUrl)
+	if (catalogMatch) return catalogMatch.id
+	const baseName = resource.name.replace(/\.(yaml|yml|py)$/i, '')
+	return baseName || resource.title || `remote-${resource.sha256.slice(0, 16)}`
+}
+
+function assayAnalyticsProperties(assay: LabAssay): Record<string, string> {
+	const properties: Record<string, string> = {
+		assayId: assayAnalyticsId(assay),
+	}
+	if (isSessionLabAssay(assay)) {
+		properties.internalAssayId = assay.id
+		properties.remoteKind = assay.remoteKind
+		properties.sourceUrl = assay.url
+		if (assay.packageSourceUrl) properties.packageSourceUrl = assay.packageSourceUrl
+		if (assay.packageEntrypoint) properties.packageEntrypoint = assay.packageEntrypoint
+	}
+	return properties
+}
+
+function genomeRelatedFileNames(genome: LabGenomeRef): string[] {
+	if (genome.kind === 'cram') {
+		return [
+			genome.primary.name,
+			genome.crai?.name,
+			genome.fasta?.name,
+			genome.fai?.name,
+		].filter((name): name is string => Boolean(name))
+	}
+	if (genome.kind === 'vcf') {
+		return [genome.primary.name, genome.tbi?.name].filter((name): name is string => Boolean(name))
+	}
+	return [genome.primary.name]
+}
+
+function safeGenomicExtension(name: string): string {
+	const lower = name.toLowerCase()
+	const knownExtensions = [
+		'.vcf.gz.tbi',
+		'.cram.crai',
+		'.fasta.fai',
+		'.fa.fai',
+		'.vcf.gz',
+		'.fasta',
+		'.cram',
+		'.crai',
+		'.fai',
+		'.vcf',
+		'.zip',
+		'.txt',
+		'.tsv',
+		'.csv',
+		'.fa',
+	]
+	const match = knownExtensions.find((extension) => lower.endsWith(extension))
+	return match ?? (lower.match(/\.[a-z0-9]+$/)?.[0] ?? '')
+}
+
+function genomeRelatedFileExtensions(genome: LabGenomeRef): string[] {
+	return genomeRelatedFileNames(genome).map(safeGenomicExtension).filter(Boolean)
+}
+
+function fileHeuristicAnalyticsProperties(
+	genome: LabGenomeRef,
+	inspection: BioscriptInspection,
+): Record<string, unknown> {
+	return {
+		assembly: inspection.assembly ?? '',
+		confidence: inspection.confidence,
+		container: inspection.container,
+		detectedKind: inspection.detectedKind,
+		durationMs: inspection.durationMs,
+		evidence: inspection.evidence,
+		fileExtension: safeGenomicExtension(inspection.fileName),
+		genomeKind: genome.kind,
+		hasIndex: inspection.hasIndex ?? false,
+		inputFormat: labGenomeInputFormat(genome),
+		phased: inspection.phased ?? false,
+		platformVersion: inspection.source?.platformVersion ?? '',
+		referenceMatches: inspection.referenceMatches ?? false,
+		relatedFileExtensions: genomeRelatedFileExtensions(genome),
+		selectedEntryExtension: inspection.selectedEntry ? safeGenomicExtension(inspection.selectedEntry) : '',
+		sourceConfidence: inspection.source?.confidence ?? '',
+		sourceEvidence: inspection.source?.evidence ?? [],
+		sourceVendor: inspection.source?.vendor ?? '',
+		warnings: inspection.warnings,
+	}
+}
+
 function panelVariantAssays(panel: SessionLabAssay, assays: SessionLabAssay[]): SessionLabAssay[] {
 	const dependencyUrls = new Set(panel.dependencyUrls)
 	if (!dependencyUrls.size) return []
@@ -436,6 +538,9 @@ async function selectPersistentHandlesForPending(
 		}) => Promise<FileSystemFileHandle[]>
 	}).showOpenFilePicker
 	if (typeof picker !== 'function') {
+		if (typeof window !== 'undefined' && !window.isSecureContext) {
+			throw new Error('File picker handle persistence requires HTTPS or localhost in Chrome.')
+		}
 		throw new Error('File picker handle persistence is not supported in this browser.')
 	}
 
@@ -532,12 +637,13 @@ export default function LabScreen() {
 	}, [])
 
 	const ingestManyRefs = useCallback(
-		(refs: LabFileRef[]) => {
+		(refs: LabFileRef[], eventProperties?: Record<string, unknown>) => {
 			const ordered = sortLabFileRefsForIngestion(refs)
 			trackEvent('lab_files_added', {
 				fileKinds: ordered.map((ref) => ref.kind),
 				fileSources: ordered.map((ref) => ref.source),
 				totalFiles: ordered.length,
+				...eventProperties,
 			})
 			const primaryCount = ordered.filter((ref) => isPrimaryGenomeFileKind(ref.kind)).length
 			if (primaryCount === 1) {
@@ -560,8 +666,8 @@ export default function LabScreen() {
 	)
 
 	const ingestMany = useCallback(
-		(files: File[], source: LabFileRef['source'] = 'local') => {
-			ingestManyRefs(fileAdapterRef.current.fromPlatformFiles(files, source))
+		(files: File[], source: LabFileRef['source'] = 'local', eventProperties?: Record<string, unknown>) => {
+			ingestManyRefs(fileAdapterRef.current.fromPlatformFiles(files, source), eventProperties)
 		},
 		[ingestManyRefs],
 	)
@@ -615,36 +721,38 @@ export default function LabScreen() {
 					typeof (item as DataTransferItem & { getAsFileSystemHandle?: unknown }).getAsFileSystemHandle === 'function'
 				),
 			})
-			for (const item of itemList) {
-				if (item.kind !== 'file') continue
-				const getHandle = (item as DataTransferItem & {
-					getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>
-				}).getAsFileSystemHandle
-				if (typeof getHandle !== 'function') continue
-				try {
-					const handle = await getHandle.call(item)
-					logPersistentHandleDebug('drop handle resolved', {
-						handleKind: handle?.kind ?? 'none',
-						handleName: handle?.name ?? 'none',
-					})
-					if (handle?.kind === 'file') {
-						handledNames.add(handle.name)
-						const group = groupPlan.get(handle.name) ?? {
-							groupId: `drop-record-${handle.name}`,
-							groupLabel: handle.name,
+			if (ENABLE_CHROME_DROPPED_FILE_HANDLES) {
+				for (const item of itemList) {
+					if (item.kind !== 'file') continue
+					const getHandle = (item as DataTransferItem & {
+						getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>
+					}).getAsFileSystemHandle
+					if (typeof getHandle !== 'function') continue
+					try {
+						const handle = await getHandle.call(item)
+						logPersistentHandleDebug('drop handle resolved', {
+							handleKind: handle?.kind ?? 'none',
+							handleName: handle?.name ?? 'none',
+						})
+						if (handle?.kind === 'file') {
+							handledNames.add(handle.name)
+							const group = groupPlan.get(handle.name) ?? {
+								groupId: `drop-record-${handle.name}`,
+								groupLabel: handle.name,
+							}
+							handles.push({
+								fileName: handle.name,
+								groupId: group.groupId,
+								groupLabel: group.groupLabel,
+								handle: handle as FileSystemFileHandle,
+								id: `drop-${handle.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+							})
 						}
-						handles.push({
-							fileName: handle.name,
-							groupId: group.groupId,
-							groupLabel: group.groupLabel,
-							handle: handle as FileSystemFileHandle,
-							id: `drop-${handle.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+					} catch (error) {
+						logPersistentHandleWarning('drop handle failed', {
+							error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
 						})
 					}
-				} catch (error) {
-					logPersistentHandleWarning('drop handle failed', {
-						error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-					})
 				}
 			}
 			for (const file of files) {
@@ -697,9 +805,23 @@ export default function LabScreen() {
 
 	useEffect(() => {
 		if (Platform.OS !== 'web') return
+		const seenIntentUrls = new Set<string>()
 		const syncIntent = () => {
 			const intent = getCurrentWebLaunchIntent()
 			if (!intent) return
+			const deferredLaunchUrl = getDeferredLaunchUrlSync()
+			const restoredFromOnboarding = deferredLaunchUrl === window.location.href
+			if (restoredFromOnboarding) {
+				clearDeferredLaunchUrlSync()
+			}
+			if (!seenIntentUrls.has(intent.url)) {
+				seenIntentUrls.add(intent.url)
+				trackEvent('lab_shared_link_opened', {
+					restoredFromOnboarding,
+					url: intent.url,
+					source: intent.source,
+				})
+			}
 			setRemoteIntent((current) => {
 				if ('intent' in current && current.intent.url === intent.url) return current
 				return { intent, status: 'pending' }
@@ -712,7 +834,7 @@ export default function LabScreen() {
 			window.removeEventListener('hashchange', syncIntent)
 			window.removeEventListener('popstate', syncIntent)
 		}
-	}, [])
+	}, [trackEvent])
 
 	useEffect(() => {
 		return filePickerRef.current.subscribeToFileDrops({
@@ -964,7 +1086,12 @@ export default function LabScreen() {
 			trackEvent('lab_sample_genome_requested', { bundleId: bundle.id })
 			try {
 				const files = await loadTestFileBundle(bundle)
-				ingestMany(files, 'bundled')
+				ingestMany(files, 'bundled', {
+					demo_bundle_id: bundle.id,
+					demo_filename: files.map((file) => file.name).join(','),
+					demo_title: bundle.title,
+					is_demo_file: true,
+				})
 				trackEvent('lab_sample_genome_loaded', { bundleId: bundle.id, totalFiles: files.length })
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
@@ -992,6 +1119,7 @@ export default function LabScreen() {
 					description: resource.summary,
 					category: resource.kind === 'panel' ? 'panel' : 'pharmacogenomics',
 					language,
+					analyticsAssayId: remoteResourceAnalyticsId(resource, LAB_ASSAYS),
 					url: resource.sourceUrl,
 					inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
 					tags: [
@@ -1089,7 +1217,11 @@ export default function LabScreen() {
 		await navigator.clipboard?.writeText(shareAssayUrl)
 		setAssayUrlCopied(true)
 		window.setTimeout(() => setAssayUrlCopied(false), 1500)
-	}, [shareAssayUrl])
+		trackEvent('lab_share_link_copied', {
+			shareUrl: shareAssayUrl,
+			targetUrl: assayUrlInput.trim(),
+		})
+	}, [assayUrlInput, shareAssayUrl, trackEvent])
 
 	const fetchRemoteIntent = useCallback(async () => {
 		if (remoteIntent.status !== 'pending' && remoteIntent.status !== 'error') return
@@ -1100,7 +1232,7 @@ export default function LabScreen() {
 			intentFileKind !== 'assay_yaml' &&
 			intentFileKind !== 'unknown'
 		setRemoteIntent({ intent, status: isRemoteLabFile ? 'file-loading' : 'resolving' })
-		trackEvent('lab_remote_intent_fetch_requested', { source: intent.source })
+		trackEvent('lab_remote_intent_fetch_requested', { source: intent.source, url: intent.url })
 		try {
 			if (isRemoteLabFile) {
 				if (intentFileKind === 'zip') {
@@ -1122,6 +1254,7 @@ export default function LabScreen() {
 						trackEvent('lab_remote_package_resolved', {
 							resourceCount: pkg.resources.length,
 							source: intent.source,
+							url: intent.url,
 						})
 						return
 					} catch (error) {
@@ -1138,6 +1271,7 @@ export default function LabScreen() {
 					cacheStatus: remoteFile.cacheStatus,
 					fileKind: remoteFile.fileKind,
 					size: remoteFile.file.size,
+					url: intent.url,
 				})
 				return
 			}
@@ -1160,6 +1294,7 @@ export default function LabScreen() {
 				trackEvent('lab_remote_package_resolved', {
 					resourceCount: pkg.resources.length,
 					source: intent.source,
+					url: intent.url,
 				})
 				return
 			}
@@ -1169,11 +1304,12 @@ export default function LabScreen() {
 				dependencyCount: resource.dependencies.length,
 				kind: resource.kind,
 				schema: resource.schema ?? 'none',
+				url: intent.url,
 			})
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			setRemoteIntent({ error: message, intent, status: 'error' })
-			trackEvent('lab_remote_intent_failed', { error: message })
+			trackEvent('lab_remote_intent_failed', { error: message, url: intent.url })
 		}
 	}, [addResolvedSessionAssays, ingestMany, refreshCachedRemoteFiles, remoteIntent, trackEvent])
 
@@ -1202,6 +1338,7 @@ export default function LabScreen() {
 		trackEvent('lab_remote_dependencies_fetch_requested', {
 			dependencyCount: resource.dependencies.length,
 			kind: resource.kind,
+			url: intent.url,
 		})
 		try {
 			const dependencies = await Promise.all(
@@ -1212,11 +1349,12 @@ export default function LabScreen() {
 			trackEvent('lab_remote_dependencies_resolved', {
 				dependencyCount: dependencies.length,
 				kind: resource.kind,
+				url: intent.url,
 			})
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			setRemoteIntent({ error: message, intent, resource, status: 'dependency-error' })
-			trackEvent('lab_remote_dependencies_failed', { error: message, kind: resource.kind })
+			trackEvent('lab_remote_dependencies_failed', { error: message, kind: resource.kind, url: intent.url })
 		}
 	}, [addResolvedSessionAssays, remoteIntent, trackEvent])
 
@@ -1286,10 +1424,24 @@ export default function LabScreen() {
 					...prev,
 				])
 				trackEvent('lab_run_started', {
-					assayId: catalogAssay.id,
+					...assayAnalyticsProperties(catalogAssay),
 					assayLanguage: catalogAssay.language,
 					genomeKind: activeGenomeRef.kind,
 				})
+				try {
+					const primaryFile = fileAdapterRef.current.getFile(activeGenomeRef.primary)
+					const bytes = new Uint8Array(await primaryFile.arrayBuffer())
+					const inspection = await inspectBytes(primaryFile.name, bytes, { detectSex: true })
+					trackEvent('using_file_heuristics', fileHeuristicAnalyticsProperties(activeGenomeRef, inspection))
+				} catch (inspectionError) {
+					trackEvent('using_file_heuristics', {
+						error: inspectionError instanceof Error ? inspectionError.message : String(inspectionError),
+						fileExtension: safeGenomicExtension(activeGenomeRef.primary.name),
+						genomeKind: activeGenomeRef.kind,
+						inputFormat: labGenomeInputFormat(activeGenomeRef),
+						relatedFileExtensions: genomeRelatedFileExtensions(activeGenomeRef),
+					})
+				}
 
 				const onProgress = (progress: LabRunProgress) => {
 					setRuns((prev) =>
@@ -1334,8 +1486,16 @@ export default function LabScreen() {
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
 				)
+				trackEvent('lab_report_generated', {
+					...assayAnalyticsProperties(catalogAssay),
+					artifactCount: success.result.artifacts?.length ?? 0,
+					artifactNames: (success.result.artifacts ?? []).map((artifact) => artifact.name),
+					genomeKind: activeGenomeRef.kind,
+					htmlReportName: htmlArtifactForResult(success.result)?.name ?? '',
+					resultKind: success.kind,
+				})
 				trackEvent('lab_run_completed', {
-					assayId: catalogAssay.id,
+					...assayAnalyticsProperties(catalogAssay),
 					genomeKind: activeGenomeRef.kind,
 					resultKind: success.kind,
 				})
@@ -1349,7 +1509,7 @@ export default function LabScreen() {
 					)
 				})
 				trackEvent('lab_run_failed', {
-					assayId: catalogAssay.id,
+					...assayAnalyticsProperties(catalogAssay),
 					genomeKind: activeGenomeRef.kind,
 					error: msg,
 				})
@@ -1423,6 +1583,8 @@ export default function LabScreen() {
 							BIOVAULT LAB
 						</OMText>
 						<View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+							<GithubButton scheme={scheme} />
+							<ContactButton scheme={scheme} />
 							<ClearAllButton />
 							<WebThemeToggle scheme={scheme} />
 						</View>
@@ -1546,6 +1708,7 @@ export default function LabScreen() {
 					</View>
 
 					<PrivacyFootnote />
+					<FeedbackFooterButton />
 				</ScrollView>
 				{sourceViewer ? (
 					<SourceViewer viewer={sourceViewer} onClose={() => setSourceViewer(null)} />
@@ -2455,9 +2618,22 @@ function CategoryChip({
 
 function RunCard({ onViewSource, record }: { onViewSource: () => void; record: RunRecord }) {
 	const { palette, styles } = useTheme()
+	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	const { assay, result } = record
 	const [resultOpen, setResultOpen] = useState(false)
 	const artifactCount = result.status === 'done' ? result.artifacts?.length ?? 0 : 0
+	const openResult = useCallback(() => {
+		if (result.status === 'done') {
+			trackEvent('lab_report_opened', {
+				...assayAnalyticsProperties(assay),
+				artifactCount,
+				artifactNames: (result.artifacts ?? []).map((artifact) => artifact.name),
+				htmlReportName: htmlArtifactForResult(result)?.name ?? '',
+				resultStatus: result.status,
+			})
+		}
+		setResultOpen(true)
+	}, [artifactCount, assay, result, trackEvent])
 	return (
 		<View style={styles.runCard}>
 			<View style={styles.runCardHead}>
@@ -2487,7 +2663,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 				{result.status === 'done' && artifactCount > 0 ? (
 					<Pressable
 						accessibilityRole="button"
-						onPress={() => setResultOpen(true)}
+						onPress={openResult}
 						style={styles.textButton}
 					>
 						<OMText variant="subtitle" style={styles.textButtonText}>
@@ -2535,6 +2711,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 }
 
 function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => void }) {
+	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	const { result, assay } = record
 	const html = result.status === 'done' ? htmlArtifactForResult(result) : null
 	const artifacts = result.status === 'done' ? result.artifacts ?? [] : []
@@ -2552,8 +2729,13 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 	}, [html])
 	const openInNewTab = useCallback(() => {
 		if (!htmlBlobUrl) return
+		trackEvent('lab_report_opened_new_window', {
+			...assayAnalyticsProperties(assay),
+			artifactCount: artifacts.length,
+			htmlReportName: html?.name ?? '',
+		})
 		window.open(htmlBlobUrl, '_blank', 'noopener,noreferrer')
-	}, [htmlBlobUrl])
+	}, [artifacts.length, assay, html?.name, htmlBlobUrl, trackEvent])
 	// Portal to document.body so the fixed-position overlay escapes the
 	// ScrollView's stacking context.
 	return createPortal(createElement('div', {
@@ -2634,7 +2816,7 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 					],
 				}),
 				artifacts.length > 0
-					? createElement(ArtifactLinks, { key: 'artifacts', artifacts })
+					? createElement(ArtifactLinks, { key: 'artifacts', artifacts, record })
 					: null,
 				html && htmlBlobUrl
 					? createElement('div', {
@@ -2875,7 +3057,8 @@ function htmlArtifactForResult(result: RunResult): LabRunArtifact | null {
 	return named ?? htmls[0] ?? null
 }
 
-function ArtifactLinks({ artifacts }: { artifacts: LabRunArtifact[] }) {
+function ArtifactLinks({ artifacts, record }: { artifacts: LabRunArtifact[]; record: RunRecord }) {
+	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	return createElement('div', {
 		style: { display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 12px' },
 		children: [
@@ -2900,6 +3083,15 @@ function ArtifactLinks({ artifacts }: { artifacts: LabRunArtifact[] }) {
 						key: `${artifact.path ?? artifact.name}-${index}`,
 						href,
 						download: artifact.name,
+						onClick: () => {
+							trackEvent('lab_report_artifact_downloaded', {
+								...assayAnalyticsProperties(record.assay),
+								artifactIndex: index,
+								artifactMimeType: artifact.mimeType ?? '',
+								artifactName: artifact.name,
+								artifactPath: artifact.path ?? '',
+							})
+						},
 						style: {
 							padding: '4px 10px',
 							border: '1px solid #cbd5df',
@@ -3110,6 +3302,105 @@ function DragOverlay() {
 				</OMText>
 			</View>
 		</View>
+	)
+}
+
+const CONTACT_EMAIL = 'contact@biovault.net'
+
+function openContactEmail(source: 'header' | 'footer') {
+	getAnalytics()?.trackEvent('lab_contact_clicked', { source })
+	if (typeof window === 'undefined') return
+	const url = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Biovault Lab — feedback / feature request')}`
+	window.location.href = url
+}
+
+const GITHUB_URL = 'https://github.com/openmined/biovault-app'
+
+function openGithub() {
+	getAnalytics()?.trackEvent('lab_github_clicked', { url: GITHUB_URL })
+	if (typeof window === 'undefined') return
+	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
+}
+
+function GithubButton({ scheme }: { scheme: 'light' | 'dark' }) {
+	const { styles } = useTheme()
+	return (
+		<Pressable
+			onPress={() => openGithub()}
+			hitSlop={8}
+			style={[
+				styles.webThemeButton,
+				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
+			]}
+			accessibilityRole="link"
+			accessibilityLabel="View Biovault on GitHub"
+		>
+			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
+				<OMIcon name="logo-github" size={16} tone="accent" />
+			</View>
+			<View pointerEvents="none">
+				<OMText
+					variant="caption"
+					style={[
+						styles.webThemeButtonText,
+						scheme === 'light' ? styles.webThemeButtonTextLight : styles.webThemeButtonTextDark,
+					]}
+				>
+					GitHub
+				</OMText>
+			</View>
+		</Pressable>
+	)
+}
+
+function ContactButton({ scheme }: { scheme: 'light' | 'dark' }) {
+	const { styles } = useTheme()
+	return (
+		<Pressable
+			onPress={() => openContactEmail('header')}
+			hitSlop={8}
+			style={[
+				styles.webThemeButton,
+				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
+			]}
+			accessibilityRole="link"
+			accessibilityLabel={`Contact: ${CONTACT_EMAIL}`}
+		>
+			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
+				<OMIcon name="mail-outline" size={16} tone="accent" />
+			</View>
+			<View pointerEvents="none">
+				<OMText
+					variant="caption"
+					style={[
+						styles.webThemeButtonText,
+						scheme === 'light' ? styles.webThemeButtonTextLight : styles.webThemeButtonTextDark,
+					]}
+				>
+					Contact
+				</OMText>
+			</View>
+		</Pressable>
+	)
+}
+
+function FeedbackFooterButton() {
+	const { styles, mutedIconTone } = useTheme()
+	return (
+		<Pressable
+			onPress={() => openContactEmail('footer')}
+			style={styles.feedbackFooter}
+			accessibilityRole="link"
+			accessibilityLabel={`Feedback or request a feature — email ${CONTACT_EMAIL}`}
+		>
+			<OMIcon name="mail-outline" tone={mutedIconTone} size={14} />
+			<OMText variant="caption" style={styles.feedbackFooterText}>
+				Feedback or Request a Feature
+			</OMText>
+			<OMText variant="caption" style={styles.feedbackFooterEmail}>
+				{CONTACT_EMAIL}
+			</OMText>
+		</Pressable>
 	)
 }
 
@@ -3939,6 +4230,19 @@ function makeStyles(p: LabPalette) {
 			marginTop: omSpacing.l,
 		},
 		footerNoteText: { color: p.textFaint, textAlign: 'center' },
+		feedbackFooter: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: omSpacing.xs,
+			marginTop: omSpacing.xs,
+			paddingVertical: omSpacing.s,
+			cursor: 'pointer',
+			userSelect: 'none',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+		feedbackFooterText: { color: p.text },
+		feedbackFooterEmail: { color: p.accentStrong },
 
 		// drag overlay
 		dragOverlay: {
