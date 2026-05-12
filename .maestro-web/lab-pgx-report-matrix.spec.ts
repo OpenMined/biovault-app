@@ -95,6 +95,13 @@ async function dismissDisclaimer(page: Page) {
 	}
 }
 
+async function dismissRememberFilesPrompt(page: Page) {
+	const notNow = page.getByText('Not now', { exact: true })
+	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+		await notNow.click()
+	}
+}
+
 async function routePgxPackageZipToLocalFile(page: Page, config: ReportMatrixConfig) {
 	const packageZip = resolvePath(config.packageZip)
 	await page.route(config.packageUrl, async (route) => {
@@ -121,6 +128,7 @@ async function dragFilesIntoLab(page: Page, files: string[]) {
 	await page.dispatchEvent('body', 'dragenter', { dataTransfer })
 	await page.dispatchEvent('body', 'dragover', { dataTransfer })
 	await page.dispatchEvent('body', 'drop', { dataTransfer })
+	await dismissRememberFilesPrompt(page)
 }
 
 async function chooseFilesIntoLab(page: Page, files: string[]) {
@@ -132,6 +140,7 @@ async function chooseFilesIntoLab(page: Page, files: string[]) {
 		})(),
 	])
 	await chooser.setFiles(files)
+	await dismissRememberFilesPrompt(page)
 }
 
 function mimeTypeFor(file: string): string {
@@ -164,7 +173,7 @@ async function runPgxAndOpenResult(page: Page) {
 	const runButton = page.getByText(/Run panel|Run assay/, { exact: true }).first()
 	await expect(runButton).toBeVisible({ timeout: 60_000 })
 	await runButton.click()
-	await expect(page.getByText('LATEST RESULT')).toBeVisible({ timeout: resultTimeout })
+	await expect(page.getByText('Latest result')).toBeVisible({ timeout: resultTimeout })
 	await expect(async () => {
 		const bodyText = await page.locator('body').innerText({ timeout: 10_000 })
 		expect(bodyText).not.toContain('Run failed')

@@ -232,7 +232,7 @@ export async function runLabAssayRef(
 		outputFile: runtimeRoot?.outputFile ?? outputFileName,
 		participantId,
 		inputFormat: 'text',
-		genomes: { [genomeKey]: descriptor },
+		genomes: { [genomeKey]: descriptor, [runtimeInputFile]: descriptor },
 		maxDurationMs: 180_000,
 		maxMemoryBytes: 128 * 1024 * 1024,
 		maxAllocations: 1_000_000,

@@ -25,7 +25,7 @@ test('web smoke', async ({ page }) => {
 		await page.waitForTimeout(600)
 	}
 
-	await expect(page.getByText(/BIOVAULT LAB|Explore Assays|Your genomic files/)).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('BioVault Lab', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
 	await page.screenshot({ path: '.maestro-web/screenshots/04-home.png', fullPage: true })
 
 	const fatal = errors.filter(

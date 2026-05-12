@@ -33,6 +33,13 @@ async function dismissDisclaimer(page: Page) {
 	}
 }
 
+async function dismissRememberFilesPrompt(page: Page) {
+	const notNow = page.getByText('Not now', { exact: true })
+	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+		await notNow.click()
+	}
+}
+
 const ALL_FIXTURES = [APOL1, CRAM, CRAI, FASTA, FAI]
 const missingFixture = ALL_FIXTURES.find((p) => !fs.existsSync(p))
 
@@ -72,22 +79,26 @@ test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', as
 		})(),
 	])
 	await chooser.setFiles([APOL1, CRAM, CRAI, FASTA, FAI])
+	await dismissRememberFilesPrompt(page)
 
 	await expect(page.getByText('Genome complete').first()).toBeVisible({ timeout: 30_000 })
 	await expect(page.getByText('apol1.py', { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+	await page.getByPlaceholder('Search assays…').fill('apol1.py')
+	const assayRow = page.getByTestId('assay-result-row').filter({ hasText: 'apol1.py' }).first()
+	await expect(assayRow).toBeVisible({ timeout: 30_000 })
 
 	await page.screenshot({
 		path: '.maestro-web/screenshots/lab-apol1-01-loaded.png',
 		fullPage: true,
 	})
 
-	const runButton = page.getByText('Run assay', { exact: true }).first()
+	const runButton = assayRow.getByText('Run assay', { exact: true })
 	await expect(runButton).toBeEnabled({ timeout: 15_000 })
 	await runButton.click()
 
-	// Either LATEST RESULT appears (success) or the "Run failed" card appears
+	// Either Latest result appears (success) or the "Run failed" card appears
 	// (error — we want to capture the message either way for debugging).
-	const results = page.getByText(/LATEST RESULT/)
+	const results = page.getByText(/Latest result/)
 	const runFailed = page.getByText('Run failed', { exact: false })
 	await Promise.race([
 		results.waitFor({ state: 'visible', timeout: 120_000 }),
@@ -99,6 +110,7 @@ test('lab: apol1.py runs against NA06985 CRAM without exception-type errors', as
 		fullPage: true,
 	})
 
+	await expect(page.locator('body')).toContainText('G0/G0', { timeout: 120_000 })
 	const finalText = await page.textContent('body')
 	// eslint-disable-next-line no-console
 	console.log('\n=== info logs ===\n' + infos.join('\n'))
