@@ -9,13 +9,14 @@ config.resolver.assetExts.push('sqlite', 'db', 'py', 'txt')
 // Add wasm asset support
 config.resolver.assetExts.push('wasm')
 
-// COOP + COEP for SharedArrayBuffer (Monty/wasm). Use credentialless — not
-// require-corp — so third-party iframes (e.g. YouTube) are not blocked.
+// Local dev experiment: relax cross-origin isolation so Chrome can load
+// third-party iframe embeds such as YouTube. Production headers are controlled
+// separately by workers/biovault-app.ts.
 config.server.enhanceMiddleware = (middleware) => {
 	return (req, res, next) => {
-		res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless')
-		res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
-		res.setHeader('Permissions-Policy', 'cross-origin-isolated=(self)')
+		res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none')
+		res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none')
+		res.setHeader('Permissions-Policy', 'cross-origin-isolated=()')
 		middleware(req, res, next)
 	}
 }

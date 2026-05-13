@@ -643,7 +643,7 @@ function wasmVariantFromMontySpec(raw: unknown, index: number, store: GenomeStor
       `lookup_variants: variant #${index}${rsid ? ` (${rsid})` : ''} is missing ref/alt — CRAM/VCF lookup requires explicit alleles`,
     );
   }
-  return {
+  const spec: VariantSpec = {
     name: rsid ?? `variant_${index}`,
     chrom: preferred.chrom,
     pos: preferred.pos,
@@ -653,12 +653,13 @@ function wasmVariantFromMontySpec(raw: unknown, index: number, store: GenomeStor
     alt,
     rsid,
     assembly,
-    kind,
-    deletion_length: deletionLength,
     // Store kind is informational only; worker picks backend from caller.
     // (store parameter retained for symmetry / future per-genome assembly hint.)
     ...(store.kind === 'cram' ? {} : {}),
   };
+  if (kind !== null) spec.kind = kind;
+  if (deletionLength !== null) spec.deletion_length = deletionLength;
+  return spec;
 }
 
 function parseLocusString(value: unknown): { chrom: string; pos: number } | null {

@@ -22,6 +22,10 @@ export type CachedRemoteLabFile = {
 	sourceUrl: string
 }
 
+export type FetchRemoteLabFileOptions = {
+	bypassCache?: boolean
+}
+
 const DB_NAME = 'biovault-remote-lab-files'
 const DB_VERSION = 1
 const STORE_NAME = 'files'
@@ -213,12 +217,15 @@ export function remoteLabFileKind(input: string): FileKind {
 	return classifyLabFile(remoteLabFileName(input))
 }
 
-export async function fetchRemoteLabFile(input: string): Promise<RemoteLabFile> {
+export async function fetchRemoteLabFile(
+	input: string,
+	options: FetchRemoteLabFileOptions = {},
+): Promise<RemoteLabFile> {
 	const sourceUrl = repairNestedArtifactUrl(normalizeSourceUrl(input))
 	assertAllowedRemoteFile(sourceUrl)
 	const name = remoteLabFileName(sourceUrl)
 	const fileKind = classifyLabFile(name)
-	const cached = await getCachedRemoteLabFile(sourceUrl)
+	const cached = options.bypassCache ? null : await getCachedRemoteLabFile(sourceUrl)
 	if (cached) {
 		const file = cachedRecordFile(cached)
 		if (file) {
