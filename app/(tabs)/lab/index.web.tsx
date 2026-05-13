@@ -162,9 +162,8 @@ const LAB_COLUMN_GUTTER_X = omSpacing.l
 const LAB_WIDE_TWO_COL_MIN = 1100
 const LAB_SIDEBAR_DRAWER_MAX = 920
 const LAB_COLUMN_HEAD_PAD_Y = omSpacing.l
-/** Self-hosted walkthrough asset. Put the mp4 under the web public asset root. */
-const LAB_PUBLIC_BASE_URL = process.env.EXPO_BASE_URL ?? ''
-const LAB_GETTING_STARTED_VIDEO_SRC = `${LAB_PUBLIC_BASE_URL}/videos/lab-getting-started.mp4`
+const LAB_GETTING_STARTED_VIDEO_URL = 'https://youtu.be/54oRjs2AcJY'
+const LAB_GETTING_STARTED_VIDEO_EMBED_URL = 'https://www.youtube.com/embed/54oRjs2AcJY'
 const ASSAY_IMPORT_URL_EXAMPLE =
 	'https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml'
 
@@ -5338,15 +5337,18 @@ function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 
 	return (
 		<View style={styles.gettingStartedVideoPlayerHost}>
-			{createElement('video', {
-				controls: true,
-				playsInline: true,
-				preload: 'metadata',
+			{createElement('iframe', {
+				allow:
+					'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share',
+				allowFullScreen: true,
+				frameBorder: '0',
+				referrerPolicy: 'strict-origin-when-cross-origin',
 				src,
 				style: {
 					display: 'block',
 					height: '100%',
 					width: '100%',
+					border: '0',
 				},
 				title,
 			})}
@@ -5487,12 +5489,15 @@ function LabGettingStartedPanel({
 				</OMText>
 				<View style={styles.gettingStartedVideoFrame}>
 					{Platform.OS === 'web' ? (
-						<WebVideoPlayer src={LAB_GETTING_STARTED_VIDEO_SRC} title="BioVault Lab walkthrough" />
+						<WebVideoPlayer
+							src={LAB_GETTING_STARTED_VIDEO_EMBED_URL}
+							title="BioVault Lab walkthrough"
+						/>
 					) : null}
 				</View>
 				<Pressable
 					onPress={() => {
-						void Linking.openURL(LAB_GETTING_STARTED_VIDEO_SRC)
+						void Linking.openURL(LAB_GETTING_STARTED_VIDEO_URL)
 					}}
 					style={styles.gettingStartedVideoLink}
 					accessibilityRole="link"
