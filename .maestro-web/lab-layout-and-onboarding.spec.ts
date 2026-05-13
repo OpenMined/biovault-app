@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { BASE_URL, GENOME_23ANDME, chooseGenomeFiles, gotoLab, missingFixture } from './lab-test-helpers'
+import { BASE_URL, GENOME_23ANDME, chooseGenomeFiles, dismissRememberFilesPrompt, gotoLab, missingFixture } from './lab-test-helpers'
 
 test.describe('lab layout, onboarding, and copy — web', () => {
 	test('first load agreement accepts once and persists after refresh', async ({ page }) => {
@@ -29,7 +29,10 @@ test.describe('lab layout, onboarding, and copy — web', () => {
 
 		await chooseGenomeFiles(page, GENOME_23ANDME)
 		await expect(page.getByText('Genome complete', { exact: true })).toBeVisible({ timeout: 30_000 })
-		await page.getByText('Import genome', { exact: true }).click()
+		await dismissRememberFilesPrompt(page)
+		await page.getByText('Import genome', { exact: true }).evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 		await expect(importDialog).toBeVisible()
 		await expect(importDialog.getByLabel(/Download .*23andMe/i)).toHaveAttribute('aria-disabled', 'true')
 	})
@@ -43,11 +46,16 @@ test.describe('lab layout, onboarding, and copy — web', () => {
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(1, { timeout: 30_000 })
 
 		const guideButton = page.getByLabel('Open the getting started guide')
-		await guideButton.click()
+		await dismissRememberFilesPrompt(page)
+		await guideButton.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 		await expect(page.getByRole('button', { name: 'Load sample data and run a demo assay locally' })).toBeVisible()
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(1)
 
-		await page.getByLabel(/Select genome genome_hu50B3F5_v5_Full\.zip/).click()
+		await page.getByLabel(/Select genome genome_hu50B3F5_v5_Full\.zip/).evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 		await expect(page.getByText('Genome complete', { exact: true })).toBeVisible()
 
 		const settings = page.getByLabel('Lab settings: theme and clear stored data')

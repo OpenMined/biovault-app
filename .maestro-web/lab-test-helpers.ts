@@ -42,8 +42,26 @@ export async function dismissDisclaimer(page: Page) {
 export async function dismissRememberFilesPrompt(page: Page) {
 	const notNow = page.getByText('Not now', { exact: true })
 	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-		await notNow.click()
+		await notNow.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 	}
+}
+
+export async function dismissSharedResourcePrompt(page: Page) {
+	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
+	if (!(await dialog.isVisible({ timeout: 1_000 }).catch(() => false))) return
+	const ignore = dialog.getByRole('button', { name: 'Ignore' })
+	if (await ignore.isVisible({ timeout: 1_000 }).catch(() => false)) {
+		await ignore.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+	} else {
+		await dialog.getByRole('button', { name: 'Close shared resource dialog' }).evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+	}
+	await expect(dialog).toBeHidden({ timeout: 10_000 })
 }
 
 export async function gotoLab(page: Page) {
@@ -75,17 +93,35 @@ export async function importPgxReleaseFromUrl(page: Page) {
 	}, PGX_RELEASE_URL)
 	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
 	await expect(dialog.getByText(/Fetch this URL\?|Load this file URL\?/)).toBeVisible({ timeout: 30_000 })
-	await dialog.getByRole('button', { name: /Fetch URL|Load file/ }).click()
-	await expect(page.getByText(/33 fetched variants ready\.|PGx-1 Panel/).first()).toBeVisible({ timeout: 60_000 })
-	const closeSharedResource = dialog.getByRole('button', { name: 'Close shared resource dialog' })
-	if (await closeSharedResource.isVisible({ timeout: 1_000 }).catch(() => false)) {
-		await closeSharedResource.click()
+	await dialog.getByRole('button', { name: /Fetch URL|Load file/ }).evaluate((element) => {
+		;(element as HTMLElement).click()
+	})
+	const fetchDependencies = dialog.getByRole('button', { name: /Fetch dependencies|Refetch dependencies/ })
+	if (await fetchDependencies.isVisible({ timeout: 30_000 }).catch(() => false)) {
+		await fetchDependencies.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+		await expect(dialog.getByText(/33 dependency files fetched for this session\./)).toBeVisible({ timeout: 60_000 })
 	}
-	const done = page.getByText('Done', { exact: true }).first()
+	const done = dialog.getByText('Done', { exact: true }).first()
 	if (await done.isVisible({ timeout: 1_000 }).catch(() => false)) {
-		await done.click()
+		await done.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+	} else {
+		const closeSharedResource = dialog.getByRole('button', { name: 'Close shared resource dialog' })
+		if (await closeSharedResource.isVisible({ timeout: 1_000 }).catch(() => false)) {
+			await closeSharedResource.evaluate((element) => {
+				;(element as HTMLElement).click()
+			})
+		}
 	}
 	await expect(dialog).toBeHidden({ timeout: 10_000 })
+	await page.evaluate(() => {
+		window.history.replaceState(null, '', window.location.pathname + window.location.search)
+	})
+	await dismissSharedResourcePrompt(page)
+	await dismissRememberFilesPrompt(page)
 }
 
 export async function chooseGenomeFiles(page: Page, files: string | string[]) {

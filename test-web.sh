@@ -18,6 +18,22 @@ if [ -n "${FORCE_COLOR:-}" ]; then
   unset NO_COLOR
 fi
 
+port_has_listener() {
+  nc -z -w 1 localhost "$1" >/dev/null 2>&1
+}
+
+if [ -z "$WEB_URL_WAS_SET" ] && [[ "$WEB_SECURE_ORIGIN" != "1" ]]; then
+  SELECTED_PORT="$PORT"
+  while port_has_listener "$SELECTED_PORT"; do
+    SELECTED_PORT=$((SELECTED_PORT + 1))
+  done
+  if [[ "$SELECTED_PORT" != "$PORT" ]]; then
+    echo "==> :$PORT is already serving; using :$SELECTED_PORT for this run"
+  fi
+  PORT="$SELECTED_PORT"
+  WEB_URL="http://localhost:${PORT}"
+fi
+
 MODE="default"
 PW_EXTRA=()
 for arg in "$@"; do
@@ -59,10 +75,6 @@ curl_web() {
     url="${url}/"
   fi
   curl --max-time 5 -Lskf "$url" >/dev/null 2>&1
-}
-
-port_has_listener() {
-  nc -z -w 1 localhost "$1" >/dev/null 2>&1
 }
 
 if ! curl_web && [ -z "$WEB_URL_WAS_SET" ] && [[ "$WEB_SECURE_ORIGIN" != "1" ]]; then

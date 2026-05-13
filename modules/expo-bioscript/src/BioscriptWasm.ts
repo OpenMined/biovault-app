@@ -209,21 +209,38 @@ export async function runPackageReportBytes(
 	inputBytes: Uint8Array,
 	options: BioscriptPackageReportOptions = {},
 ): Promise<BioscriptPackageReportResult> {
-	const mod = await loadBioscriptWasm()
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
 	const optionsJson = JSON.stringify({
 		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
 		detectSex: options.detectSex ?? false,
 		filters: options.filters ?? [],
 	})
-	return JSON.parse(
-		mod.runPackageReportBytes(
+	return new Promise<BioscriptPackageReportResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve(JSON.parse(raw.resultJson ?? '') as BioscriptPackageReportResult)
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
+		const req: WorkerReportFromBytesRequest = {
+			type: 'reportFromBytes',
+			requestId,
+			wasmUrl,
 			manifestPath,
-			JSON.stringify(packageFiles),
+			packageFilesJson: JSON.stringify(packageFiles),
 			inputName,
 			inputBytes,
 			optionsJson,
-		),
-	) as BioscriptPackageReportResult
+		}
+		const transferables: Transferable[] = inputBytes.buffer instanceof ArrayBuffer ? [inputBytes.buffer] : []
+		worker.postMessage(req, transferables)
+	})
 }
 
 // === Variant lookup (CRAM + VCF, both via the same Worker) ==================
@@ -350,6 +367,17 @@ type WorkerReportFromVcfRequest = {
 	optionsJson: string
 }
 
+type WorkerReportFromBytesRequest = {
+	type: 'reportFromBytes'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	inputBytes: Uint8Array
+	optionsJson: string
+}
+
 type WorkerGenerateVcfTbiRequest = {
 	type: 'generateVcfTbi'
 	requestId: number
@@ -416,7 +444,7 @@ function ensureLookupWorker(): Worker {
 		const msg = event.data
 		const pending = pendingLookupRequests.get(msg.requestId)
 		if (!pending) return
-			pendingLookupRequests.delete(msg.requestId)
+		pendingLookupRequests.delete(msg.requestId)
 		if (msg.type === 'done') {
 			pending.resolve({ resultBytes: msg.resultBytes, resultJson: msg.resultJson, durationMs: msg.durationMs })
 		} else {
@@ -457,7 +485,7 @@ export async function generateVcfTbiFile(vcfFile: File): Promise<Uint8Array> {
 			},
 			reject,
 		})
-	const req: WorkerGenerateVcfTbiRequest = {
+		const req: WorkerGenerateVcfTbiRequest = {
 			type: 'generateVcfTbi',
 			requestId,
 			wasmUrl,
