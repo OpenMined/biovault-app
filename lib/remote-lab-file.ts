@@ -2,7 +2,7 @@ import { classifyLabFile, humanLabSize } from '@/lib/lab/file-model'
 import type { FileKind } from '@/lib/lab/types'
 
 export const REMOTE_LAB_FILE_CACHE_MAX_BYTES = 100 * 1024 * 1024
-const REMOTE_LAB_FILE_IDB_TIMEOUT_MS = 2_000
+const REMOTE_LAB_FILE_IDB_TIMEOUT_MS = 10_000
 const REMOTE_LAB_FILE_FETCH_TIMEOUT_MS = 120_000
 
 export type RemoteLabFile = {
@@ -13,7 +13,8 @@ export type RemoteLabFile = {
 }
 
 export type CachedRemoteLabFile = {
-	blob: Blob
+	blob?: Blob
+	bytes?: ArrayBuffer
 	cachedAt: string
 	contentType: string
 	name: string
@@ -72,14 +73,28 @@ function normalizeSourceUrl(input: string): string {
 	return input.trim()
 }
 
-function toFetchableUrl(input: string): string {
-	const trimmed = input.trim()
-	const match = trimmed.match(GITHUB_BLOB_RE)
-	if (match) {
-		const [, owner, repo, ref, path] = match
-		return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`
+function githubBlobToRawUrl(input: string): string {
+	const match = input.match(GITHUB_BLOB_RE)
+	if (!match) return input
+	const [, owner, repo, ref, path] = match
+	return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`
+}
+
+function repairNestedArtifactUrl(input: string): string {
+	try {
+		const parsed = new URL(input)
+		const marker = parsed.pathname.match(/\/([^/]+\.(?:ya?ml|zip))\/([^/]+\.zip)$/i)
+		if (!marker) return input
+		const prefix = parsed.pathname.slice(0, marker.index)
+		parsed.pathname = `${prefix}/${marker[2]}`
+		return parsed.toString()
+	} catch {
+		return input
 	}
-	return trimmed
+}
+
+function toFetchableUrl(input: string): string {
+	return githubBlobToRawUrl(repairNestedArtifactUrl(input.trim()))
 }
 
 function fileNameFromUrl(input: string): string {
@@ -103,12 +118,41 @@ function isAllowedDevRemoteHost(hostname: string): boolean {
 	return DEV_REMOTE_FILE_HOSTS.has(hostname) || hostname.endsWith('.biovault.test')
 }
 
+function cachedRecordFile(record: CachedRemoteLabFile): File | null {
+	const body = record.bytes ?? record.blob
+	if (!body) return null
+	return new File([body], record.name, { type: record.contentType })
+}
+
 function getCachedRemoteLabFile(sourceUrl: string): Promise<CachedRemoteLabFile | null> {
 	return openDb().then((db) => withTimeout(new Promise<CachedRemoteLabFile | null>((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readonly')
-		const request = tx.objectStore(STORE_NAME).get(sourceUrl)
-		request.onsuccess = () => resolve((request.result as CachedRemoteLabFile | undefined) ?? null)
-		request.onerror = () => reject(request.error ?? new Error('Failed to read remote file cache.'))
+		const candidates = Array.from(new Set([
+			sourceUrl,
+			repairNestedArtifactUrl(sourceUrl),
+			githubBlobToRawUrl(sourceUrl),
+			githubBlobToRawUrl(repairNestedArtifactUrl(sourceUrl)),
+		]))
+		const store = tx.objectStore(STORE_NAME)
+		let index = 0
+		const tryNext = () => {
+			const candidate = candidates[index]
+			if (!candidate) {
+				resolve(null)
+				return
+			}
+			const request = store.get(candidate)
+			request.onsuccess = () => {
+				const result = (request.result as CachedRemoteLabFile | undefined) ?? null
+				if (result) resolve(result)
+				else {
+					index += 1
+					tryNext()
+				}
+			}
+			request.onerror = () => reject(request.error ?? new Error('Failed to read remote file cache.'))
+		}
+		tryNext()
 	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache read')).catch((error) => {
 		console.warn('[remote-lab-file] skipping cache read', error)
 		return null
@@ -131,12 +175,16 @@ export function listCachedRemoteLabFiles(): Promise<RemoteLabFile[]> {
 		const request = tx.objectStore(STORE_NAME).getAll()
 		request.onsuccess = () => {
 			const records = (request.result as CachedRemoteLabFile[] | undefined) ?? []
-			resolve(records.map((record) => ({
-				cacheStatus: 'hit',
-				file: new File([record.blob], record.name, { type: record.contentType }),
-				fileKind: classifyLabFile(record.name),
-				sourceUrl: record.sourceUrl,
-			})))
+			resolve(records.flatMap((record) => {
+				const file = cachedRecordFile(record)
+				if (!file) return []
+				return [{
+					cacheStatus: 'hit',
+					file,
+					fileKind: classifyLabFile(record.name),
+					sourceUrl: record.sourceUrl,
+				}]
+			}))
 		}
 		request.onerror = () => reject(request.error ?? new Error('Failed to list remote file cache.'))
 	}), REMOTE_LAB_FILE_IDB_TIMEOUT_MS, 'Remote file cache list')).catch((error) => {
@@ -158,7 +206,7 @@ export function deleteCachedRemoteLabFile(sourceUrl: string): Promise<void> {
 }
 
 export function remoteLabFileName(input: string): string {
-	return fileNameFromUrl(normalizeSourceUrl(input))
+	return fileNameFromUrl(repairNestedArtifactUrl(normalizeSourceUrl(input)))
 }
 
 export function remoteLabFileKind(input: string): FileKind {
@@ -166,17 +214,20 @@ export function remoteLabFileKind(input: string): FileKind {
 }
 
 export async function fetchRemoteLabFile(input: string): Promise<RemoteLabFile> {
-	const sourceUrl = normalizeSourceUrl(input)
+	const sourceUrl = repairNestedArtifactUrl(normalizeSourceUrl(input))
 	assertAllowedRemoteFile(sourceUrl)
 	const name = remoteLabFileName(sourceUrl)
 	const fileKind = classifyLabFile(name)
 	const cached = await getCachedRemoteLabFile(sourceUrl)
 	if (cached) {
-		return {
-			cacheStatus: 'hit',
-			file: new File([cached.blob], cached.name, { type: cached.contentType }),
-			fileKind,
-			sourceUrl,
+		const file = cachedRecordFile(cached)
+		if (file) {
+			return {
+				cacheStatus: 'hit',
+				file,
+				fileKind,
+				sourceUrl,
+			}
 		}
 	}
 
@@ -201,8 +252,9 @@ export async function fetchRemoteLabFile(input: string): Promise<RemoteLabFile> 
 	const file = new File([blob], name, { type: contentType })
 	if (blob.size <= REMOTE_LAB_FILE_CACHE_MAX_BYTES) {
 		try {
+			const bytes = await blob.arrayBuffer()
 			await putCachedRemoteLabFile({
-				blob,
+				bytes,
 				cachedAt: new Date().toISOString(),
 				contentType,
 				name,

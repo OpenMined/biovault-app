@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { parse } from 'yaml'
 
-export type LabTestGenomeKind = 'genotype_text' | 'zip' | 'cram' | 'vcf'
+export type LabTestGenomeKind = 'genotype_text' | 'zip' | 'cram' | 'bam' | 'vcf'
 export type LabTestPlatform = 'web' | 'desktop' | 'ios' | 'android'
 export type LabTestAction = 'run_assay' | 'persistent_handles' | 'app_smoke' | 'file_picker' | 'drag_drop' | 'sample_preset' | 'report_matrix'
 export type LabTestSource = 'local' | 'url'
@@ -148,6 +148,12 @@ export const labTestFixtures = {
 	apol1Cram: [
 		'exvitae/assays/risk/APOL1/test-data/apol1.cram',
 		'exvitae/assays/risk/APOL1/test-data/apol1.cram.crai',
+		'exvitae/assays/risk/APOL1/test-data/stub.fa',
+		'exvitae/assays/risk/APOL1/test-data/stub.fa.fai',
+	],
+	apol1Bam: [
+		'exvitae/assays/risk/APOL1/test-data/apol1.bam',
+		'exvitae/assays/risk/APOL1/test-data/apol1.bam.bai',
 		'exvitae/assays/risk/APOL1/test-data/stub.fa',
 		'exvitae/assays/risk/APOL1/test-data/stub.fa.fai',
 	],

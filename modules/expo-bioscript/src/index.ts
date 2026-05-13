@@ -32,6 +32,10 @@ export { runAssay } from './ExpoBioscriptAssays';
 export {
   inspectBytes,
   compileVariantYamlText,
+  generateBamBaiFile,
+  generateCramCraiFile,
+  generateFastaFaiFile,
+  generateVcfTbiFile,
   lookupGenotypeBytesVariants,
   lookupCramVariants,
   lookupVcfVariants,
@@ -39,6 +43,7 @@ export {
   resolvePackageZipBytes,
   resolvePackageReleaseText,
   runPackageReportBytes,
+  runPackageReportFromBamFile,
   runPackageReportFromCramFile,
   runPackageReportFromVcfFile,
   warmupBioscriptLookupWorker,

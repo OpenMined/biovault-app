@@ -2,6 +2,8 @@ import type { FileKind } from '@/lib/lab/core/file-kind'
 
 export function classifyLabFile(name: string): FileKind {
 	const lower = name.toLowerCase()
+	if (lower.endsWith('.bam.bai') || lower.endsWith('.bai')) return 'bai'
+	if (lower.endsWith('.bam')) return 'bam'
 	if (lower.endsWith('.cram.crai') || lower.endsWith('.crai')) return 'crai'
 	if (lower.endsWith('.cram')) return 'cram'
 	if (lower.endsWith('.vcf.gz.tbi') || lower.endsWith('.tbi')) return 'tbi'
@@ -24,6 +26,8 @@ export function classifyLabFile(name: string): FileKind {
 
 export function stripGenomeSuffix(name: string): string {
 	const lower = name.toLowerCase()
+	if (lower.endsWith('.bam.bai')) return name.slice(0, -4)
+	if (lower.endsWith('.bai')) return name.slice(0, -4)
 	if (lower.endsWith('.cram.crai')) return name.slice(0, -5)
 	if (lower.endsWith('.crai')) return name.slice(0, -5)
 	if (lower.endsWith('.vcf.gz.tbi')) return name.slice(0, -4)

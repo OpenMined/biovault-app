@@ -31,6 +31,136 @@ export function compileVariantYamlText(name, text) {
 }
 
 /**
+ * @param {string} input_name
+ * @param {Uint8Array} bam_bytes
+ * @returns {Uint8Array}
+ */
+export function generateBamBai(input_name, bam_bytes) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(bam_bytes, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.generateBamBai(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
+ * @param {string} input_name
+ * @param {Function} bam_read_at
+ * @param {number} bam_len
+ * @returns {Uint8Array}
+ */
+export function generateBamBaiFromReader(input_name, bam_read_at, bam_len) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.generateBamBaiFromReader(ptr0, len0, bam_read_at, bam_len);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * @param {string} input_name
+ * @param {Uint8Array} cram_bytes
+ * @returns {Uint8Array}
+ */
+export function generateCramCrai(input_name, cram_bytes) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(cram_bytes, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.generateCramCrai(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
+ * @param {string} input_name
+ * @param {Function} cram_read_at
+ * @param {number} cram_len
+ * @returns {Uint8Array}
+ */
+export function generateCramCraiFromReader(input_name, cram_read_at, cram_len) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.generateCramCraiFromReader(ptr0, len0, cram_read_at, cram_len);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * @param {string} input_name
+ * @param {Uint8Array} fasta_bytes
+ * @returns {Uint8Array}
+ */
+export function generateFastaFai(input_name, fasta_bytes) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(fasta_bytes, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.generateFastaFai(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
+ * @param {string} input_name
+ * @param {Function} fasta_read_at
+ * @param {number} fasta_len
+ * @returns {Uint8Array}
+ */
+export function generateFastaFaiFromReader(input_name, fasta_read_at, fasta_len) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.generateFastaFaiFromReader(ptr0, len0, fasta_read_at, fasta_len);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * @param {string} input_name
+ * @param {Uint8Array} vcf_bytes
+ * @returns {Uint8Array}
+ */
+export function generateVcfTbi(input_name, vcf_bytes) {
+    const ptr0 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(vcf_bytes, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.generateVcfTbi(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
  * Classify bytes as a known genomic file. Mirrors `bioscript-formats::inspect::inspect_bytes`.
  * Returns JSON matching the `Inspection` shape the app already uses.
  * @param {string} name
@@ -330,6 +460,47 @@ export function runPackageReportBytes(manifest_path, package_files_json, input_n
         var ptr4 = isLikeNone(options_json) ? 0 : passStringToWasm0(options_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len4 = WASM_VECTOR_LEN;
         const ret = wasm.runPackageReportBytes(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        var ptr6 = ret[0];
+        var len6 = ret[1];
+        if (ret[3]) {
+            ptr6 = 0; len6 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred7_0 = ptr6;
+        deferred7_1 = len6;
+        return getStringFromWasm0(ptr6, len6);
+    } finally {
+        wasm.__wbindgen_free(deferred7_0, deferred7_1, 1);
+    }
+}
+
+/**
+ * Mirrors `runPackageReportBytes` but for BAM input. The BAM body is streamed
+ * via a JS-supplied `readAt` callback and the BAI index is passed inline.
+ * @param {string} manifest_path
+ * @param {string} package_files_json
+ * @param {string} input_name
+ * @param {Function} bam_read_at
+ * @param {number} bam_len
+ * @param {Uint8Array} bai_bytes
+ * @param {string | null} [options_json]
+ * @returns {string}
+ */
+export function runPackageReportFromBam(manifest_path, package_files_json, input_name, bam_read_at, bam_len, bai_bytes, options_json) {
+    let deferred7_0;
+    let deferred7_1;
+    try {
+        const ptr0 = passStringToWasm0(manifest_path, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(package_files_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(input_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(bai_bytes, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        var ptr4 = isLikeNone(options_json) ? 0 : passStringToWasm0(options_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len4 = WASM_VECTOR_LEN;
+        const ret = wasm.runPackageReportFromBam(ptr0, len0, ptr1, len1, ptr2, len2, bam_read_at, bam_len, ptr3, len3, ptr4, len4);
         var ptr6 = ret[0];
         var len6 = ret[1];
         if (ret[3]) {

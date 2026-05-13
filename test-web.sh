@@ -35,6 +35,9 @@ for arg in "$@"; do
     --pgx-report-scenario|--pgx-report)
       MODE="pgx-report"
       ;;
+    --index-generation)
+      MODE="index-generation"
+      ;;
     *)
       PW_EXTRA+=("$arg")
       ;;
@@ -142,13 +145,26 @@ fi
 
 case "$MODE" in
   default)
-    SPECS=(.maestro-web/smoke.spec.ts .maestro-web/file-picker.spec.ts .maestro-web/lab-pgx.spec.ts .maestro-web/lab-persistent-handles.spec.ts)
+    SPECS=(
+      .maestro-web/smoke.spec.ts
+      .maestro-web/file-picker.spec.ts
+      .maestro-web/lab-file-classification.spec.ts
+      .maestro-web/lab-pgx.spec.ts
+      .maestro-web/lab-pgx-package.spec.ts
+      .maestro-web/lab-assay-picker.spec.ts
+      .maestro-web/lab-remote-cache.spec.ts
+      .maestro-web/lab-layout-and-onboarding.spec.ts
+      .maestro-web/lab-persistent-handles.spec.ts
+    )
     ;;
   scenario)
-    SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
+    SPECS=(.maestro-web/lab-format-matrix.spec.ts)
     ;;
   pgx-report)
     SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
+    ;;
+  index-generation)
+    SPECS=(.maestro-web/lab-index-generation.spec.ts)
     ;;
   *)
     echo "Unknown web test mode: $MODE" >&2

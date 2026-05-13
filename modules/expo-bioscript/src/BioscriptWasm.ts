@@ -18,6 +18,13 @@ import { getBioscriptWasmUrl } from './webRuntimeAssets'
 const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
 	default: (input?: { module_or_path: string | URL | Request }) => Promise<unknown>
 	compileVariantYamlText: (name: string, text: string) => string
+	generateBamBai: (name: string, bytes: Uint8Array) => Uint8Array
+	generateBamBaiFromReader: (name: string, readAt: (offset: number, length: number) => Uint8Array, length: number) => Uint8Array
+	generateCramCrai: (name: string, bytes: Uint8Array) => Uint8Array
+	generateCramCraiFromReader: (name: string, readAt: (offset: number, length: number) => Uint8Array, length: number) => Uint8Array
+	generateFastaFai: (name: string, bytes: Uint8Array) => Uint8Array
+	generateFastaFaiFromReader: (name: string, readAt: (offset: number, length: number) => Uint8Array, length: number) => Uint8Array
+	generateVcfTbi: (name: string, bytes: Uint8Array) => Uint8Array
 	inspectBytes: (name: string, bytes: Uint8Array, optionsJson: string | null) => string
 	lookupGenotypeBytesRsids: (name: string, bytes: Uint8Array, rsidsJson: string) => string
 	lookupGenotypeBytesVariants: (name: string, bytes: Uint8Array, variantsJson: string) => string
@@ -232,6 +239,7 @@ export type VariantSpec = {
 	rsid?: string
 	assembly?: 'grch37' | 'grch38'
 	kind?: string
+	deletion_length?: number
 }
 
 export async function compileVariantYamlText(name: string, text: string): Promise<VariantSpec[]> {
@@ -318,6 +326,18 @@ type WorkerReportFromCramRequest = {
 	optionsJson: string
 }
 
+type WorkerReportFromBamRequest = {
+	type: 'reportFromBam'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	bamFile: File
+	baiBytes: Uint8Array
+	optionsJson: string
+}
+
 type WorkerReportFromVcfRequest = {
 	type: 'reportFromVcf'
 	requestId: number
@@ -330,16 +350,52 @@ type WorkerReportFromVcfRequest = {
 	optionsJson: string
 }
 
-type WorkerResponseDone = { type: 'done'; requestId: number; resultJson: string; durationMs: number }
+type WorkerGenerateVcfTbiRequest = {
+	type: 'generateVcfTbi'
+	requestId: number
+	wasmUrl: string
+	vcfFile: File
+}
+
+type WorkerGenerateIndexRequest = {
+	type: 'generateBamBai' | 'generateCramCrai' | 'generateFastaFai'
+	requestId: number
+	wasmUrl: string
+	file: File
+}
+
+type WorkerResponseDone = {
+	type: 'done'
+	requestId: number
+	resultBytes?: Uint8Array
+	resultJson?: string
+	durationMs: number
+}
 type WorkerResponseError = { type: 'error'; requestId: number; error: string }
 type WorkerResponse = WorkerResponseDone | WorkerResponseError
+
+function cleanWorkerErrorMessage(error: string): string {
+	const trimmed = error.trim()
+	if (!trimmed) return 'BioScript worker failed.'
+	const firstLine = trimmed.split('\n').map((line) => line.trim()).find(Boolean) ?? trimmed
+	if (!isWasmInternalStack(firstLine)) return firstLine.replace(/^Error:\s*/, '')
+	const useful = trimmed
+		.split('\n')
+		.map((line) => line.trim())
+		.find((line) => line && !isWasmInternalStack(line))
+	return useful?.replace(/^Error:\s*/, '') ?? 'BioScript worker failed inside the WebAssembly runtime.'
+}
+
+function isWasmInternalStack(line: string): boolean {
+	return /wasm-function|bioscript_wasm\.wasm|__wbg_|bioscriptLookupWorker\.bundle|wasm_bindgen/.test(line)
+}
 
 let sharedWorker: Worker | null = null
 let nextLookupRequestId = 1
 const pendingLookupRequests = new Map<
 	number,
 	{
-		resolve: (r: { resultJson: string; durationMs: number }) => void
+		resolve: (r: { resultBytes?: Uint8Array; resultJson?: string; durationMs: number }) => void
 		reject: (err: Error) => void
 	}
 >()
@@ -360,17 +416,18 @@ function ensureLookupWorker(): Worker {
 		const msg = event.data
 		const pending = pendingLookupRequests.get(msg.requestId)
 		if (!pending) return
-		pendingLookupRequests.delete(msg.requestId)
+			pendingLookupRequests.delete(msg.requestId)
 		if (msg.type === 'done') {
-			pending.resolve({ resultJson: msg.resultJson, durationMs: msg.durationMs })
+			pending.resolve({ resultBytes: msg.resultBytes, resultJson: msg.resultJson, durationMs: msg.durationMs })
 		} else {
-			if (isWasmMemoryTrap(msg.error)) {
+			const errorMessage = cleanWorkerErrorMessage(msg.error)
+			if (isWasmMemoryTrap(errorMessage) || isWasmMemoryTrap(msg.error)) {
 				console.warn('[BioscriptWasm] resetting lookup worker after wasm memory trap')
 				worker.terminate()
 				sharedWorker = null
 				lookupWorkerWarmupPromise = null
 			}
-			pending.reject(new Error(msg.error))
+			pending.reject(new Error(errorMessage))
 		}
 	}
 	worker.onerror = (event) => {
@@ -383,6 +440,68 @@ function ensureLookupWorker(): Worker {
 	}
 	sharedWorker = worker
 	return worker
+}
+
+export async function generateVcfTbiFile(vcfFile: File): Promise<Uint8Array> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	return new Promise<Uint8Array>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				if (!raw.resultBytes) {
+					reject(new Error('VCF index generation returned no bytes'))
+					return
+				}
+				resolve(raw.resultBytes)
+			},
+			reject,
+		})
+	const req: WorkerGenerateVcfTbiRequest = {
+			type: 'generateVcfTbi',
+			requestId,
+			wasmUrl,
+			vcfFile,
+		}
+		worker.postMessage(req)
+	})
+}
+
+export async function generateCramCraiFile(cramFile: File): Promise<Uint8Array> {
+	return generateIndexBytes('generateCramCrai', cramFile)
+}
+
+export async function generateBamBaiFile(bamFile: File): Promise<Uint8Array> {
+	return generateIndexBytes('generateBamBai', bamFile)
+}
+
+export async function generateFastaFaiFile(fastaFile: File): Promise<Uint8Array> {
+	return generateIndexBytes('generateFastaFai', fastaFile)
+}
+
+function generateIndexBytes(type: WorkerGenerateIndexRequest['type'], file: File): Promise<Uint8Array> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	return new Promise<Uint8Array>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				if (!raw.resultBytes) {
+					reject(new Error(`${type} returned no bytes`))
+					return
+				}
+				resolve(raw.resultBytes)
+			},
+			reject,
+		})
+		const req: WorkerGenerateIndexRequest = {
+			type,
+			requestId,
+			wasmUrl,
+			file,
+		}
+		worker.postMessage(req)
+	})
 }
 
 function isWasmMemoryTrap(message: string): boolean {
@@ -458,7 +577,7 @@ export async function lookupCramVariants(
 			resolve: (raw) => {
 				try {
 					resolve({
-						observations: JSON.parse(raw.resultJson) as VariantObservation[],
+						observations: JSON.parse(raw.resultJson ?? '') as VariantObservation[],
 						durationMs: raw.durationMs,
 					})
 				} catch (error) {
@@ -509,7 +628,7 @@ export async function runPackageReportFromCramFile(
 		pendingLookupRequests.set(requestId, {
 			resolve: (raw) => {
 				try {
-					resolve(JSON.parse(raw.resultJson) as BioscriptPackageReportResult)
+					resolve(JSON.parse(raw.resultJson ?? '') as BioscriptPackageReportResult)
 				} catch (error) {
 					reject(error instanceof Error ? error : new Error(String(error)))
 				}
@@ -527,6 +646,51 @@ export async function runPackageReportFromCramFile(
 			craiBytes,
 			fastaFile,
 			faiBytes,
+			optionsJson,
+		}
+		worker.postMessage(req)
+	})
+}
+
+/**
+ * Run the rust report against a BAM input + BAI index.
+ */
+export async function runPackageReportFromBamFile(
+	manifestPath: string,
+	packageFiles: BioscriptPackageFile[],
+	inputName: string,
+	bamFile: File,
+	baiBytes: Uint8Array,
+	options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	const optionsJson = JSON.stringify({
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		detectSex: options.detectSex ?? false,
+		filters: options.filters ?? [],
+	})
+	return new Promise<BioscriptPackageReportResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve(JSON.parse(raw.resultJson ?? '') as BioscriptPackageReportResult)
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
+		const req: WorkerReportFromBamRequest = {
+			type: 'reportFromBam',
+			requestId,
+			wasmUrl,
+			manifestPath,
+			packageFilesJson: JSON.stringify(packageFiles),
+			inputName,
+			bamFile,
+			baiBytes,
 			optionsJson,
 		}
 		worker.postMessage(req)
@@ -557,7 +721,7 @@ export async function runPackageReportFromVcfFile(
 		pendingLookupRequests.set(requestId, {
 			resolve: (raw) => {
 				try {
-					resolve(JSON.parse(raw.resultJson) as BioscriptPackageReportResult)
+					resolve(JSON.parse(raw.resultJson ?? '') as BioscriptPackageReportResult)
 				} catch (error) {
 					reject(error instanceof Error ? error : new Error(String(error)))
 				}
@@ -596,7 +760,7 @@ export async function lookupVcfVariants(
 			resolve: (raw) => {
 				try {
 					resolve({
-						observations: JSON.parse(raw.resultJson) as VariantObservation[],
+						observations: JSON.parse(raw.resultJson ?? '') as VariantObservation[],
 						durationMs: raw.durationMs,
 					})
 				} catch (error) {

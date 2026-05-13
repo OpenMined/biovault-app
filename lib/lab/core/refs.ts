@@ -36,7 +36,7 @@ export type LabAssayRef = {
 }
 
 export function createLabGenomeRefFromPrimary(primary: LabFileRef): LabGenomeRef | null {
-	if (primary.kind === 'cram') return { id: makeLabId('cram'), kind: 'cram', primary }
+	if (primary.kind === 'bam' || primary.kind === 'cram') return { id: makeLabId(primary.kind), kind: 'cram', primary }
 	if (primary.kind === 'vcf_gz') return { id: makeLabId('vcf'), kind: 'vcf', primary }
 	if (primary.kind === 'genotype_text') return { id: makeLabId('text'), kind: 'text', primary }
 	if (primary.kind === 'zip') return { id: makeLabId('zip'), kind: 'zip', primary }
@@ -61,7 +61,7 @@ export function pairLabGenomeCompanionRef(genomes: LabGenomeRef[], ref: LabFileR
 	const stem = stripGenomeSuffix(ref.name).toLowerCase()
 	const next = genomes.map((genome) => ({ ...genome }))
 
-	if (ref.kind === 'crai') {
+	if (ref.kind === 'bai' || ref.kind === 'crai') {
 		const target =
 			next.find((genome) => genome.kind === 'cram' && genome.primary.name.toLowerCase() === stem) ??
 			next.find((genome) => genome.kind === 'cram' && !genome.crai)

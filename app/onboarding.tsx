@@ -31,7 +31,43 @@ function openOpenMinedWebsite() {
 	void Linking.openURL('https://www.openmined.org')
 }
 
+export type OnboardingAgreementCardProps = {
+	hasAgreed: boolean
+	onContinue: () => void
+	onToggleAgreed: () => void
+}
+
 export default function OnboardingScreen() {
+	const [hasAgreed, setHasAgreed] = useState(
+		getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true',
+	)
+	const handleContinue = () => {
+		if (!hasAgreed) return
+		const deferredLaunchUrl = Platform.OS === 'web' ? getDeferredLaunchUrlSync() : null
+		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
+		setAppPreferenceSync('hasCompletedOnboarding', 'true')
+		setExploreDemoModeEnabledSync(true)
+		if (deferredLaunchUrl && Platform.OS === 'web' && typeof window !== 'undefined') {
+			window.location.replace(deferredLaunchUrl)
+			return
+		}
+		router.replace('/(tabs)' as any)
+	}
+
+	return (
+		<OnboardingAgreementCard
+			hasAgreed={hasAgreed}
+			onContinue={handleContinue}
+			onToggleAgreed={() => setHasAgreed((value) => !value)}
+		/>
+	)
+}
+
+export function OnboardingAgreementCard({
+	hasAgreed,
+	onContinue,
+	onToggleAgreed,
+}: OnboardingAgreementCardProps) {
 	const scheme = useColorScheme()
 	const palette = labPalettes[scheme]
 	const { width } = useWindowDimensions()
@@ -39,10 +75,6 @@ export default function OnboardingScreen() {
 	const styles = useMemo(
 		() => makeStyles(palette, { isWebWide }),
 		[palette, isWebWide],
-	)
-
-	const [hasAgreed, setHasAgreed] = useState(
-		getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true',
 	)
 	const stackOpacity = useRef(new Animated.Value(0)).current
 	const stackTranslateY = useRef(new Animated.Value(10)).current
@@ -79,19 +111,6 @@ export default function OnboardingScreen() {
 			}),
 		]).start()
 	}, [infoCardOpacity, infoCardTranslateY, stackOpacity, stackTranslateY])
-
-	const handleContinue = () => {
-		if (!hasAgreed) return
-		const deferredLaunchUrl = Platform.OS === 'web' ? getDeferredLaunchUrlSync() : null
-		setAppPreferenceSync('hasAcceptedResearchDisclaimer', 'true')
-		setAppPreferenceSync('hasCompletedOnboarding', 'true')
-		setExploreDemoModeEnabledSync(true)
-		if (deferredLaunchUrl && Platform.OS === 'web' && typeof window !== 'undefined') {
-			window.location.replace(deferredLaunchUrl)
-			return
-		}
-		router.replace('/(tabs)' as any)
-	}
 
 	return (
 		<View style={styles.screen}>
@@ -177,7 +196,7 @@ export default function OnboardingScreen() {
 
 						<View style={styles.footer}>
 							<Pressable
-								onPress={() => setHasAgreed((value) => !value)}
+								onPress={onToggleAgreed}
 								style={[styles.checkboxRow, hasAgreed && styles.checkboxRowChecked]}
 							>
 								<View style={[styles.checkboxBox, hasAgreed && styles.checkboxBoxChecked]}>
@@ -190,7 +209,7 @@ export default function OnboardingScreen() {
 
 							<OMButton
 								label="Continue"
-								onPress={handleContinue}
+								onPress={onContinue}
 								disabled={!hasAgreed}
 								style={[styles.continueButton, hasAgreed && styles.continueButtonEnabled]}
 							/>

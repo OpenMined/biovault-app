@@ -56,6 +56,22 @@ export async function compileVariantYamlText(_name: string, _text: string): Prom
 	nativeOnly('compileVariantYamlText')
 }
 
+export async function generateVcfTbiFile(_vcfFile: File): Promise<Uint8Array> {
+	nativeOnly('generateVcfTbiFile')
+}
+
+export async function generateCramCraiFile(_cramFile: File): Promise<Uint8Array> {
+	nativeOnly('generateCramCraiFile')
+}
+
+export async function generateBamBaiFile(_bamFile: File): Promise<Uint8Array> {
+	nativeOnly('generateBamBaiFile')
+}
+
+export async function generateFastaFaiFile(_fastaFile: File): Promise<Uint8Array> {
+	nativeOnly('generateFastaFaiFile')
+}
+
 export async function lookupGenotypeBytesVariants(
 	_name: string,
 	_bytes: Uint8Array,
@@ -133,6 +149,17 @@ export async function runPackageReportFromCramFile(
 	_options: BioscriptPackageReportOptions = {},
 ): Promise<BioscriptPackageReportResult> {
 	nativeOnly('runPackageReportFromCramFile')
+}
+
+export async function runPackageReportFromBamFile(
+	_manifestPath: string,
+	_packageFiles: BioscriptPackageFile[],
+	_inputName: string,
+	_bamFile: File,
+	_baiBytes: Uint8Array,
+	_options: BioscriptPackageReportOptions = {},
+): Promise<BioscriptPackageReportResult> {
+	nativeOnly('runPackageReportFromBamFile')
 }
 
 export async function runPackageReportFromVcfFile(
