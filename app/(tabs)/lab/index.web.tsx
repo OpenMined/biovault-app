@@ -3636,7 +3636,7 @@ function LabExplorerSidebar({
 	onRestoreSavedHandle: (group: SavedHandleGroup) => void
 	scheme: 'light' | 'dark'
 }) {
-	const { styles } = useTheme()
+	const { styles, mutedIconTone } = useTheme()
 	const sessionPrimaryNames = useMemo(() => new Set(sessionGenomes.map((g) => g.primary.name)), [sessionGenomes])
 	/** Cached fetch rows duplicate session rows when the same primary is already loaded; keep them out of the picker list. */
 	const cachedRemotePickers = useMemo(() => {
@@ -3721,7 +3721,7 @@ function LabExplorerSidebar({
 										]}
 										accessibilityLabel={`Select genome ${labGenomeDisplayName(genome)}`}
 									>
-										<OMIcon name="layers-outline" tone="accent" size={15} />
+										<OMIcon name="layers-outline" tone={rowSelected ? 'accent' : mutedIconTone} size={15} />
 										<View style={styles.labExplorerRowText}>
 											<OMText variant="body" style={styles.labExplorerRowTitle} numberOfLines={1}>
 												{labGenomeDisplayName(genome)}
@@ -3745,7 +3745,7 @@ function LabExplorerSidebar({
 										hitSlop={6}
 										accessibilityLabel={`Remove genome ${labGenomeDisplayName(genome)}`}
 									>
-										<OMIcon name="trash-outline" tone="muted" size={14} />
+										<OMIcon name="trash-outline" tone={mutedIconTone} size={15} />
 									</Pressable>
 								</View>
 							)
@@ -3775,7 +3775,7 @@ function LabExplorerSidebar({
 										savedHandlesLoading ? styles.labExplorerRowMainMuted : null,
 									]}
 								>
-									<OMIcon name="folder-open-outline" tone="accent" size={15} />
+									<OMIcon name="folder-open-outline" tone={pinnedSelected ? 'accent' : mutedIconTone} size={15} />
 									<View style={styles.labExplorerRowText}>
 										<OMText
 											testID="saved-local-file-title"
@@ -3805,7 +3805,7 @@ function LabExplorerSidebar({
 									hitSlop={6}
 									accessibilityLabel={`Forget saved group ${group.label}`}
 								>
-									<OMIcon name="trash-outline" tone="muted" size={14} />
+									<OMIcon name="trash-outline" tone={mutedIconTone} size={15} />
 								</Pressable>
 							</View>
 							)
@@ -3835,7 +3835,7 @@ function LabExplorerSidebar({
 										savedHandlesLoading ? styles.labExplorerRowMainMuted : null,
 									]}
 								>
-									<OMIcon name="cloud-download-outline" tone="accent" size={15} />
+									<OMIcon name="cloud-download-outline" tone={cachedSelected ? 'accent' : mutedIconTone} size={15} />
 									<View style={styles.labExplorerRowText}>
 										<OMText
 											testID="saved-local-file-title"
@@ -3865,7 +3865,7 @@ function LabExplorerSidebar({
 									hitSlop={6}
 									accessibilityLabel={`Forget cached file ${remoteFile.file.name}`}
 								>
-									<OMIcon name="trash-outline" tone="muted" size={14} />
+									<OMIcon name="trash-outline" tone={mutedIconTone} size={15} />
 								</Pressable>
 							</View>
 							)
@@ -5715,7 +5715,7 @@ function FeedbackFooterButton() {
 }
 
 function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
-	const { styles } = useTheme()
+	const { styles, mutedIconTone } = useTheme()
 	const { icon, label } =
 		scheme === 'light'
 			? { icon: 'sunny-outline' as const, label: 'Light' }
@@ -5730,7 +5730,7 @@ function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 			accessibilityLabel={`Color theme: ${label}. Press to toggle.`}
 		>
 			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
-				<OMIcon name={icon} size={16} tone="accent" />
+				<OMIcon name={icon} size={16} tone={mutedIconTone} />
 			</View>
 			<View pointerEvents="none">
 				<OMText
@@ -5972,10 +5972,10 @@ function makeStyles(p: LabPalette) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: 8,
-			minHeight: 40,
+			height: 40,
 			paddingHorizontal: 14,
 			paddingVertical: 0,
-			borderRadius: omRadius.m,
+			borderRadius: omRadius.l,
 			borderWidth: 1,
 			borderColor: p.border,
 			backgroundColor: 'transparent',
@@ -6441,13 +6441,12 @@ function makeStyles(p: LabPalette) {
 			borderRadius: omRadius.l,
 			backgroundColor: p.surfaceSunken,
 			overflow: 'hidden',
-			minHeight: 58,
+			minHeight: 56,
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
 		},
 		labExplorerPinnedRowSelected: {
-			borderRadius: omRadius.l,
-			backgroundColor: p.overlayCardBg,
+			backgroundColor: p.accentTint,
 			borderColor: p.accentBorder,
 		},
 		labExplorerRowMain: {
@@ -6455,9 +6454,9 @@ function makeStyles(p: LabPalette) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: 10,
-			paddingVertical: 11,
-			paddingLeft: LAB_COLUMN_GUTTER_X,
-			paddingRight: omSpacing.m,
+			paddingVertical: 10,
+			paddingLeft: omSpacing.m + 2,
+			paddingRight: omSpacing.s,
 			minWidth: 0,
 			cursor: 'pointer',
 			userSelect: 'none',
@@ -6489,7 +6488,7 @@ function makeStyles(p: LabPalette) {
 		labExplorerRowGhostHit: {
 			alignSelf: 'stretch',
 			justifyContent: 'center',
-			paddingHorizontal: LAB_COLUMN_GUTTER_X,
+			paddingHorizontal: omSpacing.m + 2,
 			cursor: 'pointer',
 			WebkitTapHighlightColor: 'transparent',
 		} as object,
@@ -6532,7 +6531,7 @@ function makeStyles(p: LabPalette) {
 			gap: 6,
 			height: 40,
 			paddingHorizontal: 14,
-			borderRadius: omRadius.full,
+			borderRadius: omRadius.l,
 			borderWidth: 1,
 			cursor: 'pointer',
 			userSelect: 'none',
@@ -6540,12 +6539,12 @@ function makeStyles(p: LabPalette) {
 		} as object,
 		webThemeButtonIcon: { justifyContent: 'center' },
 		webThemeButtonLight: {
-			backgroundColor: 'rgba(252,252,253,0.92)',
-			borderColor: 'rgba(83,190,169,0.32)',
+			backgroundColor: 'transparent',
+			borderColor: p.border,
 		},
 		webThemeButtonDark: {
-			backgroundColor: 'rgba(255,255,255,0.05)',
-			borderColor: 'rgba(255,255,255,0.14)',
+			backgroundColor: 'transparent',
+			borderColor: p.border,
 		},
 		webThemeButtonText: {},
 		webThemeButtonTextLight: {
