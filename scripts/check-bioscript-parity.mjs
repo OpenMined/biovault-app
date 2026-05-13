@@ -17,6 +17,7 @@ const inputRel = path.relative(root, inputPath)
 const apol1ScriptRel = 'exvitae/assays/risk/APOL1/apol1.py'
 const wasmRunner = path.join(root, 'modules/expo-bioscript/scripts/run-bioscript-wasm.cjs')
 const bioscriptShim = path.join(root, 'bioscript/bs')
+const bsWasmShim = path.join(root, 'tools/bs-wasm.mjs')
 const skipWasm = process.env.BIOSCRIPT_SKIP_WASM_PARITY === '1'
 
 process.on('exit', () => {
@@ -62,6 +63,32 @@ function assertObservationGenotypes(observations, expected) {
 function assertArrayEqual(actual, expected, label) {
 	if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) {
 		throw new Error(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
+	}
+}
+
+function readJsonl(file) {
+	return readFileSync(file, 'utf8')
+		.split(/\r?\n/)
+		.filter(Boolean)
+		.map((line) => JSON.parse(line))
+}
+
+function assertPgxApoeReport(outputDir) {
+	const analyses = readJsonl(path.join(outputDir, 'analysis.jsonl'))
+	const apoe = analyses.find((analysis) => analysis.analysis_id === 'apoe_epsilon')
+	if (!apoe) throw new Error('PGx report did not emit apoe_epsilon analysis')
+	const row = apoe.rows?.[0]
+	if (!row) throw new Error('PGx apoe_epsilon analysis did not emit a row')
+	assertEqual(row.rs429358, 'TT', 'PGx APOE rs429358 analysis genotype')
+	assertEqual(row.rs7412, 'CC', 'PGx APOE rs7412 analysis genotype')
+	assertEqual(row.apoe_status, 'e3/e3', 'PGx APOE status')
+	assertEqual(row.apoe_outcome, 'normal', 'PGx APOE outcome')
+	const observations = readFileSync(path.join(outputDir, 'observations.tsv'), 'utf8')
+	if (!observations.includes('APOE-pgx-rs429358') || !observations.includes('\tTT\t')) {
+		throw new Error('PGx APOE observations.tsv does not contain rs429358 TT')
+	}
+	if (!observations.includes('APOE-pgx-rs7412') || !observations.includes('\tCC\t')) {
+		throw new Error('PGx APOE observations.tsv does not contain rs7412 CC')
 	}
 }
 
@@ -173,5 +200,32 @@ const inspection = parseJsonOutput(run('bioscript wasm inspect', 'node', [
 	env: { ...process.env, RUN_BIOSCRIPT_WASM_NO_BUILD: '1' },
 }))
 assertEqual(inspection.detectedKind, 'genotype_text', 'inspect detectedKind')
+
+const pgxManifestPath = path.join(root, 'exvitae/assays/pgx/pgx-1/manifest.yaml')
+const pgx23andmePath = path.join(
+	root,
+	'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip',
+)
+if (existsSync(pgxManifestPath) && existsSync(pgx23andmePath)) {
+	console.log('==> WASM PGx-1 23andMe APOE report parity')
+	const pgxOutputDir = path.join(tempRoot, 'pgx-1-23andme-v5-wasm')
+	run('bioscript wasm PGx-1 23andMe report', 'node', [
+		bsWasmShim,
+		'report',
+		path.relative(root, pgxManifestPath),
+		'--root',
+		root,
+		'--input-file',
+		path.relative(root, pgx23andmePath),
+		'--detect-sex',
+		'--output-dir',
+		pgxOutputDir,
+		'--analysis-max-duration-ms',
+		'30000',
+	])
+	assertPgxApoeReport(pgxOutputDir)
+} else {
+	console.warn('Skipping PGx-1 23andMe APOE report parity; fixture is not present.')
+}
 
 console.log('bioscript CLI/WASM parity passed')

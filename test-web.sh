@@ -158,7 +158,10 @@ case "$MODE" in
     )
     ;;
   scenario)
-    SPECS=(.maestro-web/lab-format-matrix.spec.ts)
+    SPECS=(
+      .maestro-web/lab-format-matrix.spec.ts
+      .maestro-web/lab-user-scenarios.spec.ts
+    )
     ;;
   pgx-report)
     SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
