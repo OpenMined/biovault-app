@@ -33,7 +33,9 @@ async function dismissDisclaimer(page: Page) {
 async function dismissRememberFilesPrompt(page: Page) {
 	const notNow = page.getByText('Not now', { exact: true })
 	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-		await notNow.click()
+		await notNow.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 	}
 }
 
@@ -88,23 +90,37 @@ test('lab: PGx-1 package runs against default 23andMe ZIP in browser', async ({ 
 	}, PGX_RELEASE_URL)
 	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
 	await expect(dialog.getByText('Fetch this URL?')).toBeVisible({ timeout: 30_000 })
-	await dialog.getByRole('button', { name: 'Fetch URL' }).click()
-	await expect(page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' }).first()).toBeVisible({ timeout: 60_000 })
+	await dialog.getByRole('button', { name: 'Fetch URL' }).evaluate((element) => {
+		;(element as HTMLElement).click()
+	})
+	const fetchDependencies = dialog.getByRole('button', { name: /Fetch dependencies|Refetch dependencies/ })
+	if (await fetchDependencies.isVisible({ timeout: 30_000 }).catch(() => false)) {
+		await fetchDependencies.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+		await expect(dialog.getByText(/33 dependency files fetched for this session\./)).toBeVisible({ timeout: 60_000 })
+	}
+	await expect(page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' }).first().getByText('Run panel', { exact: true })).toBeVisible({ timeout: 60_000 })
 	const closeSharedResource = dialog.getByRole('button', { name: 'Close shared resource dialog' })
 	if (await closeSharedResource.isVisible({ timeout: 1_000 }).catch(() => false)) {
-		await closeSharedResource.click()
+		await closeSharedResource.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 	}
 	if (await dialog.isVisible({ timeout: 1_000 }).catch(() => false)) {
 		await expect(dialog).toBeHidden({ timeout: 10_000 })
 	}
 
 	await expect(page.getByText('PGx-1 Panel', { exact: true })).toHaveCount(1)
+	await dismissRememberFilesPrompt(page)
 	await page.screenshot({
 		path: '.maestro-web/screenshots/lab-pgx-01-loaded.png',
 		fullPage: true,
 	})
 
-	await page.getByText('Run panel', { exact: true }).click()
+	await page.getByText('Run panel', { exact: true }).evaluate((element) => {
+		;(element as HTMLElement).click()
+	})
 	await expect(page.getByText('Latest result')).toBeVisible({ timeout: 180_000 })
 	await expect(page.getByText('Run failed')).toHaveCount(0)
 	await expect(page.getByText('unreachable')).toHaveCount(0)

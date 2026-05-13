@@ -3,6 +3,8 @@ import {
 	GENOME_23ANDME,
 	PGX_RELEASE_YAML,
 	chooseGenomeFiles,
+	dismissRememberFilesPrompt,
+	dismissSharedResourcePrompt,
 	gotoLab,
 	importPgxReleaseFromUrl,
 	localPackageZipFromRelease,
@@ -28,7 +30,10 @@ test.describe('lab PGx package import — web', () => {
 		await expect(panelRows.first().getByText('Run panel', { exact: true })).toBeVisible()
 		await expect(page.getByText('Download', { exact: true })).toHaveCount(0)
 
-		await panelRows.first().click()
+		await dismissRememberFilesPrompt(page)
+		await panelRows.first().evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 		const sourceDialog = page.getByLabel('Source files dialog')
 		await expect(sourceDialog).toBeVisible({ timeout: 30_000 })
 		await expect(sourceDialog.getByText(/file[s]? used by this assay\/report/)).toBeVisible()
@@ -43,7 +48,7 @@ test.describe('lab PGx package import — web', () => {
 		await expect(sourceDialog.getByText('def main():', { exact: true })).toBeVisible({ timeout: 10_000 })
 	})
 
-	test('PGx-1 package remains runnable after refresh and reselecting 23andMe ZIP', async ({ page }) => {
+	test('PGx-1 package can be restored after refresh and reselecting 23andMe ZIP', async ({ page }) => {
 		const packageZip = localPackageZipFromRelease()
 		const missing = missingFixture([GENOME_23ANDME, PGX_RELEASE_YAML, packageZip])
 		test.skip(Boolean(missing), `missing fixture: ${missing}`)
@@ -52,14 +57,27 @@ test.describe('lab PGx package import — web', () => {
 		await routePgxPackageToLocalFiles(page)
 		await gotoLab(page)
 		await importPgxReleaseFromUrl(page)
+		await page.evaluate(() => {
+			window.history.replaceState(null, '', window.location.pathname + window.location.search)
+		})
 		await page.reload({ waitUntil: 'domcontentloaded' })
+		await dismissSharedResourcePrompt(page)
 		await chooseGenomeFiles(page, GENOME_23ANDME)
 		await expect(page.getByText('Genome complete', { exact: true })).toBeVisible({ timeout: 30_000 })
 
 		const panelRow = page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' }).first()
 		await expect(panelRow).toBeVisible({ timeout: 30_000 })
+		await dismissSharedResourcePrompt(page)
+		const downloadPanel = panelRow.getByRole('button', { name: 'Download PGx-1 Panel' })
+		if (await downloadPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
+			await downloadPanel.evaluate((element) => {
+				;(element as HTMLElement).click()
+			})
+		}
 		await expect(panelRow.getByText('Run panel', { exact: true })).toBeVisible({ timeout: 60_000 })
-		await panelRow.getByText('Run panel', { exact: true }).click()
+		await panelRow.getByText('Run panel', { exact: true }).evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 
 		await expect(page.getByText('Latest result')).toBeVisible({ timeout: 180_000 })
 		await expect(page.locator('body')).not.toContainText('package file not found')

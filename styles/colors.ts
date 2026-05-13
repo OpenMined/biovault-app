@@ -61,20 +61,20 @@ export interface ColorTheme {
 // ts-prune-ignore-next
 export const lightTheme: ColorTheme = {
 	// Primary colors
-	primary: '#059669',
-	primaryAlt: '#6b9080',
-	primaryLight: '#e0f2e7',
-	primaryDark: '#2d5a4f',
+	primary: '#007559',
+	primaryAlt: '#00bc7d',
+	primaryLight: '#dff5e7',
+	primaryDark: '#003419',
 
 	// Backgrounds
-	background: '#fcfcfd',
+	background: '#fdfdfd',
 	surface: '#ffffff',
-	surfaceAlt: '#fcfcfd',
+	surfaceAlt: '#f0f2f4',
 
 	// Text colors
-	textPrimary: '#2d5a4f',
-	textSecondary: '#666666',
-	textTertiary: '#4a5568',
+	textPrimary: '#0a0b0d',
+	textSecondary: '#52555b',
+	textTertiary: '#1f2227',
 	textInverse: '#ffffff',
 
 	// Clinical significance colors
@@ -90,52 +90,52 @@ export const lightTheme: ColorTheme = {
 	benignBg: '#f0fff4',
 
 	// Status colors
-	error: '#c53030',
+	error: '#cc272e',
 	errorBg: '#fee',
 	warning: '#d69e2e',
 	warningBg: '#fffbf0',
-	success: '#22543d',
-	successBg: '#f0fff4',
-	info: '#2196f3',
-	infoBg: '#e3f2fd',
+	success: '#007d33',
+	successBg: '#dff5e7',
+	info: '#002635',
+	infoBg: '#deeef6',
 
 	// UI elements
-	border: '#e0f2e7',
-	borderLight: '#e0f2e7',
-	divider: '#e0f2e7',
-	shadow: '#2d5a4f',
+	border: '#dddee0',
+	borderLight: '#e3e4e6',
+	divider: '#dddee0',
+	shadow: '#0a0b0d',
 	overlay: 'rgba(0, 0, 0, 0.5)',
 
 	// Special elements
-	inactive: '#a4c3b2',
-	highlight: '#f0f9f6',
+	inactive: '#deeef6',
+	highlight: '#dff5e7',
 
 	// Onboarding slide backgrounds
-	bgPrivacy: '#e0f2e7',
-	bgAnalysis: '#f0f9f6',
-	bgInsights: '#e8f5f0',
-	bgResearch: '#e0f2e7',
-	bgControl: '#fcfcfd',
+	bgPrivacy: '#dff5e7',
+	bgAnalysis: '#eff0f2',
+	bgInsights: '#deeef6',
+	bgResearch: '#dff5e7',
+	bgControl: '#fdfdfd',
 }
 
 // ts-prune-ignore-next
 export const darkTheme: ColorTheme = {
 	// Primary colors
-	primary: '#059669',
-	primaryAlt: '#7ea995',
-	primaryLight: '#2d5a4f',
-	primaryDark: '#a4c3b2',
+	primary: '#62d79b',
+	primaryAlt: '#54c891',
+	primaryLight: '#202423',
+	primaryDark: '#b8bfba',
 
 	// Backgrounds
-	background: '#1a2f2a',
-	surface: '#1e3a32',
-	surfaceAlt: '#243f37',
+	background: '#111312',
+	surface: '#181b1a',
+	surfaceAlt: '#202423',
 
 	// Text colors
-	textPrimary: '#e8f5f0',
-	textSecondary: '#a4c3b2',
-	textTertiary: '#9db5a8',
-	textInverse: '#1a2f2a',
+	textPrimary: '#f3f4f1',
+	textSecondary: '#b8bfba',
+	textTertiary: '#7f8982',
+	textInverse: '#07100b',
 
 	// Clinical significance colors
 	pathogenic: '#fc8181',
@@ -150,30 +150,30 @@ export const darkTheme: ColorTheme = {
 	benignBg: 'rgba(34, 84, 61, 0.2)',
 
 	// Status colors
-	error: '#fc8181',
-	errorBg: 'rgba(197, 48, 48, 0.2)',
+	error: '#cc272e',
+	errorBg: 'rgba(204, 39, 46, 0.2)',
 	warning: '#f6e05e',
 	warningBg: 'rgba(214, 158, 46, 0.2)',
-	success: '#68d391',
-	successBg: 'rgba(34, 84, 61, 0.2)',
-	info: '#63b3ed',
-	infoBg: 'rgba(66, 153, 225, 0.2)',
+	success: '#62d79b',
+	successBg: 'rgba(98, 215, 155, 0.12)',
+	info: '#7cc7d6',
+	infoBg: 'rgba(124, 199, 214, 0.14)',
 
 	// UI elements
-	border: '#2d5a4f',
-	borderLight: '#3a6d5f',
-	divider: '#2d5a4f',
+	border: '#303633',
+	borderLight: '#3d4541',
+	divider: '#303633',
 	shadow: '#000000',
 	overlay: 'rgba(0, 0, 0, 0.7)',
 
 	// Special elements
-	inactive: '#3a6d5f',
-	highlight: '#2a4d43',
+	inactive: '#3d4541',
+	highlight: '#202423',
 
 	// Onboarding slide backgrounds
-	bgPrivacy: '#1a2f2a',
-	bgAnalysis: '#243f37',
-	bgInsights: '#2d5a4f',
-	bgResearch: '#1a2f2a',
-	bgControl: '#0f1f1a',
+	bgPrivacy: '#111312',
+	bgAnalysis: '#181b1a',
+	bgInsights: '#202423',
+	bgResearch: '#111312',
+	bgControl: '#0d0f0e',
 }

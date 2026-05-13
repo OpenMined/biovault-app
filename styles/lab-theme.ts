@@ -1,7 +1,7 @@
 import type { ColorScheme } from '@/lib/color-theme'
 
-/** Matches BioVault landing `:root`/body fill (prepare-cloudflare-web-assets `index.html`). */
-export const LAB_LANDING_PAGE_FILL = '#272532'
+/** Dark neutral base with BioVault green reserved for accents. */
+export const LAB_LANDING_PAGE_FILL = '#111312'
 
 export type LabPalette = {
 	pageBg: string
@@ -9,6 +9,8 @@ export type LabPalette = {
 	surfaceRaised: string
 	surfaceSunken: string
 	surfaceSolid: string
+	sidebar: string
+	sidebarControl: string
 	border: string
 	borderStrong: string
 	text: string
@@ -38,66 +40,68 @@ export type LabPalette = {
 // a glance; accent tints gentle but present.
 // ---------------------------------------------------------------------------
 const light: LabPalette = {
-	pageBg: '#f6f5f9',          // soft cool gray — lets white cards pop
+	pageBg: '#fdfdfd',
 	surface: '#ffffff',         // cards sit above pageBg with real contrast
 	surfaceRaised: '#ffffff',
-	surfaceSunken: '#eeedf3',   // deeper inset for code/result preBlocks
+	surfaceSunken: '#eff0f2',   // deeper inset for code/result preBlocks
 	surfaceSolid: '#ffffff',
-	border: '#e4e2eb',          // soft but visible separator
-	borderStrong: '#c6c3d2',
-	text: '#17161d',
-	textMuted: '#4e4c60',       // darker than before for cleaner secondary
-	textFaint: '#7a7790',       // still subtle but now passes 3:1
-	accent: '#53bea9',          // brand green — buttons, borders, fills
-	accentStrong: '#1f7360',    // deep green for text/links on white (5:1)
-	accentSoft: 'rgba(83,190,169,0.16)',
-	accentBorder: 'rgba(83,190,169,0.5)',
-	accentTint: 'rgba(83,190,169,0.1)',
+	sidebar: '#f6f8f7',
+	sidebarControl: '#ffffff',
+	border: '#dddee0',
+	borderStrong: '#c3d2c9',
+	text: '#0a0b0d',
+	textMuted: '#52555b',
+	textFaint: '#809589',
+	accent: '#007559',
+	accentStrong: '#007559',
+	accentSoft: 'rgba(0,117,89,0.14)',
+	accentBorder: 'rgba(0,117,89,0.34)',
+	accentTint: 'rgba(0,117,89,0.08)',
 	warningBg: '#fdf4d6',
 	warningText: '#6f540a',
 	warningBorder: '#e5cf83',
 	dangerBg: '#fbeaed',
 	dangerText: '#7d2638',
 	dangerBorder: '#dda0ad',
-	overlayBg: 'rgba(246,245,249,0.92)',
-	overlayCardBg: 'rgba(83,190,169,0.14)',
-	invertText: '#17161d',      // dark text on green button
-	iconNeutral: '#4e4c60',
-	shadow: 'rgba(23,22,29,0.06)',
+	overlayBg: 'rgba(253,253,253,0.92)',
+	overlayCardBg: 'rgba(0,117,89,0.12)',
+	invertText: '#ffffff',
+	iconNeutral: '#52555b',
+	shadow: 'rgba(10,11,13,0.06)',
 }
 
 // ---------------------------------------------------------------------------
-// Dark — aligned with BioVault landing (prepare-cloudflare-web-assets /
-// index.html): #272532 base, teal radial veil, warm off-white headline text,
-// #d8d3df secondary, soft borders like rgba(255,255,255,0.08-0.14).
+// Dark — aligned with the shared BioVault green base and emerald accents.
 // ---------------------------------------------------------------------------
 const dark: LabPalette = {
 	pageBg: LAB_LANDING_PAGE_FILL, // landing :root / body tint stack
-	surface: '#353243', // grayscale750 — inset panels / lists (home screens)
-	surfaceRaised: '#3a364c', // one step elevated from surface
-	surfaceSunken: '#1f1d29', // code wells, dipped regions
-	surfaceSolid: '#353243', // explorer column, grouped panels
-	border: 'rgba(255,255,255,0.1)', // landing .platforms / footer separators
-	borderStrong: 'rgba(255,255,255,0.14)',
-	text: '#f7f4ef', // landing :root foreground
-	textMuted: '#d8d3df', // landing hero <p>
-	textFaint: 'rgba(247,244,239,0.52)', // landing .footer-note
-	accent: '#53bea9', // landing .brand / CTA fill
-	accentStrong: '#53bea9', // BIOVAULT kicker / links — matches landing teal
-	accentSoft: 'rgba(83,190,169,0.14)',
-	accentBorder: 'rgba(83,190,169,0.32)',
-	accentTint: 'rgba(83,190,169,0.1)',
+	surface: '#181b1a',
+	surfaceRaised: '#202423',
+	surfaceSunken: '#0d0f0e',
+	surfaceSolid: '#151817',
+	sidebar: '#151817',
+	sidebarControl: '#0d0f0e',
+	border: 'rgba(219,226,221,0.12)',
+	borderStrong: 'rgba(219,226,221,0.22)',
+	text: '#f3f4f1',
+	textMuted: '#b8bfba',
+	textFaint: '#7f8982',
+	accent: '#62d79b',
+	accentStrong: '#8ee7b8',
+	accentSoft: 'rgba(98,215,155,0.10)',
+	accentBorder: 'rgba(98,215,155,0.24)',
+	accentTint: 'rgba(98,215,155,0.07)',
 	warningBg: 'rgba(255,200,80,0.1)',
 	warningText: '#ffd87a',
 	warningBorder: 'rgba(255,200,80,0.3)',
 	dangerBg: 'rgba(255,107,107,0.12)',
 	dangerText: '#ff9a9a',
 	dangerBorder: 'rgba(255,107,107,0.35)',
-	overlayBg: 'rgba(39,37,50,0.92)',
-	overlayCardBg: 'rgba(83,190,169,0.14)',
-	invertText: '#17161d', // landing .primary-action strong (on teal)
-	iconNeutral: '#cfcdd6',
-	shadow: 'rgba(83,190,169,0.24)',
+	overlayBg: 'rgba(17,19,18,0.92)',
+	overlayCardBg: 'rgba(98,215,155,0.10)',
+	invertText: '#07100b',
+	iconNeutral: '#aeb6b1',
+	shadow: 'rgba(0,0,0,0.28)',
 }
 
 export const labPalettes: Record<ColorScheme, LabPalette> = { light, dark }

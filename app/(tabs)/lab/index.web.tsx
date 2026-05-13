@@ -133,7 +133,6 @@ import {
 import { createPortal } from 'react-dom'
 import {
 	ActivityIndicator,
-	Linking,
 	Platform,
 	Pressable,
 	ScrollView,
@@ -161,12 +160,12 @@ const LAB_COLUMN_GUTTER_X = omSpacing.l
 /** Wide browser layout: genome setup left, assays + runs right */
 const LAB_WIDE_TWO_COL_MIN = 1100
 const LAB_SIDEBAR_DRAWER_MAX = 920
+const LAB_COMPACT_HEADER_MAX = 700
 const LAB_COLUMN_HEAD_PAD_Y = omSpacing.l
-const LAB_GETTING_STARTED_VIDEO_URL = 'https://youtu.be/54oRjs2AcJY'
+const LAB_CHROME_HEADER_HEIGHT = 136
+const LAB_CHROME_FOOTER_HEIGHT = 64
+const LAB_GETTING_STARTED_SECTION_GAP = omSpacing.xxxl
 const LAB_GETTING_STARTED_VIDEO_EMBED_URL = 'https://www.youtube.com/embed/54oRjs2AcJY'
-const ASSAY_IMPORT_URL_EXAMPLE =
-	'https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml'
-
 const FEATURED_CATALOG: LabAssay[] = [
 	{
 		id: 'featured-pgx-1',
@@ -364,28 +363,6 @@ function assayDisplayKind(assay: LabAssay): 'assay' | 'panel' | 'variant' | 'oth
 	return 'assay'
 }
 
-function assayKindLabel(kind: ReturnType<typeof assayDisplayKind>): string {
-	switch (kind) {
-		case 'panel':
-			return 'Panel'
-		case 'variant':
-			return 'Assay'
-		default:
-			return 'Assay'
-	}
-}
-
-function assayKindIcon(kind: ReturnType<typeof assayDisplayKind>) {
-	switch (kind) {
-		case 'panel':
-			return 'layers-outline'
-		case 'variant':
-			return 'git-branch-outline'
-		default:
-			return 'flask-outline'
-	}
-}
-
 function mergeAssayList(assays: LabAssay[]): LabAssay[] {
 	// URLs that a session assay arrived via a package release for. Catalog
 	// entries with matching `url` are hidden so the resolved package replaces
@@ -481,6 +458,20 @@ function genomeSidebarMeta(genome: LabGenomeRef): string {
 	const missing = missingLabGenomeSlots(genome)
 	if (missing.length === 1) return `${base} · Needs ${missing[0]}`
 	return `${base} · Needs ${missing.length} files`
+}
+
+function cachedRemoteGenomeMeta(remoteFile: RemoteLabFile): string {
+	const label = (() => {
+		switch (remoteFile.fileKind) {
+			case 'bam': return 'BAM alignment'
+			case 'cram': return 'CRAM alignment'
+			case 'vcf_gz': return 'VCF (bgzipped)'
+			case 'genotype_text': return 'Genotype text'
+			case 'zip': return 'Zipped genotype (23andMe etc.)'
+			default: return remoteFile.fileKind.replace('_', ' ')
+		}
+	})()
+	return `${label} · ${humanLabSize(remoteFile.file.size)}`
 }
 
 function safeGenomicExtension(name: string): string {
@@ -1110,6 +1101,7 @@ export default function LabScreen() {
 	const { width: layoutWidth } = useWindowDimensions()
 	const useWideSplit = layoutWidth >= LAB_WIDE_TWO_COL_MIN && Boolean(activeGenomeRef)
 	const useSidebarDrawer = layoutWidth < LAB_SIDEBAR_DRAWER_MAX
+	const useCompactHeader = layoutWidth < LAB_COMPACT_HEADER_MAX
 	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 	const sidebarVisible = useSidebarDrawer ? mobileSidebarOpen : true
 	useEffect(() => {
@@ -2734,6 +2726,10 @@ export default function LabScreen() {
 	const firstDemoAssay = firstDemoBundle
 		? LAB_ASSAYS.find((assay) => assay.inputFormats.includes(firstDemoBundle.format)) ?? null
 		: null
+	const demoRunPending = Boolean(
+		pendingDemoRunAssayId ||
+		(firstDemoBundle && sampleLoadingId === firstDemoBundle.id),
+	)
 	const startDemoRun = useCallback(() => {
 		if (!firstDemoBundle || !firstDemoAssay) return
 		setForceGettingStarted(false)
@@ -2754,6 +2750,27 @@ export default function LabScreen() {
 	const closeSidebarDrawer = useCallback(() => setMobileSidebarOpen(false), [])
 
 	const showGettingStartedView = !activeGenomeRef || forceGettingStarted
+	const assayCatalogSubtitle = 'Search or import assays. Run availability updates for the active genome.'
+	const assayPaneHeader = showGettingStartedView ? null : (
+		<View style={styles.workbenchPaneHead}>
+			<OMText variant="subtitle" style={styles.pickerSectionTitle}>
+				Assay catalog
+			</OMText>
+			<OMText variant="caption" style={styles.pickerIntro}>
+				{assayCatalogSubtitle}
+			</OMText>
+		</View>
+	)
+	const resultsPaneHeader = (
+		<View style={styles.workbenchPaneHead}>
+			<OMText variant="subtitle" style={styles.pickerSectionTitle}>
+				Results
+			</OMText>
+			<OMText variant="caption" style={styles.pickerIntro}>
+				For the active genome.
+			</OMText>
+		</View>
+	)
 	const assayBlocks = !showGettingStartedView ? (
 		<AssayPicker
 			genome={activeGenomeRef}
@@ -2782,15 +2799,14 @@ export default function LabScreen() {
 		/>
 	) : (
 		<>
-			<OMText variant="caption" style={styles.landingOverviewKicker}>
-				BioVault Lab
-			</OMText>
 			<View
 				onLayout={(e) => {
 					gettingStartedYRef.current = e.nativeEvent.layout.y
 				}}
 			>
 				<LabGettingStartedPanel
+					showIntro={false}
+					demoRunPending={demoRunPending}
 					onTryDemoRun={firstDemoBundle && firstDemoAssay ? startDemoRun : undefined}
 					assayTitle={firstDemoAssay?.title}
 					sampleTitle={firstDemoBundle?.title}
@@ -2819,14 +2835,11 @@ export default function LabScreen() {
 				</View>
 			) : (
 				<View style={styles.resultsEmptyCard}>
-					<View style={styles.resultsEmptyIcon}>
-						<OMIcon name="analytics-outline" tone="accent" size={22} />
-					</View>
 					<OMText variant="headline" style={styles.resultsEmptyTitle}>
-						Results will appear here
+						No results yet
 					</OMText>
 					<OMText variant="body" style={styles.resultsEmptyText}>
-						Run an assay from the catalog to see progress, reports, artifacts, and recent runs in this panel.
+						Run an assay to see progress, reports, artifacts, and recent runs here.
 					</OMText>
 				</View>
 			)}
@@ -2852,8 +2865,14 @@ export default function LabScreen() {
 	)
 	const labWorkBlocks = (
 		<>
+			{assayPaneHeader}
 			{assayBlocks}
-			{activeGenomeRef ? resultBlocks : null}
+			{activeGenomeRef ? (
+				<>
+					{resultsPaneHeader}
+					{resultBlocks}
+				</>
+			) : null}
 		</>
 	)
 	const labSidebar = (
@@ -2904,33 +2923,43 @@ export default function LabScreen() {
 						style={[styles.scroll, styles.mainWorkspaceScroll]}
 						contentContainerStyle={styles.content}
 					>
-						<View style={styles.siteHeader}>
-							<View style={[styles.heroRow, useSidebarDrawer ? styles.heroRowStacked : null]}>
-								<View style={styles.heroTextBlock}>
+						<View style={[styles.siteHeader, showGettingStartedView ? styles.siteHeaderGettingStarted : null]}>
+							<View
+								style={[
+									styles.heroRow,
+									showGettingStartedView ? styles.heroRowGettingStarted : null,
+									useCompactHeader ? styles.heroRowCompact : null,
+								]}
+							>
+								<View
+									style={[
+										styles.heroTextBlock,
+										showGettingStartedView ? styles.heroTextBlockGettingStarted : null,
+									]}
+								>
 									{activeGenomeRef ? (
 										<>
-											<OMText variant="caption" style={styles.heroEyebrowMuted}>
-												BioVault Lab · Active genome
-											</OMText>
-											<OMText variant="h4" style={styles.heroTitle}>
+											<OMText variant="h4" style={styles.heroTitle} numberOfLines={1}>
 												{labGenomeDisplayName(activeGenomeRef)}
 											</OMText>
-											<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
-												{labGenomeKindLabel(activeGenomeRef)} ·{' '}
-												{humanLabSize(labGenomeBytesTotal(activeGenomeRef))}
-											</OMText>
-											<OMText
-												variant="caption"
-												style={
-													isLabGenomeComplete(activeGenomeRef)
-														? styles.heroGenomeStatusOk
-														: styles.heroGenomeStatusWarn
-												}
-											>
-												{isLabGenomeComplete(activeGenomeRef)
-													? 'Genome complete'
-													: `Missing ${missingLabGenomeSlots(activeGenomeRef).join(' · ')}`}
-											</OMText>
+											<View style={styles.heroMetaRow}>
+												<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
+													{labGenomeKindLabel(activeGenomeRef)} ·{' '}
+													{humanLabSize(labGenomeBytesTotal(activeGenomeRef))}
+												</OMText>
+												<OMText
+													variant="caption"
+													style={
+														isLabGenomeComplete(activeGenomeRef)
+															? styles.heroGenomeStatusOk
+															: styles.heroGenomeStatusWarn
+													}
+												>
+													{isLabGenomeComplete(activeGenomeRef)
+														? 'Genome complete'
+														: `Missing ${missingLabGenomeSlots(activeGenomeRef).join(' · ')}`}
+												</OMText>
+											</View>
 											{activeGenomeRef.kind === 'cram' || activeGenomeRef.kind === 'vcf' ? (
 												<GenomeSlotStrip
 													genome={activeGenomeRef}
@@ -2939,6 +2968,15 @@ export default function LabScreen() {
 													}
 												/>
 											) : null}
+										</>
+									) : showGettingStartedView ? (
+										<>
+											<OMText variant="h4" style={styles.heroTitle} numberOfLines={1}>
+												Getting Started
+											</OMText>
+											<OMText variant="body" style={styles.heroLead}>
+												Add a genome from the sidebar, then select an assay to run from the catalog.
+											</OMText>
 										</>
 									) : null}
 								</View>
@@ -2951,9 +2989,9 @@ export default function LabScreen() {
 											/>
 										) : null}
 										<View style={styles.headerNavCluster}>
-											<GettingStartedButton active={showGettingStartedView} onPress={openGettingStarted} />
-											<GithubButton />
-											<ContactButton />
+											<GettingStartedButton active={showGettingStartedView} compact={useCompactHeader} onPress={openGettingStarted} />
+											<GithubButton compact={useCompactHeader} />
+											<ContactButton compact={useCompactHeader} />
 										</View>
 									</View>
 								</View>
@@ -2963,28 +3001,12 @@ export default function LabScreen() {
 						{useWideSplit ? (
 							<View style={styles.workbenchGrid}>
 								<View style={[styles.workbenchPane, styles.workbenchAssayPane]}>
-									{activeGenomeRef ? null : (
-										<View style={styles.workbenchPaneHead}>
-											<OMText variant="subtitle" style={styles.pickerSectionTitle}>
-												Getting started
-											</OMText>
-											<OMText variant="caption" style={styles.pickerIntro}>
-												Add a genome from the sidebar, then the assay catalog opens here.
-											</OMText>
-										</View>
-									)}
+									{assayPaneHeader}
 									{assayBlocks}
 								</View>
 								{showGettingStartedView ? null : (
 									<View style={[styles.workbenchPane, styles.workbenchResultsPane]}>
-										<View style={styles.workbenchPaneHead}>
-											<OMText variant="subtitle" style={styles.pickerSectionTitle}>
-												Results
-											</OMText>
-											<OMText variant="caption" style={styles.pickerIntro}>
-												Latest output and recent assay history.
-											</OMText>
-										</View>
+										{resultsPaneHeader}
 										{resultBlocks}
 									</View>
 								)}
@@ -3151,7 +3173,11 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={styles.intentClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
@@ -3176,12 +3202,29 @@ function RemoteIntentCard({
 					</View>
 				) : null}
 				<View style={styles.intentActions}>
-					<Pressable accessibilityRole="button" onPress={onDismiss} style={styles.intentSecondaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onDismiss}
+						style={({ hovered, pressed }) => [
+							styles.intentSecondaryButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
 							{busy ? 'Cancel' : 'Ignore'}
 						</OMText>
 					</Pressable>
-					<Pressable accessibilityRole="button" onPress={onFetch} disabled={busy} style={styles.intentPrimaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onFetch}
+						disabled={busy}
+						style={({ hovered, pressed }) => [
+							styles.intentPrimaryButton,
+							hovered && !busy && styles.buttonHover,
+							pressed && !busy && styles.buttonPressed,
+						]}
+					>
 						{busy ? <ActivityIndicator color="#ffffff" size="small" /> : null}
 						<OMText variant="subtitle" style={styles.primaryButtonText}>
 							{busy ? 'Loading' : state.status === 'error' ? 'Retry fetch' : looksLikeFile ? 'Load file' : 'Fetch URL'}
@@ -3212,7 +3255,11 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={styles.intentClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
@@ -3226,7 +3273,15 @@ function RemoteIntentCard({
 					<MetaChip label={`limit: ${remoteLabFileCacheLimitLabel()}`} />
 				</View>
 				<View style={styles.intentActions}>
-					<Pressable accessibilityRole="button" onPress={onDismiss} style={styles.intentPrimaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onDismiss}
+						style={({ hovered, pressed }) => [
+							styles.intentPrimaryButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMText variant="subtitle" style={styles.primaryButtonText}>
 							Done
 						</OMText>
@@ -3259,7 +3314,11 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={styles.intentClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
@@ -3324,7 +3383,16 @@ function RemoteIntentCard({
 				) : null}
 
 				<View style={styles.intentActions}>
-					<Pressable accessibilityRole="button" onPress={onDismiss} disabled={resolvingDeps} style={styles.intentSecondaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onDismiss}
+						disabled={resolvingDeps}
+						style={({ hovered, pressed }) => [
+							styles.intentSecondaryButton,
+							hovered && !resolvingDeps && styles.buttonHover,
+							pressed && !resolvingDeps && styles.buttonPressed,
+						]}
+					>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
 							Done
 						</OMText>
@@ -3334,7 +3402,11 @@ function RemoteIntentCard({
 							accessibilityRole="button"
 							onPress={onResolveDependencies}
 							disabled={resolvingDeps}
-							style={styles.intentPrimaryButton}
+							style={({ hovered, pressed }) => [
+								styles.intentPrimaryButton,
+								hovered && !resolvingDeps && styles.buttonHover,
+								pressed && !resolvingDeps && styles.buttonPressed,
+							]}
 						>
 							{resolvingDeps ? <ActivityIndicator color="#ffffff" size="small" /> : null}
 							<OMText variant="subtitle" style={styles.primaryButtonText}>
@@ -3400,7 +3472,14 @@ function PersistentHandlePrompt({
 								`BioVault can ask Chrome to keep access to ${pendingHandles.length === 1 ? 'this file' : 'these files'} so you can reopen ${pendingHandles.length === 1 ? 'it' : 'them'} after refresh.`}
 						</OMText>
 					</View>
-					<Pressable onPress={onDismiss} style={styles.intentClose}>
+					<Pressable
+						onPress={onDismiss}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
 				</View>
@@ -3422,12 +3501,26 @@ function PersistentHandlePrompt({
 				) : null}
 				{pendingHandles.length ? (
 					<View style={styles.intentActions}>
-						<Pressable onPress={onDismiss} style={styles.intentSecondaryButton}>
+						<Pressable
+							onPress={onDismiss}
+							style={({ hovered, pressed }) => [
+								styles.intentSecondaryButton,
+								hovered && styles.buttonHover,
+								pressed && styles.buttonPressed,
+							]}
+						>
 							<OMText variant="subtitle" style={styles.intentSecondaryText}>
 								Not now
 							</OMText>
 						</Pressable>
-						<Pressable onPress={onSave} style={styles.intentPrimaryButton}>
+						<Pressable
+							onPress={onSave}
+							style={({ hovered, pressed }) => [
+								styles.intentPrimaryButton,
+								hovered && styles.buttonHover,
+								pressed && styles.buttonPressed,
+							]}
+						>
 							<OMText variant="subtitle" style={styles.primaryButtonText}>
 								{pendingHandles.some((item) => item.needsPicker || !item.handle)
 									? 'Choose files'
@@ -3474,7 +3567,7 @@ function ImportGenomeModal({
 	sampleLoadingId: string | null
 	shareAssayUrl: string
 }) {
-	const { palette, styles, mutedIconTone } = useTheme()
+	const { styles, mutedIconTone, palette } = useTheme()
 	if (!open) return null
 	return (
 		<LabModalChrome
@@ -3498,14 +3591,26 @@ function ImportGenomeModal({
 							Choose local files, paste a URL, or drop genome files anywhere in this dialog.
 						</OMText>
 					</View>
-					<Pressable onPress={onClose} style={styles.intentClose}>
+					<Pressable
+						onPress={onClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
 				</View>
 
 				<Pressable
 					onPress={onChooseGenomeFiles}
-					style={[styles.importGenomeDropArea, dragActive ? styles.importGenomeDropAreaActive : null]}
+					style={({ hovered, pressed }) => [
+						styles.importGenomeDropArea,
+						dragActive ? styles.importGenomeDropAreaActive : null,
+						hovered && styles.buttonHover,
+						pressed && styles.buttonPressed,
+					]}
 					accessibilityRole="button"
 					accessibilityLabel="Choose genome files"
 				>
@@ -3660,13 +3765,8 @@ function LabExplorerSidebar({
 	const activeIsSessionRow = activeGenomeOwnedBySessionRow(activeGenome, sessionGenomes)
 	return (
 		<View style={[styles.labExplorerRoot, onRequestClose ? styles.labExplorerRootInDrawer : null]}>
-			<View style={styles.labExplorerChromeHead}>
-				<View>
-					<OMText variant="caption" style={styles.labExplorerSectionTitle}>
-						Genome files
-					</OMText>
-				</View>
-				{onRequestClose ? (
+			{onRequestClose ? (
+				<View style={styles.labExplorerChromeHead}>
 					<Pressable
 						accessibilityLabel="Close data sidebar"
 						accessibilityRole="button"
@@ -3676,7 +3776,10 @@ function LabExplorerSidebar({
 					>
 						<OMIcon name="close-outline" tone="muted" size={18} />
 					</Pressable>
-				) : null}
+				</View>
+			) : null}
+			<View style={styles.labExplorerTopAction}>
+				<ImportGenomeButton dragActive={dragActive} onPress={onChooseGenomeFiles} />
 			</View>
 			<ScrollView
 				showsVerticalScrollIndicator={Platform.OS !== 'web'}
@@ -3693,9 +3796,6 @@ function LabExplorerSidebar({
 							</OMText>
 						</View>
 					) : null}
-					<View style={[styles.labExplorerAddDataStack, styles.labExplorerInlineImportAction]}>
-						<ImportGenomeButton dragActive={dragActive} onPress={onChooseGenomeFiles} />
-					</View>
 					<View style={styles.labExplorerList}>
 						{sessionGenomes.map((genome) => {
 							const rowSelected = Boolean(activeGenome && activeGenome.id === genome.id)
@@ -3835,7 +3935,7 @@ function LabExplorerSidebar({
 										savedHandlesLoading ? styles.labExplorerRowMainMuted : null,
 									]}
 								>
-									<OMIcon name="cloud-download-outline" tone={cachedSelected ? 'accent' : mutedIconTone} size={15} />
+									<OMIcon name="layers-outline" tone={cachedSelected ? 'accent' : mutedIconTone} size={15} />
 									<View style={styles.labExplorerRowText}>
 										<OMText
 											testID="saved-local-file-title"
@@ -3851,7 +3951,7 @@ function LabExplorerSidebar({
 											style={styles.labExplorerRowMeta}
 											numberOfLines={1}
 										>
-											Cached download · {remoteFile.fileKind} · {humanLabSize(remoteFile.file.size)}
+											{cachedRemoteGenomeMeta(remoteFile)}
 										</OMText>
 									</View>
 								</Pressable>
@@ -3889,9 +3989,14 @@ function ImportGenomeButton({ dragActive, onPress }: { dragActive: boolean; onPr
 	return (
 		<Pressable
 			onPress={onPress}
-			style={[styles.explorerDropPanel, dragActive ? styles.explorerDropPanelActive : null]}
+			style={({ hovered, pressed }) => [
+				styles.explorerDropPanel,
+				dragActive ? styles.explorerDropPanelActive : null,
+				hovered && styles.buttonHover,
+				pressed && styles.buttonPressed,
+			]}
 		>
-			<PlatformSvgUri uri={microscopeIconUri} width={22} height={22} color={palette.accent} />
+			<PlatformSvgUri uri={microscopeIconUri} width={20} height={20} color={palette.accent} />
 			<View style={styles.explorerDropTitleCluster}>
 				<OMText variant="subtitle" style={styles.explorerDropTitle}>
 					Import genome
@@ -3978,7 +4083,15 @@ function UrlLoadBox({
 					returnKeyType="go"
 					onSubmitEditing={() => onLoadUrl(urlInput)}
 				/>
-				<Pressable onPress={() => onLoadUrl(urlInput)} disabled={!urlInput.trim()} style={loadButtonStyles}>
+				<Pressable
+					onPress={() => onLoadUrl(urlInput)}
+					disabled={!urlInput.trim()}
+					style={({ hovered, pressed }) => [
+						loadButtonStyles,
+						hovered && hasUrl && styles.buttonHover,
+						pressed && hasUrl && styles.buttonPressed,
+					]}
+				>
 					<OMText variant="subtitle" style={loadLabelStyle}>
 						Load
 					</OMText>
@@ -4006,7 +4119,12 @@ function UrlLoadBox({
 					</OMText>
 					<Pressable
 						onPress={onCopyShareUrl}
-						style={[styles.intentSecondaryButton, narrow ? styles.urlShareButtonSidebar : null]}
+						style={({ hovered, pressed }) => [
+							styles.intentSecondaryButton,
+							narrow ? styles.urlShareButtonSidebar : null,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
 							{shareUrlCopied ? 'Copied' : 'Copy link'}
@@ -4046,15 +4164,23 @@ function GenomeSlotStrip({
 						<SlotChip label=".vcf.gz.tbi optional" file={genome.tbi} />
 					</>
 				)}
+				{canGenerateIndexes ? (
+					<Pressable
+						accessibilityRole="button"
+						onPress={() => onGenerateIndexes?.()}
+						style={({ hovered, pressed }) => [
+							styles.slotGenerateButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
+						<OMIcon name="construct-outline" tone="accent" size={14} />
+						<OMText variant="caption" style={styles.slotGenerateButtonText}>
+							Generate indexes
+						</OMText>
+					</Pressable>
+				) : null}
 			</View>
-			{canGenerateIndexes ? (
-				<Pressable accessibilityRole="button" onPress={() => onGenerateIndexes?.()} style={styles.slotGenerateButton}>
-					<OMIcon name="construct-outline" tone="accent" size={14} />
-					<OMText variant="caption" style={styles.slotGenerateButtonText}>
-						Generate indexes
-					</OMText>
-				</Pressable>
-			) : null}
 		</View>
 	)
 }
@@ -4115,6 +4241,10 @@ function AssayPicker({
 	const anyRunning = Boolean(runningAssayId)
 	const trimmedQuery = query.trim()
 	const queryIsUrl = /^https?:\/\//i.test(trimmedQuery)
+	const showRuntimeWarmupNotice =
+		isLabGenomeComplete(genome) &&
+		runtimeWarmupStatus === 'loading' &&
+		results.some((assay) => isAssayCompatible(assay, genome) && assayNeedsWebRuntime(assay, genome))
 	const renderAssayRow = (
 		assay: LabAssay,
 		index: number,
@@ -4159,26 +4289,12 @@ function AssayPicker({
 					disabled && !isRunning && !isPanel ? styles.pickerRowDisabled : null,
 				]}
 			>
-				<View style={[
-					styles.pickerIcon,
-					displayKind === 'panel' ? styles.pickerIconPanel : null,
-				]}>
-					<OMIcon name={assayKindIcon(displayKind)} tone="accent" size={16} />
-				</View>
 				<View style={styles.pickerText}>
-					<View style={styles.assayTitleRow}>
-						<OMText variant="body" style={styles.pickerTitle}>
-							{assay.title}
-						</OMText>
-						<View style={[
-							styles.assayKindBadge,
-							displayKind === 'panel' ? styles.assayKindBadgePanel : null,
-						]}>
-							<OMText variant="caption" style={styles.assayKindBadgeText}>
-								{assayKindLabel(displayKind)}
+						<View style={styles.assayTitleRow}>
+							<OMText variant="body" style={styles.pickerTitle} numberOfLines={1}>
+								{assay.title}
 							</OMText>
 						</View>
-					</View>
 					<OMText variant="caption" style={styles.pickerMeta} numberOfLines={1}>
 						{assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')}
 						{isRemote ? ' · Cached remote' : ''}
@@ -4214,10 +4330,14 @@ function AssayPicker({
 									event.stopPropagation?.()
 									void onForgetRemoteAssay(assay)
 								}}
-								style={styles.labExplorerRowGhostHit}
+								style={({ hovered, pressed }) => [
+									styles.assayGhostAction,
+									hovered && styles.buttonHover,
+									pressed && styles.buttonPressed,
+								]}
 								hitSlop={6}
 							>
-								<OMIcon name="trash-outline" tone="muted" size={14} />
+								<OMIcon name="trash-outline" tone="danger" color={palette.dangerText} size={15} />
 							</Pressable>
 						) : null}
 						<Pressable
@@ -4236,12 +4356,17 @@ function AssayPicker({
 									onRun(assay)
 								}
 							}}
-							style={!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted}
+							style={({ hovered, pressed }) => [
+								!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted,
+								hovered && !disabled && styles.buttonHover,
+								pressed && !disabled && styles.buttonPressed,
+							]}
 						>
 							{compatible && !packageReady ? (
 								<OMIcon
 									name="cloud-download-outline"
 									tone={!disabled || isRunning ? 'inverse' : 'muted'}
+									color={!disabled || isRunning ? palette.invertText : undefined}
 									size={16}
 								/>
 							) : null}
@@ -4266,31 +4391,14 @@ function AssayPicker({
 
 	return (
 		<View style={styles.pickerSection}>
-			<OMText variant="subtitle" style={styles.pickerSectionTitle}>
-				Choose an assay
-			</OMText>
-			<OMText variant="caption" style={styles.pickerIntro}>
-				{isLabGenomeComplete(genome)
-					? 'Search assays or import an assay from URL.'
-					: `Add missing files first: ${missingLabGenomeSlots(genome).join(' · ')}.`}
-			</OMText>
-			<View style={styles.searchImportExampleRow}>
-				<OMText variant="caption" style={styles.searchImportExample} selectable>
-					Example: {ASSAY_IMPORT_URL_EXAMPLE}
-				</OMText>
-				<Pressable
-					onPress={() => {
-						onQueryChange(ASSAY_IMPORT_URL_EXAMPLE)
-						onImportUrl(ASSAY_IMPORT_URL_EXAMPLE)
-					}}
-					hitSlop={6}
-					accessibilityRole="button"
-					accessibilityLabel="Load example URL"
-					style={({ pressed }) => [styles.searchImportExampleButton, pressed && { opacity: 0.7 }]}
-				>
-					<OMIcon name="cloud-download-outline" tone="accent" size={14} />
-				</Pressable>
-			</View>
+			{showRuntimeWarmupNotice ? (
+				<View style={styles.runtimeWarmupNotice}>
+					<ActivityIndicator size="small" color={palette.accent} />
+					<OMText variant="caption" style={styles.runtimeWarmupText}>
+						Preparing local runtime. Runs will unlock automatically.
+					</OMText>
+				</View>
+			) : null}
 
 			<View style={styles.searchBox}>
 				<OMIcon name="search-outline" tone="muted" size={16} />
@@ -4310,7 +4418,11 @@ function AssayPicker({
 						accessibilityLabel="Import assay from URL"
 						accessibilityRole="button"
 						onPress={() => onImportUrl(trimmedQuery)}
-						style={styles.searchImportButton}
+						style={({ hovered, pressed }) => [
+							styles.searchImportButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="cloud-download-outline" tone="inverse" size={15} />
 						<OMText variant="subtitle" style={styles.searchImportButtonText}>
@@ -4318,7 +4430,14 @@ function AssayPicker({
 						</OMText>
 					</Pressable>
 				) : query ? (
-					<Pressable onPress={() => onQueryChange('')} style={styles.clearBtn}>
+					<Pressable
+						onPress={() => onQueryChange('')}
+						style={({ hovered, pressed }) => [
+							styles.clearBtn,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMIcon name="close-circle" tone="muted" size={16} />
 					</Pressable>
 				) : null}
@@ -4432,9 +4551,6 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 	return (
 		<View style={styles.runCard}>
 			<View style={styles.runCardHead}>
-				<View style={styles.runCardIcon}>
-					<OMIcon name="flask-outline" tone="accent" size={16} />
-				</View>
 				<View style={{ flex: 1, gap: 2 }}>
 					<OMText variant="caption" style={styles.runCardKicker}>
 						{ASSAY_CATEGORY_LABELS[assay.category]}
@@ -4459,14 +4575,27 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 					<Pressable
 						accessibilityRole="button"
 						onPress={openResult}
-						style={styles.textButton}
+						style={({ hovered, pressed }) => [
+							styles.textButton,
+							styles.resultPrimaryButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
-						<OMText variant="subtitle" style={styles.textButtonText}>
+						<OMText variant="subtitle" style={styles.resultPrimaryButtonText}>
 							View result
 						</OMText>
 					</Pressable>
 				) : null}
-				<Pressable accessibilityRole="button" onPress={onViewSource} style={styles.textButton}>
+				<Pressable
+					accessibilityRole="button"
+					onPress={onViewSource}
+					style={({ hovered, pressed }) => [
+						styles.textButton,
+						hovered && styles.buttonHover,
+						pressed && styles.buttonPressed,
+					]}
+				>
 					<OMText variant="subtitle" style={styles.textButtonText}>
 						View source
 					</OMText>
@@ -4475,12 +4604,6 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 
 			{result.status === 'running' ? (
 				<RunProgress progress={result.progress} />
-			) : null}
-
-			{result.status === 'done' && result.textOutput ? (
-				<OMText variant="caption" style={styles.runCardHint}>
-					{result.textOutput}
-				</OMText>
 			) : null}
 
 			{result.status === 'done' ? (
@@ -4586,6 +4709,19 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 						htmlBlobUrl ? createElement('button', {
 							key: 'open',
 							onClick: openInNewTab,
+							onMouseEnter: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.opacity = '0.9'
+							},
+							onMouseDown: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.transform = 'scale(0.98)'
+							},
+							onMouseUp: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.transform = 'scale(1)'
+							},
+							onMouseLeave: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.opacity = '1'
+								event.currentTarget.style.transform = 'scale(1)'
+							},
 							style: {
 								background: '#fff',
 								border: '1px solid #cbd5df',
@@ -4595,12 +4731,26 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 								fontFamily: 'system-ui, sans-serif',
 								fontSize: 12,
 								padding: '6px 12px',
+								transition: 'opacity 140ms ease, transform 120ms ease, background-color 140ms ease, border-color 140ms ease',
 							},
 							children: 'Open in new tab',
 						}) : null,
 						createElement('button', {
 							key: 'close',
 							onClick: onClose,
+							onMouseEnter: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.opacity = '0.9'
+							},
+							onMouseDown: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.transform = 'scale(0.98)'
+							},
+							onMouseUp: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.transform = 'scale(1)'
+							},
+							onMouseLeave: (event: { currentTarget: HTMLButtonElement }) => {
+								event.currentTarget.style.opacity = '1'
+								event.currentTarget.style.transform = 'scale(1)'
+							},
 							style: {
 								background: '#1f2933',
 								border: 'none',
@@ -4610,6 +4760,7 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 								fontFamily: 'system-ui, sans-serif',
 								fontSize: 12,
 								padding: '6px 12px',
+								transition: 'opacity 140ms ease, transform 120ms ease, background-color 140ms ease, border-color 140ms ease',
 							},
 							children: 'Close',
 						}),
@@ -4684,6 +4835,19 @@ function ClearAllButton() {
 				key: 'btn',
 				type: 'button',
 				onClick,
+				onMouseEnter: (event: { currentTarget: HTMLButtonElement }) => {
+					event.currentTarget.style.opacity = '0.9'
+				},
+				onMouseDown: (event: { currentTarget: HTMLButtonElement }) => {
+					event.currentTarget.style.transform = 'scale(0.98)'
+				},
+				onMouseUp: (event: { currentTarget: HTMLButtonElement }) => {
+					event.currentTarget.style.transform = 'scale(1)'
+				},
+				onMouseLeave: (event: { currentTarget: HTMLButtonElement }) => {
+					event.currentTarget.style.opacity = '1'
+					event.currentTarget.style.transform = 'scale(1)'
+				},
 				style: {
 					alignSelf: 'stretch',
 					background: palette.surfaceRaised,
@@ -4695,6 +4859,7 @@ function ClearAllButton() {
 					fontSize: 13,
 					fontWeight: 600,
 					padding: '10px 12px',
+					transition: 'opacity 140ms ease, transform 120ms ease, background-color 140ms ease, border-color 140ms ease',
 					width: '100%',
 				},
 				children: 'Clear all stored data…',
@@ -4761,6 +4926,19 @@ function ClearAllButton() {
 											type: 'button',
 											onClick: onCancel,
 											disabled: busy,
+											onMouseEnter: (event: { currentTarget: HTMLButtonElement }) => {
+												if (!busy) event.currentTarget.style.opacity = '0.9'
+											},
+											onMouseDown: (event: { currentTarget: HTMLButtonElement }) => {
+												if (!busy) event.currentTarget.style.transform = 'scale(0.98)'
+											},
+											onMouseUp: (event: { currentTarget: HTMLButtonElement }) => {
+												event.currentTarget.style.transform = 'scale(1)'
+											},
+											onMouseLeave: (event: { currentTarget: HTMLButtonElement }) => {
+												event.currentTarget.style.opacity = '1'
+												event.currentTarget.style.transform = 'scale(1)'
+											},
 											style: {
 												background: palette.surfaceRaised,
 												border: `1px solid ${palette.borderStrong}`,
@@ -4770,6 +4948,7 @@ function ClearAllButton() {
 												fontFamily: 'system-ui, sans-serif',
 												fontSize: 12,
 												padding: '6px 12px',
+												transition: 'opacity 140ms ease, transform 120ms ease, background-color 140ms ease, border-color 140ms ease',
 											},
 											children: 'Cancel',
 										}),
@@ -4778,6 +4957,19 @@ function ClearAllButton() {
 											type: 'button',
 											onClick: onConfirm,
 											disabled: busy,
+											onMouseEnter: (event: { currentTarget: HTMLButtonElement }) => {
+												if (!busy) event.currentTarget.style.opacity = '0.9'
+											},
+											onMouseDown: (event: { currentTarget: HTMLButtonElement }) => {
+												if (!busy) event.currentTarget.style.transform = 'scale(0.98)'
+											},
+											onMouseUp: (event: { currentTarget: HTMLButtonElement }) => {
+												event.currentTarget.style.transform = 'scale(1)'
+											},
+											onMouseLeave: (event: { currentTarget: HTMLButtonElement }) => {
+												event.currentTarget.style.opacity = '1'
+												event.currentTarget.style.transform = 'scale(1)'
+											},
 											style: {
 												background: '#c53b3b',
 												border: 'none',
@@ -4788,6 +4980,7 @@ function ClearAllButton() {
 												fontSize: 12,
 												fontWeight: 600,
 												padding: '6px 12px',
+												transition: 'opacity 140ms ease, transform 120ms ease, background-color 140ms ease, border-color 140ms ease',
 											},
 											children: busy ? 'Clearing…' : 'Clear all',
 										}),
@@ -4981,7 +5174,11 @@ function VcfIndexPrompt({
 						accessibilityLabel="Cancel index generation"
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={styles.intentClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
@@ -4995,12 +5192,29 @@ function VcfIndexPrompt({
 					</OMText>
 				) : null}
 				<View style={styles.intentActions}>
-					<Pressable accessibilityRole="button" onPress={onCancel} style={styles.intentSecondaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onCancel}
+						style={({ hovered, pressed }) => [
+							styles.intentSecondaryButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
 							Cancel
 						</OMText>
 					</Pressable>
-					<Pressable accessibilityRole="button" onPress={onConfirm} disabled={busy} style={styles.intentPrimaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onConfirm}
+						disabled={busy}
+						style={({ hovered, pressed }) => [
+							styles.intentPrimaryButton,
+							hovered && !busy && styles.buttonHover,
+							pressed && !busy && styles.buttonPressed,
+						]}
+					>
 						{busy ? <ActivityIndicator color="#fff" size="small" /> : null}
 						<OMText variant="subtitle" style={styles.primaryButtonText}>
 							{busy ? 'Generating' : 'Generate index'}
@@ -5052,7 +5266,11 @@ function AlignmentIndexPrompt({
 						accessibilityLabel="Cancel index generation"
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={styles.intentClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
@@ -5066,7 +5284,15 @@ function AlignmentIndexPrompt({
 					</OMText>
 				) : null}
 				<View style={styles.intentActions}>
-					<Pressable accessibilityRole="button" onPress={onCancel} style={styles.intentSecondaryButton}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={onCancel}
+						style={({ hovered, pressed }) => [
+							styles.intentSecondaryButton,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
+					>
 						<OMText variant="subtitle" style={styles.intentSecondaryText}>
 							{canGenerate ? 'Cancel' : 'Close'}
 						</OMText>
@@ -5076,7 +5302,11 @@ function AlignmentIndexPrompt({
 							accessibilityRole="button"
 							onPress={onConfirm}
 							disabled={busy}
-							style={styles.intentPrimaryButton}
+							style={({ hovered, pressed }) => [
+								styles.intentPrimaryButton,
+								hovered && !busy && styles.buttonHover,
+								pressed && !busy && styles.buttonPressed,
+							]}
 						>
 							{busy ? <ActivityIndicator color="#fff" size="small" /> : null}
 							<OMText variant="subtitle" style={styles.primaryButtonText}>
@@ -5122,7 +5352,11 @@ function UnknownFilesAlert({
 						accessibilityLabel="Dismiss alert"
 						accessibilityRole="button"
 						onPress={onDismissAll}
-						style={styles.intentClose}
+						style={({ hovered, pressed }) => [
+							styles.intentClose,
+							hovered && styles.buttonHover,
+							pressed && styles.buttonPressed,
+						]}
 					>
 						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
 					</Pressable>
@@ -5133,7 +5367,14 @@ function UnknownFilesAlert({
 							<OMText variant="caption" style={styles.unknownRowName} numberOfLines={2}>
 								{u.file.name}
 							</OMText>
-							<Pressable onPress={() => onRemove(u.id)} style={styles.textButton}>
+							<Pressable
+								onPress={() => onRemove(u.id)}
+								style={({ hovered, pressed }) => [
+									styles.textButton,
+									hovered && styles.buttonHover,
+									pressed && styles.buttonPressed,
+								]}
+							>
 								<OMText variant="subtitle" style={styles.textButtonText}>
 									Remove
 								</OMText>
@@ -5170,7 +5411,15 @@ function SourceViewer({
 						{viewer.files.length} file{viewer.files.length === 1 ? '' : 's'} used by this assay/report
 					</OMText>
 				</View>
-				<Pressable accessibilityRole="button" onPress={onClose} style={styles.iconButton}>
+				<Pressable
+					accessibilityRole="button"
+					onPress={onClose}
+					style={({ hovered, pressed }) => [
+						styles.iconButton,
+						hovered && styles.buttonHover,
+						pressed && styles.buttonPressed,
+					]}
+				>
 					<OMIcon name="close-outline" tone="muted" size={18} />
 				</Pressable>
 			</View>
@@ -5185,7 +5434,12 @@ function SourceViewer({
 								<Pressable
 									key={`${file.name}-${index}`}
 									onPress={() => setSelectedIndex(index)}
-									style={[styles.sourceTab, active ? styles.sourceTabActive : null]}
+									style={({ hovered, pressed }) => [
+										styles.sourceTab,
+										active ? styles.sourceTabActive : null,
+										hovered && styles.buttonHover,
+										pressed && styles.buttonPressed,
+									]}
 									accessibilityLabel={file.name}
 								>
 									<OMText
@@ -5301,36 +5555,6 @@ function DragOverlay() {
 	)
 }
 
-function GettingStartedStep({
-	action,
-	children,
-	n,
-	title,
-}: {
-	action?: ReactNode
-	children: ReactNode
-	n: number
-	title: string
-}) {
-	const { styles } = useTheme()
-	return (
-		<View style={styles.gettingStartedStepRow}>
-			<View style={styles.gettingStartedStepNum}>
-				<OMText style={styles.gettingStartedStepNumText}>{n}</OMText>
-			</View>
-			<View style={styles.gettingStartedStepBody}>
-				<OMText variant="subtitle" style={styles.gettingStartedStepTitle}>
-					{title}
-				</OMText>
-				<OMText variant="body" style={styles.gettingStartedStepText}>
-					{children}
-				</OMText>
-				{action}
-			</View>
-		</View>
-	)
-}
-
 function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 	const { styles } = useTheme()
 	if (Platform.OS !== 'web') return null
@@ -5358,19 +5582,14 @@ function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 
 function HowItWorksCard({
 	body,
-	icon,
 	title,
 }: {
 	body: string
-	icon: Parameters<typeof OMIcon>[0]['name']
 	title: string
 }) {
 	const { styles } = useTheme()
 	return (
 		<View style={styles.howItWorksCard}>
-			<View style={styles.howItWorksIcon}>
-				<OMIcon name={icon} size={20} tone="accent" />
-			</View>
 			<OMText variant="subtitle" style={styles.howItWorksTitle}>
 				{title}
 			</OMText>
@@ -5383,131 +5602,101 @@ function HowItWorksCard({
 
 function LabGettingStartedPanel({
 	assayTitle,
+	demoRunPending = false,
 	layout = 'page',
 	onTryDemoRun,
 	sampleTitle,
+	showIntro: showIntroProp,
 }: {
 	assayTitle?: string
+	demoRunPending?: boolean
 	layout?: 'modal' | 'page'
 	onTryDemoRun?: () => void
 	sampleTitle?: string
+	showIntro?: boolean
 }) {
-	const { styles, mutedIconTone } = useTheme()
-	const showIntro = layout === 'page'
-	const showDividerBeforeHow = showIntro || Boolean(onTryDemoRun)
+	const { palette, styles } = useTheme()
+	const showIntro = showIntroProp ?? layout === 'page'
 	return (
 		<View style={styles.gettingStartedWrap}>
-			{showIntro ? (
-				<View style={styles.gettingStartedIntroBlock}>
-					<OMText variant="h4" style={styles.gettingStartedTitle}>
-						Getting Started
-					</OMText>
-					<OMText variant="body" style={styles.gettingStartedLead}>
-						BioVault Lab runs entirely in your browser. Add a genome from the sidebar first; then assays and
-						results appear in this column.
-					</OMText>
-				</View>
-			) : null}
+			<View style={styles.gettingStartedHeroGrid}>
+				<View style={styles.gettingStartedPrimaryColumn}>
+					{showIntro ? (
+						<View style={styles.gettingStartedIntroBlock}>
+							<OMText variant="h4" style={styles.gettingStartedTitle}>
+								Getting Started
+							</OMText>
+							<OMText variant="body" style={styles.gettingStartedLead}>
+								Add a genome from the sidebar, then select an assay to run from the catalog.
+							</OMText>
+						</View>
+					) : null}
 
-			{showIntro ? <View style={styles.landingDivider} /> : null}
-			<View style={styles.gettingStartedSteps}>
-				<GettingStartedStep n={1} title="Add files">
-					Drag in BAM/CRAM/VCF or SNP array (23andme-style text or zip). For BAM/CRAM include the reference; indexes are optional.
-				</GettingStartedStep>
-				<GettingStartedStep n={2} title="Load an assay">
-					Pick an assay or panel from the catalog, or paste a URL to one in the sidebar.
-				</GettingStartedStep>
-				<GettingStartedStep n={3} title="Run">
-					With an active genome and an assay selected, hit Run — results appear in the column to the right.
-				</GettingStartedStep>
-			</View>
-
-			{onTryDemoRun ? (
-				<>
-					<View style={styles.landingDivider} />
-					<View style={styles.tryNowBlock}>
-						<OMIcon name="flash-outline" size={20} tone="accent" style={styles.tryNowLeadingIcon} />
-						<View style={styles.tryNowBody}>
-							<OMText variant="caption" style={styles.tryNowKicker}>
-								Try it now
-							</OMText>
-							<OMText variant="headline" style={styles.tryNowTitle}>
-								Run Example
-							</OMText>
-							<OMText variant="body" style={styles.tryNowText}>
-								One click loads {sampleTitle ?? 'sample data'} and queues {assayTitle ?? 'a demo assay'}. It runs
-								locally with WebAssembly and web workers — nothing is uploaded.
-							</OMText>
+					{onTryDemoRun ? (
+						<View style={styles.tryNowBlock}>
+							<View style={styles.tryNowBody}>
+								<OMText variant="headline" style={styles.tryNowTitle}>
+									Run the sample workflow
+								</OMText>
+								<OMText variant="body" style={styles.tryNowText}>
+									{demoRunPending
+										? 'Preparing the sample genome and assay run. Nothing is uploaded.'
+										: `Load ${sampleTitle ?? 'sample data'} and queue ${assayTitle ?? 'a demo assay'}. Nothing is uploaded.`}
+								</OMText>
+							</View>
 							<Pressable
 								onPress={onTryDemoRun}
-								style={({ pressed }) => [
+								disabled={demoRunPending}
+								style={({ hovered, pressed }) => [
 									styles.intentPrimaryButton,
 									styles.tryNowButton,
+									hovered && !demoRunPending && styles.buttonHover,
 									pressed && styles.gettingStartedBtnPressed,
+									demoRunPending && styles.gettingStartedBtnDisabled,
 								]}
 								accessibilityRole="button"
 								accessibilityLabel="Load sample data and run a demo assay locally"
 							>
-								<OMIcon name="flask-outline" size={18} tone="inverse" />
-								<OMText variant="subtitle" style={styles.primaryButtonText}>
-									Run Example
+								{demoRunPending ? (
+									<ActivityIndicator size="small" color="#fff" />
+								) : (
+									<OMIcon name="flask-outline" size={18} color={palette.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : undefined} tone="inverse" />
+								)}
+								<OMText variant="subtitle" style={[styles.primaryButtonText, styles.tryNowButtonText]}>
+									{demoRunPending ? 'Loading sample...' : 'Run Example'}
 								</OMText>
 							</Pressable>
 						</View>
-					</View>
-				</>
-			) : null}
+					) : null}
+				</View>
 
-			{showDividerBeforeHow ? <View style={styles.landingDivider} /> : null}
-			<View style={styles.howItWorksSection}>
-				<OMText variant="subtitle" style={styles.landingSectionTitle}>
-					How it works
-				</OMText>
-				<View style={styles.howItWorksGrid}>
-					<HowItWorksCard
-						icon="lock-closed-outline"
-						title="Local by default"
-						body="Genome files are processed in your browser. They are not uploaded to BioVault to run an assay. Even 100gb BAM files can be dragged in."
-					/>
-					<HowItWorksCard
-						icon="hardware-chip-outline"
-						title="WASM runtime"
-						body="BioScript and genomics readers run through WebAssembly, with web workers keeping heavy work off the UI thread."
-					/>
-					<HowItWorksCard
-						icon="folder-open-outline"
-						title="You control files"
-						body="Use local files, cached remote resources, or sample data. Browser storage can be cleared from settings."
-					/>
+				<View style={styles.gettingStartedVideoBlock}>
+					<View style={styles.gettingStartedVideoFrame}>
+						{Platform.OS === 'web' ? (
+							<WebVideoPlayer
+								src={LAB_GETTING_STARTED_VIDEO_EMBED_URL}
+								title="BioVault Lab walkthrough"
+							/>
+						) : null}
+					</View>
 				</View>
 			</View>
 
-			<View style={styles.landingDivider} />
-			<View style={styles.gettingStartedVideoBlock}>
-				<OMText variant="subtitle" style={styles.landingSectionTitle}>
-					Walkthrough video
-				</OMText>
-				<View style={styles.gettingStartedVideoFrame}>
-					{Platform.OS === 'web' ? (
-						<WebVideoPlayer
-							src={LAB_GETTING_STARTED_VIDEO_EMBED_URL}
-							title="BioVault Lab walkthrough"
-						/>
-					) : null}
+			<View style={styles.howItWorksSection}>
+				<View style={styles.howItWorksGrid}>
+					<HowItWorksCard
+						title="Local by default"
+						body="Genome files are processed in your browser and are not uploaded to run assays."
+					/>
+					<HowItWorksCard
+						title="WASM runtime"
+						body="BioScript and genomics readers run through WebAssembly with worker-backed execution."
+					/>
+					<HowItWorksCard
+						title="You control files"
+						body="Use local files, cached remote resources, or sample data, then clear storage from settings."
+					/>
 				</View>
-				<Pressable
-					onPress={() => {
-						void Linking.openURL(LAB_GETTING_STARTED_VIDEO_URL)
-					}}
-					style={styles.gettingStartedVideoLink}
-					accessibilityRole="link"
-					accessibilityLabel="Open walkthrough video"
-				>
-					<OMIcon name="play-circle-outline" size={16} tone={mutedIconTone} />
-					<OMText variant="caption" style={styles.gettingStartedVideoLinkText}>
-						Open in new tab
-					</OMText>
-				</Pressable>
 			</View>
 		</View>
 	)
@@ -5537,7 +5726,7 @@ function SidebarToggleButton({
 	open: boolean
 	onPress: () => void
 }) {
-	const { styles, mutedIconTone } = useTheme()
+	const { styles, mutedIconTone, palette } = useTheme()
 	return (
 		<Pressable
 			accessibilityLabel={open ? 'Close data sidebar' : 'Open data sidebar'}
@@ -5545,27 +5734,43 @@ function SidebarToggleButton({
 			accessibilityState={{ expanded: open }}
 			hitSlop={8}
 			onPress={onPress}
-			style={({ pressed }) => [
+			style={({ hovered, pressed }) => [
 				styles.headerSidebarToggle,
 				open ? styles.headerSidebarToggleOpen : null,
+				hovered && styles.buttonHover,
 				pressed && styles.headerSettingsTriggerPressed,
 			]}
 		>
-			<OMIcon name={open ? 'close-outline' : 'menu-outline'} size={22} tone={mutedIconTone} />
+			<OMIcon
+				name={open ? 'close-outline' : 'folder-outline'}
+				size={22}
+				tone={open ? 'accent' : mutedIconTone}
+				color={open ? palette.accentStrong : undefined}
+			/>
 		</Pressable>
 	)
 }
 
-function GettingStartedButton({ active = false, onPress }: { active?: boolean; onPress: () => void }) {
+function GettingStartedButton({
+	active = false,
+	compact = false,
+	onPress,
+}: {
+	active?: boolean
+	compact?: boolean
+	onPress: () => void
+}) {
 	const { styles, mutedIconTone, palette } = useTheme()
 	const iconTone = active ? 'accent' : mutedIconTone
 	return (
 		<Pressable
 			onPress={onPress}
 			hitSlop={8}
-			style={({ pressed }) => [
+			style={({ hovered, pressed }) => [
 				styles.headerNavLink,
+				compact ? styles.headerNavLinkCompact : null,
 				active ? styles.headerNavLinkActive : null,
+				hovered && styles.buttonHover,
 				pressed && styles.headerNavLinkPressed,
 			]}
 			accessibilityRole="button"
@@ -5575,64 +5780,80 @@ function GettingStartedButton({ active = false, onPress }: { active?: boolean; o
 			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
 				<OMIcon name="book-outline" size={18} tone={iconTone} />
 			</View>
-			<View pointerEvents="none">
-				<OMText
-					variant="caption"
-					style={[styles.headerNavLinkLabel, active ? { color: palette.accent } : null]}
-				>
-					Getting Started
-				</OMText>
-			</View>
+			{compact ? null : (
+				<View pointerEvents="none">
+					<OMText
+						variant="caption"
+						style={[styles.headerNavLinkLabel, active ? { color: palette.accent } : null]}
+					>
+						Getting Started
+					</OMText>
+				</View>
+			)}
 		</Pressable>
 	)
 }
 
-function GithubButton() {
+function GithubButton({ compact = false }: { compact?: boolean }) {
 	const { styles, mutedIconTone } = useTheme()
 	return (
 		<Pressable
 			onPress={() => openGithub()}
 			hitSlop={8}
-			style={({ pressed }) => [styles.headerNavLink, pressed && styles.headerNavLinkPressed]}
+			style={({ hovered, pressed }) => [
+				styles.headerNavLink,
+				compact ? styles.headerNavLinkCompact : null,
+				hovered && styles.buttonHover,
+				pressed && styles.headerNavLinkPressed,
+			]}
 			accessibilityRole="link"
 			accessibilityLabel="View Biovault on GitHub"
 		>
 			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
 				<OMIcon name="logo-github" size={18} tone={mutedIconTone} />
 			</View>
-			<View pointerEvents="none">
-				<OMText variant="caption" style={styles.headerNavLinkLabel}>
-					GitHub
-				</OMText>
-			</View>
+			{compact ? null : (
+				<View pointerEvents="none">
+					<OMText variant="caption" style={styles.headerNavLinkLabel}>
+						GitHub
+					</OMText>
+				</View>
+			)}
 		</Pressable>
 	)
 }
 
-function ContactButton() {
+function ContactButton({ compact = false }: { compact?: boolean }) {
 	const { styles, mutedIconTone } = useTheme()
 	return (
 		<Pressable
 			onPress={() => openContactEmail('header')}
 			hitSlop={8}
-			style={({ pressed }) => [styles.headerNavLink, pressed && styles.headerNavLinkPressed]}
+			style={({ hovered, pressed }) => [
+				styles.headerNavLink,
+				compact ? styles.headerNavLinkCompact : null,
+				hovered && styles.buttonHover,
+				pressed && styles.headerNavLinkPressed,
+			]}
 			accessibilityRole="link"
 			accessibilityLabel={`Contact: ${CONTACT_EMAIL}`}
 		>
 			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
 				<OMIcon name="mail-outline" size={18} tone={mutedIconTone} />
 			</View>
-			<View pointerEvents="none">
-				<OMText variant="caption" style={styles.headerNavLinkLabel}>
-					Contact
-				</OMText>
-			</View>
+			{compact ? null : (
+				<View pointerEvents="none">
+					<OMText variant="caption" style={styles.headerNavLinkLabel}>
+						Contact
+					</OMText>
+				</View>
+			)}
 		</Pressable>
 	)
 }
 
 function SidebarSettingsMenu() {
-	const { styles, mutedIconTone } = useTheme()
+	const { styles, mutedIconTone, palette } = useTheme()
 	const [open, setOpen] = useState(false)
 	const wrapRef = useRef<View | null>(null)
 
@@ -5666,17 +5887,26 @@ function SidebarSettingsMenu() {
 			<Pressable
 				onPress={toggle}
 				hitSlop={8}
-				style={({ pressed }) => [
+				style={({ hovered, pressed }) => [
 					styles.sidebarSettingsTrigger,
 					open && styles.sidebarSettingsTriggerOpen,
+					hovered && styles.buttonHover,
 					pressed && styles.headerSettingsTriggerPressed,
 				]}
 				accessibilityRole="button"
 				accessibilityState={{ expanded: open }}
 				accessibilityLabel="Lab settings: theme and clear stored data"
 			>
-				<OMIcon name="settings-outline" size={18} tone={mutedIconTone} />
-				<OMText variant="caption" style={styles.sidebarSettingsLabel}>
+				<OMIcon
+					name="settings-outline"
+					size={16}
+					tone={open ? 'accent' : mutedIconTone}
+					color={open ? palette.accentStrong : undefined}
+				/>
+				<OMText
+					variant="caption"
+					style={[styles.sidebarSettingsLabel, open ? { color: palette.accentStrong } : null]}
+				>
 					Settings
 				</OMText>
 			</Pressable>
@@ -5699,7 +5929,11 @@ function FeedbackFooterButton() {
 	return (
 		<Pressable
 			onPress={() => openContactEmail('footer')}
-			style={styles.feedbackFooter}
+			style={({ hovered, pressed }) => [
+				styles.feedbackFooter,
+				hovered && styles.buttonHover,
+				pressed && styles.buttonPressed,
+			]}
 			accessibilityRole="link"
 			accessibilityLabel={`Feedback or request a feature — email ${CONTACT_EMAIL}`}
 		>
@@ -5725,12 +5959,17 @@ function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 		<Pressable
 			onPress={() => toggleColorSchemePreferenceSync(scheme)}
 			hitSlop={8}
-			style={[styles.webThemeButton, scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark]}
+			style={({ hovered, pressed }) => [
+				styles.webThemeButton,
+				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
+				hovered && styles.buttonHover,
+				pressed && styles.buttonPressed,
+			]}
 			accessibilityRole="button"
 			accessibilityLabel={`Color theme: ${label}. Press to toggle.`}
 		>
 			<View pointerEvents="none" style={styles.webThemeButtonIcon}>
-				<OMIcon name={icon} size={16} tone={mutedIconTone} />
+				<OMIcon name={icon} size={14} tone={mutedIconTone} />
 			</View>
 			<View pointerEvents="none">
 				<OMText
@@ -5750,39 +5989,77 @@ function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 // === Styles ================================================================
 
 function makeStyles(p: LabPalette) {
+	const buttonMotion = Platform.OS === 'web'
+		? ({
+				transitionProperty: 'opacity, transform, background-color, border-color, color',
+				transitionDuration: '140ms',
+				transitionTimingFunction: 'ease',
+			} as object)
+		: {}
+	const buttonHover = Platform.OS === 'web' ? ({ opacity: 0.9 } as object) : {}
+	const buttonPressed = Platform.OS === 'web'
+		? ({ opacity: 0.76, transform: [{ scale: 0.98 }] } as object)
+		: ({ opacity: 0.76 } as object)
 	return StyleSheet.create({
 		safe: {
 			flex: 1,
 			backgroundColor: p.pageBg,
 		},
+		buttonHover,
+		buttonPressed,
 		scroll: { flex: 1 },
 		content: {
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
-			paddingTop: LAB_COLUMN_HEAD_PAD_Y,
+			paddingTop: 0,
 			paddingBottom: 0,
 			maxWidth: 1440,
 			width: '100%',
 			alignSelf: 'flex-start',
-			gap: omSpacing.m,
+			gap: 0,
 			minHeight: '100%',
 		},
 		stack: { gap: omSpacing.s },
 		siteHeader: {
 			width: '100%',
-			paddingBottom: omSpacing.m,
-			marginBottom: omSpacing.s,
-			borderBottomWidth: StyleSheet.hairlineWidth,
-			borderBottomColor: p.border,
+			minHeight: LAB_CHROME_HEADER_HEIGHT,
+			paddingTop: 0,
+			paddingBottom: 0,
+			paddingHorizontal: LAB_COLUMN_GUTTER_X,
+			marginBottom: 0,
+			marginHorizontal: -LAB_COLUMN_GUTTER_X,
+			borderBottomWidth: 0,
+			borderBottomColor: 'transparent',
+			justifyContent: 'center',
 			// Popover hangs below this block; raise stacking so ASSAYS/main content siblings
 			// in the ScrollView can't sit on top and eat clicks (Clear-all felt "dead").
 			...(Platform.OS === 'web' ? ({ position: 'relative', zIndex: 20 } as object) : {}),
 		},
+		siteHeaderGettingStarted: {
+			minHeight: LAB_CHROME_HEADER_HEIGHT,
+			paddingTop: 0,
+			paddingBottom: 0,
+			marginBottom: 0,
+			borderBottomWidth: 0,
+			justifyContent: 'center',
+		},
 		heroRow: {
 			flexDirection: 'row',
-			alignItems: 'flex-start',
+			alignItems: 'center',
 			justifyContent: 'space-between',
-			gap: omSpacing.xl,
-			flexWrap: 'wrap',
+			gap: omSpacing.l,
+			flexWrap: 'nowrap',
+		},
+		heroRowGettingStarted: {
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: omSpacing.m,
+		},
+		heroRowCompact: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: 8,
+			flexWrap: 'nowrap',
 		},
 		heroRowStacked: {
 			flexDirection: 'column-reverse',
@@ -5792,9 +6069,22 @@ function makeStyles(p: LabPalette) {
 		heroTextBlock: {
 			flexGrow: 1,
 			flexShrink: 1,
-			minWidth: 240,
-			maxWidth: 640,
-			gap: omSpacing.s,
+			minWidth: 0,
+			maxWidth: 760,
+			gap: 3,
+		},
+		heroTextBlockGettingStarted: {
+			justifyContent: 'center',
+			minHeight: 0,
+			maxWidth: 'none' as any,
+		},
+		mainChromeTitle: {
+			color: p.textFaint,
+			fontSize: 11,
+			fontWeight: '600',
+			letterSpacing: 0.7,
+			lineHeight: 15,
+			textTransform: 'uppercase',
 		},
 		heroEyebrow: {
 			color: p.accent,
@@ -5808,6 +6098,7 @@ function makeStyles(p: LabPalette) {
 			fontSize: 11,
 			fontWeight: '600',
 			letterSpacing: 0.4,
+			lineHeight: 15,
 		},
 		heroBrandEyebrow: {
 			color: p.textFaint,
@@ -5817,50 +6108,66 @@ function makeStyles(p: LabPalette) {
 		},
 		heroTitle: {
 			color: p.text,
+			fontSize: 24,
+			lineHeight: 30,
+			fontWeight: '700',
+			...(Platform.OS === 'web' ? ({ overflowWrap: 'anywhere' } as object) : {}),
+		},
+		heroMetaRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			flexWrap: 'wrap',
+			columnGap: omSpacing.s,
+			rowGap: 0,
+			minWidth: 0,
 		},
 		heroLead: {
-			lineHeight: 24,
-			marginTop: 2,
+			color: p.textMuted,
+			lineHeight: 17,
+			marginTop: 0,
 			maxWidth: 560,
+			fontSize: 12,
 		},
 		heroGenomeStatusOk: {
 			color: p.accentStrong,
-			fontSize: 12,
-			marginTop: omSpacing.xs,
-			letterSpacing: 0.3,
+			fontSize: 11,
+			lineHeight: 17,
+			marginTop: 0,
+			letterSpacing: 0.2,
 			fontWeight: '600',
 		},
 		heroGenomeStatusWarn: {
 			color: p.warningText,
-			fontSize: 12,
-			marginTop: omSpacing.xs,
-			lineHeight: 18,
+			fontSize: 11,
+			marginTop: 0,
+			lineHeight: 17,
 			letterSpacing: 0.2,
 			fontWeight: '600',
 		},
 		heroHeaderAside: {
 			flexDirection: 'row',
-			alignItems: 'flex-start',
-			flexWrap: 'wrap',
+			alignItems: 'center',
+			flexWrap: 'nowrap',
 			justifyContent: 'flex-end',
-			columnGap: omSpacing.l,
+			columnGap: omSpacing.m,
 			rowGap: omSpacing.s,
 			maxWidth: '100%',
-			flexShrink: 1,
+			flexShrink: 0,
 			flexGrow: 0,
 		},
 		headerTools: {
 			flexDirection: 'row',
 			alignItems: 'center',
-			gap: 8,
+			gap: 6,
 			flexShrink: 0,
-			flexWrap: 'wrap',
+			flexWrap: 'nowrap',
 		},
 		headerSidebarToggle: {
-			width: 40,
-			height: 40,
-			borderRadius: omRadius.full,
-			borderWidth: 1,
+			...buttonMotion,
+			width: 34,
+			height: 34,
+			borderRadius: omRadius.m,
+			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
 			backgroundColor: p.surfaceRaised,
 			alignItems: 'center',
@@ -5877,39 +6184,47 @@ function makeStyles(p: LabPalette) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			flexShrink: 0,
-			flexWrap: 'wrap',
-			columnGap: omSpacing.m,
+			flexWrap: 'nowrap',
+			columnGap: 8,
 			rowGap: 4,
-			marginLeft: omSpacing.xs,
+			marginLeft: 0,
 		},
 		headerNavLink: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: 6,
-			minHeight: 40,
-			paddingHorizontal: 14,
+			minHeight: 34,
+			paddingHorizontal: 11,
 			paddingVertical: 0,
 			borderRadius: omRadius.m,
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
-			backgroundColor: 'transparent',
+			backgroundColor: p.surfaceRaised,
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
 		} as object,
+		headerNavLinkCompact: {
+			width: 36,
+			height: 34,
+			minHeight: 34,
+			paddingHorizontal: 0,
+			justifyContent: 'center',
+		},
 		headerNavLinkPressed: {
 			opacity: 0.72,
 		} as object,
 		headerNavLinkActive: {
-			backgroundColor: p.surfaceRaised,
-			borderColor: p.accent,
+			backgroundColor: p.accentTint,
+			borderColor: p.accentBorder,
 		} as object,
 		headerNavLinkIcon: {
 			justifyContent: 'center',
 		},
 		headerNavLinkLabel: {
 			color: p.text,
-			fontSize: 13,
+			fontSize: 11,
 			fontWeight: '600',
 		},
 		headerSettingsWrap: {
@@ -5919,6 +6234,7 @@ function makeStyles(p: LabPalette) {
 			marginLeft: 4,
 		} as object,
 		headerSettingsTrigger: {
+			...buttonMotion,
 			width: 40,
 			height: 40,
 			borderRadius: omRadius.full,
@@ -5966,36 +6282,43 @@ function makeStyles(p: LabPalette) {
 		sidebarSettingsWrap: {
 			position: 'relative',
 			zIndex: 40,
-			alignSelf: 'flex-start',
+			flexGrow: 0,
+			flexShrink: 0,
+			width: 126,
+			minWidth: 0,
 		} as object,
 		sidebarSettingsTrigger: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
-			gap: 8,
-			height: 40,
-			paddingHorizontal: 14,
+			justifyContent: 'center',
+			gap: 7,
+			height: 36,
+			width: '100%',
+			paddingHorizontal: 10,
 			paddingVertical: 0,
-			borderRadius: omRadius.l,
-			borderWidth: 1,
+			borderRadius: omRadius.s,
+			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
-			backgroundColor: 'transparent',
+			backgroundColor: p.surfaceRaised,
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
 		} as object,
 		sidebarSettingsTriggerOpen: {
-			backgroundColor: p.surfaceRaised,
-			borderColor: p.borderStrong,
+			backgroundColor: p.accentTint,
+			borderColor: p.accentBorder,
 		},
 		sidebarSettingsLabel: {
 			color: p.text,
-			fontSize: 13,
-			fontWeight: '700',
+			fontSize: 11,
+			lineHeight: 15,
+			fontWeight: '600',
 		},
 		sidebarSettingsPopover: {
 			position: 'absolute',
 			left: 0,
-			bottom: 44,
+			bottom: 42,
 			zIndex: 30,
 			minWidth: 248,
 			paddingVertical: omSpacing.m,
@@ -6009,32 +6332,63 @@ function makeStyles(p: LabPalette) {
 
 		gettingStartedWrap: {
 			alignSelf: 'stretch',
-			marginBottom: omSpacing.m,
-			gap: 0,
+			flexGrow: 1,
+			marginBottom: 0,
+			gap: LAB_GETTING_STARTED_SECTION_GAP,
+			maxWidth: 1520,
+			padding: 0,
+			borderRadius: 0,
+			borderWidth: 0,
+			backgroundColor: 'transparent',
+			justifyContent: 'flex-start',
+			...(Platform.OS === 'web' ? ({ minHeight: 'min(680px, calc(100vh - 230px))' } as object) : {}),
+		},
+		gettingStartedHeroGrid: {
+			alignSelf: 'stretch',
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			columnGap: LAB_GETTING_STARTED_SECTION_GAP,
+			rowGap: LAB_GETTING_STARTED_SECTION_GAP,
+			flexWrap: 'wrap',
+			flexGrow: 0,
+		},
+		gettingStartedPrimaryColumn: {
+			flexGrow: 0.9,
+			flexShrink: 1,
+			flexBasis: 500,
+			minWidth: 360,
+			gap: omSpacing.l,
+			justifyContent: 'center',
 		},
 		gettingStartedIntroBlock: {
-			gap: omSpacing.s,
+			gap: 8,
+			maxWidth: 640,
 		},
 		landingDivider: {
-			height: StyleSheet.hairlineWidth,
-			backgroundColor: p.border,
+			height: 0,
+			backgroundColor: 'transparent',
 			alignSelf: 'stretch',
-			marginVertical: omSpacing.m,
+			marginVertical: 0,
 		},
 		landingSectionTitle: {
 			color: p.text,
-			fontSize: 15,
-			fontWeight: '600',
-			marginBottom: omSpacing.m,
-			letterSpacing: -0.2,
+			fontSize: 14,
+			lineHeight: 18,
+			fontWeight: '700',
+			marginBottom: omSpacing.s,
+			letterSpacing: 0,
 		},
 		gettingStartedTitle: {
 			color: p.text,
+			fontSize: 24,
+			lineHeight: 30,
+			fontWeight: '700',
 		},
 		gettingStartedLead: {
 			color: p.textMuted,
-			lineHeight: 24,
+			lineHeight: 22,
 			fontSize: 15,
+			maxWidth: 620,
 		},
 		landingOverviewKicker: {
 			color: p.textFaint,
@@ -6042,7 +6396,7 @@ function makeStyles(p: LabPalette) {
 			fontWeight: '600',
 			letterSpacing: 0.8,
 			textTransform: 'uppercase',
-			marginBottom: omSpacing.s,
+			marginBottom: 0,
 		},
 		landingFootnote: {
 			color: p.textFaint,
@@ -6053,69 +6407,91 @@ function makeStyles(p: LabPalette) {
 		tryNowBlock: {
 			alignSelf: 'stretch',
 			flexDirection: 'row',
-			alignItems: 'flex-start',
-			gap: omSpacing.m,
-			paddingVertical: omSpacing.xs,
-		},
-		tryNowLeadingIcon: {
-			marginTop: 2,
+			alignItems: 'center',
+			gap: omSpacing.l,
+			minHeight: 0,
+			paddingVertical: 0,
+			paddingHorizontal: 0,
+			borderRadius: 0,
+			borderWidth: 0,
+			borderColor: 'transparent',
+			backgroundColor: 'transparent',
 		},
 		tryNowBody: {
 			flex: 1,
 			minWidth: 0,
-			gap: omSpacing.xs,
-		},
-		tryNowKicker: {
-			color: p.accentStrong,
-			letterSpacing: 0.3,
-			fontWeight: '600',
-			fontSize: 11,
-			textTransform: 'uppercase',
+			gap: 4,
 		},
 		tryNowTitle: {
 			color: p.text,
+			fontSize: 18,
+			lineHeight: 23,
+			fontWeight: '700',
 		},
 		tryNowText: {
 			color: p.textMuted,
 			lineHeight: 21,
+			fontSize: 14,
+			maxWidth: 560,
 		},
 		tryNowButton: {
-			alignSelf: 'flex-start',
-			marginTop: omSpacing.xs,
+			alignSelf: 'center',
+			marginTop: 0,
+			minHeight: 38,
+			paddingHorizontal: omSpacing.m,
+			flexShrink: 0,
+			backgroundColor: p.pageBg === LAB_LANDING_PAGE_FILL ? '#2f7d5d' : p.accent,
+		},
+		tryNowButtonText: {
+			color: p.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : p.invertText,
 		},
 		howItWorksSection: {
 			alignSelf: 'stretch',
 			gap: 0,
+			paddingTop: 0,
+			borderTopWidth: 0,
 		},
 		howItWorksGrid: {
 			flexDirection: 'row',
 			flexWrap: 'wrap',
-			gap: omSpacing.m,
+			columnGap: omSpacing.xxl,
+			rowGap: omSpacing.l,
 		},
 		howItWorksCard: {
 			flexGrow: 1,
 			flexShrink: 1,
-			flexBasis: 200,
-			minWidth: 168,
-			gap: omSpacing.xs,
-			paddingVertical: omSpacing.xs,
+			flexBasis: 260,
+			minWidth: 220,
+			gap: 6,
+			paddingTop: omSpacing.s,
+			paddingBottom: 0,
 			paddingHorizontal: 0,
-		},
-		howItWorksIcon: {
-			alignSelf: 'flex-start',
-			marginBottom: 2,
+			borderRadius: 0,
+			backgroundColor: 'transparent',
+			borderTopWidth: 0,
+			borderTopColor: 'transparent',
 		},
 		howItWorksTitle: {
 			color: p.text,
+			fontSize: 13,
+			lineHeight: 17,
+			fontWeight: '700',
 		},
 		howItWorksText: {
 			color: p.textMuted,
-			fontSize: 13,
-			lineHeight: 19,
+			fontSize: 12,
+			lineHeight: 18,
 		},
 		gettingStartedVideoBlock: {
-			alignSelf: 'stretch',
-			gap: omSpacing.m,
+			flexGrow: 1.6,
+			flexShrink: 1,
+			flexBasis: 620,
+			minWidth: 480,
+			gap: 0,
+			padding: 0,
+			borderRadius: 0,
+			backgroundColor: 'transparent',
+			borderTopWidth: 0,
 		},
 		gettingStartedVideoFrame: {
 			alignSelf: 'stretch',
@@ -6137,58 +6513,58 @@ function makeStyles(p: LabPalette) {
 			width: '100%',
 			height: '100%',
 		} as object,
-		gettingStartedVideoLink: {
-			flexDirection: 'row',
-			alignItems: 'center',
-			alignSelf: 'flex-start',
-			gap: 6,
-			paddingVertical: 4,
-		},
-		gettingStartedVideoLinkText: {
-			color: p.accentStrong,
-			fontWeight: '600',
-			textDecorationLine: 'underline',
-		},
 		gettingStartedSteps: {
-			gap: omSpacing.m,
+			flexDirection: 'column',
+			gap: 4,
 			alignSelf: 'stretch',
 		},
 		gettingStartedStepRow: {
 			flexDirection: 'row',
 			alignItems: 'flex-start',
-			gap: omSpacing.m,
+			gap: omSpacing.s,
+			paddingVertical: 6,
+			paddingHorizontal: 0,
+			borderRadius: omRadius.m,
+			borderWidth: 0,
+			backgroundColor: 'transparent',
 		},
 		gettingStartedStepNum: {
-			width: 24,
-			height: 24,
-			borderRadius: 12,
+			width: 22,
+			height: 22,
+			borderRadius: 11,
 			alignItems: 'center',
 			justifyContent: 'center',
-			backgroundColor: 'transparent',
+			backgroundColor: p.surfaceRaised,
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
 			flexShrink: 0,
 		},
 		gettingStartedStepNumText: {
 			color: p.textMuted,
-			fontSize: 12,
+			fontSize: 11,
 			fontWeight: '600',
 		},
 		gettingStartedStepBody: {
 			flex: 1,
 			minWidth: 0,
-			gap: 4,
+			gap: 2,
 		},
 		gettingStartedStepTitle: {
 			color: p.text,
+			fontSize: 13,
+			lineHeight: 17,
+			fontWeight: '700',
 		},
 		gettingStartedStepText: {
 			color: p.textMuted,
-			lineHeight: 20,
-			fontSize: 14,
+			lineHeight: 17,
+			fontSize: 12,
 		},
 		gettingStartedBtnPressed: {
 			opacity: 0.88,
+		} as object,
+		gettingStartedBtnDisabled: {
+			opacity: 0.62,
 		} as object,
 		gettingStartedModalPanel: {
 			maxWidth: 720,
@@ -6246,6 +6622,7 @@ function makeStyles(p: LabPalette) {
 			fontSize: 15,
 		},
 		modalCloseButton: {
+			...buttonMotion,
 			width: 40,
 			height: 40,
 			borderRadius: omRadius.full,
@@ -6268,11 +6645,16 @@ function makeStyles(p: LabPalette) {
 		workbenchGrid: {
 			width: '100%',
 			flexDirection: 'row',
-			alignItems: 'flex-start',
-			gap: 0,
+			alignItems: 'stretch',
+			gap: omSpacing.xl,
+			flexGrow: 1,
+			...(Platform.OS === 'web'
+				? ({ minHeight: 'min(620px, calc(100vh - 260px))', position: 'relative' } as object)
+				: {}),
 		},
 		workbenchPane: {
 			minWidth: 0,
+			flexGrow: 1,
 			borderWidth: 0,
 			borderRadius: 0,
 			backgroundColor: 'transparent',
@@ -6284,16 +6666,14 @@ function makeStyles(p: LabPalette) {
 			flexShrink: 1,
 			flexBasis: 0,
 			minWidth: 420,
-			paddingRight: omSpacing.l,
-			borderRightWidth: StyleSheet.hairlineWidth,
-			borderRightColor: p.border,
+			paddingRight: 0,
 		},
 		workbenchResultsPane: {
 			flexGrow: 0,
 			flexShrink: 0,
 			flexBasis: 430,
 			maxWidth: 480,
-			paddingLeft: omSpacing.l,
+			paddingLeft: omSpacing.xl,
 			...(Platform.OS === 'web'
 				? ({ position: 'sticky', top: LAB_COLUMN_HEAD_PAD_Y } as object)
 				: {}),
@@ -6322,9 +6702,9 @@ function makeStyles(p: LabPalette) {
 			width: LAB_EXPLORER_PANEL_WIDTH,
 			flexShrink: 0,
 			flexGrow: 0,
-			backgroundColor: p.surfaceSolid,
-			borderRightWidth: StyleSheet.hairlineWidth,
-			borderRightColor: p.border,
+			backgroundColor: p.sidebar,
+			borderRightWidth: 0,
+			borderRightColor: 'transparent',
 		},
 		labExplorerRootInDrawer: {
 			width: '100%',
@@ -6353,20 +6733,22 @@ function makeStyles(p: LabPalette) {
 			maxWidth: '100%' as any,
 			height: '100%',
 			zIndex: 1,
-			backgroundColor: p.surfaceSolid,
-			borderRightWidth: StyleSheet.hairlineWidth,
-			borderRightColor: p.border,
+			backgroundColor: p.sidebar,
+			borderRightWidth: 0,
+			borderRightColor: 'transparent',
 		},
 		labExplorerChromeHead: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			justifyContent: 'space-between',
 			gap: omSpacing.s,
+			height: LAB_CHROME_HEADER_HEIGHT,
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
-			paddingTop: LAB_COLUMN_HEAD_PAD_Y,
-			paddingBottom: omSpacing.s,
-			borderBottomWidth: StyleSheet.hairlineWidth,
-			borderBottomColor: p.border,
+			paddingTop: 0,
+			paddingBottom: 0,
+			borderBottomWidth: 0,
+			borderBottomColor: 'transparent',
+			backgroundColor: p.sidebar,
 		},
 		labExplorerChromeClose: {
 			width: 34,
@@ -6383,19 +6765,29 @@ function makeStyles(p: LabPalette) {
 		labExplorerScroll: { flex: 1 },
 		labExplorerScrollContent: {
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
-			paddingTop: omSpacing.s,
+			paddingTop: 0,
 			paddingBottom: omSpacing.xxxl,
-			gap: omSpacing.l,
+			gap: omSpacing.m,
+		},
+		labExplorerTopAction: {
+			height: LAB_CHROME_HEADER_HEIGHT,
+			justifyContent: 'center',
+			paddingHorizontal: LAB_COLUMN_GUTTER_X,
+			paddingTop: 0,
+			paddingBottom: 0,
+			backgroundColor: p.sidebar,
 		},
 		labExplorerFooter: {
 			flexDirection: 'row',
 			alignItems: 'center',
-			justifyContent: 'space-between',
-			gap: omSpacing.s,
+			justifyContent: 'center',
+			gap: 10,
+			height: LAB_CHROME_FOOTER_HEIGHT,
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
-			paddingVertical: omSpacing.m,
-			borderTopWidth: StyleSheet.hairlineWidth,
-			borderTopColor: p.border,
+			paddingVertical: 0,
+			borderTopWidth: 0,
+			borderTopColor: 'transparent',
+			backgroundColor: p.sidebar,
 		},
 		labExplorerSavedBlock: {},
 		labExplorerSectionHeading: {
@@ -6407,9 +6799,10 @@ function makeStyles(p: LabPalette) {
 		labExplorerSectionTitle: {
 			fontSize: 11,
 			fontWeight: '600',
-			letterSpacing: 0.8,
+			letterSpacing: 0.7,
 			color: p.textFaint,
 			textTransform: 'uppercase',
+			lineHeight: 15,
 		},
 		labExplorerErrorPad: {
 			marginBottom: omSpacing.s,
@@ -6439,7 +6832,7 @@ function makeStyles(p: LabPalette) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			borderRadius: omRadius.l,
-			backgroundColor: p.surfaceSunken,
+			backgroundColor: p.sidebarControl,
 			overflow: 'hidden',
 			minHeight: 56,
 			borderWidth: StyleSheet.hairlineWidth,
@@ -6526,29 +6919,36 @@ function makeStyles(p: LabPalette) {
 			marginTop: omSpacing.xs,
 		},
 		webThemeButton: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
-			gap: 6,
-			height: 40,
-			paddingHorizontal: 14,
-			borderRadius: omRadius.l,
-			borderWidth: 1,
+			gap: 7,
+			height: 36,
+			width: 126,
+			justifyContent: 'center',
+			paddingHorizontal: 10,
+			borderRadius: omRadius.s,
+			borderWidth: StyleSheet.hairlineWidth,
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
 		} as object,
 		webThemeButtonIcon: { justifyContent: 'center' },
 		webThemeButtonLight: {
-			backgroundColor: 'transparent',
+			backgroundColor: p.surfaceRaised,
 			borderColor: p.border,
 		},
 		webThemeButtonDark: {
-			backgroundColor: 'transparent',
+			backgroundColor: p.surfaceRaised,
 			borderColor: p.border,
 		},
-		webThemeButtonText: {},
+		webThemeButtonText: {
+			fontSize: 11,
+			lineHeight: 15,
+			fontWeight: '600',
+		},
 		webThemeButtonTextLight: {
-			color: '#17161d',
+			color: p.text,
 		},
 		webThemeButtonTextDark: {
 			color: p.text,
@@ -6556,16 +6956,17 @@ function makeStyles(p: LabPalette) {
 
 		// Sidebar genome drop panel (formerly main-column hero zone)
 		explorerDropPanel: {
+			...buttonMotion,
 			alignSelf: 'stretch',
 			alignItems: 'center',
-			gap: omSpacing.s,
-			paddingVertical: omSpacing.m,
+			gap: 8,
+			paddingVertical: 14,
 			paddingHorizontal: omSpacing.m,
-			borderWidth: 1,
+			borderWidth: StyleSheet.hairlineWidth,
 			borderStyle: 'dashed',
-			borderColor: p.borderStrong,
-			borderRadius: omRadius.l,
-			backgroundColor: p.surfaceSunken,
+			borderColor: p.border,
+			borderRadius: omRadius.m,
+			backgroundColor: p.sidebarControl,
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
@@ -6587,11 +6988,12 @@ function makeStyles(p: LabPalette) {
 			color: p.text,
 			textAlign: 'center',
 			fontWeight: '600',
-			fontSize: 15,
+			fontSize: 14,
+			lineHeight: 18,
 			flexShrink: 1,
 		},
 		explorerDropSubtitle: {
-			marginTop: 4,
+			marginTop: 2,
 			color: p.textMuted,
 			textAlign: 'center',
 			fontSize: 12,
@@ -6637,6 +7039,7 @@ function makeStyles(p: LabPalette) {
 		loadedRowStatusWarn: { color: p.warningText },
 
 		removeButton: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
 			alignSelf: 'flex-start',
@@ -6654,7 +7057,6 @@ function makeStyles(p: LabPalette) {
 			flexShrink: 1,
 			maxWidth: 640,
 			marginTop: omSpacing.s,
-			gap: omSpacing.xs,
 		},
 
 		// slots
@@ -6681,12 +7083,12 @@ function makeStyles(p: LabPalette) {
 		slotChipText: { color: p.textMuted },
 		slotChipTextOk: { color: p.accentStrong },
 		slotGenerateButton: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
-			alignSelf: 'flex-start',
-			gap: omSpacing.xs,
+			gap: 6,
 			paddingHorizontal: omSpacing.s + 2,
-			paddingVertical: 6,
+			paddingVertical: 5,
 			borderRadius: omRadius.full,
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.accentBorder,
@@ -6725,6 +7127,7 @@ function makeStyles(p: LabPalette) {
 		intentUrl: { color: p.textMuted },
 		intentBody: { color: p.textMuted },
 		intentClose: {
+			...buttonMotion,
 			padding: omSpacing.xs,
 			borderRadius: omRadius.full,
 			backgroundColor: p.surfaceRaised,
@@ -6752,6 +7155,7 @@ function makeStyles(p: LabPalette) {
 			gap: omSpacing.s,
 		},
 		intentPrimaryButton: {
+			...buttonMotion,
 			minHeight: 40,
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -6763,6 +7167,7 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.accent,
 		},
 		intentSecondaryButton: {
+			...buttonMotion,
 			minHeight: 40,
 			alignItems: 'center',
 			justifyContent: 'center',
@@ -6776,19 +7181,39 @@ function makeStyles(p: LabPalette) {
 		intentSecondaryText: { color: p.textMuted },
 
 		// picker sections (sample genomes + assays)
-		pickerSection: { gap: omSpacing.s },
+		pickerSection: {
+			gap: omSpacing.m,
+			padding: omSpacing.l,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surface,
+		},
 		pickerSectionTitle: {
 			color: p.text,
-			fontSize: 16,
-			fontWeight: '600',
-			letterSpacing: -0.2,
+			fontSize: 15,
+			lineHeight: 20,
+			fontWeight: '700',
+			letterSpacing: 0,
 		},
-		pickerIntro: { color: p.textMuted, lineHeight: 20, fontSize: 13 },
-		pickerList: { gap: 0 },
+		pickerIntro: { color: p.textMuted, lineHeight: 18, fontSize: 12 },
+		runtimeWarmupNotice: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.s,
+			paddingHorizontal: omSpacing.m,
+			paddingVertical: omSpacing.s,
+			borderRadius: omRadius.m,
+			backgroundColor: p.accentTint,
+		},
+		runtimeWarmupText: {
+			color: p.accentStrong,
+			fontSize: 12,
+			lineHeight: 17,
+		},
+		pickerList: { gap: 8 },
 		panelAssayGroup: {
 			marginVertical: omSpacing.s,
 			borderRadius: omRadius.m,
-			borderWidth: 1,
+			borderWidth: 0,
 			borderColor: p.accentBorder,
 			backgroundColor: p.surfaceRaised,
 			overflow: 'hidden',
@@ -6800,7 +7225,7 @@ function makeStyles(p: LabPalette) {
 			paddingHorizontal: omSpacing.m,
 			paddingVertical: omSpacing.s,
 			backgroundColor: p.accentSoft,
-			borderBottomWidth: StyleSheet.hairlineWidth,
+			borderBottomWidth: 0,
 			borderBottomColor: p.accentBorder,
 		},
 		panelAssayGroupTitle: {
@@ -6810,29 +7235,28 @@ function makeStyles(p: LabPalette) {
 			letterSpacing: 0.8,
 		},
 		panelAssayGroupChildren: {
-			borderTopWidth: StyleSheet.hairlineWidth,
+			borderTopWidth: 0,
 			borderTopColor: p.border,
 		},
 		pickerRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.m,
-			paddingVertical: omSpacing.m,
-			paddingRight: 0,
+			minHeight: 64,
+			paddingVertical: 10,
+			paddingRight: omSpacing.m,
 			paddingLeft: omSpacing.m,
-			borderRadius: 0,
-			backgroundColor: 'transparent',
+			borderRadius: omRadius.m,
+			backgroundColor: p.surfaceRaised,
 			borderWidth: 0,
-			borderBottomWidth: StyleSheet.hairlineWidth,
-			borderBottomColor: p.border,
+			borderBottomWidth: 0,
+			borderBottomColor: 'transparent',
 		},
 		pickerRowDisabled: { opacity: 0.5 },
 		pickerRowIncompatible: { opacity: 0.6 },
 		pickerRowPanel: {
-			backgroundColor: 'transparent',
-			borderBottomColor: p.border,
-			borderLeftWidth: 2,
-			borderLeftColor: p.accent,
+			backgroundColor: p.accentTint,
+			borderBottomColor: 'transparent',
 			paddingLeft: omSpacing.m,
 		},
 		pickerRowInPanelGroup: {
@@ -6840,30 +7264,30 @@ function makeStyles(p: LabPalette) {
 			paddingRight: omSpacing.m,
 		},
 		pickerIcon: {
-			width: 32,
-			height: 32,
+			width: 24,
+			height: 24,
 			borderRadius: omRadius.s,
 			alignItems: 'center',
 			justifyContent: 'center',
 			backgroundColor: 'transparent',
 		},
 		pickerIconPanel: {
-			backgroundColor: p.accentSoft,
+			backgroundColor: 'transparent',
 		},
-		pickerText: { flex: 1, gap: 2 },
+		pickerText: { flex: 1, minWidth: 0, gap: 2 },
 		assayTitleRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			flexWrap: 'wrap',
 			gap: omSpacing.xs,
 		},
-		pickerTitle: { color: p.text },
-		pickerMeta: { color: p.textMuted },
+		pickerTitle: { color: p.text, flexShrink: 1, minWidth: 0 },
+		pickerMeta: { color: p.textMuted, fontSize: 12, lineHeight: 17 },
 		assayKindBadge: {
-			paddingHorizontal: omSpacing.s,
+			paddingHorizontal: omSpacing.xs + 2,
 			paddingVertical: 2,
-			borderRadius: omRadius.full,
-			backgroundColor: p.surfaceSunken,
+			borderRadius: omRadius.s,
+			backgroundColor: 'transparent',
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
 		},
@@ -6873,21 +7297,25 @@ function makeStyles(p: LabPalette) {
 		},
 		assayKindBadgeText: { color: p.textMuted, letterSpacing: 0.8 },
 		pickerAction: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.xs,
-			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.s,
-			borderRadius: omRadius.full,
+			minHeight: 32,
+			paddingHorizontal: omSpacing.s + 2,
+			paddingVertical: 5,
+			borderRadius: omRadius.m,
 			backgroundColor: p.accent,
 		},
 		pickerActionMuted: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.xs,
-			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.s,
-			borderRadius: omRadius.full,
+			minHeight: 32,
+			paddingHorizontal: omSpacing.s + 2,
+			paddingVertical: 5,
+			borderRadius: omRadius.m,
 			backgroundColor: 'transparent',
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
@@ -6905,44 +7333,38 @@ function makeStyles(p: LabPalette) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.s,
+			flexShrink: 0,
 		},
-
-		// search
-		searchImportExample: {
-			color: p.textMuted,
-			fontSize: 10,
-			lineHeight: 14,
-			flexShrink: 1,
-			flexWrap: 'wrap',
-			wordBreak: 'break-all',
-		} as object,
-		searchImportExampleRow: {
-			flexDirection: 'row',
+		assayGhostAction: {
+			...buttonMotion,
+			width: 30,
+			height: 30,
+			borderRadius: omRadius.m,
 			alignItems: 'center',
-			gap: 6,
-			flexWrap: 'wrap',
-		},
-		searchImportExampleButton: {
-			paddingHorizontal: 6,
-			paddingVertical: 2,
-			borderRadius: omRadius.s,
-		},
+			justifyContent: 'center',
+			backgroundColor: p.surface,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.border,
+			cursor: 'pointer',
+			WebkitTapHighlightColor: 'transparent',
+		} as object,
+
 		pickerFilterRow: {
 			flexDirection: 'row',
 			gap: omSpacing.xs,
 			flexWrap: 'wrap',
 		},
-		pickerFilterChip: {
-			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.xs,
-			borderRadius: omRadius.full,
+			pickerFilterChip: {
+				paddingHorizontal: omSpacing.s,
+				paddingVertical: 4,
+				borderRadius: omRadius.s,
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
-			backgroundColor: p.surfaceSunken,
+			backgroundColor: 'transparent',
 		} as object,
 		pickerFilterChipActive: {
-			backgroundColor: p.accent,
-			borderColor: p.accent,
+			backgroundColor: p.accentSoft,
+			borderColor: p.accentBorder,
 		},
 		pickerFilterChipText: {
 			color: p.textMuted,
@@ -6950,14 +7372,14 @@ function makeStyles(p: LabPalette) {
 			fontWeight: '600',
 		},
 		pickerFilterChipTextActive: {
-			color: p.invertText,
+			color: p.accentStrong,
 		},
 		searchBox: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.s,
-			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.s,
+			paddingHorizontal: omSpacing.s + 2,
+			paddingVertical: 7,
 			borderRadius: omRadius.m,
 			backgroundColor: p.surfaceSunken,
 			borderWidth: StyleSheet.hairlineWidth,
@@ -6966,11 +7388,12 @@ function makeStyles(p: LabPalette) {
 		searchInput: {
 			flex: 1,
 			color: p.text,
-			fontSize: 15,
+			fontSize: 13,
 			fontFamily: BrandFonts.body,
 			outlineStyle: 'none',
 		} as object,
 		searchImportButton: {
+			...buttonMotion,
 			minHeight: 32,
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -6981,7 +7404,11 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.accent,
 		},
 		searchImportButtonText: { color: p.invertText },
-		clearBtn: { padding: 2 },
+		clearBtn: {
+			...buttonMotion,
+			padding: 2,
+			cursor: 'pointer',
+		} as object,
 		urlLoadBox: {
 			gap: omSpacing.s,
 			padding: omSpacing.m,
@@ -7030,12 +7457,14 @@ function makeStyles(p: LabPalette) {
 			borderColor: p.border,
 		} as object,
 		urlLoadButton: {
+			...buttonMotion,
 			paddingHorizontal: omSpacing.l,
 			paddingVertical: omSpacing.s,
 			borderRadius: omRadius.full,
 			backgroundColor: p.accent,
 		},
 		urlLoadButtonDisabled: {
+			...buttonMotion,
 			paddingHorizontal: omSpacing.l,
 			paddingVertical: omSpacing.s,
 			borderRadius: omRadius.full,
@@ -7091,6 +7520,7 @@ function makeStyles(p: LabPalette) {
 			fontSize: 13,
 		} as object,
 		urlLoadButtonComposerOutline: {
+			...buttonMotion,
 			minHeight: 40,
 			paddingVertical: 10,
 			paddingHorizontal: omSpacing.l,
@@ -7164,7 +7594,12 @@ function makeStyles(p: LabPalette) {
 
 		// runs history
 		runsAnchor: { gap: omSpacing.m, marginTop: 0 },
-		resultSection: { gap: omSpacing.s },
+		resultSection: {
+			gap: omSpacing.s,
+			padding: omSpacing.l,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surface,
+		},
 		sectionKicker: {
 			color: p.text,
 			fontSize: 12,
@@ -7174,59 +7609,52 @@ function makeStyles(p: LabPalette) {
 		resultsEmptyCard: {
 			alignItems: 'flex-start',
 			justifyContent: 'flex-start',
-			gap: omSpacing.s,
-			minHeight: 200,
+			gap: omSpacing.xs,
+			minHeight: 128,
 			paddingVertical: omSpacing.m,
-			paddingHorizontal: 0,
-			borderRadius: 0,
-			backgroundColor: 'transparent',
+			paddingHorizontal: omSpacing.l,
+			borderRadius: omRadius.m,
+			backgroundColor: p.surface,
 			borderWidth: 0,
-		},
-		resultsEmptyIcon: {
-			width: 40,
-			height: 40,
-			borderRadius: 0,
-			alignItems: 'center',
-			justifyContent: 'center',
-			backgroundColor: 'transparent',
-			borderWidth: 0,
-			marginBottom: omSpacing.xs,
 		},
 		resultsEmptyTitle: {
 			color: p.text,
 			textAlign: 'left',
+			fontSize: 16,
+			lineHeight: 21,
+			fontWeight: '600',
 		},
 		resultsEmptyText: {
 			color: p.textMuted,
 			textAlign: 'left',
-			lineHeight: 21,
-			maxWidth: 400,
+			fontSize: 13,
+			lineHeight: 19,
+			maxWidth: 320,
 		},
 		runCard: {
-			paddingVertical: omSpacing.l,
+			paddingVertical: 0,
 			paddingRight: 0,
-			paddingLeft: omSpacing.m,
+			paddingLeft: 0,
 			borderRadius: 0,
 			backgroundColor: 'transparent',
 			borderWidth: 0,
-			borderLeftWidth: 2,
-			borderLeftColor: p.accent,
-			borderBottomWidth: StyleSheet.hairlineWidth,
-			borderBottomColor: p.border,
-			gap: omSpacing.s,
+			borderBottomWidth: 0,
+			borderBottomColor: 'transparent',
+			gap: omSpacing.m,
 		},
 		runCardHead: {
 			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.m,
+			alignItems: 'flex-start',
+			gap: omSpacing.s,
+			flexWrap: 'wrap',
 		},
 		runCardIcon: {
-			width: 32,
-			height: 32,
+			width: 28,
+			height: 28,
 			borderRadius: omRadius.s,
 			alignItems: 'center',
 			justifyContent: 'center',
-			backgroundColor: p.accentTint,
+			backgroundColor: p.surfaceSunken,
 		},
 		runCardKicker: {
 			color: p.accentStrong,
@@ -7234,9 +7662,9 @@ function makeStyles(p: LabPalette) {
 			fontSize: 11,
 			fontWeight: '600',
 		},
-		runCardTitle: { color: p.text },
-		runCardMeta: { color: p.textMuted },
-		runCardHint: { color: p.textFaint },
+		runCardTitle: { color: p.text, fontSize: 16, lineHeight: 21, fontWeight: '700' },
+		runCardMeta: { color: p.textMuted, fontSize: 12, lineHeight: 17 },
+		runCardHint: { color: p.textFaint, fontSize: 12, lineHeight: 17 },
 		runProgressBlock: { gap: omSpacing.s },
 		runProgressHead: {
 			flexDirection: 'row',
@@ -7387,19 +7815,30 @@ function makeStyles(p: LabPalette) {
 		// buttons / text
 		primaryButtonText: { color: p.invertText },
 		textButton: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
 			justifyContent: 'center',
 			gap: omSpacing.xs,
-			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.s,
-			borderRadius: omRadius.full,
+			paddingHorizontal: omSpacing.s + 2,
+			paddingVertical: 5,
+			borderRadius: omRadius.m,
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.accentBorder,
-			backgroundColor: p.accentSoft,
+			backgroundColor: 'transparent',
 		},
-		textButtonText: { color: p.accentStrong, fontWeight: '700' },
+		textButtonText: { color: p.accentStrong, fontWeight: '700', fontSize: 12 },
+		resultPrimaryButton: {
+			backgroundColor: p.accent,
+			borderColor: p.accent,
+		},
+		resultPrimaryButtonText: {
+			color: p.invertText,
+			fontWeight: '700',
+			fontSize: 12,
+		},
 		iconButton: {
+			...buttonMotion,
 			width: 36,
 			height: 36,
 			borderRadius: omRadius.full,
@@ -7487,6 +7926,7 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.overlayCardBg,
 		},
 		importGenomeDropArea: {
+			...buttonMotion,
 			alignItems: 'center',
 			justifyContent: 'center',
 			gap: omSpacing.s,
@@ -7572,11 +8012,13 @@ function makeStyles(p: LabPalette) {
 			right: 0,
 			top: 0,
 			bottom: 0,
+			zIndex: 0,
 			backgroundColor: p.pageBg === LAB_LANDING_PAGE_FILL
 				? 'rgba(39,37,50,0.96)'
 				: 'rgba(5, 7, 12, 0.9)',
 		},
 		sourcePanel: {
+			...(Platform.OS === 'web' ? ({ position: 'relative', zIndex: 1 } as any) : null),
 			width: '100%',
 			maxWidth: 980,
 			maxHeight: '86%',
@@ -7636,6 +8078,7 @@ function makeStyles(p: LabPalette) {
 			paddingVertical: omSpacing.s,
 		},
 		sourceTab: {
+			...buttonMotion,
 			alignItems: 'center',
 			justifyContent: 'center',
 			width: 220,
@@ -7706,12 +8149,13 @@ function makeStyles(p: LabPalette) {
 		resultsPaneFooter: {
 			alignItems: 'center',
 			justifyContent: 'center',
-			paddingVertical: omSpacing.m,
+			minHeight: LAB_CHROME_FOOTER_HEIGHT,
+			paddingVertical: 0,
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
-			marginTop: 'auto' as unknown as number,
+			marginTop: LAB_GETTING_STARTED_SECTION_GAP,
 			marginHorizontal: -LAB_COLUMN_GUTTER_X,
-			borderTopWidth: StyleSheet.hairlineWidth,
-			borderTopColor: p.border,
+			borderTopWidth: 0,
+			borderTopColor: 'transparent',
 		},
 		footerNote: {
 			flexDirection: 'row',
@@ -7721,6 +8165,7 @@ function makeStyles(p: LabPalette) {
 		},
 		footerNoteText: { color: p.textFaint, textAlign: 'center' },
 		feedbackFooter: {
+			...buttonMotion,
 			flexDirection: 'row',
 			alignItems: 'center',
 			justifyContent: 'center',

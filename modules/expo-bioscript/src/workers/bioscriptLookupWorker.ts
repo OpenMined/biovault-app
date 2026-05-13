@@ -5,6 +5,7 @@ import initBioscriptWasm, {
 	generateVcfTbi,
 	lookupCramVariants,
 	lookupVcfVariants,
+	runPackageReportBytes,
 	runPackageReportFromBam,
 	runPackageReportFromCram,
 	runPackageReportFromVcf,
@@ -78,6 +79,17 @@ type ReportFromVcfMessage = {
 	optionsJson: string
 }
 
+type ReportFromBytesMessage = {
+	type: 'reportFromBytes'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	inputBytes: Uint8Array
+	optionsJson: string
+}
+
 type GenerateVcfTbiMessage = {
 	type: 'generateVcfTbi'
 	requestId: number
@@ -99,6 +111,7 @@ type LookupMessage =
 	| ReportFromBamMessage
 	| ReportFromCramMessage
 	| ReportFromVcfMessage
+	| ReportFromBytesMessage
 	| GenerateVcfTbiMessage
 	| GenerateIndexMessage
 
@@ -156,6 +169,24 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 				requestId: message.requestId,
 				resultJson: '[]',
 				durationMs: 0,
+			})
+			return
+		}
+
+		if (message.type === 'reportFromBytes') {
+			const startedAt = Date.now()
+			const resultJson = runPackageReportBytes(
+				message.manifestPath,
+				message.packageFilesJson,
+				message.inputName,
+				message.inputBytes,
+				message.optionsJson,
+			)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson,
+				durationMs: Date.now() - startedAt,
 			})
 			return
 		}

@@ -191,6 +191,6 @@ const styles = StyleSheet.create({
 		backgroundColor: omTheme.accent,
 	},
 	primaryButtonText: {
-		color: omTheme.primaryText,
+		color: omTheme.actionText,
 	},
 })
