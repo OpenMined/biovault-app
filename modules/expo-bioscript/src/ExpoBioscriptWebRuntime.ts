@@ -636,6 +636,8 @@ function wasmVariantFromMontySpec(raw: unknown, index: number, store: GenomeStor
   const assembly = grch38 ? 'grch38' : 'grch37';
   const ref = normalizeOptionalString(rec.reference);
   const alt = normalizeOptionalString(rec.alternate);
+  const kind = normalizeOptionalString(rec.kind);
+  const deletionLength = normalizeOptionalNumber(rec.deletion_length);
   if (!ref || !alt) {
     throw new Error(
       `lookup_variants: variant #${index}${rsid ? ` (${rsid})` : ''} is missing ref/alt — CRAM/VCF lookup requires explicit alleles`,
@@ -651,6 +653,8 @@ function wasmVariantFromMontySpec(raw: unknown, index: number, store: GenomeStor
     alt,
     rsid,
     assembly,
+    kind,
+    deletion_length: deletionLength,
     // Store kind is informational only; worker picks backend from caller.
     // (store parameter retained for symmetry / future per-genome assembly hint.)
     ...(store.kind === 'cram' ? {} : {}),

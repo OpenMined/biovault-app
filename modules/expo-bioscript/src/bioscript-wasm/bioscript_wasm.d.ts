@@ -3,6 +3,20 @@
 
 export function compileVariantYamlText(name: string, text: string): string;
 
+export function generateBamBai(input_name: string, bam_bytes: Uint8Array): Uint8Array;
+
+export function generateBamBaiFromReader(input_name: string, bam_read_at: Function, bam_len: number): Uint8Array;
+
+export function generateCramCrai(input_name: string, cram_bytes: Uint8Array): Uint8Array;
+
+export function generateCramCraiFromReader(input_name: string, cram_read_at: Function, cram_len: number): Uint8Array;
+
+export function generateFastaFai(input_name: string, fasta_bytes: Uint8Array): Uint8Array;
+
+export function generateFastaFaiFromReader(input_name: string, fasta_read_at: Function, fasta_len: number): Uint8Array;
+
+export function generateVcfTbi(input_name: string, vcf_bytes: Uint8Array): Uint8Array;
+
 /**
  * Classify bytes as a known genomic file. Mirrors `bioscript-formats::inspect::inspect_bytes`.
  * Returns JSON matching the `Inspection` shape the app already uses.
@@ -60,6 +74,12 @@ export function resolveRemoteResourceText(source_url: string, name: string, text
 export function runPackageReportBytes(manifest_path: string, package_files_json: string, input_name: string, input_bytes: Uint8Array, options_json?: string | null): string;
 
 /**
+ * Mirrors `runPackageReportBytes` but for BAM input. The BAM body is streamed
+ * via a JS-supplied `readAt` callback and the BAI index is passed inline.
+ */
+export function runPackageReportFromBam(manifest_path: string, package_files_json: string, input_name: string, bam_read_at: Function, bam_len: number, bai_bytes: Uint8Array, options_json?: string | null): string;
+
+/**
  * Mirrors `runPackageReportBytes` but for CRAM input. The CRAM body and
  * FASTA reference are streamed via JS-supplied `readAt` callbacks so the
  * browser doesn't have to load multi-GB genomes into wasm memory. The CRAI
@@ -89,20 +109,28 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly start: () => void;
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly lookupGenotypeBytesRsids: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupVcfVariants: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly runPackageReportBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
-    readonly runPackageReportFromCram: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number) => [number, number, number, number];
-    readonly runPackageReportFromVcf: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
-    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly resolvePackageReleaseText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly resolvePackageZipBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly verifyPackageArtifactSha256: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly inspectBytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly resolveRemoteResourceText: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly generateBamBai: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly generateBamBaiFromReader: (a: number, b: number, c: any, d: number) => [number, number, number, number];
+    readonly generateCramCrai: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly generateCramCraiFromReader: (a: number, b: number, c: any, d: number) => [number, number, number, number];
+    readonly generateFastaFai: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly generateFastaFaiFromReader: (a: number, b: number, c: any, d: number) => [number, number, number, number];
+    readonly generateVcfTbi: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly start: () => void;
+    readonly compileVariantYamlText: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly runPackageReportBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
+    readonly runPackageReportFromBam: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
+    readonly runPackageReportFromCram: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: any, l: number, m: number, n: number, o: number, p: number) => [number, number, number, number];
+    readonly runPackageReportFromVcf: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: number, k: number, l: number) => [number, number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

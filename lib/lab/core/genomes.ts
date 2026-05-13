@@ -8,8 +8,8 @@ export function labGenomeDisplayName(genome: LabGenomeRef): string {
 
 export function labGenomeKindLabel(genome: LabGenomeRef): string {
 	switch (genome.kind) {
-		case 'cram': return 'CRAM alignment'
-		case 'vcf': return 'VCF (bgzipped, tabix-indexed)'
+		case 'cram': return genome.primary.kind === 'bam' ? 'BAM alignment' : 'CRAM alignment'
+		case 'vcf': return 'VCF (bgzipped)'
 		case 'text': return 'Genotype text'
 		case 'zip': return 'Zipped genotype (23andMe etc.)'
 	}
@@ -27,13 +27,11 @@ export function labGenomeInputFormat(genome: LabGenomeRef): AssayInputFormat {
 export function missingLabGenomeSlots(genome: LabGenomeRef): string[] {
 	if (genome.kind === 'cram') {
 		const missing: string[] = []
-		if (!genome.crai) missing.push('.cram.crai index')
 		if (!genome.fasta) missing.push('reference .fa')
-		if (!genome.fai) missing.push('.fa.fai index')
 		return missing
 	}
 	if (genome.kind === 'vcf') {
-		return genome.tbi ? [] : ['.vcf.gz.tbi index']
+		return []
 	}
 	return []
 }

@@ -27,6 +27,10 @@
 // wasm-pack is invoked with --target nodejs into pkg-node/ on every run;
 // cargo handles the incremental caching so this is near-free when nothing
 // changed. Pass RUN_BIOSCRIPT_WASM_NO_BUILD=1 to skip the rebuild.
+//
+// Use the dev wasm profile by default to mirror the app web build and avoid
+// the workspace's size/LTO release profile, which traps in the CRAM block
+// decoder for large indexed CRAMs.
 
 'use strict';
 
@@ -43,7 +47,7 @@ function buildIfNeeded() {
     return;
   }
   try {
-    execFileSync('wasm-pack', ['build', '--target', 'nodejs', '--release', '--out-dir', 'pkg-node'], {
+    execFileSync('wasm-pack', ['build', '--target', 'nodejs', '--dev', '--out-dir', 'pkg-node'], {
       cwd: CRATE_DIR,
       stdio: 'inherit',
     });

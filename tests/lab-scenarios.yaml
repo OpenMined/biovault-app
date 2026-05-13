@@ -15,6 +15,11 @@ fixtures:
     - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
     - exvitae/assays/risk/APOL1/test-data/stub.fa
     - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+  apol1_bam:
+    - exvitae/assays/risk/APOL1/test-data/apol1.bam
+    - exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
+    - exvitae/assays/risk/APOL1/test-data/stub.fa
+    - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
   optional_vcf:
     - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
     - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
@@ -119,6 +124,32 @@ scenarios:
     assert:
       contains: G0/G0
       not_contains:
+        - "Invalid exception type: 'Error'"
+        - Run failed
+
+  - id: apol1-bam
+    title: Python APOL1 assay runs against indexed BAM
+    platforms: [web, desktop, ios, android]
+    capabilities: [local_file, local_assay, indexed_bam, assay_run]
+    action: run_assay
+    assay:
+      source: local
+      language: python
+      path: exvitae/assays/risk/APOL1/apol1.py
+    genome:
+      source: local
+      kind: bam
+      files:
+        - exvitae/assays/risk/APOL1/test-data/apol1.bam
+        - exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
+        - exvitae/assays/risk/APOL1/test-data/stub.fa
+        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+      expect_display_name: apol1.bam
+    assert:
+      contains: G0/G0
+      not_contains:
+        - "This alignment format is not available for browser assay runs yet."
+        - "BAM browser assay runs are not wired yet."
         - "Invalid exception type: 'Error'"
         - Run failed
 

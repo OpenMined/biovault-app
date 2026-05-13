@@ -27,7 +27,17 @@ PROFILE="${BIOSCRIPT_WASM_PROFILE:-dev}"
 echo "[build-bioscript-wasm] building (${PROFILE}, target=web)"
 export RUSTFLAGS="${RUSTFLAGS:-} --cfg getrandom_backend=\"wasm_js\""
 if [ "${PROFILE}" = "release" ]; then
-  (cd "${CRATE_DIR}" && wasm-pack build --target web --release --out-dir pkg)
+  # The workspace's native release profile is tuned for size (`opt-level=z`,
+  # LTO, and wasm-opt). That combination miscompiles/traps in the CRAM block
+  # decoder for large indexed CRAMs. Keep release builds optimized, but use
+  # the CRAM-safe wasm settings that match the working dev profile.
+  (
+    cd "${CRATE_DIR}" &&
+      CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
+      CARGO_PROFILE_RELEASE_LTO=false \
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+      wasm-pack build --target web --release --no-opt --out-dir pkg
+  )
 else
   (cd "${CRATE_DIR}" && wasm-pack build --target web --dev --out-dir pkg)
 fi

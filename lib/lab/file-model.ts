@@ -37,7 +37,7 @@ export function sortFilesForIngestion(files: File[]): File[] {
 		const kindA = classifyLabFile(a.name)
 		const kindB = classifyLabFile(b.name)
 		const isPrimary = (kind: FileKind) =>
-			kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
+			kind === 'bam' || kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
 		if (isPrimary(kindA) && !isPrimary(kindB)) return -1
 		if (isPrimary(kindB) && !isPrimary(kindA)) return 1
 		return 0

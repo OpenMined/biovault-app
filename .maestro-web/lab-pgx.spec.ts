@@ -89,12 +89,14 @@ test('lab: PGx-1 package runs against default 23andMe ZIP in browser', async ({ 
 	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
 	await expect(dialog.getByText('Fetch this URL?')).toBeVisible({ timeout: 30_000 })
 	await dialog.getByRole('button', { name: 'Fetch URL' }).click()
-	await expect(page.getByText('33 fetched variants ready.')).toBeVisible({ timeout: 60_000 })
+	await expect(page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' }).first()).toBeVisible({ timeout: 60_000 })
 	const closeSharedResource = dialog.getByRole('button', { name: 'Close shared resource dialog' })
 	if (await closeSharedResource.isVisible({ timeout: 1_000 }).catch(() => false)) {
 		await closeSharedResource.click()
 	}
-	await expect(dialog).toBeHidden({ timeout: 10_000 })
+	if (await dialog.isVisible({ timeout: 1_000 }).catch(() => false)) {
+		await expect(dialog).toBeHidden({ timeout: 10_000 })
+	}
 
 	await expect(page.getByText('PGx-1 Panel', { exact: true })).toHaveCount(1)
 	await page.screenshot({

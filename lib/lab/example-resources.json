@@ -11,6 +11,18 @@
 			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml",
 			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
 			"tags": ["pgx", "panel", "remote", "bioscript-package"]
+		},
+		{
+			"id": "apol1-risk",
+			"title": "APOL1 Risk Assay",
+			"subtitle": "BioScript package",
+			"description": "Loads the APOL1 risk BioScript package release from GitHub.",
+			"category": "risk",
+			"language": "yaml",
+			"url": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/APOL1/APOL1.yaml",
+			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/APOL1/APOL1.yaml",
+			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
+			"tags": ["apol1", "risk", "assay", "remote", "bioscript-package"]
 		}
 	],
 	"testFiles": [

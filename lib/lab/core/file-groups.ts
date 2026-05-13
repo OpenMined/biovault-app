@@ -18,7 +18,7 @@ type PlannedGroup = LabFileGroupPlan & {
 }
 
 export function isPrimaryGenomeFileKind(kind: FileKind): boolean {
-	return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
+	return kind === 'bam' || kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip'
 }
 
 export function sortLabFileRefsForIngestion(refs: LabFileRef[]): LabFileRef[] {
@@ -31,7 +31,7 @@ export function sortLabFileRefsForIngestion(refs: LabFileRef[]): LabFileRef[] {
 
 export function savedLabFileGroupKey(name: string): string {
 	const kind = classifyLabFile(name)
-	if (kind === 'crai' || kind === 'tbi' || kind === 'fai') {
+	if (kind === 'bai' || kind === 'crai' || kind === 'tbi' || kind === 'fai') {
 		return stripGenomeSuffix(name).toLowerCase()
 	}
 	if (kind === 'fasta') return name.toLowerCase()
@@ -53,7 +53,7 @@ export function buildLabFileGroupPlan(refs: LabFileRef[]): Map<string, LabFileGr
 
 	for (const ref of ordered) {
 		const kind = ref.kind
-		if (kind === 'cram') {
+		if (kind === 'bam' || kind === 'cram') {
 			addStandalone(ref, 'cram')
 			continue
 		}
@@ -69,7 +69,7 @@ export function buildLabFileGroupPlan(refs: LabFileRef[]): Map<string, LabFileGr
 			addStandalone(ref, 'assay')
 			continue
 		}
-		if (kind === 'crai') {
+		if (kind === 'bai' || kind === 'crai') {
 			const stem = stripGenomeSuffix(ref.name).toLowerCase()
 			const target =
 				groups.find((group) => group.kind === 'cram' && group.primary?.toLowerCase() === stem) ??

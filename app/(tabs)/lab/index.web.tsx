@@ -16,6 +16,12 @@ import {
 } from '@/lib/file-handle-store'
 import { getCurrentWebLaunchIntent, type LaunchIntent } from '@/lib/launch-intents'
 import {
+	getCachedGeneratedIndexFile,
+	getCachedGeneratedVcfIndexFile,
+	putCachedGeneratedIndexFile,
+	putCachedGeneratedVcfIndexFile,
+} from '@/lib/lab/generated-index-cache'
+import {
 	ASSAY_CATEGORY_LABELS,
 	ASSAY_INPUT_FORMAT_LABELS,
 	type AssayCategory,
@@ -24,10 +30,8 @@ import {
 	LAB_ASSAYS,
 	LAB_TEST_FILES,
 	type LabTestFileBundle,
-	listAssayCategories,
 	loadAssayFile,
 	loadTestFileBundle,
-	searchAssays,
 } from '@/lib/lab/assay-catalog'
 import { normalizeLabSearchParam } from '@/lib/lab/assay-loader'
 import { createWebLabFileAdapter } from '@/lib/lab/adapters/file-adapter.web'
@@ -62,7 +66,13 @@ import {
 } from '@/lib/lab/core/refs'
 import { clearAllAppStorage } from '@/lib/clear-app-storage'
 import {
+	addAssayPackageSourceUrl,
+	listAssayPackageSourceUrls,
+	removeAssayPackageSourceUrl,
+} from '@/lib/assay-package-url-registry'
+import {
 	deleteRemoteResourceCache,
+	listCachedRemotePackages,
 	listResolvedCachedRemotePackages,
 	listResolvedCachedRemoteResources,
 	resolveRemotePackage,
@@ -70,6 +80,16 @@ import {
 	resourceKindLabel,
 	type ResolvedRemoteResource,
 } from '@/lib/remote-resource-resolver'
+import { getCachedRemoteResource } from '@/lib/remote-resource-cache'
+import {
+	listAssays as registryListAssays,
+	listPanels as registryListPanels,
+	resolvePackageForRun,
+	upsertAssay as registryUpsertAssay,
+	upsertPanel as registryUpsertPanel,
+	type RegistryPanel,
+	type RegistryOrigin,
+} from '@/lib/lab/assay-registry'
 import {
 	deleteCachedRemoteLabFile,
 	fetchRemoteLabFile,
@@ -81,7 +101,18 @@ import {
 } from '@/lib/remote-lab-file'
 import type { AssayLang, LabRunArtifact, LabRunProgress, LabRunSuccess, RunResult, UnknownEntry } from '@/lib/lab/types'
 import { BrandFonts } from '@/lib/brand-typography'
-import { inspectBytes, warmupMontyRuntime, type BioscriptInspection, type BioscriptPackageFile } from '@/modules/expo-bioscript'
+import {
+	generateBamBaiFile,
+	generateCramCraiFile,
+	generateFastaFaiFile,
+	generateVcfTbiFile,
+	inspectBytes,
+	resolvePackageZipBytes,
+	warmupMontyRuntime,
+	type BioscriptInspection,
+	type BioscriptPackageFile,
+	type BioscriptPackageResource,
+} from '@/modules/expo-bioscript'
 import { omRadius, omSpacing } from '@/styles/brand'
 import { LAB_LANDING_PAGE_FILL, labPalettes, type LabPalette } from '@/styles/lab-theme'
 import { Asset } from 'expo-asset'
@@ -127,10 +158,40 @@ const ENABLE_CHROME_DROPPED_FILE_HANDLES =
 const LAB_EXPLORER_PANEL_WIDTH = 296
 /** Shared horizontal inset + header band so explorer and main column line up. */
 const LAB_COLUMN_GUTTER_X = omSpacing.l
+/** Wide browser layout: genome setup left, assays + runs right */
+const LAB_WIDE_TWO_COL_MIN = 1100
+const LAB_SIDEBAR_DRAWER_MAX = 920
 const LAB_COLUMN_HEAD_PAD_Y = omSpacing.l
 /** Self-hosted walkthrough asset. Put the mp4 under the web public asset root. */
 const LAB_PUBLIC_BASE_URL = process.env.EXPO_BASE_URL ?? ''
 const LAB_GETTING_STARTED_VIDEO_SRC = `${LAB_PUBLIC_BASE_URL}/videos/lab-getting-started.mp4`
+const ASSAY_IMPORT_URL_EXAMPLE =
+	'https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml'
+
+const FEATURED_CATALOG: LabAssay[] = [
+	{
+		id: 'featured-pgx-1',
+		title: 'PGx-1 Panel',
+		subtitle: 'BioScript package',
+		description: 'A pharmacogenomics panel covering ~30 variants spanning APOE, MTHFR, CYP2C, BCHE, and more.',
+		category: 'panel',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/pgx/pgx-1/pgx-1.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['pgx', 'panel', 'featured'],
+	},
+	{
+		id: 'featured-apol1-risk',
+		title: 'APOL1 Risk Assay',
+		subtitle: 'BioScript package',
+		description: 'APOL1 G1/G2 risk assay covering the defining APOL1 variant sites and derived risk genotype.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/APOL1/APOL1.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['apol1', 'risk', 'assay', 'featured'],
+	},
+]
 
 function clearWebLaunchIntentHash() {
 	if (Platform.OS !== 'web' || !window.location.hash) return
@@ -164,6 +225,19 @@ type SourceViewerState = {
 	files: AssaySourceFile[]
 	title: string
 }
+type PendingVcfIndexRun = {
+	assay: LabAssay
+	error?: string
+	genome: Extract<LabGenomeRef, { kind: 'vcf' }>
+	status: 'confirm' | 'generating'
+}
+type PendingAlignmentIndexRun = {
+	assay?: LabAssay
+	error?: string
+	genome: Extract<LabGenomeRef, { kind: 'cram' }>
+	missing: ('alignment' | 'reference')[]
+	status: 'confirm' | 'generating'
+}
 type SessionLabAssay = LabAssay & {
 	analyticsAssayId?: string
 	dependencyUrls: string[]
@@ -173,6 +247,8 @@ type SessionLabAssay = LabAssay & {
 	packageFiles?: BioscriptPackageFile[]
 	packageSourceUrl?: string
 	remoteKind: ResolvedRemoteResource['kind']
+	remoteSchema?: string | null
+	registryId?: string | null
 }
 type PendingPersistentHandle = {
 	fileName: string
@@ -221,6 +297,27 @@ function getLabRunDisabledReasonForRef(
 	return null
 }
 
+function generatedVcfIndexName(vcfName: string): string {
+	return vcfName.toLowerCase().endsWith('.tbi') ? vcfName : `${vcfName}.tbi`
+}
+
+function generatedAlignmentIndexName(name: string): string {
+	return name.toLowerCase().endsWith('.bam') ? `${name}.bai` : `${name}.crai`
+}
+
+function generatedFastaIndexName(name: string): string {
+	return `${name}.fai`
+}
+
+function fileFromIndexBytes(bytes: Uint8Array, name: string): File {
+	const indexBuffer = new ArrayBuffer(bytes.byteLength)
+	new Uint8Array(indexBuffer).set(bytes)
+	return new File([indexBuffer], name, {
+		type: 'application/octet-stream',
+		lastModified: Date.now(),
+	})
+}
+
 function searchSessionAssays(assays: LabAssay[], query: string, category: AssayCategory | null): LabAssay[] {
 	const q = query.trim().toLowerCase()
 	return assays.filter((assay) => {
@@ -238,19 +335,34 @@ function searchSessionAssays(assays: LabAssay[], query: string, category: AssayC
 	})
 }
 
+function sortAssaysForPicker(assays: LabAssay[]): LabAssay[] {
+	return [...assays].sort((left, right) => {
+		const leftPanel = assayDisplayKind(left) === 'panel'
+		const rightPanel = assayDisplayKind(right) === 'panel'
+		if (leftPanel !== rightPanel) return leftPanel ? -1 : 1
+		return left.title.localeCompare(right.title)
+	})
+}
+
 function isSessionLabAssay(assay: LabAssay): assay is SessionLabAssay {
 	return 'file' in assay && assay.file instanceof File
 }
 
-function assayDisplayKind(assay: LabAssay): 'builtin' | 'panel' | 'python' | 'variant' {
+function assayDisplayKind(assay: LabAssay): 'assay' | 'panel' | 'variant' | 'other' {
 	if (isSessionLabAssay(assay)) {
+		if (assay.remoteKind === 'python') return 'other'
+		const schema = assay.remoteSchema?.toLowerCase() ?? ''
+		if (schema.startsWith('bioscript:panel')) return 'panel'
+		if (schema.startsWith('bioscript:variant')) return 'variant'
+		if (schema.startsWith('bioscript:assay:')) return 'assay'
+		if (schema) return 'other'
 		if (assay.remoteKind === 'panel') return 'panel'
-		if (assay.remoteKind === 'python') return 'python'
-		return 'variant'
+		if (assay.remoteKind === 'variant') return 'variant'
+		if (assay.remoteKind === 'assay') return 'assay'
+		return 'other'
 	}
 	if (assay.category === 'panel') return 'panel'
-	if (assay.language === 'python') return 'python'
-	return 'builtin'
+	return 'assay'
 }
 
 function assayKindLabel(kind: ReturnType<typeof assayDisplayKind>): string {
@@ -258,11 +370,9 @@ function assayKindLabel(kind: ReturnType<typeof assayDisplayKind>): string {
 		case 'panel':
 			return 'Panel'
 		case 'variant':
-			return 'Variant'
-		case 'python':
-			return 'Python assay'
+			return 'Assay'
 		default:
-			return 'Built-in'
+			return 'Assay'
 	}
 }
 
@@ -272,8 +382,6 @@ function assayKindIcon(kind: ReturnType<typeof assayDisplayKind>) {
 			return 'layers-outline'
 		case 'variant':
 			return 'git-branch-outline'
-		case 'python':
-			return 'code-slash-outline'
 		default:
 			return 'flask-outline'
 	}
@@ -284,19 +392,22 @@ function mergeAssayList(assays: LabAssay[]): LabAssay[] {
 	// entries with matching `url` are hidden so the resolved package replaces
 	// the example entry instead of doubling it.
 	const claimedPackageSourceUrls = new Set<string>()
+	const sessionPanelTitles = new Set<string>()
+	const sessionUrls = new Set<string>()
 	for (const assay of assays) {
-		if (isSessionLabAssay(assay) && assay.packageSourceUrl) {
-			claimedPackageSourceUrls.add(normalizeRemoteAssayUrl(assay.packageSourceUrl))
+		if (isSessionLabAssay(assay)) {
+			if (assay.packageSourceUrl) claimedPackageSourceUrls.add(normalizeRemoteAssayUrl(assay.packageSourceUrl))
+			if (assay.url) sessionUrls.add(normalizeRemoteAssayUrl(assay.url))
+			if (assay.remoteKind === 'panel' && assay.title) sessionPanelTitles.add(assay.title)
 		}
 	}
 	const byKey = new Map<string, LabAssay>()
 	for (const assay of assays) {
-		if (
-			!isSessionLabAssay(assay) &&
-			assay.url &&
-			claimedPackageSourceUrls.has(normalizeRemoteAssayUrl(assay.url))
-		) {
-			continue
+		if (!isSessionLabAssay(assay) && assay.url) {
+			const normalized = normalizeRemoteAssayUrl(assay.url)
+			if (claimedPackageSourceUrls.has(normalized)) continue
+			if (sessionUrls.has(normalized)) continue
+			if (assay.category === 'panel' && sessionPanelTitles.has(assay.title)) continue
 		}
 		const key = assayStableKey(assay)
 		byKey.set(key, assay)
@@ -305,10 +416,11 @@ function mergeAssayList(assays: LabAssay[]): LabAssay[] {
 }
 
 function assayStableKey(assay: LabAssay): string {
-	if (assay.url) return `url:${normalizeRemoteAssayUrl(assay.url)}`
 	if (isSessionLabAssay(assay)) {
+		if (assay.remoteKind === 'panel') return `remote:panel:${assay.title}`
 		return `remote:${assay.remoteKind}:${assay.title}`
 	}
+	if (assay.url) return `url:${normalizeRemoteAssayUrl(assay.url)}`
 	return `catalog:${assay.id || assay.title}`
 }
 
@@ -376,11 +488,14 @@ function safeGenomicExtension(name: string): string {
 	const lower = name.toLowerCase()
 	const knownExtensions = [
 		'.vcf.gz.tbi',
+		'.bam.bai',
 		'.cram.crai',
 		'.fasta.fai',
 		'.fa.fai',
 		'.vcf.gz',
 		'.fasta',
+		'.bam',
+		'.bai',
 		'.cram',
 		'.crai',
 		'.fai',
@@ -449,6 +564,175 @@ function panelVariantAssays(panel: SessionLabAssay, assays: SessionLabAssay[]): 
 	return assays.filter((assay) => assay.remoteKind === 'variant' && dependencyUrls.has(assay.url))
 }
 
+function parentPanelsForAssay(assay: LabAssay, assays: SessionLabAssay[]): SessionLabAssay[] {
+	if (!isSessionLabAssay(assay)) return []
+	return assays.filter(
+		(candidate) =>
+			candidate.remoteKind === 'panel' &&
+			candidate.dependencyUrls?.some((url) => url === assay.url),
+	)
+}
+
+function relativePathFromBase(baseUrl: string, targetUrl: string): string {
+	try {
+		const base = new URL(baseUrl)
+		const target = new URL(targetUrl)
+		if (target.origin !== base.origin) {
+			return target.pathname.split('/').pop() ?? 'resource'
+		}
+		const baseDir = base.pathname.split('/').slice(0, -1).join('/') + '/'
+		if (target.pathname.startsWith(baseDir)) {
+			return target.pathname.slice(baseDir.length)
+		}
+		return target.pathname.split('/').pop() ?? 'resource'
+	} catch {
+		return targetUrl.split('/').pop() ?? 'resource'
+	}
+}
+
+async function buildSyntheticPackageFromAssay(
+	assay: SessionLabAssay,
+): Promise<{ entrypoint: string; files: BioscriptPackageFile[] }> {
+	const assayContents = await assay.file.text()
+	const baseUrl = assay.url
+	const entrypoint = assay.file.name || (baseUrl.split('/').pop() ?? 'assay.yaml')
+	const files: BioscriptPackageFile[] = [
+		{ contents: assayContents, path: entrypoint, source_url: baseUrl },
+	]
+	const seen = new Set<string>([baseUrl])
+	for (const depUrl of assay.dependencyUrls) {
+		if (seen.has(depUrl)) continue
+		seen.add(depUrl)
+		const resource = await resolveRemoteResource(depUrl)
+		files.push({
+			contents: resource.contents,
+			path: relativePathFromBase(baseUrl, depUrl),
+			source_url: depUrl,
+		})
+	}
+	return { entrypoint, files }
+}
+
+function sessionAssayPackageReady(assay: LabAssay, readyIds?: Set<string>): boolean {
+	if (readyIds) {
+		const kind = assayDisplayKind(assay)
+		if (kind === 'panel' || kind === 'assay') {
+			const session = isSessionLabAssay(assay) ? assay : null
+			const registryId = session?.registryId
+			if (registryId && readyIds.has(`${kind}:${registryId}`)) return true
+		}
+	}
+	if (!isSessionLabAssay(assay)) return false
+	if (assay.packageFiles?.length && assay.packageEntrypoint) return true
+	return assay.dependencyUrls.length === 0
+}
+
+function sessionPackageLooksSynthetic(assay: SessionLabAssay, files: BioscriptPackageFile[] | undefined): boolean {
+	if (!files?.length || !assay.dependencyUrls.length) return false
+	return files.length <= assay.dependencyUrls.length + 1
+}
+
+function sessionAssayFromRegistryPanel(panel: RegistryPanel): SessionLabAssay | null {
+	const entrypointFile = panel.files.find((file) => file.path === panel.entrypoint) ?? panel.files[0]
+	if (!entrypointFile) return null
+	return {
+		id: `registry-panel-${panel.id}`,
+		title: panel.title,
+		subtitle: 'Cached package',
+		description: panel.summary ?? 'Panel restored from cached package storage.',
+		category: 'panel',
+		language: entrypointFile.path.toLowerCase().endsWith('.py') ? 'python' : 'yaml',
+		analyticsAssayId: `registry:${panel.id}`,
+		url: panel.sourceUrl ?? panel.artifactUrl ?? `registry:${panel.id}`,
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['remote', 'panel', 'cached-package', ...(panel.version ? [`version:${panel.version}`] : [])],
+		file: new File([entrypointFile.contents], entrypointFile.path, {
+			type: entrypointFile.path.toLowerCase().endsWith('.py') ? 'text/x-python' : 'application/yaml',
+		}),
+		dependencyUrls: [],
+		packageEntrypoint: panel.entrypoint,
+		packageFiles: panel.files,
+		packageSourceUrl: panel.sourceUrl ?? undefined,
+		remoteKind: 'panel',
+		remoteSchema: 'bioscript:panel:1.0',
+		registryId: panel.id,
+	}
+}
+
+function resourceSchemaKind(resource: { schema: string | null; kind: ResolvedRemoteResource['kind'] }): 'panel' | 'assay' | null {
+	const schema = resource.schema?.toLowerCase() ?? ''
+	if (schema.startsWith('bioscript:panel')) return 'panel'
+	if (schema.startsWith('bioscript:assay:')) return 'assay'
+	if (resource.kind === 'panel') return 'panel'
+	if (resource.kind === 'assay') return 'assay'
+	return null
+}
+
+function resourceRegistryId(resource: ResolvedRemoteResource): string {
+	const fromName = (resource as { name?: string }).name
+	if (typeof fromName === 'string' && fromName.trim()) return fromName.trim()
+	if (resource.title) return resource.title
+	return resource.sha256.slice(0, 16)
+}
+
+async function registerPackageWithRegistry(
+	pkg: { resources: ResolvedRemoteResource[]; entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
+	origin: RegistryOrigin,
+	options?: { artifactUrl?: string | null; artifactSha256?: string | null },
+): Promise<void> {
+	const panelResource = pkg.resources.find((r) => resourceSchemaKind(r) === 'panel')
+	const assayResources = pkg.resources.filter((r) => resourceSchemaKind(r) === 'assay')
+
+	const cachedAt = new Date().toISOString()
+	const panelId = panelResource ? resourceRegistryId(panelResource) : null
+	const memberAssayIds = new Set<string>()
+
+	if (panelResource && panelId) {
+		const dependencyUrls = new Set(panelResource.dependencies.map((d) => d.url))
+		for (const assay of assayResources) {
+			if (!dependencyUrls.has(assay.sourceUrl)) continue
+			memberAssayIds.add(resourceRegistryId(assay))
+		}
+		await registryUpsertPanel({
+			id: panelId,
+			version: panelResource.version ?? null,
+			title: panelResource.title,
+			label: panelResource.title,
+			summary: panelResource.summary ?? null,
+			tags: panelResource.dependencies.map(() => '').filter(Boolean),
+			sourceUrl: pkg.sourceUrl,
+			artifactUrl: options?.artifactUrl ?? null,
+			artifactSha256: options?.artifactSha256 ?? null,
+			entrypoint: pkg.entrypoint,
+			files: pkg.files,
+			memberAssayIds: Array.from(memberAssayIds),
+			origin,
+			cachedAt,
+		})
+	}
+
+	for (const assay of assayResources) {
+		const assayId = resourceRegistryId(assay)
+		const isMember = panelId !== null && memberAssayIds.has(assayId)
+		const pathInPackage = pkg.files.find((f) => f.source_url === assay.sourceUrl)?.path ?? null
+		await registryUpsertAssay({
+			id: assayId,
+			version: assay.version ?? null,
+			title: assay.title,
+			summary: assay.summary ?? null,
+			parentPanelId: isMember ? panelId : null,
+			sourceUrl: isMember ? pkg.sourceUrl : assay.sourceUrl,
+			pathInPackage,
+			artifactUrl: isMember ? null : (options?.artifactUrl ?? null),
+			artifactSha256: isMember ? null : (options?.artifactSha256 ?? null),
+			entrypoint: isMember ? null : pkg.entrypoint,
+			files: isMember ? null : pkg.files,
+			origin,
+			cachedAt,
+		})
+	}
+}
+
 function buildGenomeBundleFromRefs(
 	refs: LabFileRef[],
 	getFile: (ref: LabFileRef) => File,
@@ -458,6 +742,7 @@ function buildGenomeBundleFromRefs(
 	if (!primary) return null
 	const primaryKind = primary.kind
 	if (
+		primaryKind !== 'bam' &&
 		primaryKind !== 'cram' &&
 		primaryKind !== 'vcf_gz' &&
 		primaryKind !== 'genotype_text' &&
@@ -473,7 +758,7 @@ function buildGenomeBundleFromRefs(
 		if (ref.id === primary.id) continue
 		const kind = ref.kind
 		const file = getFile(ref)
-		if (kind === 'crai' || kind === 'tbi' || kind === 'fai' || kind === 'fasta') {
+		if (kind === 'bai' || kind === 'crai' || kind === 'tbi' || kind === 'fai' || kind === 'fasta') {
 			genomeRef = pairLabGenomeCompanionRef([genomeRef], ref)[0] ?? genomeRef
 			continue
 		}
@@ -482,6 +767,78 @@ function buildGenomeBundleFromRefs(
 		}
 	}
 	return { genomeRef, unknowns }
+}
+
+function isGenomeLabFileKind(kind: LabFileRef['kind']): boolean {
+	return (
+		kind === 'cram' ||
+		kind === 'bam' ||
+		kind === 'bai' ||
+		kind === 'crai' ||
+		kind === 'fasta' ||
+		kind === 'fai' ||
+		kind === 'vcf_gz' ||
+		kind === 'tbi' ||
+		kind === 'genotype_text' ||
+		kind === 'zip'
+	)
+}
+
+function summarizeResolvedResource(kind: ResolvedRemoteResource['kind'], dependencyCount: number): string {
+	const label = kind === 'unknown' ? 'remote resource' : kind
+	if (!dependencyCount) return `This looks like a ${label}. No dependencies were detected.`
+	return `This looks like a ${label}. It references ${dependencyCount} ${dependencyCount === 1 ? 'dependency' : 'dependencies'}.`
+}
+
+function resolvedFromLocalPackageResource(
+	resource: BioscriptPackageResource,
+	packageSourceUrl: string,
+): ResolvedRemoteResource {
+	const resolution = resource.resolution
+	return {
+		cacheStatus: 'miss',
+		cachedAt: new Date().toISOString(),
+		contents: resource.contents,
+		contentType: null,
+		dependencies: resolution.dependencies,
+		kind: resolution.kind,
+		name: resolution.name,
+		previousSha256: null,
+		previousVersion: null,
+		schema: resolution.schema ?? null,
+		sha256: resolution.sha256,
+		sourceUrl: resolution.source_url || `${packageSourceUrl}/${resource.path}`,
+		summary: summarizeResolvedResource(resolution.kind, resolution.dependencies.length),
+		title: resolution.title,
+		version: resolution.version ?? null,
+	}
+}
+
+async function resolveLocalAssayPackageZipRef(
+	ref: LabFileRef,
+	getFile: (ref: LabFileRef) => File,
+): Promise<{
+	entrypoint: string
+	files: BioscriptPackageFile[]
+	resources: ResolvedRemoteResource[]
+	sourceUrl: string
+} | null> {
+	if (ref.kind !== 'zip') return null
+	const sourceUrl = `local://${ref.id}/${encodeURIComponent(ref.name)}`
+	try {
+		const file = getFile(ref)
+		const bytes = new Uint8Array(await file.arrayBuffer())
+		const pkg = await resolvePackageZipBytes(sourceUrl, ref.name, bytes)
+		if (!pkg.resources.length) return null
+		return {
+			entrypoint: pkg.entrypoint,
+			files: pkg.files,
+			resources: pkg.resources.map((resource) => resolvedFromLocalPackageResource(resource, sourceUrl)),
+			sourceUrl,
+		}
+	} catch {
+		return null
+	}
 }
 
 function storedHandleName(row: StoredHandleBundle): string {
@@ -504,7 +861,7 @@ function groupStoredHandles(rows: StoredHandleBundle[]): SavedHandleGroup[] {
 		const storedLabel = groupRows.find((row) => row.handles.groupLabel)?.handles.groupLabel
 		const primary = names.find((name) => {
 			const kind = classifyLabFile(name)
-			return kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip' || kind === 'assay_yaml' || kind === 'assay_python'
+			return kind === 'bam' || kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip' || kind === 'assay_yaml' || kind === 'assay_python'
 		}) ?? storedLabel ?? names[0] ?? key
 		return {
 			id: key,
@@ -520,9 +877,15 @@ function groupStoredHandles(rows: StoredHandleBundle[]): SavedHandleGroup[] {
 	// A CRAM genome often has an unrelated reference FASTA name. Attach loose
 	// FASTA/FAI groups to a single CRAM group so reopening restores one complete
 	// genome bundle from the files the user persisted together.
-	const cramGroups = result.filter((group) => group.rows.some((row) => classifyLabFile(storedHandleName(row)) === 'cram'))
+	const cramGroups = result.filter((group) => group.rows.some((row) => {
+		const kind = classifyLabFile(storedHandleName(row))
+		return kind === 'bam' || kind === 'cram'
+	}))
 	const looseCraiGroups = result.filter((group) =>
-		group.rows.every((row) => classifyLabFile(storedHandleName(row)) === 'crai')
+		group.rows.every((row) => {
+			const kind = classifyLabFile(storedHandleName(row))
+			return kind === 'bai' || kind === 'crai'
+		})
 	)
 	for (const craiGroup of looseCraiGroups) {
 		const craiName = storedHandleName(craiGroup.rows[0]!)
@@ -570,6 +933,17 @@ function savedHandleGroupMatchesActiveGenome(group: SavedHandleGroup, genome: La
 function cachedRemoteMatchesActiveGenome(remote: RemoteLabFile, genome: LabGenomeRef | null): boolean {
 	if (!genome) return false
 	return remote.file.name === genome.primary.name
+}
+
+function sampleBundleMatchesGenome(bundle: LabTestFileBundle, genome: LabGenomeRef): boolean {
+	const sampleNames = new Set(bundle.files.map((file) => file.name))
+	return sampleNames.has(genome.primary.name)
+}
+
+function sampleBundleMatchesCachedRemoteFile(bundle: LabTestFileBundle, remoteFile: RemoteLabFile): boolean {
+	if (bundle.remoteUrl && remoteFile.sourceUrl === bundle.remoteUrl) return true
+	const sampleNames = new Set(bundle.files.map((file) => file.name))
+	return sampleNames.has(remoteFile.file.name)
 }
 
 /** Avoid double “selected” rows when cached URL storage or persisted handles share filenames with this session genome. */
@@ -662,14 +1036,15 @@ export default function LabScreen() {
 	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
 	const [selectedGenomeId, setSelectedGenomeId] = useState<string | null>(null)
+	const [forceGettingStarted, setForceGettingStarted] = useState(false)
 	const [runs, setRuns] = useState<RunRecord[]>([])
 	const [runningAssayId, setRunningAssayId] = useState<string | null>(null)
 	const [dragActive, setDragActive] = useState(false)
 	const [importGenomeModalOpen, setImportGenomeModalOpen] = useState(false)
 	const [query, setQuery] = useState('')
+	const [pickerKindFilter, setPickerKindFilter] = useState<'all' | 'panel' | 'assay'>('panel')
 	const [assayUrlInput, setAssayUrlInput] = useState('')
 	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
-	const [category, setCategory] = useState<AssayCategory | null>('panel')
 	const [sampleLoadingId, setSampleLoadingId] = useState<string | null>(null)
 	const [sampleLoadError, setSampleLoadError] = useState<string | null>(null)
 	const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null)
@@ -677,24 +1052,63 @@ export default function LabScreen() {
 	const [remoteIntent, setRemoteIntent] = useState<RemoteIntentState>({ status: 'idle' })
 	const remoteIntentRequestSeqRef = useRef(0)
 	const [sessionAssays, setSessionAssays] = useState<SessionLabAssay[]>([])
+	const [registryReadyIds, setRegistryReadyIds] = useState<Set<string>>(() => new Set())
+	const refreshRegistryReady = useCallback(async () => {
+		try {
+			const [panels, assays] = await Promise.all([registryListPanels(), registryListAssays()])
+			const ready = new Set<string>()
+			for (const panel of panels) {
+				if (panel.entrypoint && panel.files?.length) ready.add(`panel:${panel.id}`)
+			}
+			for (const assay of assays) {
+				if (assay.parentPanelId) {
+					const parent = panels.find((p) => p.id === assay.parentPanelId)
+					if (parent?.entrypoint && parent.files?.length) ready.add(`assay:${assay.id}`)
+				} else if (assay.entrypoint && assay.files?.length) {
+					ready.add(`assay:${assay.id}`)
+				}
+			}
+			setRegistryReadyIds(ready)
+		} catch (err) {
+			console.warn('[lab] registry refresh failed', err)
+		}
+	}, [])
+	useEffect(() => { void refreshRegistryReady() }, [refreshRegistryReady, sessionAssays])
 	const [pendingHandles, setPendingHandles] = useState<PendingPersistentHandle[]>([])
 	const [handlePersistMessage, setHandlePersistMessage] = useState<string | null>(null)
 	const [savedHandles, setSavedHandles] = useState<SavedHandleGroup[]>([])
 	const [savedHandlesLoading, setSavedHandlesLoading] = useState(false)
 	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
 	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
+	const [cachedRemotePackageArtifactUrls, setCachedRemotePackageArtifactUrls] = useState<Set<string>>(() => new Set())
 	const [pendingDemoRunAssayId, setPendingDemoRunAssayId] = useState<string | null>(null)
-	const [gettingStartedModalOpen, setGettingStartedModalOpen] = useState(false)
+	const [pendingVcfIndexRun, setPendingVcfIndexRun] = useState<PendingVcfIndexRun | null>(null)
+	const [pendingAlignmentIndexRun, setPendingAlignmentIndexRun] = useState<PendingAlignmentIndexRun | null>(null)
+	const promptedAlignmentIndexGenomeIdsRef = useRef<Set<string>>(new Set())
+	const vcfIndexGenerationSeqRef = useRef(0)
+	const alignmentIndexGenerationSeqRef = useRef(0)
 
 	const activeGenomeRef = useMemo(
-		() => genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null,
-		[genomes, selectedGenomeId],
+		() => {
+			if (forceGettingStarted) return null
+			return genomes.find((g) => g.id === selectedGenomeId) ?? genomes[genomes.length - 1] ?? null
+		},
+		[forceGettingStarted, genomes, selectedGenomeId],
 	)
+	const loadedSampleBundleIds = useMemo(() => {
+		const ids = new Set<string>()
+		for (const bundle of LAB_TEST_FILES) {
+			if (
+				genomes.some((genome) => sampleBundleMatchesGenome(bundle, genome)) ||
+				cachedRemoteFiles.some((remoteFile) => sampleBundleMatchesCachedRemoteFile(bundle, remoteFile))
+			) {
+				ids.add(bundle.id)
+			}
+		}
+		return ids
+	}, [cachedRemoteFiles, genomes])
 
 	const { width: layoutWidth } = useWindowDimensions()
-	/** Wide browser layout: genome setup left, assays + runs right */
-	const LAB_WIDE_TWO_COL_MIN = 1100
-	const LAB_SIDEBAR_DRAWER_MAX = 920
 	const useWideSplit = layoutWidth >= LAB_WIDE_TWO_COL_MIN && Boolean(activeGenomeRef)
 	const useSidebarDrawer = layoutWidth < LAB_SIDEBAR_DRAWER_MAX
 	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -702,6 +1116,58 @@ export default function LabScreen() {
 	useEffect(() => {
 		if (!useSidebarDrawer) setMobileSidebarOpen(false)
 	}, [useSidebarDrawer])
+
+	const addResolvedSessionAssays = useCallback((
+		resources: ResolvedRemoteResource[],
+		packageInfo?: { entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
+	) => {
+		const assays = resources
+			.filter((resource) => resource.kind === 'panel' || resource.kind === 'assay' || resource.kind === 'variant' || resource.kind === 'python')
+			.map((resource): SessionLabAssay => {
+				const language = resource.kind === 'python' ? 'python' : 'yaml'
+				return {
+					id: `remote-${resource.sha256.slice(0, 16)}`,
+					title: resource.title,
+					subtitle: resource.schema ?? resource.name,
+					description: resource.summary,
+					category: resource.kind === 'panel' ? 'panel' : 'pharmacogenomics',
+					language,
+					analyticsAssayId: remoteResourceAnalyticsId(resource, LAB_ASSAYS),
+					url: resource.sourceUrl,
+					inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+					tags: [
+						'remote',
+						resource.kind,
+						...(resource.version ? [`version:${resource.version}`] : []),
+					],
+					file: new File([resource.contents], resource.name, {
+						type: language === 'python' ? 'text/x-python' : 'application/yaml',
+					}),
+					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
+					packageEntrypoint: packageInfo?.entrypoint,
+					packageFiles: packageInfo?.files,
+					packageSourceUrl: packageInfo?.sourceUrl,
+					remoteKind: resource.kind,
+					remoteSchema: resource.schema,
+					registryId: resourceRegistryId(resource),
+				}
+			})
+		if (!assays.length) return
+		setSessionAssays((prev) => {
+			const byKey = new Map(prev.map((assay) => [assayStableKey(assay), assay]))
+			for (const assay of assays) {
+				const key = assayStableKey(assay)
+				const existing = byKey.get(key)
+				byKey.set(key, existing && !assay.packageFiles?.length ? {
+					...assay,
+					packageEntrypoint: existing.packageEntrypoint,
+					packageFiles: existing.packageFiles,
+					packageSourceUrl: existing.packageSourceUrl,
+				} : assay)
+			}
+			return Array.from(byKey.values()).sort((left, right) => left.title.localeCompare(right.title))
+		})
+	}, [])
 
 	const ingestLocalAssayRef = useCallback((ref: LabFileRef) => {
 		const file = fileAdapterRef.current.getFile(ref)
@@ -725,7 +1191,6 @@ export default function LabScreen() {
 			const byName = prev.filter((assay) => !(isSessionLabAssay(assay) && assay.url.startsWith('local://') && assay.title === ref.name))
 			return [...byName, localAssay].sort((left, right) => left.title.localeCompare(right.title))
 		})
-		setCategory(null)
 	}, [])
 
 	const ingestRef = useCallback((ref: LabFileRef) => {
@@ -739,7 +1204,7 @@ export default function LabScreen() {
 			ingestLocalAssayRef(ref)
 			return
 		}
-		if (kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip') {
+		if (kind === 'bam' || kind === 'cram' || kind === 'vcf_gz' || kind === 'genotype_text' || kind === 'zip') {
 			const genomeRef = createLabGenomeRefFromPrimary(ref)
 			if (!genomeRef) return
 			setGenomes((prev) => [...prev, genomeRef])
@@ -751,34 +1216,63 @@ export default function LabScreen() {
 
 	const ingestManyRefs = useCallback(
 		(refs: LabFileRef[], eventProperties?: Record<string, unknown>) => {
-			const ordered = sortLabFileRefsForIngestion(refs)
-			const assayRefs = ordered.filter((ref) => ref.kind === 'assay_python' || ref.kind === 'assay_yaml')
-			const genomeRefs = ordered.filter((ref) => ref.kind !== 'assay_python' && ref.kind !== 'assay_yaml')
-			trackEvent('lab_files_added', {
-				fileKinds: ordered.map((ref) => ref.kind),
-				fileSources: ordered.map((ref) => ref.source),
-				totalFiles: ordered.length,
-				...eventProperties,
-			})
-			for (const ref of assayRefs) ingestLocalAssayRef(ref)
-			const primaryCount = genomeRefs.filter((ref) => isPrimaryGenomeFileKind(ref.kind)).length
-			if (primaryCount === 1) {
-				const bundle = buildGenomeBundleFromRefs(genomeRefs, fileAdapterRef.current.getFile)
-				if (bundle) {
-					setGenomes((prev) => [
-						...prev.filter((genome) => genome.primary.name !== bundle.genomeRef.primary.name),
-						bundle.genomeRef,
-					])
-					setSelectedGenomeId(bundle.genomeRef.id)
-					if (bundle.unknowns.length) {
-						setUnknowns((prev) => [...prev, ...bundle.unknowns.map(createUnknownEntry)])
-					}
-					return
+			void (async () => {
+				const ordered = sortLabFileRefsForIngestion(refs)
+				const localPackageRefs = new Set<string>()
+				for (const ref of ordered) {
+					const pkg = await resolveLocalAssayPackageZipRef(ref, fileAdapterRef.current.getFile)
+					if (!pkg) continue
+					localPackageRefs.add(ref.id)
+					addResolvedSessionAssays(pkg.resources, {
+						entrypoint: pkg.entrypoint,
+						files: pkg.files,
+						sourceUrl: pkg.sourceUrl,
+					})
+					void registerPackageWithRegistry(pkg, 'local-drop').catch((err) =>
+						console.warn('[lab] registry upsert (local zip) failed', err),
+					)
 				}
-			}
-			for (const ref of genomeRefs) ingestRef(ref)
+				const assayRefs = ordered.filter((ref) => ref.kind === 'assay_python' || ref.kind === 'assay_yaml')
+				const genomeRefs = ordered.filter(
+					(ref) =>
+						!localPackageRefs.has(ref.id) &&
+						ref.kind !== 'assay_python' &&
+						ref.kind !== 'assay_yaml' &&
+						isGenomeLabFileKind(ref.kind),
+				)
+				const otherRefs = ordered.filter(
+					(ref) => !localPackageRefs.has(ref.id) && !assayRefs.includes(ref) && !genomeRefs.includes(ref),
+				)
+				trackEvent('lab_files_added', {
+					fileKinds: ordered.map((ref) => localPackageRefs.has(ref.id) ? 'assay_zip' : ref.kind),
+					fileSources: ordered.map((ref) => ref.source),
+					totalFiles: ordered.length,
+					...eventProperties,
+				})
+				for (const ref of assayRefs) ingestLocalAssayRef(ref)
+				const primaryCount = genomeRefs.filter((ref) => isPrimaryGenomeFileKind(ref.kind)).length
+				if (primaryCount === 1) {
+					const bundle = buildGenomeBundleFromRefs(genomeRefs, fileAdapterRef.current.getFile)
+					if (bundle) {
+						setGenomes((prev) => [
+							...prev.filter((genome) => genome.primary.name !== bundle.genomeRef.primary.name),
+							bundle.genomeRef,
+						])
+						setSelectedGenomeId(bundle.genomeRef.id)
+						if (bundle.unknowns.length) {
+							setUnknowns((prev) => [...prev, ...bundle.unknowns.map(createUnknownEntry)])
+						}
+						for (const ref of otherRefs) ingestRef(ref)
+						return
+					}
+				}
+				for (const ref of genomeRefs) ingestRef(ref)
+				for (const ref of otherRefs) ingestRef(ref)
+			})().catch((error) => {
+				console.error('[lab] failed to ingest files', error)
+			})
 		},
-		[ingestLocalAssayRef, ingestRef, trackEvent],
+		[addResolvedSessionAssays, ingestLocalAssayRef, ingestRef, trackEvent],
 	)
 
 	const ingestMany = useCallback(
@@ -817,7 +1311,15 @@ export default function LabScreen() {
 			items: DataTransferItemList | undefined,
 			logLabel: 'drop' | 'picker',
 		): Promise<PendingPersistentHandle[]> => {
-			const groupPlan = buildLabFileGroupPlan(refs)
+			const genomeRefs: LabFileRef[] = []
+			for (const ref of refs) {
+				if (!isGenomeLabFileKind(ref.kind)) continue
+				const packageZip = await resolveLocalAssayPackageZipRef(ref, fileAdapterRef.current.getFile)
+				if (packageZip) continue
+				genomeRefs.push(ref)
+			}
+			const persistableNames = new Set(genomeRefs.map((ref) => ref.name))
+			const groupPlan = buildLabFileGroupPlan(genomeRefs)
 			const handles: PendingPersistentHandle[] = []
 			const handledNames = new Set<string>()
 			const itemList = Array.from(items ?? [])
@@ -849,6 +1351,7 @@ export default function LabScreen() {
 							handleName: handle?.name ?? 'none',
 						})
 						if (handle?.kind === 'file') {
+							if (!persistableNames.has(handle.name)) continue
 							handledNames.add(handle.name)
 							const group = groupPlan.get(handle.name) ?? {
 								groupId: `drop-record-${handle.name}`,
@@ -871,6 +1374,7 @@ export default function LabScreen() {
 			}
 			for (const file of files) {
 				if (handledNames.has(file.name)) continue
+				if (!persistableNames.has(file.name)) continue
 				const group = groupPlan.get(file.name) ?? {
 					groupId: `drop-record-${file.name}`,
 					groupLabel: file.name,
@@ -912,7 +1416,26 @@ export default function LabScreen() {
 
 	const refreshCachedRemoteFiles = useCallback(async () => {
 		try {
-			setCachedRemoteFiles(await listCachedRemoteLabFiles())
+			const [files, packages] = await Promise.all([
+				listCachedRemoteLabFiles(),
+				listResolvedCachedRemotePackages(),
+			])
+			const packageUrls = new Set<string>(packages.map((pkg) => pkg.artifactUrl))
+			for (const url of listAssayPackageSourceUrls()) packageUrls.add(url)
+			await Promise.all(files.map(async (file) => {
+				if (file.fileKind !== 'zip') return
+				try {
+					const bytes = new Uint8Array(await file.file.arrayBuffer())
+					const pkg = await resolvePackageZipBytes(file.sourceUrl, file.file.name, bytes)
+					if (!pkg.resources.length) return
+					packageUrls.add(file.sourceUrl)
+					addAssayPackageSourceUrl(file.sourceUrl)
+				} catch {
+					// Ordinary genome ZIPs can fail package resolution; keep them visible.
+				}
+			}))
+			setCachedRemoteFiles(files)
+			setCachedRemotePackageArtifactUrls(packageUrls)
 		} catch (error) {
 			logPersistentHandleWarning('remote file cache refresh failed', {
 				error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
@@ -1303,68 +1826,62 @@ export default function LabScreen() {
 		[ingestMany, refreshCachedRemoteFiles, trackEvent],
 	)
 
-	const addResolvedSessionAssays = useCallback((
-		resources: ResolvedRemoteResource[],
-		packageInfo?: { entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
-	) => {
-		const assays = resources
-			.filter((resource) => resource.kind === 'panel' || resource.kind === 'assay' || resource.kind === 'variant' || resource.kind === 'python')
-			.map((resource): SessionLabAssay => {
-				const language = resource.kind === 'python' ? 'python' : 'yaml'
-				return {
-					id: `remote-${resource.sha256.slice(0, 16)}`,
-					title: resource.title,
-					subtitle: resource.schema ?? resource.name,
-					description: resource.summary,
-					category: resource.kind === 'panel' ? 'panel' : 'pharmacogenomics',
-					language,
-					analyticsAssayId: remoteResourceAnalyticsId(resource, LAB_ASSAYS),
-					url: resource.sourceUrl,
-					inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
-					tags: [
-						'remote',
-						resource.kind,
-						...(resource.version ? [`version:${resource.version}`] : []),
-					],
-					file: new File([resource.contents], resource.name, {
-						type: language === 'python' ? 'text/x-python' : 'application/yaml',
-					}),
-					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
-					packageEntrypoint: packageInfo?.entrypoint,
-					packageFiles: packageInfo?.files,
-					packageSourceUrl: packageInfo?.sourceUrl,
-					remoteKind: resource.kind,
-				}
-			})
-		if (!assays.length) return
-		setSessionAssays((prev) => {
-			const byKey = new Map(prev.map((assay) => [assayStableKey(assay), assay]))
-			for (const assay of assays) {
-				const key = assayStableKey(assay)
-				const existing = byKey.get(key)
-				byKey.set(key, existing && !assay.packageFiles?.length ? {
-					...assay,
-					packageEntrypoint: existing.packageEntrypoint,
-					packageFiles: existing.packageFiles,
-					packageSourceUrl: existing.packageSourceUrl,
-				} : assay)
-			}
-			return Array.from(byKey.values()).sort((left, right) => left.title.localeCompare(right.title))
-		})
-	}, [])
-
 	useEffect(() => {
 		let cancelled = false
 		void Promise.all([
 			listResolvedCachedRemoteResources(),
 			listResolvedCachedRemotePackages(),
 		])
-			.then(([resources, packages]) => {
+			.then(async ([resources, packages]) => {
 				if (cancelled) return
 				for (const pkg of packages) {
 					addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+					void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
+						console.warn('[lab] registry upsert (rehydrate) failed', err),
+					)
 				}
-				if (resources.length) addResolvedSessionAssays(resources)
+				try {
+					const registryPanels = await registryListPanels()
+					const restoredPanels = registryPanels
+						.map(sessionAssayFromRegistryPanel)
+						.filter((panel): panel is SessionLabAssay => Boolean(panel))
+					if (restoredPanels.length) {
+						setSessionAssays((prev) => {
+							const byKey = new Map(prev.map((assay) => [assayStableKey(assay), assay]))
+							for (const panel of restoredPanels) {
+								if (!byKey.has(assayStableKey(panel))) byKey.set(assayStableKey(panel), panel)
+							}
+							return Array.from(byKey.values()).sort((left, right) => left.title.localeCompare(right.title))
+						})
+					}
+				} catch (err) {
+					console.warn('[lab] registry panel rehydrate failed', err)
+				}
+				// Even when listResolvedCachedRemotePackages drops a package because
+				// some inner resources were evicted from localStorage, the raw
+				// package metadata (incl. resourceUrls → packageSourceUrl mapping)
+				// is still present. Re-attach packageSourceUrl/entrypoint/files to
+				// the individually rehydrated resources so the run path can recover
+				// the release URL instead of mistaking the inner manifest for a
+				// package-release.
+				const rawPackages = listCachedRemotePackages()
+				const fullyResolvedSourceUrls = new Set(packages.flatMap((pkg) => pkg.resources.map((r) => r.sourceUrl)))
+				const resourceUrlToRawPkg = new Map<string, typeof rawPackages[number]>()
+				for (const pkg of rawPackages) {
+					for (const url of pkg.resourceUrls) resourceUrlToRawPkg.set(url, pkg)
+				}
+				const orphanedResources = resources.filter((resource) => !fullyResolvedSourceUrls.has(resource.sourceUrl))
+				for (const resource of orphanedResources) {
+					const rawPkg = resourceUrlToRawPkg.get(resource.sourceUrl)
+					if (!rawPkg) continue
+					addResolvedSessionAssays([resource], {
+						entrypoint: rawPkg.entrypoint,
+						files: rawPkg.files ?? [],
+						sourceUrl: rawPkg.sourceUrl,
+					})
+				}
+				const stillOrphaned = orphanedResources.filter((resource) => !resourceUrlToRawPkg.has(resource.sourceUrl))
+				if (stillOrphaned.length) addResolvedSessionAssays(stillOrphaned)
 				logPersistentHandleDebug('remote cache rehydrated', {
 					count: resources.length,
 					packageCount: packages.length,
@@ -1374,6 +1891,42 @@ export default function LabScreen() {
 						title: resource.title,
 					})),
 				})
+				// For standalone-loaded assays/panels (not part of a package zip),
+				// rebuild synthesized packageFiles from individually cached deps so
+				// the Run button stays available across refreshes.
+				const eligible = resources.filter(
+					(resource) =>
+						(resource.kind === 'assay' || resource.kind === 'panel') &&
+						resource.dependencies.length > 0 &&
+						!packages.some((pkg) => pkg.resources.some((r) => r.sourceUrl === resource.sourceUrl)),
+				)
+				for (const resource of eligible) {
+					if (cancelled) return
+					const depRecords = await Promise.all(
+						resource.dependencies.map((dep) => getCachedRemoteResource(dep.url)),
+					)
+					if (depRecords.some((record) => !record)) continue
+					const entrypoint = resource.name || (resource.sourceUrl.split('/').pop() ?? 'assay.yaml')
+					const files: BioscriptPackageFile[] = [
+						{ contents: resource.contents, path: entrypoint, source_url: resource.sourceUrl },
+					]
+					resource.dependencies.forEach((dep, i) => {
+						const record = depRecords[i]
+						if (!record) return
+						files.push({
+							contents: record.contents,
+							path: relativePathFromBase(resource.sourceUrl, dep.url),
+							source_url: dep.url,
+						})
+					})
+					if (cancelled) return
+					setSessionAssays((prev) => prev.map((entry) => entry.url === resource.sourceUrl ? {
+						...entry,
+						packageEntrypoint: entrypoint,
+						packageFiles: files,
+						packageSourceUrl: resource.sourceUrl,
+					} : entry))
+				}
 			})
 			.catch((error) => {
 				logPersistentHandleWarning('remote cache rehydrate failed', {
@@ -1388,12 +1941,27 @@ export default function LabScreen() {
 	const forgetRemoteAssay = useCallback(async (assay: LabAssay) => {
 		if (!isSessionLabAssay(assay)) return
 		await deleteRemoteResourceCache(assay.url)
+		if (assay.registryId) {
+			const kind = assayDisplayKind(assay)
+			try {
+				if (kind === 'panel') {
+					const { removePanel: registryRemovePanel } = await import('@/lib/lab/assay-registry')
+					await registryRemovePanel(assay.registryId)
+				} else if (kind === 'assay') {
+					const { removeAssay: registryRemoveAssay } = await import('@/lib/lab/assay-registry')
+					await registryRemoveAssay(assay.registryId)
+				}
+			} catch (err) {
+				console.warn('[lab] registry remove failed', err)
+			}
+			await refreshRegistryReady()
+		}
 		setSessionAssays((prev) => prev.filter((item) => item.url !== assay.url))
 		trackEvent('lab_remote_resource_cache_deleted', {
 			kind: assay.remoteKind,
 			sourceUrl: assay.url,
 		})
-	}, [trackEvent])
+	}, [refreshRegistryReady, trackEvent])
 
 	const dismissRemoteIntent = useCallback(() => {
 		remoteIntentRequestSeqRef.current += 1
@@ -1443,11 +2011,26 @@ export default function LabScreen() {
 			if (isRemoteLabFile) {
 				const remoteFile = await fetchRemoteLabFile(intent.url)
 				if (!isCurrentRemoteIntent()) return
+				if (remoteFile.fileKind === 'zip') {
+					try {
+						const bytes = new Uint8Array(await remoteFile.file.arrayBuffer())
+						const pkg = await resolvePackageZipBytes(intent.url, remoteFile.file.name, bytes)
+						if (pkg?.resources?.length) {
+							addAssayPackageSourceUrl(intent.url)
+						} else {
+							removeAssayPackageSourceUrl(intent.url)
+						}
+					} catch {
+						removeAssayPackageSourceUrl(intent.url)
+					}
+				}
 				ingestMany([remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
 				if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
 					await refreshCachedRemoteFiles()
 				}
 				if (!isCurrentRemoteIntent()) return
+				setAssayUrlInput('')
+				setForceGettingStarted(false)
 				setRemoteIntent({ file: remoteFile, intent, status: 'file-loaded' })
 				trackEvent('lab_remote_file_loaded', {
 					...demoProperties,
@@ -1465,12 +2048,17 @@ export default function LabScreen() {
 				const pkg = await resolveRemotePackage(intent.url)
 				if (!isCurrentRemoteIntent()) return
 				addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+				void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
+					console.warn('[lab] registry upsert (url package) failed', err),
+				)
 				const entrypointResource =
 					pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
 					pkg.resources[0]
 				if (!entrypointResource) {
 					throw new Error(`Package ${pkg.name ?? pkg.sourceUrl} did not contain runnable BioScript resources.`)
 				}
+				setAssayUrlInput('')
+				setForceGettingStarted(false)
 				clearWebLaunchIntentHash()
 				setRemoteIntent({ status: 'idle' })
 				trackEvent('lab_remote_package_resolved', {
@@ -1483,6 +2071,8 @@ export default function LabScreen() {
 			}
 			addResolvedSessionAssays([resource])
 			if (!isCurrentRemoteIntent()) return
+			setAssayUrlInput('')
+			setForceGettingStarted(false)
 			setRemoteIntent({ dependencies: [], intent, resource, status: 'resolved' })
 			trackEvent('lab_remote_intent_resolved', {
 				...demoProperties,
@@ -1514,12 +2104,40 @@ export default function LabScreen() {
 
 	const removeCachedRemoteFile = useCallback(async (remoteFile: RemoteLabFile) => {
 		await deleteCachedRemoteLabFile(remoteFile.sourceUrl)
+		removeAssayPackageSourceUrl(remoteFile.sourceUrl)
 		await refreshCachedRemoteFiles()
 		trackEvent('lab_remote_file_cache_deleted', {
 			fileKind: remoteFile.fileKind,
 			sourceUrl: remoteFile.sourceUrl,
 		})
 	}, [refreshCachedRemoteFiles, trackEvent])
+
+	const removeSessionGenome = useCallback(async (genome: LabGenomeRef) => {
+		const relatedNames = new Set(genomeRelatedFileNames(genome))
+		const matchedRemotes = cachedRemoteFiles.filter((remote) => relatedNames.has(remote.file.name))
+		const matchedSavedHandleRows = savedHandles.flatMap((group) =>
+			group.rows.filter((row) =>
+				(row.handles.primary?.name && relatedNames.has(row.handles.primary.name)) ||
+				(row.handles.reference?.name && relatedNames.has(row.handles.reference.name)) ||
+				relatedNames.has(group.label),
+			),
+		)
+		setGenomes((prev) => prev.filter((g) => g.id !== genome.id))
+		setSelectedGenomeId((prev) => (prev === genome.id ? null : prev))
+		if (matchedRemotes.length > 0) {
+			await Promise.all(matchedRemotes.map((remote) => deleteCachedRemoteLabFile(remote.sourceUrl)))
+			await refreshCachedRemoteFiles()
+		}
+		if (matchedSavedHandleRows.length > 0) {
+			await Promise.all(matchedSavedHandleRows.map((row) => deleteHandles(row.documentId)))
+			await refreshSavedHandles()
+		}
+		trackEvent('lab_session_genome_removed', {
+			cachedRemotesCleared: matchedRemotes.length,
+			savedHandlesCleared: matchedSavedHandleRows.length,
+			genomeKind: genome.kind,
+		})
+	}, [cachedRemoteFiles, refreshCachedRemoteFiles, refreshSavedHandles, savedHandles, trackEvent])
 
 	const resolveRemoteDependencies = useCallback(async () => {
 		if (remoteIntent.status !== 'resolved' && remoteIntent.status !== 'dependency-error') return
@@ -1579,6 +2197,14 @@ export default function LabScreen() {
 				}]
 			}
 
+			if (isSessionLabAssay(catalogAssay) && catalogAssay.packageFiles?.length) {
+				return catalogAssay.packageFiles.map((file) => ({
+					language: file.path.toLowerCase().endsWith('.py') ? ('python' as const) : ('yaml' as const),
+					name: file.path,
+					source: file.source_url,
+					text: file.contents,
+				}))
+			}
 			if (isSessionLabAssay(catalogAssay) && catalogAssay.remoteKind === 'panel') {
 				const panel = await sourceFromAssay(catalogAssay)
 				const variants = await Promise.all(panelVariantAssays(catalogAssay, sessionAssays).map(sourceFromAssay))
@@ -1597,12 +2223,41 @@ export default function LabScreen() {
 		[buildAssaySourceFiles],
 	)
 
-	const runAssay = useCallback(
-		async (catalogAssay: LabAssay) => {
-			if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
+	const downloadAssayPackage = useCallback(async (catalogAssay: LabAssay) => {
+		if (!isSessionLabAssay(catalogAssay)) {
+			if (catalogAssay.url) loadAssayUrl(catalogAssay.url)
+			return
+		}
+		if (sessionAssayPackageReady(catalogAssay)) return
+		if (!catalogAssay.dependencyUrls.length) {
+			// Nothing to fetch — fall back to package-release fetch.
+			if (catalogAssay.url) loadAssayUrl(catalogAssay.url)
+			return
+		}
+		try {
+			setRunningAssayId(catalogAssay.id)
+			const synth = await buildSyntheticPackageFromAssay(catalogAssay)
+			setSessionAssays((prev) => prev.map((entry) => (
+				entry.id === catalogAssay.id || entry.url === catalogAssay.url
+			) ? {
+				...entry,
+				packageEntrypoint: synth.entrypoint,
+				packageFiles: synth.files,
+				packageSourceUrl: catalogAssay.url,
+			} : entry))
+		} catch (error) {
+			console.warn('[lab] downloadAssayPackage failed', error)
+		} finally {
+			setRunningAssayId(null)
+		}
+	}, [loadAssayUrl])
+
+	const runAssayNow = useCallback(
+		async (catalogAssay: LabAssay, genomeForRun: LabGenomeRef) => {
+			if (!isLabGenomeComplete(genomeForRun)) return
 			if (runningAssayId) return
-			if (!isAssayCompatible(catalogAssay, activeGenomeRef)) return
-			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, activeGenomeRef)) return
+			if (!isAssayCompatible(catalogAssay, genomeForRun)) return
+			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, genomeForRun)) return
 
 			try {
 				setRunningAssayId(catalogAssay.id)
@@ -1612,7 +2267,7 @@ export default function LabScreen() {
 					{
 						id: runId,
 						assay: catalogAssay,
-						genomeName: labGenomeDisplayName(activeGenomeRef),
+						genomeName: labGenomeDisplayName(genomeForRun),
 						sourceFiles,
 						startedAt: Date.now(),
 						result: { status: 'running' },
@@ -1622,20 +2277,20 @@ export default function LabScreen() {
 				trackEvent('lab_run_started', {
 					...assayAnalyticsProperties(catalogAssay),
 					assayLanguage: catalogAssay.language,
-					genomeKind: activeGenomeRef.kind,
+					genomeKind: genomeForRun.kind,
 				})
 				try {
-					const primaryFile = fileAdapterRef.current.getFile(activeGenomeRef.primary)
+					const primaryFile = fileAdapterRef.current.getFile(genomeForRun.primary)
 					const bytes = new Uint8Array(await primaryFile.arrayBuffer())
 					const inspection = await inspectBytes(primaryFile.name, bytes, { detectSex: true })
-					trackEvent('using_file_heuristics', fileHeuristicAnalyticsProperties(activeGenomeRef, inspection))
+					trackEvent('using_file_heuristics', fileHeuristicAnalyticsProperties(genomeForRun, inspection))
 				} catch (inspectionError) {
 					trackEvent('using_file_heuristics', {
 						error: inspectionError instanceof Error ? inspectionError.message : String(inspectionError),
-						fileExtension: safeGenomicExtension(activeGenomeRef.primary.name),
-						genomeKind: activeGenomeRef.kind,
-						inputFormat: labGenomeInputFormat(activeGenomeRef),
-						relatedFileExtensions: genomeRelatedFileExtensions(activeGenomeRef),
+						fileExtension: safeGenomicExtension(genomeForRun.primary.name),
+						genomeKind: genomeForRun.kind,
+						inputFormat: labGenomeInputFormat(genomeForRun),
+						relatedFileExtensions: genomeRelatedFileExtensions(genomeForRun),
 					})
 				}
 
@@ -1651,34 +2306,142 @@ export default function LabScreen() {
 				const session = isSessionLabAssay(catalogAssay) ? catalogAssay : null
 				let packageEntrypoint = session?.packageEntrypoint
 				let packageFiles = session?.packageFiles
+				// First try the registry — for an assay that's a panel member, the
+				// parent panel's files are the authoritative bundle for the runner.
+				if ((!packageFiles?.length || !packageEntrypoint) && session?.registryId) {
+					const kind = assayDisplayKind(catalogAssay)
+					if (kind === 'panel' || kind === 'assay') {
+						try {
+							const bundle = await resolvePackageForRun(kind, session.registryId)
+							if (bundle) {
+								packageEntrypoint = bundle.entrypoint
+								packageFiles = bundle.files
+							}
+						} catch (err) {
+							console.warn('[lab] registry resolvePackageForRun failed', err)
+						}
+					}
+				}
 				// If the user is running a catalog entry that hasn't been resolved
 				// to a package yet (or whose cache was cleared / refresh raced the
 				// rehydrate effect), resolve on-the-fly so they don't need a
 				// separate "Load" click. resolveRemotePackage handles both
 				// package-release manifests and panel/assay YAMLs that declare a
 				// `package: { artifact: ... }` field, so we don't gate on schema.
-				if ((!packageFiles?.length || !packageEntrypoint) && catalogAssay.url) {
+				// Prefer the original package-release URL (`packageSourceUrl`) over
+				// the inner-resource URL so panel/assay manifests inside a zip don't
+				// get incorrectly treated as standalone package-release manifests.
+				const featuredPackageUrl = FEATURED_CATALOG.find((assay) => assay.title === catalogAssay.title)?.url
+				const releaseFetchUrl = session?.packageSourceUrl || featuredPackageUrl || catalogAssay.url
+				if (session && packageEntrypoint && sessionPackageLooksSynthetic(session, packageFiles) && releaseFetchUrl) {
 					try {
-						const pkg = await resolveRemotePackage(catalogAssay.url)
+						const pkg = await resolveRemotePackage(releaseFetchUrl)
 						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
+							console.warn('[lab] registry upsert (replace synthetic package) failed', err),
+						)
+						packageEntrypoint = pkg.entrypoint
+						packageFiles = pkg.files
+					} catch (resolveError) {
+						console.warn('[lab] replace synthetic package failed', resolveError)
+					}
+				}
+				if ((!packageFiles?.length || !packageEntrypoint) && releaseFetchUrl) {
+					try {
+						const pkg = await resolveRemotePackage(releaseFetchUrl)
+						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
+							console.warn('[lab] registry upsert (auto-resolve) failed', err),
+						)
 						packageEntrypoint = pkg.entrypoint
 						packageFiles = pkg.files
 					} catch (resolveError) {
 						console.warn('[lab] auto-resolve package failed', resolveError)
 					}
 				}
+				// Fallback: for a standalone assay/panel loaded by URL, the catalog
+				// entry doesn't carry a package archive — synthesize one by fetching
+				// the manifest's declared dependencies (cached via resolveRemoteResource).
+				if ((!packageFiles?.length || !packageEntrypoint) && session && session.dependencyUrls.length) {
+					try {
+						const synth = await buildSyntheticPackageFromAssay(session)
+						addResolvedSessionAssays([], {
+							entrypoint: synth.entrypoint,
+							files: synth.files,
+							sourceUrl: session.url,
+						})
+						setSessionAssays((prev) => prev.map((entry) => entry.id === session.id ? {
+							...entry,
+							packageEntrypoint: synth.entrypoint,
+							packageFiles: synth.files,
+							packageSourceUrl: session.url,
+						} : entry))
+						packageEntrypoint = synth.entrypoint
+						packageFiles = synth.files
+					} catch (synthError) {
+						console.warn('[lab] synthetic package build failed', synthError)
+					}
+				}
 				const success: LabRunSuccess =
 					packageFiles?.length && packageEntrypoint
-						? await runLabPackageReportRef(
-								activeGenomeRef,
-								packageEntrypoint,
-								packageFiles,
-								fileAdapterRef.current,
-								onProgress,
-							)
+						? await (async () => {
+								try {
+									const firstRun = await runLabPackageReportRef(
+										genomeForRun,
+										packageEntrypoint,
+										packageFiles,
+										fileAdapterRef.current,
+										onProgress,
+									)
+									const textOutput = firstRun.result.textOutput ?? ''
+									const artifactCount = firstRun.result.artifacts?.length ?? 0
+									const shouldRetryStalePackage =
+										artifactCount === 0 &&
+										releaseFetchUrl &&
+										(/Unable to fetch remote file \(\d+\)\./.test(textOutput) ||
+											textOutput.includes('package file not found:'))
+									if (!shouldRetryStalePackage) return firstRun
+									const pkg = await resolveRemotePackage(releaseFetchUrl, { bypassCache: true })
+									addResolvedSessionAssays(pkg.resources, {
+										entrypoint: pkg.entrypoint,
+										files: pkg.files,
+										sourceUrl: pkg.sourceUrl,
+									})
+									void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
+										console.warn('[lab] registry upsert (run stale-package retry) failed', err),
+									)
+									return runLabPackageReportRef(
+										genomeForRun,
+										pkg.entrypoint,
+										pkg.files,
+										fileAdapterRef.current,
+										onProgress,
+									)
+								} catch (error) {
+									const message = error instanceof Error ? error.message : String(error)
+									if (!catalogAssay.url || !message.includes('package file not found:')) throw error
+									const retryFetchUrl = releaseFetchUrl || catalogAssay.url
+									const pkg = await resolveRemotePackage(retryFetchUrl, { bypassCache: true })
+									addResolvedSessionAssays(pkg.resources, {
+										entrypoint: pkg.entrypoint,
+										files: pkg.files,
+										sourceUrl: pkg.sourceUrl,
+									})
+									void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
+										console.warn('[lab] registry upsert (run retry) failed', err),
+									)
+									return runLabPackageReportRef(
+										genomeForRun,
+										pkg.entrypoint,
+										pkg.files,
+										fileAdapterRef.current,
+										onProgress,
+									)
+								}
+							})()
 						: session?.fileRef
 							? await runLabAssayRef(
-									activeGenomeRef,
+									genomeForRun,
 									createLabAssayRef(session.fileRef, session.language, session.url),
 									fileAdapterRef.current,
 								)
@@ -1694,13 +2457,13 @@ export default function LabScreen() {
 					...assayAnalyticsProperties(catalogAssay),
 					artifactCount: success.result.artifacts?.length ?? 0,
 					artifactNames: (success.result.artifacts ?? []).map((artifact) => artifact.name),
-					genomeKind: activeGenomeRef.kind,
+					genomeKind: genomeForRun.kind,
 					htmlReportName: htmlArtifactForResult(success.result)?.name ?? '',
 					resultKind: success.kind,
 				})
 				trackEvent('lab_run_completed', {
 					...assayAnalyticsProperties(catalogAssay),
-					genomeKind: activeGenomeRef.kind,
+					genomeKind: genomeForRun.kind,
 					resultKind: success.kind,
 				})
 			} catch (err) {
@@ -1714,15 +2477,192 @@ export default function LabScreen() {
 				})
 				trackEvent('lab_run_failed', {
 					...assayAnalyticsProperties(catalogAssay),
-					genomeKind: activeGenomeRef.kind,
+					genomeKind: genomeForRun.kind,
 					error: msg,
 				})
 			} finally {
 				setRunningAssayId(null)
 			}
 		},
-		[activeGenomeRef, buildAssaySourceFiles, runningAssayId, runtimeWarmupStatus, sessionAssays, trackEvent],
+		[addResolvedSessionAssays, buildAssaySourceFiles, runningAssayId, runtimeWarmupStatus, trackEvent],
 	)
+
+	const runAssay = useCallback(
+		(catalogAssay: LabAssay) => {
+			if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
+			if (activeGenomeRef.kind === 'cram' && (!activeGenomeRef.crai || !activeGenomeRef.fai)) {
+				void (async () => {
+					let indexedGenome: Extract<LabGenomeRef, { kind: 'cram' }> = activeGenomeRef
+					const cachedFiles: File[] = []
+					const alignmentIndexSuffix = indexedGenome.primary.kind === 'bam' ? 'bai' : 'crai'
+					if (!indexedGenome.crai) {
+						const cached = await getCachedGeneratedIndexFile(indexedGenome.primary, alignmentIndexSuffix)
+						if (cached) cachedFiles.push(cached)
+					}
+					if (indexedGenome.fasta && !indexedGenome.fai) {
+						const cached = await getCachedGeneratedIndexFile(indexedGenome.fasta, 'fai')
+						if (cached) cachedFiles.push(cached)
+					}
+					if (cachedFiles.length) {
+						const refs = fileAdapterRef.current.fromPlatformFiles(cachedFiles, 'local')
+						for (const ref of refs) {
+							const nextGenome = pairLabGenomeCompanionRef([indexedGenome], ref)[0]
+							if (nextGenome?.kind === 'cram') indexedGenome = nextGenome
+						}
+						setGenomes((prev) =>
+							prev.map((genome) => (genome.id === indexedGenome.id ? indexedGenome : genome)),
+						)
+						setSelectedGenomeId(indexedGenome.id)
+						if (indexedGenome.crai && indexedGenome.fai) {
+							await runAssayNow(catalogAssay, indexedGenome)
+							return
+						}
+					}
+					const missing: PendingAlignmentIndexRun['missing'] = []
+					if (!indexedGenome.crai) missing.push('alignment')
+					if (indexedGenome.fasta && !indexedGenome.fai) missing.push('reference')
+					setPendingAlignmentIndexRun({ assay: catalogAssay, genome: indexedGenome, missing, status: 'confirm' })
+				})()
+				return
+			}
+			if (activeGenomeRef.kind === 'vcf' && !activeGenomeRef.tbi) {
+				void (async () => {
+					const cachedIndexFile = await getCachedGeneratedVcfIndexFile(activeGenomeRef.primary)
+					if (cachedIndexFile) {
+						const [cachedIndexRef] = fileAdapterRef.current.fromPlatformFiles([cachedIndexFile], 'local')
+						if (cachedIndexRef) {
+							const indexedGenome: LabGenomeRef = { ...activeGenomeRef, tbi: cachedIndexRef }
+							setGenomes((prev) =>
+								prev.map((genome) => (genome.id === indexedGenome.id ? indexedGenome : genome)),
+							)
+							setSelectedGenomeId(indexedGenome.id)
+							await runAssayNow(catalogAssay, indexedGenome)
+							return
+						}
+					}
+					setPendingVcfIndexRun({ assay: catalogAssay, genome: activeGenomeRef, status: 'confirm' })
+				})()
+				return
+			}
+			void runAssayNow(catalogAssay, activeGenomeRef)
+		},
+		[activeGenomeRef, runAssayNow],
+	)
+
+	const cancelPendingVcfIndexRun = useCallback(() => {
+		vcfIndexGenerationSeqRef.current += 1
+		setPendingVcfIndexRun(null)
+	}, [])
+
+	const confirmPendingVcfIndexRun = useCallback(() => {
+		const pending = pendingVcfIndexRun
+		if (!pending || pending.status === 'generating') return
+		const generationSeq = vcfIndexGenerationSeqRef.current + 1
+		vcfIndexGenerationSeqRef.current = generationSeq
+		void (async () => {
+			setPendingVcfIndexRun({ ...pending, error: undefined, status: 'generating' })
+			try {
+				const vcfFile = fileAdapterRef.current.getFile(pending.genome.primary)
+				const indexBytes = await generateVcfTbiFile(vcfFile)
+				if (vcfIndexGenerationSeqRef.current !== generationSeq) return
+				const indexFile = fileFromIndexBytes(indexBytes, generatedVcfIndexName(vcfFile.name))
+				await putCachedGeneratedVcfIndexFile(pending.genome.primary, indexFile)
+				if (vcfIndexGenerationSeqRef.current !== generationSeq) return
+				const [indexRef] = fileAdapterRef.current.fromPlatformFiles([indexFile], 'local')
+				if (!indexRef) throw new Error('Could not attach generated index file.')
+				const indexedGenome: LabGenomeRef = { ...pending.genome, tbi: indexRef }
+				if (vcfIndexGenerationSeqRef.current !== generationSeq) return
+				setGenomes((prev) =>
+					prev.map((genome) => (genome.id === indexedGenome.id ? indexedGenome : genome)),
+				)
+				setSelectedGenomeId(indexedGenome.id)
+				setPendingVcfIndexRun(null)
+				await runAssayNow(pending.assay, indexedGenome)
+			} catch (error) {
+				if (vcfIndexGenerationSeqRef.current !== generationSeq) return
+				setPendingVcfIndexRun({
+					...pending,
+					error: error instanceof Error ? error.message : String(error),
+					status: 'confirm',
+				})
+			}
+		})()
+	}, [pendingVcfIndexRun, runAssayNow])
+
+	const cancelPendingAlignmentIndexRun = useCallback(() => {
+		alignmentIndexGenerationSeqRef.current += 1
+		setPendingAlignmentIndexRun(null)
+	}, [])
+
+	const promptGenerateAlignmentIndexes = useCallback((genome: Extract<LabGenomeRef, { kind: 'cram' }>) => {
+		const missing: PendingAlignmentIndexRun['missing'] = []
+		if (!genome.crai) missing.push('alignment')
+		if (genome.fasta && !genome.fai) missing.push('reference')
+		if (!missing.length) return
+		setPendingAlignmentIndexRun({ genome, missing, status: 'confirm' })
+	}, [])
+
+	useEffect(() => {
+		if (!activeGenomeRef || activeGenomeRef.kind !== 'cram' || pendingAlignmentIndexRun) return
+		if (activeGenomeRef.crai && (!activeGenomeRef.fasta || activeGenomeRef.fai)) return
+		if (promptedAlignmentIndexGenomeIdsRef.current.has(activeGenomeRef.id)) return
+		promptedAlignmentIndexGenomeIdsRef.current.add(activeGenomeRef.id)
+		promptGenerateAlignmentIndexes(activeGenomeRef)
+	}, [activeGenomeRef, pendingAlignmentIndexRun, promptGenerateAlignmentIndexes])
+
+	const confirmPendingAlignmentIndexRun = useCallback(() => {
+		const pending = pendingAlignmentIndexRun
+		if (!pending || pending.status === 'generating' || !pending.missing.length) return
+		const generationSeq = alignmentIndexGenerationSeqRef.current + 1
+		alignmentIndexGenerationSeqRef.current = generationSeq
+		void (async () => {
+			setPendingAlignmentIndexRun({ ...pending, error: undefined, status: 'generating' })
+			try {
+				const generatedFiles: File[] = []
+				if (pending.missing.includes('alignment')) {
+					const alignmentFile = fileAdapterRef.current.getFile(pending.genome.primary)
+					const bytes = pending.genome.primary.kind === 'bam'
+						? await generateBamBaiFile(alignmentFile)
+						: await generateCramCraiFile(alignmentFile)
+					if (alignmentIndexGenerationSeqRef.current !== generationSeq) return
+					const indexFile = fileFromIndexBytes(bytes, generatedAlignmentIndexName(alignmentFile.name))
+					await putCachedGeneratedIndexFile(pending.genome.primary, pending.genome.primary.kind === 'bam' ? 'bai' : 'crai', indexFile)
+					generatedFiles.push(indexFile)
+				}
+				if (pending.missing.includes('reference')) {
+					if (!pending.genome.fasta) throw new Error('Reference FASTA is required before generating .fai.')
+					const fastaFile = fileAdapterRef.current.getFile(pending.genome.fasta)
+					const bytes = await generateFastaFaiFile(fastaFile)
+					if (alignmentIndexGenerationSeqRef.current !== generationSeq) return
+					const indexFile = fileFromIndexBytes(bytes, generatedFastaIndexName(fastaFile.name))
+					await putCachedGeneratedIndexFile(pending.genome.fasta, 'fai', indexFile)
+					generatedFiles.push(indexFile)
+				}
+				if (alignmentIndexGenerationSeqRef.current !== generationSeq) return
+				const refs = fileAdapterRef.current.fromPlatformFiles(generatedFiles, 'local')
+				let indexedGenome: LabGenomeRef = pending.genome
+				for (const ref of refs) {
+					indexedGenome = pairLabGenomeCompanionRef([indexedGenome], ref)[0] ?? indexedGenome
+				}
+				if (alignmentIndexGenerationSeqRef.current !== generationSeq) return
+				setGenomes((prev) =>
+					prev.map((genome) => (genome.id === indexedGenome.id ? indexedGenome : genome)),
+				)
+				setSelectedGenomeId(indexedGenome.id)
+				setPendingAlignmentIndexRun(null)
+				if (pending.assay) {
+					await runAssayNow(pending.assay, indexedGenome)
+				}
+			} catch (error) {
+				if (alignmentIndexGenerationSeqRef.current !== generationSeq) return
+				setPendingAlignmentIndexRun({
+					...pending,
+					error: error instanceof Error ? error.message : String(error),
+					status: 'confirm',
+				})
+			}
+		})()
+	}, [pendingAlignmentIndexRun, runAssayNow])
 
 	// Auto-run from `?run=<assayId>` once genome is ready — consumed only once.
 	const pendingAutoRunRef = useRef<string | null>(normalizeLabSearchParam(params.run))
@@ -1776,14 +2716,18 @@ export default function LabScreen() {
 		}
 	}, [runs.length])
 
-	const categories = useMemo(() => {
-		const seen = new Set<AssayCategory>(listAssayCategories())
-		for (const assay of sessionAssays) seen.add(assay.category)
-		return Array.from(seen)
-	}, [sessionAssays])
 	const searchResults = useMemo(
-		() => searchSessionAssays(mergeAssayList([...searchAssays('', null), ...sessionAssays]), query, category),
-		[category, query, sessionAssays],
+		() => {
+			const filtered = searchSessionAssays(mergeAssayList([...FEATURED_CATALOG, ...sessionAssays]), query, null).filter((assay) => {
+				const kind = assayDisplayKind(assay)
+				if (kind === 'variant' || kind === 'other') return false
+				if (pickerKindFilter === 'panel') return kind === 'panel'
+				if (pickerKindFilter === 'assay') return kind === 'assay'
+				return true
+			})
+			return sortAssaysForPicker(filtered)
+		},
+		[pickerKindFilter, query, sessionAssays],
 	)
 	const latestRun = runs[0] ?? null
 	const previousRuns = runs.slice(1)
@@ -1793,38 +2737,46 @@ export default function LabScreen() {
 		: null
 	const startDemoRun = useCallback(() => {
 		if (!firstDemoBundle || !firstDemoAssay) return
+		setForceGettingStarted(false)
 		setPendingDemoRunAssayId(firstDemoAssay.id)
 		void pickSample(firstDemoBundle)
 	}, [firstDemoAssay, firstDemoBundle, pickSample])
 	const openGettingStarted = useCallback(() => {
-		if (activeGenomeRef) {
-			setGettingStartedModalOpen(true)
-			return
-		}
-		scrollRef.current?.scrollTo({
-			y: Math.max(0, gettingStartedYRef.current - 24),
-			animated: true,
-		})
-	}, [activeGenomeRef])
+		setForceGettingStarted(true)
+		scrollRef.current?.scrollTo({ y: 0, animated: true })
+	}, [])
+	const selectSessionGenome = useCallback((id: string | null) => {
+		setSelectedGenomeId(id)
+		if (id) setForceGettingStarted(false)
+	}, [])
 	const toggleSidebar = useCallback(() => {
 		setMobileSidebarOpen((value) => !value)
 	}, [])
 	const closeSidebarDrawer = useCallback(() => setMobileSidebarOpen(false), [])
 
-	const assayBlocks = activeGenomeRef ? (
+	const showGettingStartedView = !activeGenomeRef || forceGettingStarted
+	const assayBlocks = !showGettingStartedView ? (
 		<AssayPicker
 			genome={activeGenomeRef}
+			kindFilter={pickerKindFilter}
+			onKindFilterChange={setPickerKindFilter}
+			registryReadyIds={registryReadyIds}
 			query={query}
 			onQueryChange={setQuery}
-			category={category}
-			onCategoryChange={setCategory}
-			categories={categories}
+			onImportUrl={(url) => {
+				setAssayUrlInput(url)
+				loadAssayUrl(url)
+				setQuery('')
+			}}
 			results={searchResults}
 			onForgetRemoteAssay={forgetRemoteAssay}
 			runningAssayId={runningAssayId}
 			runtimeWarmupStatus={runtimeWarmupStatus}
 			sessionAssays={sessionAssays}
 			onRun={runAssay}
+			onDownload={(assay) => {
+				void downloadAssayPackage(assay)
+			}}
 			onViewSource={(assay) => {
 				void openAssaySource(assay)
 			}}
@@ -1832,7 +2784,7 @@ export default function LabScreen() {
 	) : (
 		<>
 			<OMText variant="caption" style={styles.landingOverviewKicker}>
-				Overview
+				BioVault Lab
 			</OMText>
 			<View
 				onLayout={(e) => {
@@ -1909,8 +2861,10 @@ export default function LabScreen() {
 		<LabExplorerSidebar
 			activeGenome={activeGenomeRef}
 			sessionGenomes={genomes}
-			onSelectSessionGenome={setSelectedGenomeId}
+			onSelectSessionGenome={selectSessionGenome}
+			onRemoveSessionGenome={removeSessionGenome}
 			cachedRemoteFiles={cachedRemoteFiles}
+			cachedRemotePackageArtifactUrls={cachedRemotePackageArtifactUrls}
 			dragActive={dragActive}
 			onChooseGenomeFiles={() => setImportGenomeModalOpen(true)}
 			onRequestClose={useSidebarDrawer ? closeSidebarDrawer : undefined}
@@ -1952,7 +2906,7 @@ export default function LabScreen() {
 						contentContainerStyle={styles.content}
 					>
 						<View style={styles.siteHeader}>
-							<View style={styles.heroRow}>
+							<View style={[styles.heroRow, useSidebarDrawer ? styles.heroRowStacked : null]}>
 								<View style={styles.heroTextBlock}>
 									{activeGenomeRef ? (
 										<>
@@ -1979,22 +2933,15 @@ export default function LabScreen() {
 													: `Missing ${missingLabGenomeSlots(activeGenomeRef).join(' · ')}`}
 											</OMText>
 											{activeGenomeRef.kind === 'cram' || activeGenomeRef.kind === 'vcf' ? (
-												<GenomeSlotStrip genome={activeGenomeRef} />
+												<GenomeSlotStrip
+													genome={activeGenomeRef}
+													onGenerateIndexes={
+														activeGenomeRef.kind === 'cram' ? () => promptGenerateAlignmentIndexes(activeGenomeRef) : undefined
+													}
+												/>
 											) : null}
 										</>
-									) : (
-										<>
-											<OMText variant="caption" style={styles.heroBrandEyebrow}>
-												BioVault Lab
-											</OMText>
-											<OMText variant="h4" style={styles.heroTitle}>
-												Run genomics assays in your browser
-											</OMText>
-											<OMText variant="body" style={[styles.heroLead, { color: palette.textMuted }]}>
-												Load genomic data, pick an assay, and inspect results — locally in this browser.
-											</OMText>
-										</>
-									)}
+									) : null}
 								</View>
 								<View style={styles.heroHeaderAside}>
 									<View style={styles.headerTools}>
@@ -2005,7 +2952,7 @@ export default function LabScreen() {
 											/>
 										) : null}
 										<View style={styles.headerNavCluster}>
-											<GettingStartedButton onPress={openGettingStarted} />
+											<GettingStartedButton active={showGettingStartedView} onPress={openGettingStarted} />
 											<GithubButton />
 											<ContactButton />
 										</View>
@@ -2017,36 +2964,39 @@ export default function LabScreen() {
 						{useWideSplit ? (
 							<View style={styles.workbenchGrid}>
 								<View style={[styles.workbenchPane, styles.workbenchAssayPane]}>
-									<View style={styles.workbenchPaneHead}>
-										<OMText variant="caption" style={styles.columnKicker}>
-											{activeGenomeRef ? 'Run an assay' : 'Getting started'}
-										</OMText>
-										<OMText variant="caption" style={styles.workbenchPaneHint}>
-											{activeGenomeRef
-												? 'Search compatible assays and launch local runs.'
-												: 'Add a genome from the sidebar, then the assay catalog opens here.'}
-										</OMText>
-									</View>
+									{activeGenomeRef ? null : (
+										<View style={styles.workbenchPaneHead}>
+											<OMText variant="subtitle" style={styles.pickerSectionTitle}>
+												Getting started
+											</OMText>
+											<OMText variant="caption" style={styles.pickerIntro}>
+												Add a genome from the sidebar, then the assay catalog opens here.
+											</OMText>
+										</View>
+									)}
 									{assayBlocks}
 								</View>
-								<View style={[styles.workbenchPane, styles.workbenchResultsPane]}>
-									<View style={styles.workbenchPaneHead}>
-										<OMText variant="caption" style={styles.columnKicker}>
-											Results
-										</OMText>
-										<OMText variant="caption" style={styles.workbenchPaneHint}>
-											Latest output and recent assay history.
-										</OMText>
+								{showGettingStartedView ? null : (
+									<View style={[styles.workbenchPane, styles.workbenchResultsPane]}>
+										<View style={styles.workbenchPaneHead}>
+											<OMText variant="subtitle" style={styles.pickerSectionTitle}>
+												Results
+											</OMText>
+											<OMText variant="caption" style={styles.pickerIntro}>
+												Latest output and recent assay history.
+											</OMText>
+										</View>
+										{resultBlocks}
 									</View>
-									{resultBlocks}
-								</View>
+								)}
 							</View>
 						) : (
 							labWorkBlocks
 						)}
-
-						<PrivacyFootnote />
-						<FeedbackFooterButton />
+						<View style={styles.resultsPaneFooter}>
+							<PrivacyFootnote />
+							<FeedbackFooterButton />
+						</View>
 					</ScrollView>
 				</View>
 				<UnknownFilesAlert unknowns={unknowns} onDismissAll={clearUnknowns} onRemove={removeUnknown} />
@@ -2065,16 +3015,22 @@ export default function LabScreen() {
 					onFetch={fetchRemoteIntent}
 					onResolveDependencies={resolveRemoteDependencies}
 				/>
-				{gettingStartedModalOpen ? (
-					<GettingStartedModal
-						assayTitle={firstDemoAssay?.title}
-						onClose={() => setGettingStartedModalOpen(false)}
-						onTryDemoRun={firstDemoBundle && firstDemoAssay ? startDemoRun : undefined}
-						sampleTitle={firstDemoBundle?.title}
-					/>
-				) : null}
 				{sourceViewer ? (
 					<SourceViewer viewer={sourceViewer} onClose={() => setSourceViewer(null)} />
+				) : null}
+				{pendingVcfIndexRun ? (
+					<VcfIndexPrompt
+						state={pendingVcfIndexRun}
+						onCancel={cancelPendingVcfIndexRun}
+						onConfirm={confirmPendingVcfIndexRun}
+					/>
+				) : null}
+				{pendingAlignmentIndexRun ? (
+					<AlignmentIndexPrompt
+						state={pendingAlignmentIndexRun}
+						onCancel={cancelPendingAlignmentIndexRun}
+						onConfirm={confirmPendingAlignmentIndexRun}
+					/>
 				) : null}
 				<ImportGenomeModal
 					assayUrlCopied={assayUrlCopied}
@@ -2082,6 +3038,7 @@ export default function LabScreen() {
 					dragActive={dragActive}
 					open={importGenomeModalOpen}
 					sampleBundles={LAB_TEST_FILES}
+					loadedSampleBundleIds={loadedSampleBundleIds}
 					sampleLoadError={sampleLoadError}
 					sampleLoadingId={sampleLoadingId}
 					shareAssayUrl={shareAssayUrl}
@@ -2120,8 +3077,10 @@ function LabModalChrome({
 	scrollContentStyle?: object
 }) {
 	const { styles } = useTheme()
+	const { width } = useWindowDimensions()
+	const fullScreen = width < LAB_SIDEBAR_DRAWER_MAX
 	return (
-		<View style={[styles.sourceOverlay, styles.labModalLayer, layerStyle]}>
+		<View style={[styles.sourceOverlay, fullScreen ? styles.sourceOverlayFullScreen : null, styles.labModalLayer, layerStyle]}>
 			<Pressable
 				accessibilityRole="button"
 				accessibilityLabel="Close dialog"
@@ -2132,7 +3091,7 @@ function LabModalChrome({
 				accessibilityLabel={accessibilityLabel}
 				accessibilityViewIsModal
 				accessible
-				style={[styles.sourcePanel, panelStyle]}
+				style={[styles.sourcePanel, fullScreen ? styles.sourcePanelFullScreen : null, panelStyle]}
 			>
 				{scroll ? (
 					<ScrollView
@@ -2494,6 +3453,7 @@ function ImportGenomeModal({
 	onPickSample,
 	onUrlInputChange,
 	open,
+	loadedSampleBundleIds,
 	sampleBundles,
 	sampleLoadError,
 	sampleLoadingId,
@@ -2509,12 +3469,13 @@ function ImportGenomeModal({
 	onPickSample: (bundle: LabTestFileBundle) => void
 	onUrlInputChange: (url: string) => void
 	open: boolean
+	loadedSampleBundleIds: Set<string>
 	sampleBundles: LabTestFileBundle[]
 	sampleLoadError: string | null
 	sampleLoadingId: string | null
 	shareAssayUrl: string
 }) {
-	const { styles, mutedIconTone } = useTheme()
+	const { palette, styles, mutedIconTone } = useTheme()
 	if (!open) return null
 	return (
 		<LabModalChrome
@@ -2554,7 +3515,7 @@ function ImportGenomeModal({
 						{dragActive ? 'Release anywhere in this dialog to import' : 'Drop files here or click to choose'}
 					</OMText>
 					<OMText variant="caption" style={styles.importGenomeDropBody}>
-						CRAM/VCF companion files are paired automatically when dropped together.
+						BAM/CRAM references are required. Indexes for BAM/CRAM/VCF are optional.
 					</OMText>
 				</Pressable>
 
@@ -2571,16 +3532,23 @@ function ImportGenomeModal({
 						<View style={styles.labExplorerList}>
 							{sampleBundles.map((bundle) => {
 								const loading = sampleLoadingId === bundle.id
-								const ctaLabel = loading ? 'Loading...' : bundle.remoteUrl ? 'Download' : 'Import'
+								const loaded = loadedSampleBundleIds.has(bundle.id)
 								return (
 									<Pressable
 										key={bundle.id}
-										disabled={loading}
+										disabled={loading || loaded}
 										onPress={() => {
 											onPickSample(bundle)
 											onClose()
 										}}
-										style={[styles.labExplorerSampleRow, loading ? styles.labExplorerSampleRowMuted : null]}
+										style={[styles.labExplorerSampleRow, loading || loaded ? styles.labExplorerSampleRowMuted : null]}
+										accessibilityLabel={
+											loading
+												? `Loading ${bundle.title}`
+												: bundle.remoteUrl
+													? `Download ${bundle.title}`
+													: `Import ${bundle.title}`
+										}
 									>
 										<View style={styles.labExplorerSampleGlyph}>
 											<OMIcon name="document-text-outline" tone="accent" size={14} />
@@ -2593,9 +3561,15 @@ function ImportGenomeModal({
 												{ASSAY_INPUT_FORMAT_LABELS[bundle.format]} · {bundle.description}
 											</OMText>
 										</View>
-										<OMText variant="caption" style={styles.labExplorerSampleCta}>
-											{ctaLabel}
-										</OMText>
+										{loaded ? null : loading ? (
+											<ActivityIndicator size="small" color={palette.accent} />
+										) : (
+											<OMIcon
+												name={bundle.remoteUrl ? 'cloud-download-outline' : 'add-circle-outline'}
+												tone="accent"
+												size={18}
+											/>
+										)}
 									</Pressable>
 								)
 							})}
@@ -2629,10 +3603,12 @@ function ImportGenomeModal({
 function LabExplorerSidebar({
 	activeGenome,
 	cachedRemoteFiles,
+	cachedRemotePackageArtifactUrls,
 	dragActive,
 	onChooseGenomeFiles,
 	onRemoveCachedRemote,
 	onRemoveSavedHandle,
+	onRemoveSessionGenome,
 	onRequestClose,
 	onRestoreCachedRemote,
 	onRestoreSavedHandle,
@@ -2647,6 +3623,7 @@ function LabExplorerSidebar({
 	sessionGenomes: LabGenomeRef[]
 	onSelectSessionGenome: (id: string | null) => void
 	cachedRemoteFiles: RemoteLabFile[]
+	cachedRemotePackageArtifactUrls: Set<string>
 	dragActive: boolean
 	onChooseGenomeFiles: () => void
 	savedHandlesError: string | null
@@ -2654,17 +3631,33 @@ function LabExplorerSidebar({
 	savedHandleGroups: SavedHandleGroup[]
 	onRemoveCachedRemote: (remoteFile: RemoteLabFile) => void
 	onRemoveSavedHandle: (group: SavedHandleGroup) => void
+	onRemoveSessionGenome: (genome: LabGenomeRef) => void
 	onRequestClose?: () => void
 	onRestoreCachedRemote: (remoteFile: RemoteLabFile) => void
 	onRestoreSavedHandle: (group: SavedHandleGroup) => void
 	scheme: 'light' | 'dark'
 }) {
 	const { styles } = useTheme()
+	const sessionPrimaryNames = useMemo(() => new Set(sessionGenomes.map((g) => g.primary.name)), [sessionGenomes])
 	/** Cached fetch rows duplicate session rows when the same primary is already loaded; keep them out of the picker list. */
 	const cachedRemotePickers = useMemo(() => {
-		const sessionPrimaryNames = new Set(sessionGenomes.map((g) => g.primary.name))
-		return cachedRemoteFiles.filter((r) => !sessionPrimaryNames.has(r.file.name))
-	}, [cachedRemoteFiles, sessionGenomes])
+		return cachedRemoteFiles.filter(
+			(r) =>
+				isGenomeLabFileKind(r.fileKind) &&
+				!cachedRemotePackageArtifactUrls.has(r.sourceUrl) &&
+				!sessionPrimaryNames.has(r.file.name),
+		)
+	}, [cachedRemoteFiles, cachedRemotePackageArtifactUrls, sessionPrimaryNames])
+	/** Hide a remembered local-file group when the same primary is already loaded as a session genome. */
+	const filteredSavedHandleGroups = useMemo(() => {
+		return savedHandleGroups.filter((group) => {
+			if (sessionPrimaryNames.has(group.label)) return false
+			return !group.rows.some((row) =>
+				(row.handles.primary?.name && sessionPrimaryNames.has(row.handles.primary.name)) ||
+				(row.handles.reference?.name && sessionPrimaryNames.has(row.handles.reference.name)),
+			)
+		})
+	}, [savedHandleGroups, sessionPrimaryNames])
 	const activeIsSessionRow = activeGenomeOwnedBySessionRow(activeGenome, sessionGenomes)
 	return (
 		<View style={[styles.labExplorerRoot, onRequestClose ? styles.labExplorerRootInDrawer : null]}>
@@ -2719,7 +3712,10 @@ function LabExplorerSidebar({
 								>
 									<Pressable
 										disabled={savedHandlesLoading}
-										onPress={() => onSelectSessionGenome(genome.id)}
+										onPress={() => {
+											onSelectSessionGenome(genome.id)
+											onRequestClose?.()
+										}}
 										style={[
 											styles.labExplorerRowMain,
 											savedHandlesLoading ? styles.labExplorerRowMainMuted : null,
@@ -2740,10 +3736,22 @@ function LabExplorerSidebar({
 											</OMText>
 										</View>
 									</Pressable>
+									<Pressable
+										disabled={savedHandlesLoading}
+										onPress={() => onRemoveSessionGenome(genome)}
+										style={[
+											styles.labExplorerRowGhostHit,
+											savedHandlesLoading ? styles.labExplorerRowGhostMuted : null,
+										]}
+										hitSlop={6}
+										accessibilityLabel={`Remove genome ${labGenomeDisplayName(genome)}`}
+									>
+										<OMIcon name="trash-outline" tone="muted" size={14} />
+									</Pressable>
 								</View>
 							)
 						})}
-						{savedHandleGroups.map((group) => {
+						{filteredSavedHandleGroups.map((group) => {
 							const pinnedSelected =
 								Boolean(activeGenome) &&
 								savedHandleGroupMatchesActiveGenome(group, activeGenome) &&
@@ -2759,7 +3767,10 @@ function LabExplorerSidebar({
 							>
 								<Pressable
 									disabled={savedHandlesLoading}
-									onPress={() => onRestoreSavedHandle(group)}
+									onPress={() => {
+										onRestoreSavedHandle(group)
+										onRequestClose?.()
+									}}
 									style={[
 										styles.labExplorerRowMain,
 										savedHandlesLoading ? styles.labExplorerRowMainMuted : null,
@@ -2816,7 +3827,10 @@ function LabExplorerSidebar({
 							>
 								<Pressable
 									disabled={savedHandlesLoading}
-									onPress={() => onRestoreCachedRemote(remoteFile)}
+									onPress={() => {
+										onRestoreCachedRemote(remoteFile)
+										onRequestClose?.()
+									}}
 									style={[
 										styles.labExplorerRowMain,
 										savedHandlesLoading ? styles.labExplorerRowMainMuted : null,
@@ -2862,7 +3876,8 @@ function LabExplorerSidebar({
 
 			</ScrollView>
 			<View style={styles.labExplorerFooter}>
-				<SidebarSettingsMenu scheme={scheme} />
+				<SidebarSettingsMenu />
+				<WebThemeToggle scheme={scheme} />
 			</View>
 		</View>
 	)
@@ -2911,8 +3926,9 @@ function UrlLoadBox({
 }) {
 	const { palette, styles } = useTheme()
 	const placeholder = narrow
-		? 'GitHub raw, assay URL, genome zip…'
-		: 'Paste a GitHub/raw assay, panel, genome ZIP, or genotype URL…'
+		? 'Text, ZIP SNP array, or VCF URL…'
+		: 'Paste a text, ZIP SNP array, or VCF URL…'
+	const sampleZipUrl = LAB_TEST_FILES.find((bundle) => bundle.id === 'biovault-23andme-sample')?.remoteUrl
 	const hasUrl = Boolean(urlInput.trim())
 	const boxStyle = [
 		styles.urlLoadBox,
@@ -2970,9 +3986,16 @@ function UrlLoadBox({
 				</Pressable>
 			</View>
 			{narrow && composer ? null : (
-				<OMText variant="caption" style={styles.pickerIntro}>
-					Assays are schema-inspected; genome/test files are loaded into the Lab and cached if small enough.
-				</OMText>
+				<View style={styles.urlLoadHelpBlock}>
+					<OMText variant="caption" style={styles.pickerIntro}>
+						Paste a URL to a text or zip SNP array, or VCF to download into the browser.
+					</OMText>
+					{sampleZipUrl ? (
+						<OMText variant="caption" style={styles.urlLoadExampleText} selectable>
+							Example: {sampleZipUrl}
+						</OMText>
+					) : null}
+				</View>
 			)}
 			{shareUrl ? (
 				<View style={[styles.shareLinkBox, composer && narrow ? styles.shareLinkBoxComposer : null]}>
@@ -2998,26 +4021,41 @@ function UrlLoadBox({
 
 // === Genome companion file slots (site header) =============================
 
-function GenomeSlotStrip({ genome }: { genome: LabGenomeRef }) {
+function GenomeSlotStrip({
+	genome,
+	onGenerateIndexes,
+}: {
+	genome: LabGenomeRef
+	onGenerateIndexes?: () => void
+}) {
 	const { styles } = useTheme()
 	if (genome.kind !== 'cram' && genome.kind !== 'vcf') return null
+	const canGenerateIndexes = genome.kind === 'cram' && Boolean(onGenerateIndexes) && (!genome.crai || (genome.fasta && !genome.fai))
 	return (
 		<View style={styles.heroGenomeSlotStrip} accessibilityRole="none">
 			<View style={[styles.slotGrid, styles.heroGenomeSlotGrid]}>
 				{genome.kind === 'cram' ? (
 					<>
-						<SlotChip label=".cram" file={genome.primary} />
-						<SlotChip label=".cram.crai" file={genome.crai} />
+						<SlotChip label={genome.primary.kind === 'bam' ? '.bam' : '.cram'} file={genome.primary} />
+						<SlotChip label={genome.primary.kind === 'bam' ? '.bam.bai optional' : '.cram.crai optional'} file={genome.crai} />
 						<SlotChip label=".fa" file={genome.fasta} />
-						<SlotChip label=".fa.fai" file={genome.fai} />
+						<SlotChip label=".fa.fai optional" file={genome.fai} />
 					</>
 				) : (
 					<>
 						<SlotChip label=".vcf.gz" file={genome.primary} />
-						<SlotChip label=".vcf.gz.tbi" file={genome.tbi} />
+						<SlotChip label=".vcf.gz.tbi optional" file={genome.tbi} />
 					</>
 				)}
 			</View>
+			{canGenerateIndexes ? (
+				<Pressable accessibilityRole="button" onPress={() => onGenerateIndexes?.()} style={styles.slotGenerateButton}>
+					<OMIcon name="construct-outline" tone="accent" size={14} />
+					<OMText variant="caption" style={styles.slotGenerateButtonText}>
+						Generate indexes
+					</OMText>
+				</Pressable>
+			) : null}
 		</View>
 	)
 }
@@ -3042,29 +4080,33 @@ function SlotChip({ file, label }: { file?: LabFileRef; label: string }) {
 // === Assay picker ==========================================================
 
 function AssayPicker({
-	categories,
-	category,
 	genome,
-	onCategoryChange,
+	kindFilter,
+	onDownload,
 	onForgetRemoteAssay,
+	onImportUrl,
+	onKindFilterChange,
 	onQueryChange,
 	onRun,
 	onViewSource,
 	query,
+	registryReadyIds,
 	results,
 	runningAssayId,
 	sessionAssays,
 	runtimeWarmupStatus,
 }: {
-	categories: AssayCategory[]
-	category: AssayCategory | null
 	genome: LabGenomeRef
-	onCategoryChange: (c: AssayCategory | null) => void
+	kindFilter: 'all' | 'panel' | 'assay'
+	onDownload: (assay: LabAssay) => void
 	onForgetRemoteAssay: (assay: LabAssay) => void
+	onImportUrl: (url: string) => void
+	onKindFilterChange: (kind: 'all' | 'panel' | 'assay') => void
 	onQueryChange: (q: string) => void
 	onRun: (assay: LabAssay) => void
 	onViewSource: (assay: LabAssay) => void
 	query: string
+	registryReadyIds: Set<string>
 	results: LabAssay[]
 	runningAssayId: string | null
 	sessionAssays: SessionLabAssay[]
@@ -3072,6 +4114,156 @@ function AssayPicker({
 }) {
 	const { palette, styles } = useTheme()
 	const anyRunning = Boolean(runningAssayId)
+	const trimmedQuery = query.trim()
+	const queryIsUrl = /^https?:\/\//i.test(trimmedQuery)
+	const renderAssayRow = (
+		assay: LabAssay,
+		index: number,
+		options: { inPanelGroup?: boolean; parentPanel?: SessionLabAssay } = {},
+	) => {
+		const displayKind = assayDisplayKind(assay)
+		const isPanel = isSessionLabAssay(assay) && displayKind === 'panel'
+		const isRemote = isSessionLabAssay(assay)
+		const packageReady = sessionAssayPackageReady(assay, registryReadyIds)
+		const panelVariants = isPanel ? panelVariantAssays(assay, sessionAssays) : []
+		const parentPanels = options.parentPanel ? [options.parentPanel] : (!isPanel ? parentPanelsForAssay(assay, sessionAssays) : [])
+		const lockedByParent = parentPanels.length > 0
+		const compatible = isAssayCompatible(assay, genome)
+		const waitingForRuntime =
+			compatible &&
+			runtimeWarmupStatus === 'loading' &&
+			assayNeedsWebRuntime(assay, genome)
+		const disabledReason = compatible
+			? isPanel
+				? panelVariants.length
+					? `${panelVariants.length} panel assays ready.`
+					: packageReady
+						? 'Cached package ready.'
+					: 'Fetch panel dependencies first.'
+				: waitingForRuntime
+				? 'Runtime is loading.'
+				: getLabRunDisabledReasonForRef(genome, assay.language)
+			: 'Assay is not compatible with this genome format.'
+		const isRunning = runningAssayId === assay.id
+		const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length && !packageReady)
+		return (
+			<Pressable
+				key={`${assay.id}-${index}`}
+				testID="assay-result-row"
+				accessibilityLabel={`View assay ${assay.title}`}
+				onPress={() => onViewSource(assay)}
+				style={[
+					styles.pickerRow,
+					displayKind === 'panel' ? styles.pickerRowPanel : null,
+					options.inPanelGroup ? styles.pickerRowInPanelGroup : null,
+					!compatible ? styles.pickerRowIncompatible : null,
+					disabled && !isRunning && !isPanel ? styles.pickerRowDisabled : null,
+				]}
+			>
+				<View style={[
+					styles.pickerIcon,
+					displayKind === 'panel' ? styles.pickerIconPanel : null,
+				]}>
+					<OMIcon name={assayKindIcon(displayKind)} tone="accent" size={16} />
+				</View>
+				<View style={styles.pickerText}>
+					<View style={styles.assayTitleRow}>
+						<OMText variant="body" style={styles.pickerTitle}>
+							{assay.title}
+						</OMText>
+						<View style={[
+							styles.assayKindBadge,
+							displayKind === 'panel' ? styles.assayKindBadgePanel : null,
+						]}>
+							<OMText variant="caption" style={styles.assayKindBadgeText}>
+								{assayKindLabel(displayKind)}
+							</OMText>
+						</View>
+					</View>
+					<OMText variant="caption" style={styles.pickerMeta} numberOfLines={1}>
+						{assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')}
+						{isRemote ? ' · Cached remote' : ''}
+						{disabledReason ? ` · ${disabledReason}` : ''}
+					</OMText>
+					{parentPanels.length && !options.inPanelGroup ? (
+						<OMText variant="caption" style={styles.pickerMeta} numberOfLines={1}>
+							Part of: {parentPanels.map((panel) => panel.title).join(', ')}
+						</OMText>
+					) : null}
+				</View>
+				{isRunning ? (
+					<View style={styles.pickerActionRunning}>
+						<ActivityIndicator size="small" color={palette.accent} />
+						<OMText variant="subtitle" style={styles.pickerActionRunningText}>
+							Running…
+						</OMText>
+					</View>
+				) : waitingForRuntime ? (
+					<View style={styles.pickerActionRunning}>
+						<ActivityIndicator size="small" color={palette.accent} />
+						<OMText variant="subtitle" style={styles.pickerActionRunningText}>
+							Loading runtime…
+						</OMText>
+					</View>
+				) : (
+					<View style={styles.assayActionGroup}>
+						{isRemote && !lockedByParent ? (
+							<Pressable
+								accessibilityLabel={`Forget assay ${assay.title}`}
+								accessibilityRole="button"
+								onPress={(event) => {
+									event.stopPropagation?.()
+									void onForgetRemoteAssay(assay)
+								}}
+								style={styles.labExplorerRowGhostHit}
+								hitSlop={6}
+							>
+								<OMIcon name="trash-outline" tone="muted" size={14} />
+							</Pressable>
+						) : null}
+						<Pressable
+							accessibilityLabel={
+								packageReady
+									? `Run ${assay.title}`
+									: `Download ${assay.title}`
+							}
+							accessibilityRole="button"
+							disabled={disabled}
+							onPress={(event) => {
+								event.stopPropagation?.()
+								if (!packageReady) {
+									onDownload(assay)
+								} else {
+									onRun(assay)
+								}
+							}}
+							style={!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted}
+						>
+							{compatible && !packageReady ? (
+								<OMIcon
+									name="cloud-download-outline"
+									tone={!disabled || isRunning ? 'inverse' : 'muted'}
+									size={16}
+								/>
+							) : null}
+							<OMText
+								variant="subtitle"
+								style={!disabled || isRunning ? styles.pickerActionText : styles.pickerActionMutedText}
+							>
+								{!compatible
+									? 'Unavailable'
+									: !packageReady
+										? 'Download'
+										: isPanel
+											? 'Run panel'
+											: 'Run assay'}
+							</OMText>
+						</Pressable>
+					</View>
+				)}
+			</Pressable>
+		)
+	}
 
 	return (
 		<View style={styles.pickerSection}>
@@ -3080,199 +4272,141 @@ function AssayPicker({
 			</OMText>
 			<OMText variant="caption" style={styles.pickerIntro}>
 				{isLabGenomeComplete(genome)
-					? 'Search the catalog and run locally — results show in the next column.'
+					? 'Search assays or import an assay from URL.'
 					: `Add missing files first: ${missingLabGenomeSlots(genome).join(' · ')}.`}
 			</OMText>
+			<View style={styles.searchImportExampleRow}>
+				<OMText variant="caption" style={styles.searchImportExample} selectable>
+					Example: {ASSAY_IMPORT_URL_EXAMPLE}
+				</OMText>
+				<Pressable
+					onPress={() => {
+						onQueryChange(ASSAY_IMPORT_URL_EXAMPLE)
+						onImportUrl(ASSAY_IMPORT_URL_EXAMPLE)
+					}}
+					hitSlop={6}
+					accessibilityRole="button"
+					accessibilityLabel="Load example URL"
+					style={({ pressed }) => [styles.searchImportExampleButton, pressed && { opacity: 0.7 }]}
+				>
+					<OMIcon name="cloud-download-outline" tone="accent" size={14} />
+				</Pressable>
+			</View>
 
 			<View style={styles.searchBox}>
 				<OMIcon name="search-outline" tone="muted" size={16} />
 				<TextInput
 					value={query}
 					onChangeText={onQueryChange}
-					placeholder="Search assays…"
+					placeholder="Search assays or import from URL…"
 					placeholderTextColor={palette.textFaint}
 					style={styles.searchInput}
-					returnKeyType="search"
+					returnKeyType={queryIsUrl ? 'go' : 'search'}
+					onSubmitEditing={() => {
+						if (queryIsUrl) onImportUrl(trimmedQuery)
+					}}
 				/>
-				{query ? (
+				{queryIsUrl ? (
+					<Pressable
+						accessibilityLabel="Import assay from URL"
+						accessibilityRole="button"
+						onPress={() => onImportUrl(trimmedQuery)}
+						style={styles.searchImportButton}
+					>
+						<OMIcon name="cloud-download-outline" tone="inverse" size={15} />
+						<OMText variant="subtitle" style={styles.searchImportButtonText}>
+							Get
+						</OMText>
+					</Pressable>
+				) : query ? (
 					<Pressable onPress={() => onQueryChange('')} style={styles.clearBtn}>
 						<OMIcon name="close-circle" tone="muted" size={16} />
 					</Pressable>
 				) : null}
 			</View>
 
-			{categories.length > 0 ? (
-				<View style={styles.chipRow}>
-					{[...categories]
-						.sort((a, b) => {
-							// Surface Panels first; everything else keeps its
-							// catalog order. "All" (null) is appended last.
-							if (a === 'panel') return -1
-							if (b === 'panel') return 1
-							return 0
-						})
-						.map((c) => (
-							<CategoryChip
-								key={c}
-								label={ASSAY_CATEGORY_LABELS[c]}
-								active={category === c}
-								onPress={() => onCategoryChange(category === c ? null : c)}
-							/>
-						))}
-					<CategoryChip
-						label="All"
-						active={category === null}
-						onPress={() => onCategoryChange(null)}
-					/>
-				</View>
-			) : null}
+			<View style={styles.pickerFilterRow}>
+				{(['panel', 'assay', 'all'] as const).map((kind) => {
+					const active = kindFilter === kind
+					const label = kind === 'all' ? 'All' : kind === 'panel' ? 'Panels' : 'Assays'
+					return (
+						<Pressable
+							key={kind}
+							accessibilityRole="button"
+							accessibilityState={{ selected: active }}
+							onPress={() => onKindFilterChange(kind)}
+							style={[styles.pickerFilterChip, active ? styles.pickerFilterChipActive : null]}
+						>
+							<OMText
+								variant="caption"
+								style={[styles.pickerFilterChipText, active ? styles.pickerFilterChipTextActive : null]}
+							>
+								{label}
+							</OMText>
+						</Pressable>
+					)
+				})}
+			</View>
 
 			{results.length === 0 ? (
 				<OMText variant="caption" style={styles.mutedHint}>
-					No assays match this search. Try clearing filters or search text.
+					No assays match this search. Try clearing search text.
 				</OMText>
+			) : kindFilter === 'assay' ? (
+				(() => {
+					const groups = new Map<string, { panel: SessionLabAssay | null; assays: LabAssay[] }>()
+					for (const assay of results) {
+						const parents = parentPanelsForAssay(assay, sessionAssays)
+						if (parents.length === 0) {
+							const entry = groups.get('__standalone__') ?? { panel: null, assays: [] }
+							entry.assays.push(assay)
+							groups.set('__standalone__', entry)
+						} else {
+							for (const parent of parents) {
+								const entry = groups.get(parent.id) ?? { panel: parent, assays: [] }
+								entry.assays.push(assay)
+								groups.set(parent.id, entry)
+							}
+						}
+					}
+					const orderedGroups = Array.from(groups.values()).sort((a, b) => {
+						if (a.panel && !b.panel) return -1
+						if (!a.panel && b.panel) return 1
+						return (a.panel?.title ?? '').localeCompare(b.panel?.title ?? '')
+					})
+					return (
+						<View style={styles.pickerList}>
+							{orderedGroups.map((group, groupIndex) => (
+								<View key={group.panel?.id ?? '__standalone__'} style={styles.panelAssayGroup}>
+									<View style={styles.panelAssayGroupHeader}>
+										<OMIcon
+											name={group.panel ? 'layers-outline' : 'flask-outline'}
+											tone="accent"
+											size={14}
+										/>
+										<OMText variant="caption" style={styles.panelAssayGroupTitle}>
+											{group.panel ? `Part of ${group.panel.title}` : 'Standalone assays'}
+										</OMText>
+									</View>
+									<View style={styles.panelAssayGroupChildren}>
+										{group.assays.map((assay, assayIndex) =>
+											renderAssayRow(assay, groupIndex * 1000 + assayIndex, {
+												inPanelGroup: true,
+												parentPanel: group.panel ?? undefined,
+											}),
+										)}
+									</View>
+								</View>
+							))}
+						</View>
+					)
+				})()
 			) : (
 				<View style={styles.pickerList}>
-						{results.map((assay, index) => {
-						const displayKind = assayDisplayKind(assay)
-						const isPanel = isSessionLabAssay(assay) && displayKind === 'panel'
-						const isRemote = isSessionLabAssay(assay)
-						const panelVariants = isPanel ? panelVariantAssays(assay, sessionAssays) : []
-						const compatible = isAssayCompatible(assay, genome)
-						const waitingForRuntime =
-							compatible &&
-							runtimeWarmupStatus === 'loading' &&
-							assayNeedsWebRuntime(assay, genome)
-						const disabledReason = compatible
-							? isPanel
-								? panelVariants.length
-									? `${panelVariants.length} fetched variants ready.`
-									: 'Fetch panel dependencies first.'
-								: waitingForRuntime
-								? 'Runtime is loading.'
-								: getLabRunDisabledReasonForRef(genome, assay.language)
-							: 'Assay is not compatible with this genome format.'
-						const isRunning = runningAssayId === assay.id
-						const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length)
-							return (
-								<Pressable
-									key={`${assay.id}-${index}`}
-									testID="assay-result-row"
-									accessibilityLabel={`Assay ${assay.title}`}
-								onPress={() => onRun(assay)}
-								disabled={disabled}
-								style={[
-									styles.pickerRow,
-									displayKind === 'panel' ? styles.pickerRowPanel : null,
-									displayKind === 'variant' ? styles.pickerRowVariant : null,
-									!compatible ? styles.pickerRowIncompatible : null,
-									disabled && !isRunning && !isPanel ? styles.pickerRowDisabled : null,
-								]}
-							>
-								<View style={[
-									styles.pickerIcon,
-									displayKind === 'panel' ? styles.pickerIconPanel : null,
-									displayKind === 'variant' ? styles.pickerIconVariant : null,
-								]}>
-									<OMIcon name={assayKindIcon(displayKind)} tone="accent" size={16} />
-								</View>
-								<View style={styles.pickerText}>
-									<View style={styles.assayTitleRow}>
-										<OMText variant="body" style={styles.pickerTitle}>
-											{assay.title}
-										</OMText>
-										<View style={[
-											styles.assayKindBadge,
-											displayKind === 'panel' ? styles.assayKindBadgePanel : null,
-											displayKind === 'variant' ? styles.assayKindBadgeVariant : null,
-										]}>
-											<OMText variant="caption" style={styles.assayKindBadgeText}>
-												{assayKindLabel(displayKind)}
-											</OMText>
-										</View>
-									</View>
-									<OMText variant="caption" style={styles.pickerMeta} numberOfLines={1}>
-										{ASSAY_CATEGORY_LABELS[assay.category]} ·{' '}
-										{assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')}
-										{isRemote ? ' · Cached remote' : ''}
-										{disabledReason ? ` · ${disabledReason}` : ''}
-									</OMText>
-								</View>
-								{isRunning ? (
-									<View style={styles.pickerActionRunning}>
-										<ActivityIndicator size="small" color={palette.accent} />
-										<OMText variant="subtitle" style={styles.pickerActionRunningText}>
-											Running…
-										</OMText>
-									</View>
-								) : waitingForRuntime ? (
-									<View style={styles.pickerActionRunning}>
-										<ActivityIndicator size="small" color={palette.accent} />
-										<OMText variant="subtitle" style={styles.pickerActionRunningText}>
-											Loading runtime…
-										</OMText>
-									</View>
-								) : (
-									<View style={styles.assayActionGroup}>
-										<View style={!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted}>
-											<OMText
-												variant="subtitle"
-												style={!disabled || isRunning ? styles.pickerActionText : styles.pickerActionMutedText}
-											>
-												{isPanel ? 'Run panel' : compatible ? 'Run assay' : 'Unavailable'}
-											</OMText>
-										</View>
-										{isRemote ? (
-											<Pressable
-												onPress={(event) => {
-													event.stopPropagation?.()
-													void onForgetRemoteAssay(assay)
-												}}
-												style={styles.textButton}
-											>
-												<OMText variant="subtitle" style={styles.textButtonText}>
-													Forget
-												</OMText>
-											</Pressable>
-										) : null}
-										<Pressable
-											onPress={(event) => {
-												event.stopPropagation?.()
-												onViewSource(assay)
-											}}
-											style={styles.textButton}
-										>
-											<OMText variant="subtitle" style={styles.textButtonText}>
-												View
-											</OMText>
-										</Pressable>
-									</View>
-								)}
-							</Pressable>
-						)
-					})}
+					{results.map((assay, index) => renderAssayRow(assay, index))}
 				</View>
 			)}
 		</View>
-	)
-}
-
-function CategoryChip({
-	active,
-	label,
-	onPress,
-}: {
-	active: boolean
-	label: string
-	onPress: () => void
-}) {
-	const { styles } = useTheme()
-	return (
-		<Pressable onPress={onPress} style={[styles.chip, active ? styles.chipActive : null]}>
-			<OMText variant="caption" style={active ? styles.chipTextActive : styles.chipText}>
-				{label}
-			</OMText>
-		</Pressable>
 	)
 }
 
@@ -3817,6 +4951,146 @@ function MetaChip({ label }: { label: string }) {
 	)
 }
 
+function VcfIndexPrompt({
+	onCancel,
+	onConfirm,
+	state,
+}: {
+	onCancel: () => void
+	onConfirm: () => void
+	state: PendingVcfIndexRun
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	const busy = state.status === 'generating'
+	const fileName = state.genome.primary.name
+	return (
+		<LabModalChrome
+			accessibilityLabel="Generate VCF index"
+			layerStyle={styles.vcfIndexPromptLayer}
+			onBackdropDismiss={onCancel}
+			panelStyle={styles.vcfIndexPromptPanel}
+		>
+			<View style={styles.vcfIndexPromptChrome} accessibilityRole="alert">
+				<View style={styles.unknownAlertHeadRow}>
+					<View style={styles.unknownNoteHead}>
+						<OMIcon name="alert-circle-outline" tone={mutedIconTone} size={18} />
+						<OMText variant="subtitle" style={styles.vcfIndexPromptTitle}>
+							No index for {fileName}
+						</OMText>
+					</View>
+					<Pressable
+						accessibilityLabel="Cancel index generation"
+						accessibilityRole="button"
+						onPress={onCancel}
+						style={styles.intentClose}
+					>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+				<OMText variant="body" style={styles.vcfIndexPromptBody}>
+					Do you want to generate {generatedVcfIndexName(fileName)} now?
+				</OMText>
+				{state.error ? (
+					<OMText variant="caption" style={styles.vcfIndexPromptError}>
+						{state.error}
+					</OMText>
+				) : null}
+				<View style={styles.intentActions}>
+					<Pressable accessibilityRole="button" onPress={onCancel} style={styles.intentSecondaryButton}>
+						<OMText variant="subtitle" style={styles.intentSecondaryText}>
+							Cancel
+						</OMText>
+					</Pressable>
+					<Pressable accessibilityRole="button" onPress={onConfirm} disabled={busy} style={styles.intentPrimaryButton}>
+						{busy ? <ActivityIndicator color="#fff" size="small" /> : null}
+						<OMText variant="subtitle" style={styles.primaryButtonText}>
+							{busy ? 'Generating' : 'Generate index'}
+						</OMText>
+					</Pressable>
+				</View>
+			</View>
+		</LabModalChrome>
+	)
+}
+
+function AlignmentIndexPrompt({
+	onCancel,
+	onConfirm,
+	state,
+}: {
+	onCancel: () => void
+	onConfirm: () => void
+	state: PendingAlignmentIndexRun
+}) {
+	const { styles, mutedIconTone } = useTheme()
+	const busy = state.status === 'generating'
+	const fileName = state.genome.primary.name
+	const names = [
+		state.missing.includes('alignment') ? generatedAlignmentIndexName(state.genome.primary.name) : null,
+		state.missing.includes('reference') && state.genome.fasta ? generatedFastaIndexName(state.genome.fasta.name) : null,
+	].filter((name): name is string => Boolean(name))
+	const canGenerate = state.missing.length > 0
+	const bodyText = names.length
+		? `Do you want to generate ${names.join(' and ')} now?`
+		: state.error ?? 'This alignment format is not available for browser assay runs yet.'
+	const titleText = canGenerate ? `Missing indexes for ${fileName}` : 'Browser assay run unavailable'
+	return (
+		<LabModalChrome
+			accessibilityLabel="Generate alignment indexes"
+			layerStyle={styles.vcfIndexPromptLayer}
+			onBackdropDismiss={onCancel}
+			panelStyle={styles.vcfIndexPromptPanel}
+		>
+			<View style={styles.vcfIndexPromptChrome} accessibilityRole="alert">
+				<View style={styles.unknownAlertHeadRow}>
+					<View style={styles.unknownNoteHead}>
+						<OMIcon name="alert-circle-outline" tone={mutedIconTone} size={18} />
+						<OMText variant="subtitle" style={styles.vcfIndexPromptTitle}>
+							{titleText}
+						</OMText>
+					</View>
+					<Pressable
+						accessibilityLabel="Cancel index generation"
+						accessibilityRole="button"
+						onPress={onCancel}
+						style={styles.intentClose}
+					>
+						<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+					</Pressable>
+				</View>
+				<OMText variant="body" style={styles.vcfIndexPromptBody}>
+					{bodyText}
+				</OMText>
+				{state.error && names.length ? (
+					<OMText variant="caption" style={styles.vcfIndexPromptError}>
+						{state.error}
+					</OMText>
+				) : null}
+				<View style={styles.intentActions}>
+					<Pressable accessibilityRole="button" onPress={onCancel} style={styles.intentSecondaryButton}>
+						<OMText variant="subtitle" style={styles.intentSecondaryText}>
+							{canGenerate ? 'Cancel' : 'Close'}
+						</OMText>
+					</Pressable>
+					{canGenerate ? (
+						<Pressable
+							accessibilityRole="button"
+							onPress={onConfirm}
+							disabled={busy}
+							style={styles.intentPrimaryButton}
+						>
+							{busy ? <ActivityIndicator color="#fff" size="small" /> : null}
+							<OMText variant="subtitle" style={styles.primaryButtonText}>
+								{busy ? 'Generating' : 'Generate indexes'}
+							</OMText>
+						</Pressable>
+					) : null}
+				</View>
+			</View>
+		</LabModalChrome>
+	)
+}
+
 // === Unknown files alert (modal) ===========================================
 
 function UnknownFilesAlert({
@@ -3905,21 +5179,27 @@ function SourceViewer({
 			{viewer.files.length > 1 ? (
 				<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourceTabsScroll}>
 					<View style={styles.sourceTabs}>
-						{viewer.files.map((file, index) => (
-							<Pressable
-								key={`${file.name}-${index}`}
-								onPress={() => setSelectedIndex(index)}
-								style={[styles.sourceTab, selectedIndex === index ? styles.sourceTabActive : null]}
-							>
-								<OMText
-									variant="caption"
-									style={selectedIndex === index ? styles.sourceTabTextActive : styles.sourceTabText}
-									numberOfLines={1}
+						{viewer.files.map((file, index) => {
+							const basename = file.name.split('/').pop() || file.name
+							const active = selectedIndex === index
+							return (
+								<Pressable
+									key={`${file.name}-${index}`}
+									onPress={() => setSelectedIndex(index)}
+									style={[styles.sourceTab, active ? styles.sourceTabActive : null]}
+									accessibilityLabel={file.name}
 								>
-									{file.name}
-								</OMText>
-							</Pressable>
-						))}
+									<OMText
+										variant="caption"
+										style={active ? styles.sourceTabTextActive : styles.sourceTabText}
+										ellipsizeMode="middle"
+										numberOfLines={1}
+									>
+										{basename}
+									</OMText>
+								</Pressable>
+							)
+						})}
 					</View>
 				</ScrollView>
 			) : null}
@@ -3935,9 +5215,11 @@ function SourceViewer({
 						</OMText>
 					</View>
 					{selected.source ? (
-						<OMText variant="caption" style={styles.runCardHint} numberOfLines={1}>
-							{selected.source}
-						</OMText>
+						<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourcePathScroll}>
+							<OMText variant="caption" style={styles.runCardHint} selectable>
+								{selected.source}
+							</OMText>
+						</ScrollView>
 					) : null}
 					<ScrollView style={styles.sourceCodeScroll}>
 						<ScrollView horizontal>
@@ -4020,7 +5302,17 @@ function DragOverlay() {
 	)
 }
 
-function GettingStartedStep({ children, n, title }: { children: ReactNode; n: number; title: string }) {
+function GettingStartedStep({
+	action,
+	children,
+	n,
+	title,
+}: {
+	action?: ReactNode
+	children: ReactNode
+	n: number
+	title: string
+}) {
 	const { styles } = useTheme()
 	return (
 		<View style={styles.gettingStartedStepRow}>
@@ -4034,6 +5326,7 @@ function GettingStartedStep({ children, n, title }: { children: ReactNode; n: nu
 				<OMText variant="body" style={styles.gettingStartedStepText}>
 					{children}
 				</OMText>
+				{action}
 			</View>
 		</View>
 	)
@@ -4086,60 +5379,6 @@ function HowItWorksCard({
 	)
 }
 
-function GettingStartedModal({
-	assayTitle,
-	onClose,
-	onTryDemoRun,
-	sampleTitle,
-}: {
-	assayTitle?: string
-	onClose: () => void
-	onTryDemoRun?: () => void
-	sampleTitle?: string
-}) {
-	const { styles, mutedIconTone } = useTheme()
-	return (
-		<LabModalChrome
-			accessibilityLabel="Getting started guide"
-			onBackdropDismiss={onClose}
-			panelStyle={styles.gettingStartedModalPanel}
-			scroll={false}
-		>
-			<View style={styles.gettingStartedModalColumn}>
-				<View style={styles.gettingStartedModalHead}>
-					<View style={{ flex: 1, gap: 6 }}>
-						<OMText variant="caption" style={styles.gettingStartedModalKicker}>
-							Guide
-						</OMText>
-						<OMText variant="h4" style={styles.gettingStartedModalTitle}>
-							BioVault Lab
-						</OMText>
-						<OMText variant="body" style={styles.gettingStartedModalSubtitle}>
-							Load genomes, run assays, and read reports — all in your browser.
-						</OMText>
-					</View>
-					<Pressable accessibilityRole="button" onPress={onClose} style={styles.modalCloseButton}>
-						<OMIcon name="close-outline" tone={mutedIconTone} size={20} />
-					</Pressable>
-				</View>
-				<ScrollView
-					contentContainerStyle={styles.gettingStartedModalScrollContent}
-					keyboardShouldPersistTaps="handled"
-					nestedScrollEnabled
-					style={styles.gettingStartedModalScroll}
-				>
-					<LabGettingStartedPanel
-						assayTitle={assayTitle}
-						layout="modal"
-						onTryDemoRun={onTryDemoRun}
-						sampleTitle={sampleTitle}
-					/>
-				</ScrollView>
-			</View>
-		</LabModalChrome>
-	)
-}
-
 function LabGettingStartedPanel({
 	assayTitle,
 	layout = 'page',
@@ -4159,7 +5398,7 @@ function LabGettingStartedPanel({
 			{showIntro ? (
 				<View style={styles.gettingStartedIntroBlock}>
 					<OMText variant="h4" style={styles.gettingStartedTitle}>
-						Welcome
+						Getting Started
 					</OMText>
 					<OMText variant="body" style={styles.gettingStartedLead}>
 						BioVault Lab runs entirely in your browser. Add a genome from the sidebar first; then assays and
@@ -4168,9 +5407,22 @@ function LabGettingStartedPanel({
 				</View>
 			) : null}
 
+			{showIntro ? <View style={styles.landingDivider} /> : null}
+			<View style={styles.gettingStartedSteps}>
+				<GettingStartedStep n={1} title="Add files">
+					Drag in BAM/CRAM/VCF or SNP array (23andme-style text or zip). For BAM/CRAM include the reference; indexes are optional.
+				</GettingStartedStep>
+				<GettingStartedStep n={2} title="Load an assay">
+					Pick an assay or panel from the catalog, or paste a URL to one in the sidebar.
+				</GettingStartedStep>
+				<GettingStartedStep n={3} title="Run">
+					With an active genome and an assay selected, hit Run — results appear in the column to the right.
+				</GettingStartedStep>
+			</View>
+
 			{onTryDemoRun ? (
 				<>
-					{showIntro ? <View style={styles.landingDivider} /> : null}
+					<View style={styles.landingDivider} />
 					<View style={styles.tryNowBlock}>
 						<OMIcon name="flash-outline" size={20} tone="accent" style={styles.tryNowLeadingIcon} />
 						<View style={styles.tryNowBody}>
@@ -4178,7 +5430,7 @@ function LabGettingStartedPanel({
 								Try it now
 							</OMText>
 							<OMText variant="headline" style={styles.tryNowTitle}>
-								Load sample data and run an assay
+								Run Example
 							</OMText>
 							<OMText variant="body" style={styles.tryNowText}>
 								One click loads {sampleTitle ?? 'sample data'} and queues {assayTitle ?? 'a demo assay'}. It runs
@@ -4196,7 +5448,7 @@ function LabGettingStartedPanel({
 							>
 								<OMIcon name="flask-outline" size={18} tone="inverse" />
 								<OMText variant="subtitle" style={styles.primaryButtonText}>
-									Load sample and run assay
+									Run Example
 								</OMText>
 							</Pressable>
 						</View>
@@ -4213,7 +5465,7 @@ function LabGettingStartedPanel({
 					<HowItWorksCard
 						icon="lock-closed-outline"
 						title="Local by default"
-						body="Genome files are processed in your browser. They are not uploaded to BioVault to run an assay."
+						body="Genome files are processed in your browser. They are not uploaded to BioVault to run an assay. Even 100gb BAM files can be dragged in."
 					/>
 					<HowItWorksCard
 						icon="hardware-chip-outline"
@@ -4251,30 +5503,6 @@ function LabGettingStartedPanel({
 						Open in new tab
 					</OMText>
 				</Pressable>
-			</View>
-
-			<View style={styles.landingDivider} />
-			<View style={styles.gettingStartedSteps}>
-				<OMText variant="subtitle" style={styles.landingSectionTitle}>
-					Four quick steps
-				</OMText>
-				<GettingStartedStep n={1} title="Add genome files">
-					Use the sidebar: drop files on the dashed zone or use the file picker. CRAM/VCF, 23andMe-style text, or ZIP
-					packages work; companions (e.g. CRAI, reference FASTA) pair when dropped together.
-				</GettingStartedStep>
-				<GettingStartedStep n={2} title="Or try sample data">
-					Open Sample files in the sidebar for the full list. When a demo is available, use the Try it now block above
-					for a one-click load.
-				</GettingStartedStep>
-				<GettingStartedStep n={3} title="Optional: URL or shared link">
-					Paste an assay, package, or genome URL in the sidebar when someone shares a link with you.
-				</GettingStartedStep>
-				<GettingStartedStep n={4} title="Run an assay">
-					When the header shows an active genome, search the catalog and run — results appear in the results column.
-				</GettingStartedStep>
-				<OMText variant="caption" style={styles.landingFootnote}>
-					Everything runs locally.
-				</OMText>
 			</View>
 		</View>
 	)
@@ -4323,21 +5551,30 @@ function SidebarToggleButton({
 	)
 }
 
-function GettingStartedButton({ onPress }: { onPress: () => void }) {
-	const { styles, mutedIconTone } = useTheme()
+function GettingStartedButton({ active = false, onPress }: { active?: boolean; onPress: () => void }) {
+	const { styles, mutedIconTone, palette } = useTheme()
+	const iconTone = active ? 'accent' : mutedIconTone
 	return (
 		<Pressable
 			onPress={onPress}
 			hitSlop={8}
-			style={({ pressed }) => [styles.headerNavLink, pressed && styles.headerNavLinkPressed]}
+			style={({ pressed }) => [
+				styles.headerNavLink,
+				active ? styles.headerNavLinkActive : null,
+				pressed && styles.headerNavLinkPressed,
+			]}
 			accessibilityRole="button"
+			accessibilityState={{ selected: active }}
 			accessibilityLabel="Open the getting started guide"
 		>
 			<View pointerEvents="none" style={styles.headerNavLinkIcon}>
-				<OMIcon name="book-outline" size={18} tone={mutedIconTone} />
+				<OMIcon name="book-outline" size={18} tone={iconTone} />
 			</View>
 			<View pointerEvents="none">
-				<OMText variant="caption" style={styles.headerNavLinkLabel}>
+				<OMText
+					variant="caption"
+					style={[styles.headerNavLinkLabel, active ? { color: palette.accent } : null]}
+				>
 					Getting Started
 				</OMText>
 			</View>
@@ -4389,7 +5626,7 @@ function ContactButton() {
 	)
 }
 
-function SidebarSettingsMenu({ scheme }: { scheme: 'light' | 'dark' }) {
+function SidebarSettingsMenu() {
 	const { styles, mutedIconTone } = useTheme()
 	const [open, setOpen] = useState(false)
 	const wrapRef = useRef<View | null>(null)
@@ -4440,12 +5677,6 @@ function SidebarSettingsMenu({ scheme }: { scheme: 'light' | 'dark' }) {
 			</Pressable>
 			{open ? (
 				<View style={styles.sidebarSettingsPopover}>
-					<View style={styles.headerSettingsPopoverSection}>
-						<OMText variant="caption" style={styles.headerSettingsPopoverKicker}>
-							Appearance
-						</OMText>
-						<WebThemeToggle scheme={scheme} />
-					</View>
 					<View style={styles.headerSettingsPopoverSection}>
 						<OMText variant="caption" style={styles.headerSettingsPopoverKicker}>
 							Data
@@ -4523,11 +5754,12 @@ function makeStyles(p: LabPalette) {
 		content: {
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
 			paddingTop: LAB_COLUMN_HEAD_PAD_Y,
-			paddingBottom: omSpacing.xxxxl,
+			paddingBottom: 0,
 			maxWidth: 1440,
 			width: '100%',
 			alignSelf: 'flex-start',
 			gap: omSpacing.m,
+			minHeight: '100%',
 		},
 		stack: { gap: omSpacing.s },
 		siteHeader: {
@@ -4546,6 +5778,11 @@ function makeStyles(p: LabPalette) {
 			justifyContent: 'space-between',
 			gap: omSpacing.xl,
 			flexWrap: 'wrap',
+		},
+		heroRowStacked: {
+			flexDirection: 'column-reverse',
+			alignItems: 'stretch',
+			gap: omSpacing.m,
 		},
 		heroTextBlock: {
 			flexGrow: 1,
@@ -4657,6 +5894,10 @@ function makeStyles(p: LabPalette) {
 		} as object,
 		headerNavLinkPressed: {
 			opacity: 0.72,
+		} as object,
+		headerNavLinkActive: {
+			backgroundColor: p.surfaceRaised,
+			borderColor: p.accent,
 		} as object,
 		headerNavLinkIcon: {
 			justifyContent: 'center',
@@ -5103,8 +6344,8 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: 'rgba(0,0,0,0.42)',
 		} as object,
 		labExplorerDrawerPanel: {
-			width: 'min(88vw, 360px)' as any,
-			maxWidth: 360,
+			width: '100%' as any,
+			maxWidth: '100%' as any,
 			height: '100%',
 			zIndex: 1,
 			backgroundColor: p.surfaceSolid,
@@ -5142,7 +6383,10 @@ function makeStyles(p: LabPalette) {
 			gap: omSpacing.l,
 		},
 		labExplorerFooter: {
-			alignItems: 'flex-start',
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: omSpacing.s,
 			paddingHorizontal: LAB_COLUMN_GUTTER_X,
 			paddingVertical: omSpacing.m,
 			borderTopWidth: StyleSheet.hairlineWidth,
@@ -5406,6 +6650,7 @@ function makeStyles(p: LabPalette) {
 			flexShrink: 1,
 			maxWidth: 640,
 			marginTop: omSpacing.s,
+			gap: omSpacing.xs,
 		},
 
 		// slots
@@ -5431,6 +6676,22 @@ function makeStyles(p: LabPalette) {
 		},
 		slotChipText: { color: p.textMuted },
 		slotChipTextOk: { color: p.accentStrong },
+		slotGenerateButton: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			alignSelf: 'flex-start',
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.s + 2,
+			paddingVertical: 6,
+			borderRadius: omRadius.full,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.accentBorder,
+			backgroundColor: p.accentSoft,
+		},
+		slotGenerateButtonText: {
+			color: p.accentStrong,
+			fontWeight: '700',
+		},
 
 		// launch intents
 		intentCard: {
@@ -5520,6 +6781,34 @@ function makeStyles(p: LabPalette) {
 		},
 		pickerIntro: { color: p.textMuted, lineHeight: 20, fontSize: 13 },
 		pickerList: { gap: 0 },
+		panelAssayGroup: {
+			marginVertical: omSpacing.s,
+			borderRadius: omRadius.m,
+			borderWidth: 1,
+			borderColor: p.accentBorder,
+			backgroundColor: p.surfaceRaised,
+			overflow: 'hidden',
+		},
+		panelAssayGroupHeader: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.m,
+			paddingVertical: omSpacing.s,
+			backgroundColor: p.accentSoft,
+			borderBottomWidth: StyleSheet.hairlineWidth,
+			borderBottomColor: p.accentBorder,
+		},
+		panelAssayGroupTitle: {
+			color: p.accentStrong,
+			fontWeight: '700',
+			textTransform: 'uppercase',
+			letterSpacing: 0.8,
+		},
+		panelAssayGroupChildren: {
+			borderTopWidth: StyleSheet.hairlineWidth,
+			borderTopColor: p.border,
+		},
 		pickerRow: {
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -5542,9 +6831,9 @@ function makeStyles(p: LabPalette) {
 			borderLeftColor: p.accent,
 			paddingLeft: omSpacing.m,
 		},
-		pickerRowVariant: {
-			backgroundColor: 'transparent',
-			borderBottomColor: p.border,
+		pickerRowInPanelGroup: {
+			paddingLeft: omSpacing.m,
+			paddingRight: omSpacing.m,
 		},
 		pickerIcon: {
 			width: 32,
@@ -5556,11 +6845,6 @@ function makeStyles(p: LabPalette) {
 		},
 		pickerIconPanel: {
 			backgroundColor: p.accentSoft,
-		},
-		pickerIconVariant: {
-			backgroundColor: p.surfaceSunken,
-			borderWidth: 0,
-			borderColor: 'transparent',
 		},
 		pickerText: { flex: 1, gap: 2 },
 		assayTitleRow: {
@@ -5583,18 +6867,20 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.accentSoft,
 			borderColor: p.accentBorder,
 		},
-		assayKindBadgeVariant: {
-			backgroundColor: p.surface,
-			borderColor: p.accentBorder,
-		},
 		assayKindBadgeText: { color: p.textMuted, letterSpacing: 0.8 },
 		pickerAction: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.xs,
 			paddingHorizontal: omSpacing.m,
 			paddingVertical: omSpacing.s,
 			borderRadius: omRadius.full,
 			backgroundColor: p.accent,
 		},
 		pickerActionMuted: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.xs,
 			paddingHorizontal: omSpacing.m,
 			paddingVertical: omSpacing.s,
 			borderRadius: omRadius.full,
@@ -5618,6 +6904,50 @@ function makeStyles(p: LabPalette) {
 		},
 
 		// search
+		searchImportExample: {
+			color: p.textMuted,
+			fontSize: 10,
+			lineHeight: 14,
+			flexShrink: 1,
+			flexWrap: 'wrap',
+			wordBreak: 'break-all',
+		} as object,
+		searchImportExampleRow: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 6,
+			flexWrap: 'wrap',
+		},
+		searchImportExampleButton: {
+			paddingHorizontal: 6,
+			paddingVertical: 2,
+			borderRadius: omRadius.s,
+		},
+		pickerFilterRow: {
+			flexDirection: 'row',
+			gap: omSpacing.xs,
+			flexWrap: 'wrap',
+		},
+		pickerFilterChip: {
+			paddingHorizontal: omSpacing.m,
+			paddingVertical: omSpacing.xs,
+			borderRadius: omRadius.full,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.border,
+			backgroundColor: p.surfaceSunken,
+		} as object,
+		pickerFilterChipActive: {
+			backgroundColor: p.accent,
+			borderColor: p.accent,
+		},
+		pickerFilterChipText: {
+			color: p.textMuted,
+			fontSize: 12,
+			fontWeight: '600',
+		},
+		pickerFilterChipTextActive: {
+			color: p.invertText,
+		},
 		searchBox: {
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -5636,6 +6966,17 @@ function makeStyles(p: LabPalette) {
 			fontFamily: BrandFonts.body,
 			outlineStyle: 'none',
 		} as object,
+		searchImportButton: {
+			minHeight: 32,
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: omSpacing.xs,
+			paddingHorizontal: omSpacing.m,
+			borderRadius: omRadius.full,
+			backgroundColor: p.accent,
+		},
+		searchImportButtonText: { color: p.invertText },
 		clearBtn: { padding: 2 },
 		urlLoadBox: {
 			gap: omSpacing.s,
@@ -5644,6 +6985,15 @@ function makeStyles(p: LabPalette) {
 			backgroundColor: p.surfaceSunken,
 			borderWidth: 1,
 			borderColor: p.border,
+		},
+		urlLoadHelpBlock: {
+			gap: omSpacing.xs,
+		},
+		urlLoadExampleText: {
+			color: p.textMuted,
+			lineHeight: 18,
+			fontSize: 12,
+			fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 		},
 		urlLoadHeader: {
 			flexDirection: 'row',
@@ -6033,11 +7383,18 @@ function makeStyles(p: LabPalette) {
 		// buttons / text
 		primaryButtonText: { color: p.invertText },
 		textButton: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'center',
+			gap: omSpacing.xs,
 			paddingHorizontal: omSpacing.m,
 			paddingVertical: omSpacing.s,
 			borderRadius: omRadius.full,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.accentBorder,
+			backgroundColor: p.accentSoft,
 		},
-		textButtonText: { color: p.accentStrong },
+		textButtonText: { color: p.accentStrong, fontWeight: '700' },
 		iconButton: {
 			width: 36,
 			height: 36,
@@ -6048,6 +7405,23 @@ function makeStyles(p: LabPalette) {
 			borderWidth: 1,
 			borderColor: p.border,
 		},
+
+		// VCF index prompt
+		vcfIndexPromptLayer: {
+			zIndex: 59,
+		},
+		vcfIndexPromptPanel: {
+			maxWidth: 500,
+			width: '100%',
+			borderColor: p.warningBorder,
+		},
+		vcfIndexPromptChrome: {
+			padding: omSpacing.l,
+			gap: omSpacing.m,
+		},
+		vcfIndexPromptTitle: { color: p.text, flexShrink: 1 },
+		vcfIndexPromptBody: { color: p.textMuted },
+		vcfIndexPromptError: { color: p.dangerText },
 
 		// unknowns (modal alert)
 		unknownFilesAlertLayer: {
@@ -6182,6 +7556,9 @@ function makeStyles(p: LabPalette) {
 			justifyContent: 'center',
 			padding: omSpacing.xl,
 		},
+		sourceOverlayFullScreen: {
+			padding: 0,
+		},
 		labModalLayer: {
 			zIndex: 60,
 		},
@@ -6204,6 +7581,14 @@ function makeStyles(p: LabPalette) {
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
 			overflow: 'hidden',
+		},
+		sourcePanelFullScreen: {
+			width: '100%',
+			height: '100%',
+			maxWidth: '100%' as any,
+			maxHeight: '100%' as any,
+			borderRadius: 0,
+			borderWidth: 0,
 		},
 		intentModalLayer: {
 			zIndex: 55,
@@ -6230,31 +7615,40 @@ function makeStyles(p: LabPalette) {
 			borderBottomColor: p.border,
 		},
 		sourceTitle: { color: p.text },
+		sourcePathScroll: {
+			width: '100%',
+		},
 		sourceTabsScroll: {
 			borderBottomWidth: 1,
 			borderBottomColor: p.border,
+			height: 74,
 		},
 		sourceTabs: {
+			alignItems: 'center',
 			flexDirection: 'row',
 			gap: omSpacing.xs,
+			minHeight: 74,
 			paddingHorizontal: omSpacing.l,
 			paddingVertical: omSpacing.s,
 		},
 		sourceTab: {
-			maxWidth: 240,
+			alignItems: 'center',
+			justifyContent: 'center',
+			width: 220,
+			minHeight: 36,
 			paddingHorizontal: omSpacing.m,
-			paddingVertical: omSpacing.s,
+			paddingVertical: 0,
 			borderRadius: omRadius.full,
 			backgroundColor: p.surfaceSunken,
 			borderWidth: 1,
 			borderColor: p.border,
 		},
 		sourceTabActive: {
-			backgroundColor: p.warningBg,
-			borderColor: p.warningBorder,
+			backgroundColor: p.accentSoft,
+			borderColor: p.accentBorder,
 		},
-		sourceTabText: { color: p.textMuted },
-		sourceTabTextActive: { color: p.warningText, fontWeight: '800' },
+		sourceTabText: { color: p.text, fontSize: 12, fontWeight: '600', lineHeight: 16, width: '100%' },
+		sourceTabTextActive: { color: p.accentStrong, fontSize: 12, fontWeight: '700', lineHeight: 16, width: '100%' },
 		sourceBody: {
 			gap: omSpacing.s,
 			padding: omSpacing.l,
@@ -6270,6 +7664,8 @@ function makeStyles(p: LabPalette) {
 		sourceFileName: {
 			color: p.text,
 			fontWeight: '800',
+			flex: 1,
+			flexShrink: 1,
 		},
 		sourceCodeScroll: {
 			borderRadius: omRadius.m,
@@ -6303,12 +7699,21 @@ function makeStyles(p: LabPalette) {
 		},
 
 		// footer
+		resultsPaneFooter: {
+			alignItems: 'center',
+			justifyContent: 'center',
+			paddingVertical: omSpacing.m,
+			paddingHorizontal: LAB_COLUMN_GUTTER_X,
+			marginTop: 'auto' as unknown as number,
+			marginHorizontal: -LAB_COLUMN_GUTTER_X,
+			borderTopWidth: StyleSheet.hairlineWidth,
+			borderTopColor: p.border,
+		},
 		footerNote: {
 			flexDirection: 'row',
 			alignItems: 'center',
 			justifyContent: 'center',
 			gap: omSpacing.xs,
-			marginTop: omSpacing.l,
 		},
 		footerNoteText: { color: p.textFaint, textAlign: 'center' },
 		feedbackFooter: {

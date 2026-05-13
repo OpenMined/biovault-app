@@ -17,6 +17,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Check TruffleHog exclude scope
+        run: node ./scripts/check-trufflehog-excludes.mjs
+
+      - name: Run local secrets scan wrapper
+        run: npm run secrets:scan
+
+      - name: Scan for committed secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: --exclude-paths=.trufflehog-exclude --results=verified,unknown
+
   rust:
     if: github.event_name == 'pull_request'
     # Runs ./test.sh, which exercises the app's Rust code (desktop/src-tauri).
@@ -109,6 +133,9 @@ jobs:
 
       - name: Run ./lint.sh --check
         run: ./lint.sh --check
+
+      - name: Check runtime asset references
+        run: npm run check:runtime-assets
 
   web:
     if: github.event_name == 'pull_request'

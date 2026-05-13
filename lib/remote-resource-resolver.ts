@@ -15,6 +15,7 @@ import {
 	type BioscriptPackageRelease,
 	type BioscriptPackageResource,
 } from '@/modules/expo-bioscript'
+import YAML from 'yaml'
 
 export type RemoteResourceKind =
 	| 'assay'
@@ -63,6 +64,10 @@ export type ResolvedRemotePackage = {
 	sourceUrl: string
 }
 
+type ResolveRemotePackageOptions = {
+	bypassCache?: boolean
+}
+
 type CachedRemotePackage = {
 	artifactSha256: string | null
 	artifactUrl: string
@@ -92,6 +97,27 @@ function toFetchableUrl(input: string): string {
 		return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`
 	}
 	return trimmed
+}
+
+function joinUrl(baseUrl: string, pathOrUrl: string): string {
+	try {
+		return repairNestedArtifactUrl(new URL(pathOrUrl, baseUrl).toString())
+	} catch {
+		return pathOrUrl
+	}
+}
+
+function repairNestedArtifactUrl(input: string): string {
+	try {
+		const parsed = new URL(input)
+		const marker = parsed.pathname.match(/\/([^/]+\.(?:ya?ml|zip))\/([^/]+\.zip)$/i)
+		if (!marker) return input
+		const prefix = parsed.pathname.slice(0, marker.index)
+		parsed.pathname = `${prefix}/${marker[2]}`
+		return parsed.toString()
+	} catch {
+		return input
+	}
 }
 
 function normalizeSourceUrl(input: string): string {
@@ -133,7 +159,7 @@ function getCachedRemotePackage(sourceUrl: string, artifactSha256: string | null
 		}
 		return {
 			artifactSha256: typeof parsed.artifactSha256 === 'string' ? parsed.artifactSha256 : null,
-			artifactUrl: parsed.artifactUrl,
+			artifactUrl: repairNestedArtifactUrl(parsed.artifactUrl),
 			cachedAt: typeof parsed.cachedAt === 'string' ? parsed.cachedAt : new Date(0).toISOString(),
 			entrypoint: parsed.entrypoint,
 			files: Array.isArray(parsed.files)
@@ -152,7 +178,7 @@ function getCachedRemotePackage(sourceUrl: string, artifactSha256: string | null
 	}
 }
 
-function listCachedRemotePackages(): CachedRemotePackage[] {
+export function listCachedRemotePackages(): CachedRemotePackage[] {
 	if (!hasLocalStorage()) return []
 	const packages: CachedRemotePackage[] = []
 	try {
@@ -174,7 +200,7 @@ function listCachedRemotePackages(): CachedRemotePackage[] {
 			}
 			packages.push({
 				artifactSha256: typeof parsed.artifactSha256 === 'string' ? parsed.artifactSha256 : null,
-				artifactUrl: parsed.artifactUrl,
+				artifactUrl: repairNestedArtifactUrl(parsed.artifactUrl),
 				cachedAt: typeof parsed.cachedAt === 'string' ? parsed.cachedAt : new Date(0).toISOString(),
 				entrypoint: parsed.entrypoint,
 				files: Array.isArray(parsed.files)
@@ -274,6 +300,53 @@ function resolvedFromPackageResource(
 	}
 }
 
+function packageReleaseFromPackagedResource(
+	sourceUrl: string,
+	name: string,
+	text: string,
+	resolution: Awaited<ReturnType<typeof resolveRemoteResourceText>>,
+): BioscriptPackageRelease | null {
+	if (resolution.kind !== 'panel' && resolution.kind !== 'assay') return null
+	try {
+		const parsed = YAML.parse(text) as unknown
+		if (!parsed || typeof parsed !== 'object') return null
+		const root = parsed as Record<string, unknown>
+		const pkg = root.package
+		if (!pkg || typeof pkg !== 'object') return null
+		const packageMap = pkg as Record<string, unknown>
+		const artifact = packageMap.artifact
+		const artifactUrl = typeof packageMap.artifactUrl === 'string'
+			? packageMap.artifactUrl
+			: typeof packageMap.artifact_url === 'string'
+				? packageMap.artifact_url
+				: null
+		const artifactPath = typeof artifact === 'string'
+			? artifact
+			: artifact && typeof artifact === 'object' && typeof (artifact as Record<string, unknown>).path === 'string'
+				? (artifact as Record<string, unknown>).path as string
+				: null
+		const artifactSha256 = artifact && typeof artifact === 'object' && typeof (artifact as Record<string, unknown>).sha256 === 'string'
+			? (artifact as Record<string, unknown>).sha256 as string
+			: null
+		const artifactSizeBytes = artifact && typeof artifact === 'object' && typeof (artifact as Record<string, unknown>).size_bytes === 'number'
+			? (artifact as Record<string, unknown>).size_bytes as number
+			: null
+		const target = artifactUrl ?? artifactPath
+		if (!target) return null
+		return {
+			artifactSha256,
+			artifactSizeBytes,
+			artifactUrl: joinUrl(sourceUrl, target),
+			entrypoint: name,
+			name: resolution.name,
+			title: resolution.title,
+			version: resolution.version ?? null,
+		}
+	} catch {
+		return null
+	}
+}
+
 export async function fetchRemoteResource(input: string): Promise<FetchedRemoteResource> {
 	const sourceUrl = normalizeSourceUrl(input)
 	const parsedSource = new URL(sourceUrl)
@@ -343,7 +416,10 @@ export async function resolveRemoteResource(input: string): Promise<ResolvedRemo
 	}
 }
 
-export async function resolveRemotePackage(input: string): Promise<ResolvedRemotePackage> {
+export async function resolveRemotePackage(
+	input: string,
+	options: ResolveRemotePackageOptions = {},
+): Promise<ResolvedRemotePackage> {
 	const sourceUrl = normalizeSourceUrl(input)
 	const parsedSource = new URL(sourceUrl)
 	if (!isAllowedRemoteResourceHost(parsedSource.hostname)) {
@@ -367,12 +443,24 @@ export async function resolveRemotePackage(input: string): Promise<ResolvedRemot
 			sourceUrl: fetched.sourceUrl,
 			version: releaseResolution.version ?? null,
 		}))
-		release = await resolvePackageReleaseText(fetched.sourceUrl, fetched.name, fetched.contents)
-		artifactUrl = release.artifactUrl
+		try {
+			release = await resolvePackageReleaseText(fetched.sourceUrl, fetched.name, fetched.contents)
+		} catch (error) {
+			release = packageReleaseFromPackagedResource(
+				fetched.sourceUrl,
+				fetched.name,
+				fetched.contents,
+				releaseResolution,
+			)
+			if (!release) throw error
+		}
+		artifactUrl = repairNestedArtifactUrl(release.artifactUrl)
 		artifactSha256 = release.artifactSha256 ?? null
 		packageName = release.name ?? release.title ?? name
-		const cachedPackage = await resolvedPackageFromCache(sourceUrl, release)
-		if (cachedPackage) return cachedPackage
+		if (!options.bypassCache) {
+			const cachedPackage = await resolvedPackageFromCache(sourceUrl, release)
+			if (cachedPackage) return cachedPackage
+		}
 	}
 
 	const remoteZip = await fetchRemoteLabFile(artifactUrl)

@@ -1,6 +1,11 @@
 import initBioscriptWasm, {
+	generateBamBaiFromReader,
+	generateCramCraiFromReader,
+	generateFastaFaiFromReader,
+	generateVcfTbi,
 	lookupCramVariants,
 	lookupVcfVariants,
+	runPackageReportFromBam,
 	runPackageReportFromCram,
 	runPackageReportFromVcf,
 } from '../bioscript-wasm/bioscript_wasm.js'
@@ -49,6 +54,18 @@ type ReportFromCramMessage = {
 	optionsJson: string
 }
 
+type ReportFromBamMessage = {
+	type: 'reportFromBam'
+	requestId: number
+	wasmUrl: string
+	manifestPath: string
+	packageFilesJson: string
+	inputName: string
+	bamFile: File
+	baiBytes: Uint8Array
+	optionsJson: string
+}
+
 type ReportFromVcfMessage = {
 	type: 'reportFromVcf'
 	requestId: number
@@ -61,12 +78,29 @@ type ReportFromVcfMessage = {
 	optionsJson: string
 }
 
+type GenerateVcfTbiMessage = {
+	type: 'generateVcfTbi'
+	requestId: number
+	wasmUrl: string
+	vcfFile: File
+}
+
+type GenerateIndexMessage = {
+	type: 'generateBamBai' | 'generateCramCrai' | 'generateFastaFai'
+	requestId: number
+	wasmUrl: string
+	file: File
+}
+
 type LookupMessage =
 	| LookupCramMessage
 	| LookupVcfMessage
 	| WarmupMessage
+	| ReportFromBamMessage
 	| ReportFromCramMessage
 	| ReportFromVcfMessage
+	| GenerateVcfTbiMessage
+	| GenerateIndexMessage
 
 let wasmReady: Promise<void> | null = null
 
@@ -83,6 +117,31 @@ function makeReadAt(file: File, fileReader: FileReaderSync) {
 		const buf = fileReader.readAsArrayBuffer(slice)
 		return new Uint8Array(buf)
 	}
+}
+
+function workerErrorMessage(error: unknown, operation: LookupMessage['type']): string {
+	const message = error instanceof Error ? error.message : String(error)
+	if (message && !looksLikeWasmStack(message)) return message
+	const stack = error instanceof Error ? error.stack ?? '' : ''
+	const firstUseful = stack
+		.split('\n')
+		.map((line) => line.trim())
+		.find((line) =>
+			line &&
+			!line.includes('bioscriptLookupWorker.bundle') &&
+			!line.includes('bioscript_wasm_bg.wasm') &&
+			!line.includes('wasm-function') &&
+			!line.startsWith('__wbg_') &&
+			!line.startsWith('bioscript_wasm.wasm.'),
+		)
+	if (firstUseful && !looksLikeWasmStack(firstUseful)) return firstUseful.replace(/^Error:\s*/, '')
+	return operation === 'reportFromVcf'
+		? 'BioScript VCF report failed while reading the package or indexed VCF.'
+		: `BioScript worker failed during ${operation}.`
+}
+
+function looksLikeWasmStack(text: string): boolean {
+	return /wasm-function|bioscript_wasm\.wasm|__wbg_|bioscriptLookupWorker\.bundle|wasm_bindgen/.test(text)
 }
 
 self.onmessage = async (event: MessageEvent<LookupMessage>) => {
@@ -150,6 +209,27 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 			return
 		}
 
+		if (message.type === 'reportFromBam') {
+			const bamReadAt = makeReadAt(message.bamFile, fileReader)
+			const startedAt = Date.now()
+			const resultJson = runPackageReportFromBam(
+				message.manifestPath,
+				message.packageFilesJson,
+				message.inputName,
+				bamReadAt,
+				message.bamFile.size,
+				message.baiBytes,
+				message.optionsJson,
+			)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson,
+				durationMs: Date.now() - startedAt,
+			})
+			return
+		}
+
 		if (message.type === 'reportFromVcf') {
 			const vcfReadAt = makeReadAt(message.vcfFile, fileReader)
 			const startedAt = Date.now()
@@ -171,22 +251,54 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 			return
 		}
 
-		const vcfReadAt = makeReadAt(message.vcfFile, fileReader)
-		const startedAt = Date.now()
-		const resultJson = lookupVcfVariants(
-			vcfReadAt,
-			message.vcfFile.size,
-			message.tbiBytes,
-			message.variantsJson,
-		)
-		self.postMessage({
-			type: 'done',
-			requestId: message.requestId,
-			resultJson,
-			durationMs: Date.now() - startedAt,
-		})
+		if (message.type === 'generateVcfTbi') {
+			const startedAt = Date.now()
+			const bytes = new Uint8Array(fileReader.readAsArrayBuffer(message.vcfFile))
+			const resultBytes = generateVcfTbi(message.vcfFile.name, bytes)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultBytes,
+				durationMs: Date.now() - startedAt,
+			})
+			return
+		}
+
+		if (message.type === 'generateBamBai' || message.type === 'generateCramCrai' || message.type === 'generateFastaFai') {
+			const startedAt = Date.now()
+			const readAt = makeReadAt(message.file, fileReader)
+			const resultBytes = message.type === 'generateBamBai'
+				? generateBamBaiFromReader(message.file.name, readAt, message.file.size)
+				: message.type === 'generateCramCrai'
+					? generateCramCraiFromReader(message.file.name, readAt, message.file.size)
+					: generateFastaFaiFromReader(message.file.name, readAt, message.file.size)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultBytes,
+				durationMs: Date.now() - startedAt,
+			})
+			return
+		}
+
+		if (message.type === 'lookupVcf') {
+			const vcfReadAt = makeReadAt(message.vcfFile, fileReader)
+			const startedAt = Date.now()
+			const resultJson = lookupVcfVariants(
+				vcfReadAt,
+				message.vcfFile.size,
+				message.tbiBytes,
+				message.variantsJson,
+			)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson,
+				durationMs: Date.now() - startedAt,
+			})
+		}
 	} catch (error) {
-		const messageText = error instanceof Error && error.stack ? error.stack : String(error)
+		const messageText = workerErrorMessage(error, message.type)
 		self.postMessage({ type: 'error', requestId: message.requestId, error: messageText })
 	}
 }

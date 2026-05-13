@@ -447,7 +447,43 @@ export async function runLabPackageReportRef(
 	}
 	if (selectedGenome.kind === 'cram') {
 		if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
-			throw new Error('CRAM genome incomplete: needs .cram + .crai + .fasta + .fai')
+			const label = selectedGenome.primary.kind === 'bam' ? 'BAM' : 'CRAM'
+			const indexLabel = selectedGenome.primary.kind === 'bam' ? '.bai' : '.crai'
+			throw new Error(`${label} genome incomplete: needs ${selectedGenome.primary.name} + ${indexLabel} + .fasta + .fai`)
+		}
+		if (selectedGenome.primary.kind === 'bam') {
+			const bamFile = requirePlatformFile(fileAdapter, selectedGenome.primary, 'BAM genome')
+			const baiBytes = await fileAdapter.readBytes(selectedGenome.crai)
+			onProgress?.({
+				completed: 0,
+				label: 'Running BioScript report (BAM)',
+				phase: 'running',
+				total: null,
+			})
+			await yieldToBrowser()
+			const report = await runtime.runPackageReportFromBamFile(
+				manifestPath,
+				packageFiles,
+				selectedGenome.primary.name,
+				bamFile,
+				baiBytes,
+				reportOptions,
+			)
+			onProgress?.({
+				completed: 1,
+				label: 'BioScript report complete',
+				phase: 'complete',
+				total: 1,
+			})
+			return {
+				kind: 'text_output',
+				result: {
+					status: 'done',
+					artifacts: report.artifacts,
+					durationMs: report.durationMs,
+					textOutput: report.textOutput,
+				},
+			}
 		}
 		const cramFile = requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome')
 		const fastaFile = requirePlatformFile(fileAdapter, selectedGenome.fasta, 'CRAM reference FASTA')

@@ -128,12 +128,24 @@ coverage/
 # Credentials & signing (keep out of VCS)
 *.keystore
 *.keystore.properties
+*.keystore.json
+*.keystore.password
+*.storepass
+*.keypass
+key.properties
+keystore.properties
+release.keystore
+upload-keystore.jks
+debug.keystore
+google-services.local.json
+google-services.*.local.json
 # Already ignoring: *.jks, *.p8, *.p12, *.key, *.mobileprovision
 
 notebooks/.ipynb_checkpoints/
 notebooks/downloads/
 notebooks/work/
 output/
+reports/
 
 .claude/*
 data/*
