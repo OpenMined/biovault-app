@@ -147,7 +147,7 @@ export async function resolvePackageForRun(
 	if (assay.parentPanelId) {
 		const panel = await getPanel(assay.parentPanelId)
 		if (!panel) return null
-		return { entrypoint: panel.entrypoint, files: panel.files }
+		return { entrypoint: assay.pathInPackage || panel.entrypoint, files: panel.files }
 	}
 	if (assay.entrypoint && assay.files?.length) {
 		return { entrypoint: assay.entrypoint, files: assay.files }

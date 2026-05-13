@@ -674,6 +674,21 @@ function resourceRegistryId(resource: ResolvedRemoteResource): string {
 	return resource.sha256.slice(0, 16)
 }
 
+function packageFileSourceUrl(file: BioscriptPackageFile): string | null {
+	const value = (file as BioscriptPackageFile & { sourceUrl?: unknown; source_url?: unknown }).sourceUrl ??
+		(file as BioscriptPackageFile & { sourceUrl?: unknown; source_url?: unknown }).source_url
+	return typeof value === 'string' && value.length ? value : null
+}
+
+function packageEntrypointForSelectedAssay(
+	assay: LabAssay,
+	defaultEntrypoint: string,
+	files: BioscriptPackageFile[] | undefined | null,
+): string {
+	if (!isSessionLabAssay(assay) || assay.remoteKind !== 'assay' || !files?.length) return defaultEntrypoint
+	return files.find((file) => packageFileSourceUrl(file) === assay.url)?.path ?? defaultEntrypoint
+}
+
 async function registerPackageWithRegistry(
 	pkg: { resources: ResolvedRemoteResource[]; entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
 	origin: RegistryOrigin,
@@ -713,7 +728,7 @@ async function registerPackageWithRegistry(
 	for (const assay of assayResources) {
 		const assayId = resourceRegistryId(assay)
 		const isMember = panelId !== null && memberAssayIds.has(assayId)
-		const pathInPackage = pkg.files.find((f) => f.source_url === assay.sourceUrl)?.path ?? null
+		const pathInPackage = pkg.files.find((file) => packageFileSourceUrl(file) === assay.sourceUrl)?.path ?? null
 		await registryUpsertAssay({
 			id: assayId,
 			version: assay.version ?? null,
@@ -1124,6 +1139,7 @@ export default function LabScreen() {
 			.filter((resource) => resource.kind === 'panel' || resource.kind === 'assay' || resource.kind === 'variant' || resource.kind === 'python')
 			.map((resource): SessionLabAssay => {
 				const language = resource.kind === 'python' ? 'python' : 'yaml'
+				const pathInPackage = packageInfo?.files.find((file) => packageFileSourceUrl(file) === resource.sourceUrl)?.path
 				return {
 					id: `remote-${resource.sha256.slice(0, 16)}`,
 					title: resource.title,
@@ -1143,7 +1159,7 @@ export default function LabScreen() {
 						type: language === 'python' ? 'text/x-python' : 'application/yaml',
 					}),
 					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
-					packageEntrypoint: packageInfo?.entrypoint,
+					packageEntrypoint: resource.kind === 'assay' && pathInPackage ? pathInPackage : packageInfo?.entrypoint,
 					packageFiles: packageInfo?.files,
 					packageSourceUrl: packageInfo?.sourceUrl,
 					remoteKind: resource.kind,
@@ -2305,6 +2321,9 @@ export default function LabScreen() {
 				const session = isSessionLabAssay(catalogAssay) ? catalogAssay : null
 				let packageEntrypoint = session?.packageEntrypoint
 				let packageFiles = session?.packageFiles
+				if (packageEntrypoint) {
+					packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, packageEntrypoint, packageFiles)
+				}
 				// First try the registry — for an assay that's a panel member, the
 				// parent panel's files are the authoritative bundle for the runner.
 				if ((!packageFiles?.length || !packageEntrypoint) && session?.registryId) {
@@ -2313,7 +2332,7 @@ export default function LabScreen() {
 						try {
 							const bundle = await resolvePackageForRun(kind, session.registryId)
 							if (bundle) {
-								packageEntrypoint = bundle.entrypoint
+								packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, bundle.entrypoint, bundle.files)
 								packageFiles = bundle.files
 							}
 						} catch (err) {
@@ -2339,7 +2358,7 @@ export default function LabScreen() {
 						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 							console.warn('[lab] registry upsert (replace synthetic package) failed', err),
 						)
-						packageEntrypoint = pkg.entrypoint
+						packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files)
 						packageFiles = pkg.files
 					} catch (resolveError) {
 						console.warn('[lab] replace synthetic package failed', resolveError)
@@ -2352,7 +2371,7 @@ export default function LabScreen() {
 						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 							console.warn('[lab] registry upsert (auto-resolve) failed', err),
 						)
-						packageEntrypoint = pkg.entrypoint
+						packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files)
 						packageFiles = pkg.files
 					} catch (resolveError) {
 						console.warn('[lab] auto-resolve package failed', resolveError)
@@ -2411,7 +2430,7 @@ export default function LabScreen() {
 									)
 									return runLabPackageReportRef(
 										genomeForRun,
-										pkg.entrypoint,
+										packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files),
 										pkg.files,
 										fileAdapterRef.current,
 										onProgress,
@@ -2431,7 +2450,7 @@ export default function LabScreen() {
 									)
 									return runLabPackageReportRef(
 										genomeForRun,
-										pkg.entrypoint,
+										packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files),
 										pkg.files,
 										fileAdapterRef.current,
 										onProgress,

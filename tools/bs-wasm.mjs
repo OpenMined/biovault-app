@@ -206,9 +206,9 @@ if (manifestAbs.toLowerCase().endsWith('.zip')) {
   packageFiles = pkg.files.map((file) => ({
     path: file.path,
     contents: file.contents,
-    sourceUrl: file.source_url ?? null,
+    sourceUrl: file.sourceUrl ?? file.source_url ?? null,
   }))
-  manifestRel = pkg.entrypoint
+  manifestRel = opts.package_entrypoint || pkg.entrypoint
 } else {
   const collected = collectPackageFiles(manifestAbs)
   packageFiles = collected.files
