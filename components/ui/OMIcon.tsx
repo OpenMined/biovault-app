@@ -10,6 +10,7 @@ interface OMIconProps {
 	name: ComponentProps<typeof Ionicons>['name']
 	size?: number
 	tone?: OMIconTone
+	color?: string
 	containerTone?: OMIconContainerTone
 	style?: StyleProp<TextStyle>
 	containerStyle?: StyleProp<ViewStyle>
@@ -47,13 +48,14 @@ export function OMIcon({
 	name,
 	size = 20,
 	tone = 'default',
+	color,
 	containerTone = 'none',
 	style,
 	containerStyle,
 }: OMIconProps) {
 	return (
 		<View style={[containerStyles[containerTone], containerStyle]}>
-			<Ionicons name={name} size={size} color={iconColors[tone]} style={style} />
+			<Ionicons name={name} size={size} color={color ?? iconColors[tone]} style={style} />
 		</View>
 	)
 }

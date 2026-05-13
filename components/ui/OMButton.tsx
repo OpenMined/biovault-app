@@ -1,6 +1,6 @@
 import { omRadius, omSpacing, omTheme, omTypography } from '@/styles/brand'
 import type { ComponentProps } from 'react'
-import { StyleProp, StyleSheet, TouchableOpacity, TouchableOpacityProps, ViewStyle } from 'react-native'
+import { Platform, StyleProp, StyleSheet, TouchableOpacity, TouchableOpacityProps, ViewStyle } from 'react-native'
 import { OMIcon } from './OMIcon'
 import { OMText } from './OMText'
 
@@ -23,12 +23,27 @@ export function OMButton({
 
 	return (
 		<TouchableOpacity
-			activeOpacity={0.85}
+			activeOpacity={0.78}
 			disabled={disabled}
-			style={[styles.base, variantStyles[variant], disabled && styles.disabled, style]}
+			style={[
+				styles.base,
+				Platform.OS === 'web' ? styles.webMotion : null,
+				Platform.OS === 'web' ? disabled ? styles.webDisabledCursor : styles.webCursor : null,
+				variantStyles[variant],
+				disabled && styles.disabled,
+				style,
+			]}
 			{...props}
 		>
-			{iconName ? <OMIcon name={iconName} size={16} tone={iconTone} style={styles.icon} /> : null}
+			{iconName ? (
+				<OMIcon
+					name={iconName}
+					size={16}
+					tone={iconTone}
+					color={variant === 'primary' ? omTheme.actionText : undefined}
+					style={styles.icon}
+				/>
+			) : null}
 			<OMText
 				variant="subtitle"
 				style={[
@@ -59,7 +74,7 @@ const styles = StyleSheet.create({
 		marginRight: omSpacing.s,
 	},
 	primaryLabel: {
-		color: omTheme.primaryText,
+		color: omTheme.actionText,
 	},
 	secondaryLabel: {
 		color: omTheme.textHeadline,
@@ -67,6 +82,17 @@ const styles = StyleSheet.create({
 	disabled: {
 		opacity: 0.5,
 	},
+	webMotion: {
+		transitionProperty: 'opacity, transform, background-color, border-color',
+		transitionDuration: '140ms',
+		transitionTimingFunction: 'ease',
+	} as object,
+	webCursor: {
+		cursor: 'pointer',
+	} as object,
+	webDisabledCursor: {
+		cursor: 'not-allowed',
+	} as object,
 })
 
 const variantStyles = StyleSheet.create({
