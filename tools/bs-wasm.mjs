@@ -87,6 +87,7 @@ if (!opts.manifest || !opts.input_file) {
   process.exit(2)
 }
 
+const runtimeRootAbs = opts.root ? path.resolve(opts.root) : null
 const manifestAbs = path.resolve(opts.manifest)
 const inputFileAbs = path.resolve(opts.input_file)
 const outputDirAbs = path.resolve(opts.output_dir || 'test-output/wasm-report')
@@ -99,6 +100,7 @@ const isVcf =
   inputFormat === 'vcf' ||
   inputFileAbs.toLowerCase().endsWith('.vcf.gz') ||
   inputFileAbs.toLowerCase().endsWith('.bcf')
+const metadataOutputDir = opts.metadata_output_dir || outputDirAbs
 
 // Walk the manifest's directory once, collecting every YAML / Python / TSV /
 // CSV file so the wasm `PackageWorkspace` can resolve relative paths the
@@ -107,6 +109,7 @@ const isVcf =
 // `member.path` against `manifest_path`).
 function collectPackageFiles(manifestPath) {
   const root = path.dirname(manifestPath)
+  const keyRoot = runtimeRootAbs || root
   const files = []
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -127,7 +130,7 @@ function collectPackageFiles(manifestPath) {
       ) {
         continue
       }
-      const relative = path.relative(root, full)
+      const relative = path.relative(keyRoot, full)
       files.push({
         path: relative,
         contents: fs.readFileSync(full, 'utf8'),
@@ -136,15 +139,18 @@ function collectPackageFiles(manifestPath) {
     }
   }
   walk(root)
-  return { files, manifestRel: path.relative(root, manifestPath) }
+  return { files, manifestRel: path.relative(keyRoot, manifestPath) }
 }
-
-const { files: packageFiles, manifestRel } = collectPackageFiles(manifestAbs)
 
 const reportOptions = {
   analysisMaxDurationMs: Number(opts.analysis_max_duration_ms ?? 30000),
   detectSex: Boolean(opts.detect_sex),
   filters: [],
+  outputDir: runtimeRootAbs
+    ? path.isAbsolute(metadataOutputDir)
+      ? path.relative(runtimeRootAbs, metadataOutputDir)
+      : metadataOutputDir
+    : null,
   sampleSex: opts.sample_sex || null,
 }
 
@@ -191,6 +197,23 @@ function writeArtifacts(artifacts) {
 }
 
 const wasm = await loadWasm()
+
+let packageFiles
+let manifestRel
+if (manifestAbs.toLowerCase().endsWith('.zip')) {
+  const zipBytes = new Uint8Array(fs.readFileSync(manifestAbs))
+  const pkg = JSON.parse(wasm.resolvePackageZipBytes(manifestAbs, path.basename(manifestAbs), zipBytes))
+  packageFiles = pkg.files.map((file) => ({
+    path: file.path,
+    contents: file.contents,
+    sourceUrl: file.source_url ?? null,
+  }))
+  manifestRel = pkg.entrypoint
+} else {
+  const collected = collectPackageFiles(manifestAbs)
+  packageFiles = collected.files
+  manifestRel = collected.manifestRel
+}
 
 let resultJson
 if (isCram) {

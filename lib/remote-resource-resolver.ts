@@ -463,10 +463,21 @@ export async function resolveRemotePackage(
 		}
 	}
 
-	const remoteZip = await fetchRemoteLabFile(artifactUrl)
-	const zipBytes = new Uint8Array(await remoteZip.file.arrayBuffer())
+	let remoteZip = await fetchRemoteLabFile(artifactUrl)
+	let zipBytes = new Uint8Array(await remoteZip.file.arrayBuffer())
 	if (artifactSha256) {
-		await verifyPackageArtifactSha256(remoteZip.file.name, zipBytes, artifactSha256)
+		try {
+			await verifyPackageArtifactSha256(remoteZip.file.name, zipBytes, artifactSha256)
+		} catch (error) {
+			if (remoteZip.cacheStatus !== 'hit') throw error
+			console.warn('[remote-resource] cached package artifact hash mismatch; refreshing artifact', {
+				artifactUrl,
+				sourceUrl,
+			})
+			remoteZip = await fetchRemoteLabFile(artifactUrl, { bypassCache: true })
+			zipBytes = new Uint8Array(await remoteZip.file.arrayBuffer())
+			await verifyPackageArtifactSha256(remoteZip.file.name, zipBytes, artifactSha256)
+		}
 	}
 	const pkg = await resolvePackageZipBytes(artifactUrl, remoteZip.file.name, zipBytes)
 	const contentType = remoteZip.file.type || null
