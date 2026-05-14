@@ -1,6 +1,6 @@
 import { omRadius, omSpacing, omTheme, omTypography } from '@/styles/brand'
 import type { ComponentProps } from 'react'
-import { Platform, StyleProp, StyleSheet, TouchableOpacity, TouchableOpacityProps, ViewStyle } from 'react-native'
+import { Platform, StyleProp, StyleSheet, TextStyle, TouchableOpacity, TouchableOpacityProps, ViewStyle } from 'react-native'
 import { OMIcon } from './OMIcon'
 import { OMText } from './OMText'
 
@@ -8,11 +8,13 @@ interface OMButtonProps extends TouchableOpacityProps {
 	label: string
 	variant?: 'primary' | 'secondary' | 'danger'
 	iconName?: ComponentProps<typeof OMIcon>['name']
+	labelStyle?: StyleProp<TextStyle>
 	style?: StyleProp<ViewStyle>
 }
 
 export function OMButton({
 	label,
+	labelStyle,
 	variant = 'primary',
 	iconName,
 	style,
@@ -49,6 +51,7 @@ export function OMButton({
 				style={[
 					styles.label,
 					variant === 'primary' ? styles.primaryLabel : styles.secondaryLabel,
+					labelStyle,
 				]}
 			>
 				{label}
