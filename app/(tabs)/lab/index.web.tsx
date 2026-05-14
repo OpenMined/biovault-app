@@ -3190,7 +3190,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3222,7 +3222,7 @@ function RemoteIntentCard({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3236,7 +3236,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						onPress={onFetch}
 						disabled={busy}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentPrimaryButton,
 							hovered && !busy && styles.buttonHover,
 							pressed && !busy && styles.buttonPressed,
@@ -3272,7 +3272,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3293,7 +3293,7 @@ function RemoteIntentCard({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentPrimaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3331,7 +3331,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3404,7 +3404,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						onPress={onDismiss}
 						disabled={resolvingDeps}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && !resolvingDeps && styles.buttonHover,
 							pressed && !resolvingDeps && styles.buttonPressed,
@@ -3419,7 +3419,7 @@ function RemoteIntentCard({
 							accessibilityRole="button"
 							onPress={onResolveDependencies}
 							disabled={resolvingDeps}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentPrimaryButton,
 								hovered && !resolvingDeps && styles.buttonHover,
 								pressed && !resolvingDeps && styles.buttonPressed,
@@ -3491,7 +3491,7 @@ function PersistentHandlePrompt({
 					</View>
 					<Pressable
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3520,7 +3520,7 @@ function PersistentHandlePrompt({
 					<View style={styles.intentActions}>
 						<Pressable
 							onPress={onDismiss}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentSecondaryButton,
 								hovered && styles.buttonHover,
 								pressed && styles.buttonPressed,
@@ -3532,7 +3532,7 @@ function PersistentHandlePrompt({
 						</Pressable>
 						<Pressable
 							onPress={onSave}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentPrimaryButton,
 								hovered && styles.buttonHover,
 								pressed && styles.buttonPressed,
@@ -3610,7 +3610,7 @@ function ImportGenomeModal({
 					</View>
 					<Pressable
 						onPress={onClose}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3622,7 +3622,7 @@ function ImportGenomeModal({
 
 				<Pressable
 					onPress={onChooseGenomeFiles}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						styles.importGenomeDropArea,
 						dragActive ? styles.importGenomeDropAreaActive : null,
 						hovered && styles.buttonHover,
@@ -4006,7 +4006,7 @@ function ImportGenomeButton({ dragActive, onPress }: { dragActive: boolean; onPr
 	return (
 		<Pressable
 			onPress={onPress}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.explorerDropPanel,
 				dragActive ? styles.explorerDropPanelActive : null,
 				hovered && styles.buttonHover,
@@ -4103,7 +4103,7 @@ function UrlLoadBox({
 				<Pressable
 					onPress={() => onLoadUrl(urlInput)}
 					disabled={!urlInput.trim()}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						loadButtonStyles,
 						hovered && hasUrl && styles.buttonHover,
 						pressed && hasUrl && styles.buttonPressed,
@@ -4136,7 +4136,7 @@ function UrlLoadBox({
 					</OMText>
 					<Pressable
 						onPress={onCopyShareUrl}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							narrow ? styles.urlShareButtonSidebar : null,
 							hovered && styles.buttonHover,
@@ -4185,7 +4185,7 @@ function GenomeSlotStrip({
 					<Pressable
 						accessibilityRole="button"
 						onPress={() => onGenerateIndexes?.()}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.slotGenerateButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -4347,7 +4347,7 @@ function AssayPicker({
 									event.stopPropagation?.()
 									void onForgetRemoteAssay(assay)
 								}}
-								style={({ hovered, pressed }) => [
+								style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 									styles.assayGhostAction,
 									hovered && styles.buttonHover,
 									pressed && styles.buttonPressed,
@@ -4373,7 +4373,7 @@ function AssayPicker({
 									onRun(assay)
 								}
 							}}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted,
 								hovered && !disabled && styles.buttonHover,
 								pressed && !disabled && styles.buttonPressed,
@@ -4435,7 +4435,7 @@ function AssayPicker({
 						accessibilityLabel="Import assay from URL"
 						accessibilityRole="button"
 						onPress={() => onImportUrl(trimmedQuery)}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.searchImportButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -4449,7 +4449,7 @@ function AssayPicker({
 				) : query ? (
 					<Pressable
 						onPress={() => onQueryChange('')}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.clearBtn,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -4592,7 +4592,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 					<Pressable
 						accessibilityRole="button"
 						onPress={openResult}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.textButton,
 							styles.resultPrimaryButton,
 							hovered && styles.buttonHover,
@@ -4607,7 +4607,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 				<Pressable
 					accessibilityRole="button"
 					onPress={onViewSource}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						styles.textButton,
 						hovered && styles.buttonHover,
 						pressed && styles.buttonPressed,
@@ -5191,7 +5191,7 @@ function VcfIndexPrompt({
 						accessibilityLabel="Cancel index generation"
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5212,7 +5212,7 @@ function VcfIndexPrompt({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5226,7 +5226,7 @@ function VcfIndexPrompt({
 						accessibilityRole="button"
 						onPress={onConfirm}
 						disabled={busy}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentPrimaryButton,
 							hovered && !busy && styles.buttonHover,
 							pressed && !busy && styles.buttonPressed,
@@ -5283,7 +5283,7 @@ function AlignmentIndexPrompt({
 						accessibilityLabel="Cancel index generation"
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5304,7 +5304,7 @@ function AlignmentIndexPrompt({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5319,7 +5319,7 @@ function AlignmentIndexPrompt({
 							accessibilityRole="button"
 							onPress={onConfirm}
 							disabled={busy}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentPrimaryButton,
 								hovered && !busy && styles.buttonHover,
 								pressed && !busy && styles.buttonPressed,
@@ -5369,7 +5369,7 @@ function UnknownFilesAlert({
 						accessibilityLabel="Dismiss alert"
 						accessibilityRole="button"
 						onPress={onDismissAll}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5386,7 +5386,7 @@ function UnknownFilesAlert({
 							</OMText>
 							<Pressable
 								onPress={() => onRemove(u.id)}
-								style={({ hovered, pressed }) => [
+								style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 									styles.textButton,
 									hovered && styles.buttonHover,
 									pressed && styles.buttonPressed,
@@ -5431,7 +5431,7 @@ function SourceViewer({
 				<Pressable
 					accessibilityRole="button"
 					onPress={onClose}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						styles.iconButton,
 						hovered && styles.buttonHover,
 						pressed && styles.buttonPressed,
@@ -5451,7 +5451,7 @@ function SourceViewer({
 								<Pressable
 									key={`${file.name}-${index}`}
 									onPress={() => setSelectedIndex(index)}
-									style={({ hovered, pressed }) => [
+									style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 										styles.sourceTab,
 										active ? styles.sourceTabActive : null,
 										hovered && styles.buttonHover,
@@ -5664,7 +5664,7 @@ function LabGettingStartedPanel({
 							<Pressable
 								onPress={onTryDemoRun}
 								disabled={demoRunPending}
-								style={({ hovered, pressed }) => [
+								style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 									styles.intentPrimaryButton,
 									styles.tryNowButton,
 									hovered && !demoRunPending && styles.buttonHover,
@@ -5751,7 +5751,7 @@ function SidebarToggleButton({
 			accessibilityState={{ expanded: open }}
 			hitSlop={8}
 			onPress={onPress}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerSidebarToggle,
 				open ? styles.headerSidebarToggleOpen : null,
 				hovered && styles.buttonHover,
@@ -5783,7 +5783,7 @@ function GettingStartedButton({
 		<Pressable
 			onPress={onPress}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerNavLink,
 				compact ? styles.headerNavLinkCompact : null,
 				active ? styles.headerNavLinkActive : null,
@@ -5817,7 +5817,7 @@ function GithubButton({ compact = false }: { compact?: boolean }) {
 		<Pressable
 			onPress={() => openGithub()}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerNavLink,
 				compact ? styles.headerNavLinkCompact : null,
 				hovered && styles.buttonHover,
@@ -5846,7 +5846,7 @@ function ContactButton({ compact = false }: { compact?: boolean }) {
 		<Pressable
 			onPress={() => openContactEmail('header')}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerNavLink,
 				compact ? styles.headerNavLinkCompact : null,
 				hovered && styles.buttonHover,
@@ -5904,7 +5904,7 @@ function SidebarSettingsMenu() {
 			<Pressable
 				onPress={toggle}
 				hitSlop={8}
-				style={({ hovered, pressed }) => [
+				style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 					styles.sidebarSettingsTrigger,
 					open && styles.sidebarSettingsTriggerOpen,
 					hovered && styles.buttonHover,
@@ -5946,7 +5946,7 @@ function FeedbackFooterButton() {
 	return (
 		<Pressable
 			onPress={() => openContactEmail('footer')}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.feedbackFooter,
 				hovered && styles.buttonHover,
 				pressed && styles.buttonPressed,
@@ -5976,7 +5976,7 @@ function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 		<Pressable
 			onPress={() => toggleColorSchemePreferenceSync(scheme)}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.webThemeButton,
 				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
 				hovered && styles.buttonHover,
