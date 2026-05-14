@@ -16,6 +16,7 @@ import {
 	Easing,
 	Platform,
 	Pressable,
+	ScrollView,
 	StyleSheet,
 	View,
 	useWindowDimensions,
@@ -115,7 +116,11 @@ export function OnboardingAgreementCard({
 	return (
 		<View style={styles.screen}>
 			<SafeAreaView style={styles.safeArea}>
-				<View style={styles.content}>
+				<ScrollView
+					style={styles.scroll}
+					contentContainerStyle={styles.content}
+					showsVerticalScrollIndicator={false}
+				>
 					<Animated.View
 						style={[
 							styles.stack,
@@ -211,7 +216,12 @@ export function OnboardingAgreementCard({
 								label="Continue"
 								onPress={onContinue}
 								disabled={!hasAgreed}
-								style={[styles.continueButton, hasAgreed && styles.continueButtonEnabled]}
+								labelStyle={!hasAgreed ? styles.continueButtonLabelDisabled : null}
+								style={[
+									styles.continueButton,
+									!hasAgreed ? styles.continueButtonDisabled : null,
+									hasAgreed && styles.continueButtonEnabled,
+								]}
 							/>
 
 							<Pressable
@@ -228,7 +238,7 @@ export function OnboardingAgreementCard({
 							</Pressable>
 						</View>
 					</Animated.View>
-				</View>
+				</ScrollView>
 			</SafeAreaView>
 		</View>
 	)
@@ -288,24 +298,27 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		safeArea: {
 			flex: 1,
 		},
-		content: {
+		scroll: {
 			flex: 1,
-			paddingHorizontal: omSpacing.xl,
-			paddingVertical: omSpacing.xl,
+		},
+		content: {
+			flexGrow: 1,
+			paddingHorizontal: opts.isWebWide ? omSpacing.xl : omSpacing.l,
+			paddingVertical: opts.isWebWide ? omSpacing.xl : omSpacing.l,
 			maxWidth: opts.isWebWide ? 520 : 420,
 			width: '100%',
 			alignSelf: 'center',
 			justifyContent: 'center',
 		},
 		stack: {
-			gap: omSpacing.xl,
+			gap: opts.isWebWide ? omSpacing.xl : omSpacing.m,
 		},
 		mainSection: {
-			gap: omSpacing.l,
+			gap: opts.isWebWide ? omSpacing.l : omSpacing.m,
 		},
 		heroSection: {
-			gap: omSpacing.s,
-			paddingBottom: omSpacing.s,
+			gap: opts.isWebWide ? omSpacing.s : omSpacing.xs,
+			paddingBottom: opts.isWebWide ? omSpacing.s : 0,
 		},
 		heroKicker: {
 			color: p.accentStrong,
@@ -313,14 +326,14 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		},
 		title: {
 			color: p.text,
-			letterSpacing: -0.6,
-			fontSize: opts.isWebWide ? 44 : 38,
-			lineHeight: opts.isWebWide ? 48 : 42,
+			letterSpacing: 0,
+			fontSize: opts.isWebWide ? 40 : 30,
+			lineHeight: opts.isWebWide ? 44 : 34,
 		},
 		heroSupport: {
 			color: p.textMuted,
-			fontSize: 16,
-			lineHeight: 22,
+			fontSize: opts.isWebWide ? 16 : 15,
+			lineHeight: opts.isWebWide ? 22 : 20,
 			marginTop: omSpacing.xs,
 		},
 		infoCardBorder: {
@@ -329,8 +342,8 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		},
 		metricsPanel: {
 			gap: omSpacing.xs,
-			paddingHorizontal: omSpacing.l,
-			paddingVertical: omSpacing.l,
+			paddingHorizontal: opts.isWebWide ? omSpacing.l : omSpacing.m,
+			paddingVertical: opts.isWebWide ? omSpacing.l : omSpacing.m,
 			borderRadius: omRadius.l,
 			backgroundColor: p.accentSoft,
 			borderWidth: 1,
@@ -343,23 +356,23 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		},
 		metricsBody: {
 			color: p.text,
-			fontSize: 15,
-			lineHeight: 22,
+			fontSize: opts.isWebWide ? 15 : 14,
+			lineHeight: opts.isWebWide ? 22 : 20,
 		},
 		infoCard: {
 			margin: 1.5,
-			paddingHorizontal: omSpacing.xl,
-			paddingVertical: omSpacing.xl,
+			paddingHorizontal: opts.isWebWide ? omSpacing.xl : omSpacing.l,
+			paddingVertical: opts.isWebWide ? omSpacing.xl : omSpacing.l,
 			borderRadius: omRadius.l,
 			backgroundColor: p.surfaceSolid,
 		},
 		signalList: {
-			gap: omSpacing.l,
+			gap: opts.isWebWide ? omSpacing.l : omSpacing.m,
 		},
 		disclaimerPanel: {
 			gap: omSpacing.xs,
-			paddingHorizontal: omSpacing.l,
-			paddingVertical: omSpacing.l,
+			paddingHorizontal: opts.isWebWide ? omSpacing.l : omSpacing.m,
+			paddingVertical: opts.isWebWide ? omSpacing.l : omSpacing.m,
 			borderRadius: omRadius.l,
 			backgroundColor: p.warningBg,
 			borderWidth: 1,
@@ -371,11 +384,11 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		},
 		disclaimerBody: {
 			color: p.warningText,
-			fontSize: 15,
-			lineHeight: 22,
+			fontSize: opts.isWebWide ? 15 : 14,
+			lineHeight: opts.isWebWide ? 22 : 20,
 		},
 		footer: {
-			gap: omSpacing.m,
+			gap: opts.isWebWide ? omSpacing.m : omSpacing.s,
 			alignItems: 'stretch',
 		},
 		footerCreditRow: {
@@ -389,8 +402,8 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 			flexDirection: 'row',
 			alignItems: 'center',
 			gap: omSpacing.m,
-			paddingHorizontal: omSpacing.l,
-			paddingVertical: omSpacing.m,
+			paddingHorizontal: opts.isWebWide ? omSpacing.l : omSpacing.m,
+			paddingVertical: opts.isWebWide ? omSpacing.m : omSpacing.s,
 			borderRadius: omRadius.l,
 			backgroundColor: p.surface,
 			borderWidth: 1,
@@ -418,16 +431,24 @@ function makeStyles(p: LabPalette, opts: { isWebWide: boolean }) {
 		checkboxText: {
 			flex: 1,
 			color: p.text,
-			fontSize: 16,
-			lineHeight: 22,
+			fontSize: opts.isWebWide ? 16 : 15,
+			lineHeight: opts.isWebWide ? 22 : 20,
 			includeFontPadding: false,
 		},
 		continueButton: {
-			minHeight: 54,
+			minHeight: opts.isWebWide ? 54 : 46,
 			borderRadius: omRadius.l,
 			backgroundColor: p.surface,
 			borderWidth: 1,
 			borderColor: p.border,
+		},
+		continueButtonDisabled: {
+			opacity: 1,
+			backgroundColor: p.surfaceRaised,
+			borderColor: p.border,
+		},
+		continueButtonLabelDisabled: {
+			color: p.textMuted,
 		},
 		continueButtonEnabled: {
 			backgroundColor: p.accent,

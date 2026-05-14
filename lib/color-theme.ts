@@ -9,10 +9,10 @@ import { useColorScheme as useSystemColorScheme } from 'react-native'
 export type ColorScheme = 'light' | 'dark'
 export type ColorSchemePreference = ColorScheme | 'system'
 
-const PREF_KEY = 'colorSchemePreference'
+export const COLOR_SCHEME_PREFERENCE_KEY = 'colorSchemePreference'
 
 function readPreferenceSync(): ColorSchemePreference {
-	const raw = getAppPreferenceSync(PREF_KEY)
+	const raw = getAppPreferenceSync(COLOR_SCHEME_PREFERENCE_KEY)
 	return raw === 'light' || raw === 'dark' ? raw : 'system'
 }
 
@@ -21,7 +21,7 @@ export function getColorSchemePreferenceSync(): ColorSchemePreference {
 }
 
 export function setColorSchemePreferenceSync(pref: ColorSchemePreference) {
-	setAppPreferenceSync(PREF_KEY, pref === 'system' ? null : pref)
+	setAppPreferenceSync(COLOR_SCHEME_PREFERENCE_KEY, pref === 'system' ? null : pref)
 }
 
 export function cycleColorSchemePreferenceSync() {
@@ -44,7 +44,7 @@ export function toggleColorSchemePreferenceSync(currentScheme: ColorScheme) {
 export function useColorSchemePreference(): ColorSchemePreference {
 	return useSyncExternalStore(
 		(listener) =>
-			subscribeToAppPreference(PREF_KEY, () => {
+			subscribeToAppPreference(COLOR_SCHEME_PREFERENCE_KEY, () => {
 				listener()
 			}),
 		readPreferenceSync,

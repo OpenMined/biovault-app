@@ -6,7 +6,7 @@ import { deferLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-lau
 import { identifyBioVaultWebUser } from '@/lib/rybbit-identify.web'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { warmupBioscriptRuntime } from '@/modules/expo-bioscript'
-import { omColors, omSpacing } from '@/styles/brand'
+import { omColors, omRadius, omSpacing } from '@/styles/brand'
 import { useFonts } from 'expo-font'
 import { Stack, usePathname, useRouter } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
@@ -27,8 +27,8 @@ installGlobalErrorHandler()
 applyGlobalBrandTypography()
 SplashScreen.preventAutoHideAsync().catch(() => {})
 
-/** TEMP: skip onboarding + disclaimer gate on web (remove when flow is web-ready). */
-const WEB_SKIPS_ONBOARDING = Platform.OS === 'web'
+/** Web uses a first-load agreement overlay instead of the native onboarding route. */
+const WEB_USES_FIRST_LOAD_AGREEMENT = Platform.OS === 'web'
 
 function RootNavigator() {
 	const pathname = usePathname()
@@ -37,19 +37,19 @@ function RootNavigator() {
 		() => Platform.OS !== 'web' || getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
 	)
 	const [completedOnboarding, setCompletedOnboarding] = useState(
-		() => WEB_SKIPS_ONBOARDING || getAppPreferenceSync('hasCompletedOnboarding') === 'true'
+		() => WEB_USES_FIRST_LOAD_AGREEMENT || getAppPreferenceSync('hasCompletedOnboarding') === 'true'
 	)
 	const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(
-		() => WEB_SKIPS_ONBOARDING || getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+		() => WEB_USES_FIRST_LOAD_AGREEMENT || getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
 	)
 	const canAccessApp = completedOnboarding && acceptedDisclaimer
 
 	useEffect(() => {
 		const unsubscribeCompleted = subscribeToAppPreference('hasCompletedOnboarding', (value) => {
-			setCompletedOnboarding(WEB_SKIPS_ONBOARDING || value === 'true')
+			setCompletedOnboarding(WEB_USES_FIRST_LOAD_AGREEMENT || value === 'true')
 		})
 		const unsubscribeDisclaimer = subscribeToAppPreference('hasAcceptedResearchDisclaimer', (value) => {
-			setAcceptedDisclaimer(WEB_SKIPS_ONBOARDING || value === 'true')
+			setAcceptedDisclaimer(WEB_USES_FIRST_LOAD_AGREEMENT || value === 'true')
 			if (Platform.OS === 'web') setWebAgreementAccepted(value === 'true')
 		})
 
@@ -220,12 +220,18 @@ const styles = StyleSheet.create({
 		flex: 1,
 		alignItems: 'center',
 		justifyContent: 'center',
-		padding: 0,
-		backgroundColor: 'rgba(23,22,29,0.74)',
+		padding: omSpacing.l,
+		backgroundColor: 'rgba(23,22,29,0.84)',
 	},
 	agreementFrame: {
-		flex: 1,
 		width: '100%',
-		padding: omSpacing.xl,
+		maxWidth: 560,
+		maxHeight: 'calc(100vh - 32px)' as any,
+		borderRadius: omRadius.l,
+		overflow: 'hidden',
+		backgroundColor: omColors.grayscale50,
+		...(Platform.OS === 'web'
+			? ({ boxShadow: '0 28px 80px rgba(0,0,0,0.36)' } as object)
+			: {}),
 	},
 })

@@ -11,8 +11,8 @@ type Props = {
 	chevronDirection?: 'down' | 'up'
 }
 
-const chevronDownUri = Asset.fromModule(require('../../assets/images/chevron-down.svg')).uri
-const chevronUpUri = Asset.fromModule(require('../../assets/images/chevron-up.svg')).uri
+const chevronDownUri = Asset.fromModule(require('../../assets/icons/chevron-down.svg')).uri
+const chevronUpUri = Asset.fromModule(require('../../assets/icons/chevron-up.svg')).uri
 
 export function ExploreActiveFileBar({
 	fileName,
