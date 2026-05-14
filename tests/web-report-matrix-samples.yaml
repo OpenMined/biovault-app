@@ -1,0 +1,88 @@
+# Browser report matrix samples. These are intentionally narrower than
+# exvitae/samples.yaml so PR CI covers representative browser/WASM paths quickly.
+defaults:
+  assertions:
+    observations:
+      min_rows: 1
+    reports:
+      min_rows: 1
+      require_status:
+        - complete
+        - partial
+
+samples:
+  - id: 23andme-v5-hu50B3F5
+    input_file: ../test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+    package_input_file: true
+    html_contains:
+      - PGx
+
+  - id: NA06985-vcf
+    input_file: ../test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+    input_index: ../test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+    input_format: vcf
+    package_input_file: true
+    html_contains:
+      - PGx
+    assertions:
+      observations:
+        min_rows: 1
+        rows:
+          - rsid: rs1128503
+            genotype_display: GG
+          - rsid: rs2231142
+            genotype_display: GT
+      reports:
+        min_rows: 1
+        require_status: complete
+        contains:
+          - path: analyses[].analysis_id
+            equals: apoe_epsilon
+          - path: analyses[].analysis_id
+            equals: mthfr_combined
+
+  - id: apol1-bam
+    input_file: ../exvitae/assays/risk/APOL1/test-data/apol1.bam
+    input_index: ../exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
+    reference_file: ../exvitae/assays/risk/APOL1/test-data/stub.fa
+    reference_index: ../exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+    package_manifest: ../exvitae/assays/risk/APOL1/APOL1.yaml
+    package_zip: ../exvitae/assays/risk/APOL1/APOL1.zip
+    package_input_file: true
+    package_url: https://local.biovault.test/assays/risk/APOL1/APOL1.yaml
+    package_label: APOL1 Risk Assay
+    html_contains:
+      - APOL1
+      - G0/G0
+    assertions:
+      reports:
+        min_rows: 1
+        require_status: complete
+        contains:
+          - path: analyses[].analysis_id
+            equals: apol1_status
+          - path: analyses[].rows[].apol1_status
+            equals: G0/G0
+
+  - id: apol1-cram
+    input_file: ../exvitae/assays/risk/APOL1/test-data/apol1.cram
+    input_index: ../exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+    reference_file: ../exvitae/assays/risk/APOL1/test-data/stub.fa
+    reference_index: ../exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+    package_manifest: ../exvitae/assays/risk/APOL1/APOL1.yaml
+    package_zip: ../exvitae/assays/risk/APOL1/APOL1.zip
+    package_input_file: true
+    package_url: https://local.biovault.test/assays/risk/APOL1/APOL1.yaml
+    package_label: APOL1 Risk Assay
+    html_contains:
+      - APOL1
+      - G0/G0
+    assertions:
+      reports:
+        min_rows: 1
+        require_status: complete
+        contains:
+          - path: analyses[].analysis_id
+            equals: apol1_status
+          - path: analyses[].rows[].apol1_status
+            equals: G0/G0

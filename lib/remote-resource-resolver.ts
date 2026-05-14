@@ -162,13 +162,7 @@ function getCachedRemotePackage(sourceUrl: string, artifactSha256: string | null
 			artifactUrl: repairNestedArtifactUrl(parsed.artifactUrl),
 			cachedAt: typeof parsed.cachedAt === 'string' ? parsed.cachedAt : new Date(0).toISOString(),
 			entrypoint: parsed.entrypoint,
-			files: Array.isArray(parsed.files)
-				? parsed.files.filter((file): file is BioscriptPackageFile =>
-						typeof file?.path === 'string' &&
-						typeof file?.contents === 'string' &&
-						typeof file?.source_url === 'string',
-					)
-				: undefined,
+			files: normalizePackageFiles(parsed.files),
 			name: parsed.name,
 			resourceUrls: parsed.resourceUrls.filter((url): url is string => typeof url === 'string'),
 			sourceUrl: parsed.sourceUrl,
@@ -203,13 +197,7 @@ export function listCachedRemotePackages(): CachedRemotePackage[] {
 				artifactUrl: repairNestedArtifactUrl(parsed.artifactUrl),
 				cachedAt: typeof parsed.cachedAt === 'string' ? parsed.cachedAt : new Date(0).toISOString(),
 				entrypoint: parsed.entrypoint,
-				files: Array.isArray(parsed.files)
-					? parsed.files.filter((file): file is BioscriptPackageFile =>
-							typeof file?.path === 'string' &&
-							typeof file?.contents === 'string' &&
-							typeof file?.source_url === 'string',
-						)
-					: undefined,
+				files: normalizePackageFiles(parsed.files),
 				name: parsed.name,
 				resourceUrls: parsed.resourceUrls.filter((url): url is string => typeof url === 'string'),
 				sourceUrl: parsed.sourceUrl,
@@ -221,10 +209,34 @@ export function listCachedRemotePackages(): CachedRemotePackage[] {
 	return packages
 }
 
+function normalizePackageFiles(files: unknown): BioscriptPackageFile[] | undefined {
+	if (!Array.isArray(files)) return undefined
+	const normalized = files.flatMap((file): BioscriptPackageFile[] => {
+		if (!file || typeof file !== 'object') return []
+		const record = file as { contents?: unknown; path?: unknown; source_url?: unknown; sourceUrl?: unknown }
+		const sourceUrl = typeof record.source_url === 'string'
+			? record.source_url
+			: typeof record.sourceUrl === 'string'
+				? record.sourceUrl
+				: null
+		if (typeof record.path !== 'string' || typeof record.contents !== 'string' || !sourceUrl) return []
+		return [{
+			contents: record.contents,
+			path: record.path,
+			source_url: sourceUrl,
+			sourceUrl,
+		}]
+	})
+	return normalized.length ? normalized : undefined
+}
+
 function putCachedRemotePackage(record: CachedRemotePackage): void {
 	if (!hasLocalStorage()) return
 	try {
-		globalThis.localStorage.setItem(packageCacheKey(record.sourceUrl, record.artifactSha256), JSON.stringify(record))
+		globalThis.localStorage.setItem(packageCacheKey(record.sourceUrl, record.artifactSha256), JSON.stringify({
+			...record,
+			files: normalizePackageFiles(record.files),
+		}))
 	} catch {
 		// Best-effort package metadata cache.
 	}

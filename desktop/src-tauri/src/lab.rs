@@ -284,7 +284,7 @@ fn run_assay_blocking(request: DesktopRunAssayRequest) -> Result<DesktopRunAssay
 fn run_variant_yaml_blocking(
     request: DesktopRunAssayRequest,
 ) -> Result<DesktopRunAssayResult, String> {
-    let RunVariantYamlResult { observations } = run_variant_yaml_request(RunVariantYamlRequest {
+    let RunVariantYamlResult { observations } = run_variant_yaml_request(&RunVariantYamlRequest {
         yaml_path: request.assay_path,
         genome_path: request.genome_path,
         input_format: Some(request.input_format),
@@ -540,7 +540,7 @@ mod tests {
         }
     }
 
-    fn input_index_path(repo: &PathBuf, genome: &ScenarioGenome) -> Option<String> {
+    fn input_index_path(repo: &std::path::Path, genome: &ScenarioGenome) -> Option<String> {
         match genome.kind.as_str() {
             "cram" | "vcf" => genome
                 .files
@@ -550,7 +550,7 @@ mod tests {
         }
     }
 
-    fn reference_path(repo: &PathBuf, genome: &ScenarioGenome) -> Option<String> {
+    fn reference_path(repo: &std::path::Path, genome: &ScenarioGenome) -> Option<String> {
         (genome.kind == "cram")
             .then(|| {
                 genome
@@ -561,7 +561,7 @@ mod tests {
             .flatten()
     }
 
-    fn reference_index_path(repo: &PathBuf, genome: &ScenarioGenome) -> Option<String> {
+    fn reference_index_path(repo: &std::path::Path, genome: &ScenarioGenome) -> Option<String> {
         (genome.kind == "cram")
             .then(|| {
                 genome
@@ -572,7 +572,7 @@ mod tests {
             .flatten()
     }
 
-    fn create_zip_fixture(source_path: &PathBuf, zip_path: &PathBuf) {
+    fn create_zip_fixture(source_path: &std::path::Path, zip_path: &std::path::Path) {
         let file = fs::File::create(zip_path).expect("create zip fixture");
         let mut zip = zip::ZipWriter::new(file);
         let options = zip::write::SimpleFileOptions::default();

@@ -31,6 +31,23 @@ export function missingFixture(files: string[]): string | undefined {
 	return files.find((file) => !fs.existsSync(file))
 }
 
+async function clickDialogControl(page: Page, dialogLabel: string, labels: string[]): Promise<boolean> {
+	const dialog = page.getByLabel(dialogLabel, { exact: true })
+	for (const label of labels) {
+		const byRole = dialog.getByRole('button', { name: label, exact: true })
+		if (await byRole.isVisible({ timeout: 250 }).catch(() => false)) {
+			await byRole.click({ force: true, timeout: 1_000 }).catch(() => undefined)
+			return true
+		}
+		const byText = dialog.getByText(label, { exact: true })
+		if (await byText.isVisible({ timeout: 250 }).catch(() => false)) {
+			await byText.click({ force: true, timeout: 1_000 }).catch(() => undefined)
+			return true
+		}
+	}
+	return false
+}
+
 export async function dismissDisclaimer(page: Page) {
 	const understand = page.getByText('I understand and want to continue', { exact: false })
 	if (await understand.isVisible().catch(() => false)) {
@@ -40,28 +57,31 @@ export async function dismissDisclaimer(page: Page) {
 }
 
 export async function dismissRememberFilesPrompt(page: Page) {
-	const notNow = page.getByText('Not now', { exact: true })
-	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-		await notNow.evaluate((element) => {
-			;(element as HTMLElement).click()
-		})
+	const dialog = page.getByLabel('Persistent file access dialog', { exact: true })
+	if (!(await dialog.isVisible({ timeout: 2_000 }).catch(() => false))) return
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		if (await clickDialogControl(page, 'Persistent file access dialog', ['Not now', 'Close dialog'])) {
+			await expect(dialog).toBeHidden({ timeout: 5_000 }).catch(() => undefined)
+			if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		}
+		await page.waitForTimeout(100)
 	}
+	await expect(dialog).toBeHidden({ timeout: 5_000 })
 }
 
 export async function dismissSharedResourcePrompt(page: Page) {
 	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
-	if (!(await dialog.isVisible({ timeout: 1_000 }).catch(() => false))) return
-	const ignore = dialog.getByRole('button', { name: 'Ignore' })
-	if (await ignore.isVisible({ timeout: 1_000 }).catch(() => false)) {
-		await ignore.evaluate((element) => {
-			;(element as HTMLElement).click()
-		})
-	} else {
-		await dialog.getByRole('button', { name: 'Close shared resource dialog' }).evaluate((element) => {
-			;(element as HTMLElement).click()
-		})
+	if (!(await dialog.isVisible({ timeout: 3_000 }).catch(() => false))) return
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		if (await clickDialogControl(page, 'Shared resource dialog', ['Ignore', 'Done', 'Close shared resource dialog'])) {
+			await expect(dialog).toBeHidden({ timeout: 5_000 }).catch(() => undefined)
+			if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		}
+		await page.waitForTimeout(100)
 	}
-	await expect(dialog).toBeHidden({ timeout: 10_000 })
+	await expect(dialog).toBeHidden({ timeout: 5_000 })
 }
 
 export async function gotoLab(page: Page) {
@@ -97,24 +117,28 @@ export async function importPgxReleaseFromUrl(page: Page) {
 		;(element as HTMLElement).click()
 	})
 	const fetchDependencies = dialog.getByRole('button', { name: /Fetch dependencies|Refetch dependencies/ })
-	if (await fetchDependencies.isVisible({ timeout: 30_000 }).catch(() => false)) {
+	await expect.poll(async () => {
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return 'closed'
+		if (await fetchDependencies.isVisible({ timeout: 250 }).catch(() => false)) return 'dependencies'
+		if (await dialog.getByRole('button', { name: 'Retry fetch', exact: true }).isVisible({ timeout: 250 }).catch(() => false)) return 'error'
+		return 'pending'
+	}, { timeout: 90_000 }).not.toBe('pending')
+
+	if (await fetchDependencies.isVisible({ timeout: 250 }).catch(() => false)) {
 		await fetchDependencies.evaluate((element) => {
 			;(element as HTMLElement).click()
 		})
 		await expect(dialog.getByText(/33 dependency files fetched for this session\./)).toBeVisible({ timeout: 60_000 })
 	}
+	if (await dialog.getByRole('button', { name: 'Retry fetch', exact: true }).isVisible({ timeout: 250 }).catch(() => false)) {
+		const message = await dialog.locator('text=/./').allTextContents().catch(() => [])
+		throw new Error(`PGx release import failed: ${message.join(' ').trim()}`)
+	}
 	const done = dialog.getByText('Done', { exact: true }).first()
 	if (await done.isVisible({ timeout: 1_000 }).catch(() => false)) {
-		await done.evaluate((element) => {
-			;(element as HTMLElement).click()
-		})
+		await clickDialogControl(page, 'Shared resource dialog', ['Done'])
 	} else {
-		const closeSharedResource = dialog.getByRole('button', { name: 'Close shared resource dialog' })
-		if (await closeSharedResource.isVisible({ timeout: 1_000 }).catch(() => false)) {
-			await closeSharedResource.evaluate((element) => {
-				;(element as HTMLElement).click()
-			})
-		}
+		await clickDialogControl(page, 'Shared resource dialog', ['Close shared resource dialog', 'Ignore'])
 	}
 	await expect(dialog).toBeHidden({ timeout: 10_000 })
 	await page.evaluate(() => {
@@ -122,6 +146,44 @@ export async function importPgxReleaseFromUrl(page: Page) {
 	})
 	await dismissSharedResourcePrompt(page)
 	await dismissRememberFilesPrompt(page)
+}
+
+export async function waitForAssayRegistryPanel(page: Page, title = 'PGx-1 Panel') {
+	await expect.poll(async () => page.evaluate(async (panelTitle) => {
+		for (let index = 0; index < localStorage.length; index += 1) {
+			const key = localStorage.key(index)
+			if (!key?.startsWith('biovault-remote-package:')) continue
+			try {
+				const parsed = JSON.parse(localStorage.getItem(key) ?? '{}') as { files?: unknown[]; name?: string }
+				if (parsed.name === 'pgx-1' && Boolean(parsed.files?.length)) return true
+			} catch {
+				// Ignore unrelated localStorage values.
+			}
+		}
+
+		const db = await new Promise<IDBDatabase>((resolve, reject) => {
+			const req = indexedDB.open('biovault-assay-registry', 1)
+			req.onupgradeneeded = () => {
+				const db = req.result
+				if (!db.objectStoreNames.contains('panels')) db.createObjectStore('panels', { keyPath: 'id' })
+				if (!db.objectStoreNames.contains('assays')) db.createObjectStore('assays', { keyPath: 'id' })
+			}
+			req.onsuccess = () => resolve(req.result)
+			req.onerror = () => reject(req.error ?? new Error('failed to open assay registry'))
+		})
+		try {
+			if (!db.objectStoreNames.contains('panels')) return false
+			const panels = await new Promise<Array<{ title?: string; entrypoint?: string; files?: unknown[] }>>((resolve, reject) => {
+				const tx = db.transaction('panels', 'readonly')
+				const req = tx.objectStore('panels').getAll()
+				req.onsuccess = () => resolve(req.result)
+				req.onerror = () => reject(req.error ?? new Error('failed to read assay registry panels'))
+			})
+			return panels.some((panel) => panel.title === panelTitle && Boolean(panel.entrypoint) && Boolean(panel.files?.length))
+		} finally {
+			db.close()
+		}
+	}, title), { timeout: 30_000 }).toBe(true)
 }
 
 export async function chooseGenomeFiles(page: Page, files: string | string[]) {

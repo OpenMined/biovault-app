@@ -233,19 +233,8 @@ function buildAggregatePropertyTotals(eventPropertiesByName) {
 }
 
 async function fetchDailyOverview(config, minutes) {
-	console.error(`Fetching ${config.label} daily overview`)
-	try {
-		const bucketed = await rybbitGet(config, `/sites/${config.siteId}/overview-bucketed`, {
-			past_minutes_start: String(minutes),
-			past_minutes_end: '0',
-			bucket: 'day',
-		})
-		return trimLeadingEmptyDailyRows(dailyOverviewRows(bucketed))
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		console.error(`Daily bucketed overview failed for ${config.label}; falling back to rolling daily windows: ${message}`)
-		return fetchRollingDailyOverview(config, minutes)
-	}
+	console.error(`Fetching ${config.label} daily overview with rolling daily windows`)
+	return fetchRollingDailyOverview(config, minutes)
 }
 
 async function fetchRollingDailyOverview(config, minutes) {

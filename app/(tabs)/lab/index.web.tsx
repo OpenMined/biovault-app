@@ -2055,9 +2055,7 @@ export default function LabScreen() {
 				const pkg = await resolveRemotePackage(intent.url)
 				if (!isCurrentRemoteIntent()) return
 				addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
-				void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
-					console.warn('[lab] registry upsert (url package) failed', err),
-				)
+				await registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null })
 				const entrypointResource =
 					pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
 					pkg.resources[0]
@@ -6364,20 +6362,14 @@ function makeStyles(p: LabPalette) {
 		},
 		gettingStartedHeroGrid: {
 			alignSelf: 'stretch',
-			flexDirection: 'row',
-			alignItems: 'flex-start',
-			columnGap: LAB_GETTING_STARTED_SECTION_GAP,
+			flexDirection: 'column',
+			alignItems: 'stretch',
 			rowGap: LAB_GETTING_STARTED_SECTION_GAP,
-			flexWrap: 'wrap',
 			flexGrow: 0,
 		},
 		gettingStartedPrimaryColumn: {
-			flexGrow: 0.9,
-			flexShrink: 1,
-			flexBasis: 500,
-			minWidth: 360,
+			alignSelf: 'stretch',
 			gap: omSpacing.l,
-			justifyContent: 'center',
 		},
 		gettingStartedIntroBlock: {
 			gap: 8,
@@ -6502,10 +6494,9 @@ function makeStyles(p: LabPalette) {
 			lineHeight: 18,
 		},
 		gettingStartedVideoBlock: {
-			flexGrow: 1.6,
-			flexShrink: 1,
-			flexBasis: 620,
-			minWidth: 480,
+			alignSelf: 'stretch',
+			width: '100%',
+			maxWidth: 960,
 			gap: 0,
 			padding: 0,
 			borderRadius: 0,

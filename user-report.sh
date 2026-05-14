@@ -3,7 +3,7 @@ set -euo pipefail
 
 SITES="dev,prod"
 MINUTES="43200"
-EVENT_LIMIT="10000"
+EVENT_LIMIT="50000"
 USE_CACHE=0
 
 usage() {
@@ -13,7 +13,7 @@ Usage: ./user-report.sh [--dev | --prod] [--minutes N] [--event-limit N] [--use-
 Defaults:
   sites:       dev and prod in one per-user HTML report
   minutes:     43200 (30 days)
-  event limit: 10000 raw events per site
+  event limit: 50000 raw events per site
 
 Examples:
   ./user-report.sh

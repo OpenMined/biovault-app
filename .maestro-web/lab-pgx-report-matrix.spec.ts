@@ -14,6 +14,12 @@ type SampleCase = {
 	id: string
 	sourceFile: string
 	inputFiles: string[]
+	packageManifest?: string
+	packageZip: string
+	packageUrl: string
+	packageInputFile: boolean
+	packageLabel: string
+	htmlContains: string[]
 	assertions: {
 		observationMinRows: number
 		reportMinRows: number
@@ -56,10 +62,30 @@ function loadSampleCases(config: ReportMatrixConfig): SampleCase[] {
 				.map((key) => sample[key])
 				.filter(Boolean)
 				.map((value) => resolvePath(String(value), path.dirname(sourceFile)))
+			const packageZip = sample.package_zip
+				? resolvePath(String(sample.package_zip), path.dirname(sourceFile))
+				: resolvePath(config.packageZip)
+			const packageManifest = sample.package_manifest
+				? resolvePath(String(sample.package_manifest), path.dirname(sourceFile))
+				: config.assayManifest
+					? resolvePath(config.assayManifest)
+					: undefined
+			const packageUrl = String(sample.package_url ?? config.packageUrl)
+			const packageInputFile = sample.package_input_file === true
+			const packageLabel = String(sample.package_label ?? 'PGx-1 Panel')
+			const htmlContains = Array.isArray(sample.html_contains)
+				? sample.html_contains.map(String)
+				: config.htmlContains ?? []
 			cases.push({
 				id,
 				sourceFile,
 				inputFiles: [inputFile, ...optionalFiles],
+				packageManifest,
+				packageZip,
+				packageUrl,
+				packageInputFile,
+				packageLabel,
+				htmlContains,
 				assertions: mergedAssertions(defaults.assertions, sample.assertions, config),
 			})
 		}
@@ -96,16 +122,49 @@ async function dismissDisclaimer(page: Page) {
 }
 
 async function dismissRememberFilesPrompt(page: Page) {
-	const notNow = page.getByText('Not now', { exact: true })
-	if (await notNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-		await notNow.click()
+	const dialog = page.getByLabel('Persistent file access dialog', { exact: true })
+	if (!(await dialog.isVisible({ timeout: 2_000 }).catch(() => false))) return
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		const notNow = dialog.getByText('Not now', { exact: true })
+		if (await notNow.isVisible({ timeout: 250 }).catch(() => false)) {
+			await notNow.evaluate((element) => {
+				;(element as HTMLElement).click()
+			})
+		} else {
+			const close = dialog.getByRole('button', { name: 'Close dialog', exact: true })
+			if (await close.isVisible({ timeout: 250 }).catch(() => false)) {
+				await close.evaluate((element) => {
+					;(element as HTMLElement).click()
+				})
+			}
+		}
+		await expect(dialog).toBeHidden({ timeout: 2_000 }).catch(() => undefined)
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		await page.waitForTimeout(100)
 	}
+	await expect(dialog).toBeHidden({ timeout: 5_000 })
 }
 
-async function routePgxPackageZipToLocalFile(page: Page, config: ReportMatrixConfig) {
-	const packageZip = resolvePath(config.packageZip)
-	await page.route(config.packageUrl, async (route) => {
-		await route.fulfill({ body: fs.readFileSync(packageZip), contentType: 'application/zip' })
+async function routePackageZipToLocalFile(page: Page, caseDef: SampleCase) {
+	await page.route(caseDef.packageUrl, async (route) => {
+		if (caseDef.packageManifest) {
+			await route.fulfill({ body: fs.readFileSync(caseDef.packageManifest), contentType: 'application/yaml' })
+			return
+		}
+		await route.fulfill({ body: fs.readFileSync(caseDef.packageZip), contentType: 'application/zip' })
+	})
+	if (caseDef.packageManifest) {
+		await page.route(`**/${path.basename(caseDef.packageManifest)}`, async (route) => {
+			await route.fulfill({ body: fs.readFileSync(caseDef.packageManifest!), contentType: 'application/yaml' })
+		})
+	}
+	const artifactUrl = new URL(path.basename(caseDef.packageZip), caseDef.packageUrl).toString()
+	await page.route(artifactUrl, async (route) => {
+		await route.fulfill({ body: fs.readFileSync(caseDef.packageZip), contentType: 'application/zip' })
+	})
+	await page.route(`**/${path.basename(caseDef.packageZip)}`, async (route) => {
+		await route.fulfill({ body: fs.readFileSync(caseDef.packageZip), contentType: 'application/zip' })
 	})
 }
 
@@ -152,27 +211,70 @@ function mimeTypeFor(file: string): string {
 	return 'application/octet-stream'
 }
 
-async function loadPgxPackageZipFromUrl(page: Page, config: ReportMatrixConfig) {
+async function loadPackageZipFromUrl(page: Page, caseDef: SampleCase) {
 	await page.evaluate((url) => {
 		window.location.hash = `url=${encodeURIComponent(url)}`
-	}, config.packageUrl)
-	await expect(page.getByText(/Fetch this URL\?|Load this file URL\?/)).toBeVisible({ timeout: 30_000 })
-	const loadAction = page.getByText(/Fetch URL|Load file/, { exact: true })
+	}, caseDef.packageUrl)
+	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
+	await expect(dialog.getByText(/Fetch this URL\?|Load this file URL\?/)).toBeVisible({ timeout: 30_000 })
+	const loadAction = dialog.getByRole('button', { name: /Fetch URL|Load file/ })
 	await expect(loadAction).toBeVisible({ timeout: 30_000 })
-	await loadAction.click()
-	await expect(page.getByText(/33 fetched variants ready\.|PGx-1 Panel/).first()).toBeVisible({ timeout: 60_000 })
-	const done = page.getByText('Done', { exact: true }).first()
+	await loadAction.evaluate((element) => {
+		;(element as HTMLElement).click()
+	})
+	const fetchDependencies = dialog.getByRole('button', { name: /Fetch dependencies|Refetch dependencies/ })
+	await expect.poll(async () => {
+		if (await fetchDependencies.isVisible({ timeout: 250 }).catch(() => false)) return 'dependencies'
+		if (await page.getByText(caseDef.packageLabel, { exact: true }).first().isVisible({ timeout: 250 }).catch(() => false)) return 'ready'
+		if (await dialog.getByRole('button', { name: 'Retry fetch', exact: true }).isVisible({ timeout: 250 }).catch(() => false)) return 'error'
+		return 'pending'
+	}, { timeout: 90_000 }).not.toBe('pending')
+	if (await fetchDependencies.isVisible({ timeout: 250 }).catch(() => false)) {
+		await fetchDependencies.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+		await expect.poll(async () => (
+			await page.getByText(caseDef.packageLabel, { exact: true }).first().isVisible({ timeout: 250 }).catch(() => false)
+		), { timeout: 90_000 }).toBe(true)
+	}
+	if (await dialog.getByRole('button', { name: 'Retry fetch', exact: true }).isVisible({ timeout: 250 }).catch(() => false)) {
+		const message = await dialog.locator('text=/./').allTextContents().catch(() => [])
+		throw new Error(`Package import failed: ${message.join(' ').trim()}`)
+	}
+	await expect(page.getByText(caseDef.packageLabel, { exact: true }).first()).toBeVisible({ timeout: 60_000 })
+	const done = dialog.getByText('Done', { exact: true }).first()
 	if (await done.isVisible({ timeout: 10_000 }).catch(() => false)) {
-		await done.click()
+		await done.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 	}
 }
 
-async function runPgxAndOpenResult(page: Page) {
+async function runPackageAndOpenResult(page: Page, caseDef: SampleCase) {
 	const resultTimeout = Number(process.env.WEB_REPORT_RESULT_TIMEOUT_MS ?? 600_000)
-	await expect(page.getByText('PGx-1 Panel', { exact: true }).first()).toBeVisible({ timeout: 60_000 })
-	const runButton = page.getByText(/Run panel|Run assay/, { exact: true }).first()
+	const allFilter = page.getByText('All', { exact: true }).first()
+	if (await allFilter.isVisible({ timeout: 2_000 }).catch(() => false)) {
+		await allFilter.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+	}
+	const packageRow = page.getByTestId('assay-result-row').filter({ hasText: caseDef.packageLabel }).last()
+	await expect(packageRow).toBeVisible({ timeout: 60_000 })
+	let runButton = page.getByRole('button', { name: `Run ${caseDef.packageLabel}`, exact: true }).first()
+	if (!(await runButton.isVisible({ timeout: 1_000 }).catch(() => false))) {
+		const downloadButton = page.getByRole('button', { name: `Download ${caseDef.packageLabel}`, exact: true }).first()
+		await expect(downloadButton).toBeVisible({ timeout: 30_000 })
+		await downloadButton.evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
+		await dismissRememberFilesPrompt(page)
+		runButton = page.getByRole('button', { name: `Run ${caseDef.packageLabel}`, exact: true }).first()
+	}
 	await expect(runButton).toBeVisible({ timeout: 60_000 })
-	await runButton.click()
+	await dismissRememberFilesPrompt(page)
+	await runButton.evaluate((element) => {
+		;(element as HTMLElement).click()
+	})
 	await expect(page.getByText('Latest result')).toBeVisible({ timeout: resultTimeout })
 	await expect(async () => {
 		const bodyText = await page.locator('body').innerText({ timeout: 10_000 })
@@ -183,13 +285,18 @@ async function runPgxAndOpenResult(page: Page) {
 		timeout: resultTimeout,
 		intervals: [1_000, 3_000, 5_000, 10_000],
 	})
-	await page.getByText('View result', { exact: true }).click()
+	const viewResult = page.getByText('View result', { exact: true })
+	await expect(viewResult).toBeVisible({ timeout: 30_000 })
+	await dismissRememberFilesPrompt(page)
+	await viewResult.evaluate((element) => {
+		;(element as HTMLElement).click()
+	})
 	await expect(page.getByText('ARTIFACTS', { exact: true })).toBeVisible({ timeout: 30_000 })
 }
 
 async function expectLoadedGenome(page: Page, filePath: string) {
 	const name = path.basename(filePath)
-	await expect(page.getByText('LOADED GENOME', { exact: true })).toBeVisible({ timeout: 60_000 })
+	await expect(page.getByTestId('session-genome-row').filter({ hasText: name })).toBeVisible({ timeout: 60_000 })
 	await expect(page.getByText(name, { exact: true }).last()).toBeVisible({ timeout: 60_000 })
 	await expect(page.getByText('Genome complete', { exact: true })).toBeVisible({ timeout: 60_000 })
 }
@@ -343,16 +450,25 @@ const scenario = webReportMatrixScenarios.find((item) => item.id === DEFAULT_SCE
 test.skip(!scenario?.reportMatrix, `missing scenario: ${DEFAULT_SCENARIO_ID}`)
 
 const config = scenario?.reportMatrix
-const cases = config ? loadSampleCases(config) : []
+const selectedCaseIds = new Set(
+	(process.env.WEB_REPORT_SAMPLE_IDS ?? '')
+		.split(',')
+		.map((value) => value.trim())
+		.filter(Boolean),
+)
+const cases = config
+	? loadSampleCases(config).filter((caseDef) => !selectedCaseIds.size || selectedCaseIds.has(caseDef.id))
+	: []
 
-test.describe('lab PGx-1 report matrix — web scenario', () => {
+test.describe('lab report matrix — web scenario', () => {
 	for (const caseDef of cases) {
 		test(`${caseDef.id} via browser file input`, async ({ page }, testInfo) => {
 			testInfo.setTimeout(caseTimeoutFor(caseDef))
 			const missing = caseDef.inputFiles.find((file) => !fs.existsSync(file))
 			test.skip(Boolean(missing), `missing fixture: ${missing}`)
 			const maxBytes = Number(process.env.WEB_REPORT_MAX_DRAG_BYTES ?? config?.maxDragBytes ?? 268_435_456)
-			const totalBytes = bytesForFiles(caseDef.inputFiles)
+			const labInputFiles = caseDef.packageInputFile ? [...caseDef.inputFiles, caseDef.packageZip] : caseDef.inputFiles
+			const totalBytes = bytesForFiles(labInputFiles)
 			const useDragDrop = totalBytes <= maxBytes
 
 			const errors: string[] = []
@@ -361,27 +477,29 @@ test.describe('lab PGx-1 report matrix — web scenario', () => {
 				if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`)
 			})
 
-			test.skip(!fs.existsSync(resolvePath(config!.packageZip)), `missing PGx package zip: ${config!.packageZip}`)
-			await routePgxPackageZipToLocalFile(page, config!)
+			test.skip(!fs.existsSync(caseDef.packageZip), `missing package zip: ${caseDef.packageZip}`)
+			await routePackageZipToLocalFile(page, caseDef)
 			await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
 			await dismissDisclaimer(page)
 			await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
 			await expect(page.getByText('Import genome', { exact: true })).toBeVisible({ timeout: 30_000 })
 			if (useDragDrop) {
-				await dragFilesIntoLab(page, caseDef.inputFiles)
+				await dragFilesIntoLab(page, labInputFiles)
 			} else {
-				await chooseFilesIntoLab(page, caseDef.inputFiles)
+				await chooseFilesIntoLab(page, labInputFiles)
 			}
 			await expectLoadedGenome(page, caseDef.inputFiles[0])
-			await loadPgxPackageZipFromUrl(page, config!)
-			await runPgxAndOpenResult(page)
+			if (!caseDef.packageInputFile) {
+				await loadPackageZipFromUrl(page, caseDef)
+			}
+			await runPackageAndOpenResult(page, caseDef)
 
 			const requiredArtifacts = config?.requireArtifacts ?? ['observations.tsv', 'analysis.jsonl', 'reports.jsonl', 'index.html']
 			for (const artifact of requiredArtifacts) {
 				await expect(page.getByRole('link', { name: artifact })).toBeVisible()
 			}
 			const reportFrame = page.frameLocator('iframe[title="index.html"]')
-			for (const expected of config?.htmlContains ?? []) {
+			for (const expected of caseDef.htmlContains) {
 				await expect(reportFrame.getByText(expected, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
 			}
 			await expectReportScrollsAndDisplays(page, caseDef.id, testInfo)
