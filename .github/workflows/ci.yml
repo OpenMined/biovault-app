@@ -141,6 +141,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [import, assays, state]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -204,13 +208,13 @@ jobs:
         run: npm run check:bioscript-boundary
 
       - name: Run web tests
-        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 ./test-web.sh
+        run: ./test-web-core.sh --core-${{ matrix.chunk }}
 
       - name: Upload web artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: web-core-artifacts
+          name: web-core-${{ matrix.chunk }}-artifacts
           path: |
             .maestro-web/screenshots
             test-results

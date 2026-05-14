@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import { parse } from 'yaml'
+import { dragFilesIntoLab } from './lab-test-helpers'
 
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:8081'
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -73,15 +74,7 @@ test('lab: PGx-1 package runs against default 23andMe ZIP in browser', async ({ 
 	await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
 	await expect(page.getByText('Import genome', { exact: true })).toBeVisible({ timeout: 30_000 })
 
-	const [chooser] = await Promise.all([
-		page.waitForEvent('filechooser'),
-		(async () => {
-			await page.getByText('Import genome', { exact: true }).click()
-			await page.getByLabel('Choose genome files').click()
-		})(),
-	])
-	await chooser.setFiles(GENOME_23ANDME)
-	await dismissRememberFilesPrompt(page)
+	await dragFilesIntoLab(page, [GENOME_23ANDME])
 	await expect(page.getByText('Genome complete').first()).toBeVisible({ timeout: 30_000 })
 
 	await expect(page.getByText('PGx-1 Panel', { exact: true }).first()).toBeVisible({ timeout: 30_000 })

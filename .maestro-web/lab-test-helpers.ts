@@ -187,18 +187,7 @@ export async function waitForAssayRegistryPanel(page: Page, title = 'PGx-1 Panel
 }
 
 export async function chooseGenomeFiles(page: Page, files: string | string[]) {
-	const importDialog = page.getByLabel('Import genome dialog')
-	const [chooser] = await Promise.all([
-		page.waitForEvent('filechooser'),
-		(async () => {
-			if (!(await importDialog.isVisible({ timeout: 500 }).catch(() => false))) {
-				await page.getByText('Import genome', { exact: true }).click()
-			}
-			await page.getByLabel('Choose genome files').click()
-		})(),
-	])
-	await chooser.setFiles(files)
-	await dismissRememberFilesPrompt(page)
+	await dragFilesIntoLab(page, Array.isArray(files) ? files : [files])
 }
 
 export async function dragFilesIntoLab(page: Page, files: string[]) {
