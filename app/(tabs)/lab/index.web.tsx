@@ -6417,9 +6417,9 @@ function makeStyles(p: LabPalette) {
 		},
 		tryNowBlock: {
 			alignSelf: 'stretch',
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.l,
+			flexDirection: 'column',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
 			minHeight: 0,
 			paddingVertical: 0,
 			paddingHorizontal: 0,
@@ -6446,7 +6446,7 @@ function makeStyles(p: LabPalette) {
 			maxWidth: 560,
 		},
 		tryNowButton: {
-			alignSelf: 'center',
+			alignSelf: 'flex-start',
 			marginTop: 0,
 			minHeight: 38,
 			paddingHorizontal: omSpacing.m,
