@@ -121,7 +121,8 @@ export type BioscriptRemoteResourceResolution = {
 export type BioscriptPackageFile = {
 	contents: string
 	path: string
-	source_url: string
+	source_url?: string
+	sourceUrl?: string
 }
 
 export type BioscriptPackageResource = {

@@ -665,6 +665,21 @@ function resourceRegistryId(resource: ResolvedRemoteResource): string {
 	return resource.sha256.slice(0, 16)
 }
 
+function packageFileSourceUrl(file: BioscriptPackageFile): string | null {
+	const value = (file as BioscriptPackageFile & { sourceUrl?: unknown; source_url?: unknown }).sourceUrl ??
+		(file as BioscriptPackageFile & { sourceUrl?: unknown; source_url?: unknown }).source_url
+	return typeof value === 'string' && value.length ? value : null
+}
+
+function packageEntrypointForSelectedAssay(
+	assay: LabAssay,
+	defaultEntrypoint: string,
+	files: BioscriptPackageFile[] | undefined | null,
+): string {
+	if (!isSessionLabAssay(assay) || assay.remoteKind !== 'assay' || !files?.length) return defaultEntrypoint
+	return files.find((file) => packageFileSourceUrl(file) === assay.url)?.path ?? defaultEntrypoint
+}
+
 async function registerPackageWithRegistry(
 	pkg: { resources: ResolvedRemoteResource[]; entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
 	origin: RegistryOrigin,
@@ -704,7 +719,7 @@ async function registerPackageWithRegistry(
 	for (const assay of assayResources) {
 		const assayId = resourceRegistryId(assay)
 		const isMember = panelId !== null && memberAssayIds.has(assayId)
-		const pathInPackage = pkg.files.find((f) => f.source_url === assay.sourceUrl)?.path ?? null
+		const pathInPackage = pkg.files.find((file) => packageFileSourceUrl(file) === assay.sourceUrl)?.path ?? null
 		await registryUpsertAssay({
 			id: assayId,
 			version: assay.version ?? null,
@@ -1116,6 +1131,7 @@ export default function LabScreen() {
 			.filter((resource) => resource.kind === 'panel' || resource.kind === 'assay' || resource.kind === 'variant' || resource.kind === 'python')
 			.map((resource): SessionLabAssay => {
 				const language = resource.kind === 'python' ? 'python' : 'yaml'
+				const pathInPackage = packageInfo?.files.find((file) => packageFileSourceUrl(file) === resource.sourceUrl)?.path
 				return {
 					id: `remote-${resource.sha256.slice(0, 16)}`,
 					title: resource.title,
@@ -1135,7 +1151,7 @@ export default function LabScreen() {
 						type: language === 'python' ? 'text/x-python' : 'application/yaml',
 					}),
 					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
-					packageEntrypoint: packageInfo?.entrypoint,
+					packageEntrypoint: resource.kind === 'assay' && pathInPackage ? pathInPackage : packageInfo?.entrypoint,
 					packageFiles: packageInfo?.files,
 					packageSourceUrl: packageInfo?.sourceUrl,
 					remoteKind: resource.kind,
@@ -2039,9 +2055,7 @@ export default function LabScreen() {
 				const pkg = await resolveRemotePackage(intent.url)
 				if (!isCurrentRemoteIntent()) return
 				addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
-				void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
-					console.warn('[lab] registry upsert (url package) failed', err),
-				)
+				await registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null })
 				const entrypointResource =
 					pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
 					pkg.resources[0]
@@ -2297,6 +2311,9 @@ export default function LabScreen() {
 				const session = isSessionLabAssay(catalogAssay) ? catalogAssay : null
 				let packageEntrypoint = session?.packageEntrypoint
 				let packageFiles = session?.packageFiles
+				if (packageEntrypoint) {
+					packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, packageEntrypoint, packageFiles)
+				}
 				// First try the registry — for an assay that's a panel member, the
 				// parent panel's files are the authoritative bundle for the runner.
 				if ((!packageFiles?.length || !packageEntrypoint) && session?.registryId) {
@@ -2305,7 +2322,7 @@ export default function LabScreen() {
 						try {
 							const bundle = await resolvePackageForRun(kind, session.registryId)
 							if (bundle) {
-								packageEntrypoint = bundle.entrypoint
+								packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, bundle.entrypoint, bundle.files)
 								packageFiles = bundle.files
 							}
 						} catch (err) {
@@ -2331,7 +2348,7 @@ export default function LabScreen() {
 						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 							console.warn('[lab] registry upsert (replace synthetic package) failed', err),
 						)
-						packageEntrypoint = pkg.entrypoint
+						packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files)
 						packageFiles = pkg.files
 					} catch (resolveError) {
 						console.warn('[lab] replace synthetic package failed', resolveError)
@@ -2344,7 +2361,7 @@ export default function LabScreen() {
 						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 							console.warn('[lab] registry upsert (auto-resolve) failed', err),
 						)
-						packageEntrypoint = pkg.entrypoint
+						packageEntrypoint = packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files)
 						packageFiles = pkg.files
 					} catch (resolveError) {
 						console.warn('[lab] auto-resolve package failed', resolveError)
@@ -2403,7 +2420,7 @@ export default function LabScreen() {
 									)
 									return runLabPackageReportRef(
 										genomeForRun,
-										pkg.entrypoint,
+										packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files),
 										pkg.files,
 										fileAdapterRef.current,
 										onProgress,
@@ -2423,7 +2440,7 @@ export default function LabScreen() {
 									)
 									return runLabPackageReportRef(
 										genomeForRun,
-										pkg.entrypoint,
+										packageEntrypointForSelectedAssay(catalogAssay, pkg.entrypoint, pkg.files),
 										pkg.files,
 										fileAdapterRef.current,
 										onProgress,
@@ -3173,7 +3190,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3205,7 +3222,7 @@ function RemoteIntentCard({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3219,7 +3236,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						onPress={onFetch}
 						disabled={busy}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentPrimaryButton,
 							hovered && !busy && styles.buttonHover,
 							pressed && !busy && styles.buttonPressed,
@@ -3255,7 +3272,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3276,7 +3293,7 @@ function RemoteIntentCard({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentPrimaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3314,7 +3331,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						accessibilityLabel="Close shared resource dialog"
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3387,7 +3404,7 @@ function RemoteIntentCard({
 						accessibilityRole="button"
 						onPress={onDismiss}
 						disabled={resolvingDeps}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && !resolvingDeps && styles.buttonHover,
 							pressed && !resolvingDeps && styles.buttonPressed,
@@ -3402,7 +3419,7 @@ function RemoteIntentCard({
 							accessibilityRole="button"
 							onPress={onResolveDependencies}
 							disabled={resolvingDeps}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentPrimaryButton,
 								hovered && !resolvingDeps && styles.buttonHover,
 								pressed && !resolvingDeps && styles.buttonPressed,
@@ -3474,7 +3491,7 @@ function PersistentHandlePrompt({
 					</View>
 					<Pressable
 						onPress={onDismiss}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3503,7 +3520,7 @@ function PersistentHandlePrompt({
 					<View style={styles.intentActions}>
 						<Pressable
 							onPress={onDismiss}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentSecondaryButton,
 								hovered && styles.buttonHover,
 								pressed && styles.buttonPressed,
@@ -3515,7 +3532,7 @@ function PersistentHandlePrompt({
 						</Pressable>
 						<Pressable
 							onPress={onSave}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentPrimaryButton,
 								hovered && styles.buttonHover,
 								pressed && styles.buttonPressed,
@@ -3593,7 +3610,7 @@ function ImportGenomeModal({
 					</View>
 					<Pressable
 						onPress={onClose}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -3605,7 +3622,7 @@ function ImportGenomeModal({
 
 				<Pressable
 					onPress={onChooseGenomeFiles}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						styles.importGenomeDropArea,
 						dragActive ? styles.importGenomeDropAreaActive : null,
 						hovered && styles.buttonHover,
@@ -3989,7 +4006,7 @@ function ImportGenomeButton({ dragActive, onPress }: { dragActive: boolean; onPr
 	return (
 		<Pressable
 			onPress={onPress}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.explorerDropPanel,
 				dragActive ? styles.explorerDropPanelActive : null,
 				hovered && styles.buttonHover,
@@ -4086,7 +4103,7 @@ function UrlLoadBox({
 				<Pressable
 					onPress={() => onLoadUrl(urlInput)}
 					disabled={!urlInput.trim()}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						loadButtonStyles,
 						hovered && hasUrl && styles.buttonHover,
 						pressed && hasUrl && styles.buttonPressed,
@@ -4119,7 +4136,7 @@ function UrlLoadBox({
 					</OMText>
 					<Pressable
 						onPress={onCopyShareUrl}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							narrow ? styles.urlShareButtonSidebar : null,
 							hovered && styles.buttonHover,
@@ -4168,7 +4185,7 @@ function GenomeSlotStrip({
 					<Pressable
 						accessibilityRole="button"
 						onPress={() => onGenerateIndexes?.()}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.slotGenerateButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -4330,7 +4347,7 @@ function AssayPicker({
 									event.stopPropagation?.()
 									void onForgetRemoteAssay(assay)
 								}}
-								style={({ hovered, pressed }) => [
+								style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 									styles.assayGhostAction,
 									hovered && styles.buttonHover,
 									pressed && styles.buttonPressed,
@@ -4356,7 +4373,7 @@ function AssayPicker({
 									onRun(assay)
 								}
 							}}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								!disabled || isRunning ? styles.pickerAction : styles.pickerActionMuted,
 								hovered && !disabled && styles.buttonHover,
 								pressed && !disabled && styles.buttonPressed,
@@ -4418,7 +4435,7 @@ function AssayPicker({
 						accessibilityLabel="Import assay from URL"
 						accessibilityRole="button"
 						onPress={() => onImportUrl(trimmedQuery)}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.searchImportButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -4432,7 +4449,7 @@ function AssayPicker({
 				) : query ? (
 					<Pressable
 						onPress={() => onQueryChange('')}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.clearBtn,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -4575,7 +4592,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 					<Pressable
 						accessibilityRole="button"
 						onPress={openResult}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.textButton,
 							styles.resultPrimaryButton,
 							hovered && styles.buttonHover,
@@ -4590,7 +4607,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 				<Pressable
 					accessibilityRole="button"
 					onPress={onViewSource}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						styles.textButton,
 						hovered && styles.buttonHover,
 						pressed && styles.buttonPressed,
@@ -5174,7 +5191,7 @@ function VcfIndexPrompt({
 						accessibilityLabel="Cancel index generation"
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5195,7 +5212,7 @@ function VcfIndexPrompt({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5209,7 +5226,7 @@ function VcfIndexPrompt({
 						accessibilityRole="button"
 						onPress={onConfirm}
 						disabled={busy}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentPrimaryButton,
 							hovered && !busy && styles.buttonHover,
 							pressed && !busy && styles.buttonPressed,
@@ -5266,7 +5283,7 @@ function AlignmentIndexPrompt({
 						accessibilityLabel="Cancel index generation"
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5287,7 +5304,7 @@ function AlignmentIndexPrompt({
 					<Pressable
 						accessibilityRole="button"
 						onPress={onCancel}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentSecondaryButton,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5302,7 +5319,7 @@ function AlignmentIndexPrompt({
 							accessibilityRole="button"
 							onPress={onConfirm}
 							disabled={busy}
-							style={({ hovered, pressed }) => [
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 								styles.intentPrimaryButton,
 								hovered && !busy && styles.buttonHover,
 								pressed && !busy && styles.buttonPressed,
@@ -5352,7 +5369,7 @@ function UnknownFilesAlert({
 						accessibilityLabel="Dismiss alert"
 						accessibilityRole="button"
 						onPress={onDismissAll}
-						style={({ hovered, pressed }) => [
+						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
 							hovered && styles.buttonHover,
 							pressed && styles.buttonPressed,
@@ -5369,7 +5386,7 @@ function UnknownFilesAlert({
 							</OMText>
 							<Pressable
 								onPress={() => onRemove(u.id)}
-								style={({ hovered, pressed }) => [
+								style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 									styles.textButton,
 									hovered && styles.buttonHover,
 									pressed && styles.buttonPressed,
@@ -5414,7 +5431,7 @@ function SourceViewer({
 				<Pressable
 					accessibilityRole="button"
 					onPress={onClose}
-					style={({ hovered, pressed }) => [
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 						styles.iconButton,
 						hovered && styles.buttonHover,
 						pressed && styles.buttonPressed,
@@ -5434,7 +5451,7 @@ function SourceViewer({
 								<Pressable
 									key={`${file.name}-${index}`}
 									onPress={() => setSelectedIndex(index)}
-									style={({ hovered, pressed }) => [
+									style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 										styles.sourceTab,
 										active ? styles.sourceTabActive : null,
 										hovered && styles.buttonHover,
@@ -5647,7 +5664,7 @@ function LabGettingStartedPanel({
 							<Pressable
 								onPress={onTryDemoRun}
 								disabled={demoRunPending}
-								style={({ hovered, pressed }) => [
+								style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 									styles.intentPrimaryButton,
 									styles.tryNowButton,
 									hovered && !demoRunPending && styles.buttonHover,
@@ -5734,7 +5751,7 @@ function SidebarToggleButton({
 			accessibilityState={{ expanded: open }}
 			hitSlop={8}
 			onPress={onPress}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerSidebarToggle,
 				open ? styles.headerSidebarToggleOpen : null,
 				hovered && styles.buttonHover,
@@ -5766,7 +5783,7 @@ function GettingStartedButton({
 		<Pressable
 			onPress={onPress}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerNavLink,
 				compact ? styles.headerNavLinkCompact : null,
 				active ? styles.headerNavLinkActive : null,
@@ -5800,7 +5817,7 @@ function GithubButton({ compact = false }: { compact?: boolean }) {
 		<Pressable
 			onPress={() => openGithub()}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerNavLink,
 				compact ? styles.headerNavLinkCompact : null,
 				hovered && styles.buttonHover,
@@ -5829,7 +5846,7 @@ function ContactButton({ compact = false }: { compact?: boolean }) {
 		<Pressable
 			onPress={() => openContactEmail('header')}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.headerNavLink,
 				compact ? styles.headerNavLinkCompact : null,
 				hovered && styles.buttonHover,
@@ -5887,7 +5904,7 @@ function SidebarSettingsMenu() {
 			<Pressable
 				onPress={toggle}
 				hitSlop={8}
-				style={({ hovered, pressed }) => [
+				style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 					styles.sidebarSettingsTrigger,
 					open && styles.sidebarSettingsTriggerOpen,
 					hovered && styles.buttonHover,
@@ -5929,7 +5946,7 @@ function FeedbackFooterButton() {
 	return (
 		<Pressable
 			onPress={() => openContactEmail('footer')}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.feedbackFooter,
 				hovered && styles.buttonHover,
 				pressed && styles.buttonPressed,
@@ -5959,7 +5976,7 @@ function WebThemeToggle({ scheme }: { scheme: 'light' | 'dark' }) {
 		<Pressable
 			onPress={() => toggleColorSchemePreferenceSync(scheme)}
 			hitSlop={8}
-			style={({ hovered, pressed }) => [
+			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.webThemeButton,
 				scheme === 'light' ? styles.webThemeButtonLight : styles.webThemeButtonDark,
 				hovered && styles.buttonHover,
@@ -6345,20 +6362,14 @@ function makeStyles(p: LabPalette) {
 		},
 		gettingStartedHeroGrid: {
 			alignSelf: 'stretch',
-			flexDirection: 'row',
-			alignItems: 'flex-start',
-			columnGap: LAB_GETTING_STARTED_SECTION_GAP,
+			flexDirection: 'column',
+			alignItems: 'stretch',
 			rowGap: LAB_GETTING_STARTED_SECTION_GAP,
-			flexWrap: 'wrap',
 			flexGrow: 0,
 		},
 		gettingStartedPrimaryColumn: {
-			flexGrow: 0.9,
-			flexShrink: 1,
-			flexBasis: 500,
-			minWidth: 360,
+			alignSelf: 'stretch',
 			gap: omSpacing.l,
-			justifyContent: 'center',
 		},
 		gettingStartedIntroBlock: {
 			gap: 8,
@@ -6406,9 +6417,9 @@ function makeStyles(p: LabPalette) {
 		},
 		tryNowBlock: {
 			alignSelf: 'stretch',
-			flexDirection: 'row',
-			alignItems: 'center',
-			gap: omSpacing.l,
+			flexDirection: 'column',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
 			minHeight: 0,
 			paddingVertical: 0,
 			paddingHorizontal: 0,
@@ -6435,7 +6446,7 @@ function makeStyles(p: LabPalette) {
 			maxWidth: 560,
 		},
 		tryNowButton: {
-			alignSelf: 'center',
+			alignSelf: 'flex-start',
 			marginTop: 0,
 			minHeight: 38,
 			paddingHorizontal: omSpacing.m,
@@ -6483,10 +6494,9 @@ function makeStyles(p: LabPalette) {
 			lineHeight: 18,
 		},
 		gettingStartedVideoBlock: {
-			flexGrow: 1.6,
-			flexShrink: 1,
-			flexBasis: 620,
-			minWidth: 480,
+			alignSelf: 'stretch',
+			width: '100%',
+			maxWidth: 960,
 			gap: 0,
 			padding: 0,
 			borderRadius: 0,

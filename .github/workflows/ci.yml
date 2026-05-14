@@ -137,10 +137,14 @@ jobs:
       - name: Check runtime asset references
         run: npm run check:runtime-assets
 
-  web:
+  web-core:
     if: github.event_name == 'pull_request'
     runs-on: namespace-profile-linux-medium
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [import, assays, state]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -156,20 +160,8 @@ jobs:
         with:
           node-version-file: '.nvmrc'
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Setup uv
         uses: astral-sh/setup-uv@v6
-
-      - name: Cache Rust (bioscript parity)
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: bioscript/rust
-          key: web-bioscript-parity
-
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
 
       - name: Install npm dependencies
         run: npm install
@@ -215,20 +207,153 @@ jobs:
       - name: Check BioScript app/core boundary
         run: npm run check:bioscript-boundary
 
-      - name: Check BioScript CLI/WASM parity
-        run: npm run check:bioscript-parity
-
       - name: Run web tests
-        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 ./test-web.sh
-
-      - name: Run PGx report browser matrix
-        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=8 WEB_REPORT_NO_PRIVATE=1 ./test-web.sh --pgx-report-scenario
+        run: ./test-web-core.sh --core-${{ matrix.chunk }}
 
       - name: Upload web artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: web-artifacts
+          name: web-core-${{ matrix.chunk }}-artifacts
+          path: |
+            .maestro-web/screenshots
+            test-results
+          if-no-files-found: ignore
+
+  web-report-parity:
+    if: github.event_name == 'pull_request'
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache Rust (bioscript parity)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bioscript/rust
+          key: web-bioscript-parity
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify required submodules
+        run: |
+          test -f bioscript/rust/Cargo.toml
+          test -f exvitae/assays/risk/APOL1/apol1.py
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
+          git submodule status bioscript exvitae
+
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-web-pgx-v1
+          restore-keys: bioscript-test-data-
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify report parity fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+
+      - name: Check BioScript CLI/WASM parity
+        run: npm run check:bioscript-parity
+
+  web-browser-matrix:
+    if: github.event_name == 'pull_request'
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify required submodules
+        run: |
+          test -f bioscript/rust/Cargo.toml
+          test -f exvitae/assays/risk/APOL1/apol1.py
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
+          git submodule status bioscript exvitae
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-web-pgx-v1
+          restore-keys: bioscript-test-data-
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify browser matrix fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
+          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+          test -f exvitae/assays/risk/APOL1/APOL1.yaml
+          test -f exvitae/assays/risk/APOL1/APOL1.zip
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.bam
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
+          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
+          test -f exvitae/assays/risk/APOL1/test-data/stub.fa
+          test -f exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+
+      - name: Run selected PGx report browser matrix
+        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=2 WEB_REPORT_NO_PRIVATE=1 WEB_REPORT_SAMPLE_IDS=23andme-v5-hu50B3F5,NA06985-vcf,apol1-bam,apol1-cram ./test-web.sh --pgx-report-scenario
+
+      - name: Upload browser matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-browser-matrix-artifacts
           path: |
             .maestro-web/screenshots
             test-results

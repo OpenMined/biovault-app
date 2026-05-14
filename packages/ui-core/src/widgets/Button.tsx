@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { omColors, omRadius, omSpacing, omTheme, omTypography } from '../tokens'
+import { omRadius, omSpacing, omTheme, omTypography } from '../tokens'
 
 export function Button({
   children,

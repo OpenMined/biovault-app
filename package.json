@@ -28,6 +28,7 @@
     "prepare-cloudflare-web": "node ./scripts/prepare-cloudflare-web-assets.mjs",
     "rybbit": "node ./scripts/rybbit-api.mjs",
     "rybbit:report": "node ./scripts/rybbit-report.mjs",
+    "rybbit:user-report": "node ./scripts/rybbit-user-report.mjs",
     "deploy-web-prod": "EXPO_BASE_URL=/web npx expo export --platform web && npm run prepare-cloudflare-web && npx --yes wrangler deploy",
     "deploy-preview-android": "npx eas-cli build --profile preview --platform android --clear-cache",
     "deploy-dev": "npx eas-cli build --profile development --platform ios --clear-cache",

@@ -10,6 +10,7 @@ import {
 	localPackageZipFromRelease,
 	missingFixture,
 	routePgxPackageToLocalFiles,
+	waitForAssayRegistryPanel,
 } from './lab-test-helpers'
 
 test.describe('lab PGx package import — web', () => {
@@ -57,6 +58,7 @@ test.describe('lab PGx package import — web', () => {
 		await routePgxPackageToLocalFiles(page)
 		await gotoLab(page)
 		await importPgxReleaseFromUrl(page)
+		await waitForAssayRegistryPanel(page)
 		await page.evaluate(() => {
 			window.history.replaceState(null, '', window.location.pathname + window.location.search)
 		})
@@ -68,12 +70,6 @@ test.describe('lab PGx package import — web', () => {
 		const panelRow = page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' }).first()
 		await expect(panelRow).toBeVisible({ timeout: 30_000 })
 		await dismissSharedResourcePrompt(page)
-		const downloadPanel = panelRow.getByRole('button', { name: 'Download PGx-1 Panel' })
-		if (await downloadPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
-			await downloadPanel.evaluate((element) => {
-				;(element as HTMLElement).click()
-			})
-		}
 		await expect(panelRow.getByText('Run panel', { exact: true })).toBeVisible({ timeout: 60_000 })
 		await panelRow.getByText('Run panel', { exact: true }).evaluate((element) => {
 			;(element as HTMLElement).click()

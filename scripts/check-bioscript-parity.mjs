@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -19,10 +19,9 @@ const wasmRunner = path.join(root, 'modules/expo-bioscript/scripts/run-bioscript
 const bioscriptShim = path.join(root, 'bioscript/bs')
 const bsWasmShim = path.join(root, 'tools/bs-wasm.mjs')
 const skipWasm = process.env.BIOSCRIPT_SKIP_WASM_PARITY === '1'
-const exvitaeReportRoot = process.env.EXVITAE_REPORT_ROOT ?? '/Users/madhavajay'
-const exvitaeDataRoot = process.env.EXVITAE_DATA_ROOT ?? path.join(exvitaeReportRoot, 'dev')
-const exvitaeDataRepo = process.env.EXVITAE_DATA_REPO ?? path.join(exvitaeDataRoot, 'exvitae-data/exvitae')
-const exvitaeProjects = process.env.EXVITAE_PROJECTS_DIR ?? path.join(exvitaeDataRoot, 'exvitae-data/projects')
+const exvitaeReportRoot = process.env.EXVITAE_REPORT_ROOT ?? process.env.HOME ?? path.parse(root).root
+const exvitaeDataRepo = process.env.EXVITAE_DATA_REPO ?? path.join(root, 'exvitae')
+const exvitaeProjects = process.env.EXVITAE_PROJECTS_DIR ?? path.join(exvitaeDataRepo, 'assays/pgx')
 const externalReportParityRoot = mkdtempSync(path.join(repoTempRoot, 'exvitae-report-parity-'))
 
 process.on('exit', () => {
@@ -98,39 +97,62 @@ function assertPgxApoeReport(outputDir) {
 	}
 }
 
-function normalizeTextArtifact(artifact, text) {
+function assertApol1Report(outputDir) {
+	const analyses = readJsonl(path.join(outputDir, 'analysis.jsonl'))
+	const apol1 = analyses.find((analysis) => analysis.analysis_id === 'apol1_status')
+	if (!apol1) throw new Error('APOL1 report did not emit apol1_status analysis')
+	const row = apol1.rows?.[0]
+	if (!row) throw new Error('APOL1 analysis did not emit a row')
+	assertEqual(row.apol1_status, 'G0/G0', 'APOL1 status')
+	const observations = readFileSync(path.join(outputDir, 'observations.tsv'), 'utf8')
+	if (!observations.includes('rs71785313') || !observations.includes('\tII\t')) {
+		throw new Error('APOL1 observations.tsv does not contain rs71785313 II')
+	}
+}
+
+function normalizeTextArtifact(artifact, text, options = {}) {
+	const normalizedPathText = options.normalizeEvidencePaths
+		? text.replace(/(?:\/[^/\t\n:]+)+\/([^/\t\n:]+\.(?:vcf\.gz|cram|bam|txt|zip|csv)):/g, '$1:')
+		: text
 	if (artifact.endsWith('.jsonl')) {
-		return text
+		return normalizedPathText
 			.split(/\r?\n/)
 			.filter(Boolean)
-			.map((line) => JSON.stringify(removeVolatileReportFields(JSON.parse(line))))
+			.map((line) => JSON.stringify(removeVolatileReportFields(JSON.parse(line), options)))
 			.join('\n') + '\n'
 	}
 	if (artifact.endsWith('.html')) {
-		return text
+		return normalizedPathText
 			.replace(/\r\n/g, '\n')
 			.replace(/(&quot;file_path&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
+			.replace(/(&quot;manifest_path&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
+			.replace(/(&quot;script_path&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
+			.replace(/(&quot;output_file&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
 			.replace(/(&quot;duration_ms&quot;:\s*)\d+/g, '$1<normalized>')
 			.trimEnd() + '\n'
 	}
-	return text.replace(/\r\n/g, '\n').trimEnd() + '\n'
+	return normalizedPathText.replace(/\r\n/g, '\n').trimEnd() + '\n'
 }
 
-function removeVolatileReportFields(value) {
-	if (Array.isArray(value)) return value.map(removeVolatileReportFields)
+function removeVolatileReportFields(value, options = {}) {
+	if (Array.isArray(value)) return value.map((child) => removeVolatileReportFields(child, options))
 	if (!value || typeof value !== 'object') return value
 	const normalized = {}
 	for (const [key, child] of Object.entries(value)) {
 		if (key === 'duration_ms') continue
 		if (key === 'file_path') continue
-		normalized[key] = removeVolatileReportFields(child)
+		if (key === 'manifest_path') continue
+		if (key === 'script_path') continue
+		if (key === 'output_file') continue
+		if (options.normalizeInputDebug && key === 'debug') continue
+		normalized[key] = removeVolatileReportFields(child, options)
 	}
 	return normalized
 }
 
-function assertArtifactEqual(cliDir, wasmDir, artifact) {
-	const cliText = normalizeTextArtifact(artifact, readFileSync(path.join(cliDir, artifact), 'utf8'))
-	const wasmText = normalizeTextArtifact(artifact, readFileSync(path.join(wasmDir, artifact), 'utf8'))
+function assertArtifactEqual(cliDir, wasmDir, artifact, options = {}) {
+	const cliText = normalizeTextArtifact(artifact, readFileSync(path.join(cliDir, artifact), 'utf8'), options)
+	const wasmText = normalizeTextArtifact(artifact, readFileSync(path.join(wasmDir, artifact), 'utf8'), options)
 	if (cliText !== wasmText) {
 		const max = Math.min(cliText.length, wasmText.length)
 		let offset = 0
@@ -164,20 +186,26 @@ function runExvitaeReportParityCase(caseDef) {
 	mkdirSync(cliOutputDir, { recursive: true })
 	mkdirSync(wasmOutputDir, { recursive: true })
 
-	run(`exvitae test-report ${caseDef.id}`, path.join(root, 'exvitae/test-report.sh'), [
-		caseDef.dataAlias,
-		caseDef.assayAlias,
+	run(`bioscript CLI report ${caseDef.id}`, bioscriptShim, [
+		'report',
+		caseDef.manifest,
+		'--root',
+		exvitaeReportRoot,
+		'--input-file',
+		caseDef.inputFile,
+		'--detect-sex',
 		'--output-dir',
 		cliOutputDir,
-		'--no-open',
-		'--',
+		'--analysis-max-duration-ms',
+		'30000',
 		'--html',
+		...(caseDef.extraCliArgs ?? caseDef.extraWasmArgs),
 	])
 
 	run(`wasm report ${caseDef.id}`, 'node', [
 		bsWasmShim,
 		'report',
-		caseDef.manifest,
+		caseDef.wasmManifest ?? caseDef.manifest,
 		'--root',
 		exvitaeReportRoot,
 		'--input-file',
@@ -189,12 +217,18 @@ function runExvitaeReportParityCase(caseDef) {
 		'--detect-sex',
 		'--analysis-max-duration-ms',
 		'30000',
+		...(caseDef.packageEntrypoint ? ['--package-entrypoint', caseDef.packageEntrypoint] : []),
 		...caseDef.extraWasmArgs,
 	])
 
-	for (const artifact of ['observations.tsv', 'analysis.jsonl', 'reports.jsonl', 'index.html']) {
-		assertArtifactEqual(cliOutputDir, wasmOutputDir, artifact)
+	for (const artifact of caseDef.artifacts ?? ['observations.tsv', 'analysis.jsonl', 'reports.jsonl', 'index.html']) {
+		assertArtifactEqual(cliOutputDir, wasmOutputDir, artifact, {
+			normalizeEvidencePaths: Boolean(caseDef.normalizeEvidencePaths),
+			normalizeInputDebug: Boolean(caseDef.normalizeInputDebug),
+		})
 	}
+	caseDef.assertOutputs?.(cliOutputDir)
+	caseDef.assertOutputs?.(wasmOutputDir)
 }
 
 function makeZipFixture() {
@@ -335,6 +369,22 @@ if (existsSync(pgxManifestPath) && existsSync(pgx23andmePath)) {
 
 console.log('==> ExVitae test-report.sh vs WASM report artifact parity')
 runExvitaeReportParityCase({
+	id: '23andme-v5-apol1',
+	dataAlias: '23andme_v5',
+	assayAlias: 'apol1',
+	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+	inputFile: path.join(exvitaeDataRepo, 'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip'),
+	requiredFiles: [
+		path.join(root, 'exvitae/test-report.sh'),
+		path.join(exvitaeDataRepo, 'bioscript/bs'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+		path.join(exvitaeDataRepo, 'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip'),
+	],
+	extraWasmArgs: [],
+	assertOutputs: assertApol1Report,
+})
+
+runExvitaeReportParityCase({
 	id: '23andme-v5-pgx-1',
 	dataAlias: '23andme_v5',
 	assayAlias: 'pgx-1',
@@ -347,6 +397,80 @@ runExvitaeReportParityCase({
 		path.join(exvitaeDataRepo, 'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip'),
 	],
 	extraWasmArgs: [],
+})
+
+runExvitaeReportParityCase({
+	id: '23andme-v5-pgx-1-apoe-entrypoint',
+	dataAlias: '23andme_v5',
+	cliAssayArg: path.join(exvitaeProjects, 'pgx-1/assets/APOE/assay.yaml'),
+	wasmManifest: path.join(exvitaeProjects, 'pgx-1/pgx-1.zip'),
+	packageEntrypoint: 'assets/APOE/assay.yaml',
+	manifest: path.join(exvitaeProjects, 'pgx-1/assets/APOE/assay.yaml'),
+	inputFile: path.join(exvitaeDataRepo, 'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip'),
+	requiredFiles: [
+		path.join(root, 'exvitae/test-report.sh'),
+		path.join(exvitaeDataRepo, 'bioscript/bs'),
+		path.join(exvitaeProjects, 'pgx-1/assets/APOE/assay.yaml'),
+		path.join(exvitaeProjects, 'pgx-1/pgx-1.zip'),
+		path.join(exvitaeDataRepo, 'test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip'),
+	],
+	extraWasmArgs: [],
+	assertOutputs: assertPgxApoeReport,
+})
+
+runExvitaeReportParityCase({
+	id: 'na06985-apol1-cram',
+	dataAlias: 'NA06985',
+	assayAlias: 'apol1',
+	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+	inputFile: path.join(exvitaeDataRepo, 'test-data/1k-genomes/aligned/NA06985.final.cram'),
+	requiredFiles: [
+		path.join(root, 'exvitae/test-report.sh'),
+		path.join(exvitaeDataRepo, 'bioscript/bs'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/aligned/NA06985.final.cram'),
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/aligned/NA06985.final.cram.crai'),
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'),
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai'),
+	],
+	extraWasmArgs: [
+		'--input-index',
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/aligned/NA06985.final.cram.crai'),
+		'--reference-file',
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa'),
+		'--reference-index',
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai'),
+		'--allow-md5-mismatch',
+	],
+	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
+	normalizeEvidencePaths: true,
+	normalizeInputDebug: true,
+	assertOutputs: assertApol1Report,
+})
+
+runExvitaeReportParityCase({
+	id: 'na06985-apol1-vcf',
+	dataAlias: 'NA06985-vcf',
+	assayAlias: 'apol1',
+	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+	inputFile: path.join(exvitaeDataRepo, 'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz'),
+	requiredFiles: [
+		path.join(root, 'exvitae/test-report.sh'),
+		path.join(exvitaeDataRepo, 'bioscript/bs'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz'),
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi'),
+	],
+	extraWasmArgs: [
+		'--input-format',
+		'vcf',
+		'--input-index',
+		path.join(exvitaeDataRepo, 'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi'),
+	],
+	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
+	normalizeEvidencePaths: true,
+	normalizeInputDebug: true,
+	assertOutputs: assertApol1Report,
 })
 
 console.log('bioscript CLI/WASM parity passed')

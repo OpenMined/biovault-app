@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { test, expect, type Page } from '@playwright/test'
-import { GENOME_23ANDME, chooseGenomeFiles, gotoLab, missingFixture } from './lab-test-helpers'
+import { GENOME_23ANDME, chooseGenomeFiles, dismissRememberFilesPrompt, gotoLab, missingFixture } from './lab-test-helpers'
 
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:8081'
 const HANDLE_DB = 'biovault-file-handles'
@@ -195,6 +195,7 @@ test.describe('lab persistent handles — web', () => {
 		await gotoLab(page)
 		await chooseGenomeFiles(page, GENOME_23ANDME)
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(1, { timeout: 30_000 })
+		await dismissRememberFilesPrompt(page)
 
 		await page.getByLabel('Remove genome genome_hu50B3F5_v5_Full.zip').click()
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(0)
@@ -212,6 +213,7 @@ test.describe('lab persistent handles — web', () => {
 		await chooseGenomeFiles(page, GENOME_23ANDME)
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(1, { timeout: 30_000 })
 		expect(await cachedRemoteUrls(page)).toContain(REMOTE_GENOME_URL)
+		await dismissRememberFilesPrompt(page)
 
 		await page.getByLabel('Remove genome genome_hu50B3F5_v5_Full.zip').click()
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(0)

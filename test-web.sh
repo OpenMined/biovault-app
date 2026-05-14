@@ -51,6 +51,15 @@ for arg in "$@"; do
     --pgx-report-scenario|--pgx-report)
       MODE="pgx-report"
       ;;
+    --core-import)
+      MODE="core-import"
+      ;;
+    --core-assays)
+      MODE="core-assays"
+      ;;
+    --core-state)
+      MODE="core-state"
+      ;;
     --index-generation)
       MODE="index-generation"
       ;;
@@ -164,6 +173,27 @@ case "$MODE" in
       .maestro-web/lab-pgx.spec.ts
       .maestro-web/lab-pgx-package.spec.ts
       .maestro-web/lab-assay-picker.spec.ts
+      .maestro-web/lab-remote-cache.spec.ts
+      .maestro-web/lab-layout-and-onboarding.spec.ts
+      .maestro-web/lab-persistent-handles.spec.ts
+    )
+    ;;
+  core-import)
+    SPECS=(
+      .maestro-web/smoke.spec.ts
+      .maestro-web/file-picker.spec.ts
+      .maestro-web/lab-file-classification.spec.ts
+    )
+    ;;
+  core-assays)
+    SPECS=(
+      .maestro-web/lab-pgx.spec.ts
+      .maestro-web/lab-pgx-package.spec.ts
+      .maestro-web/lab-assay-picker.spec.ts
+    )
+    ;;
+  core-state)
+    SPECS=(
       .maestro-web/lab-remote-cache.spec.ts
       .maestro-web/lab-layout-and-onboarding.spec.ts
       .maestro-web/lab-persistent-handles.spec.ts

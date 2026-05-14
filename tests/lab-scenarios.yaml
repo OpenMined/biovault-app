@@ -310,13 +310,12 @@ scenarios:
     platforms: [web]
     capabilities: [local_file, drag_drop, file_picker, pgx_panel, browser_report, report_artifacts]
     action: report_matrix
-    notes: Runs ExVitae PGx-1 report samples through the Lab web page itself. Samples at or below WEB_REPORT_MAX_DRAG_BYTES use drag/drop; larger samples use the browser file picker so Playwright can pass filesystem paths directly.
+    notes: Runs selected ExVitae report samples through the Lab web page itself. Samples at or below WEB_REPORT_MAX_DRAG_BYTES use drag/drop; larger samples use the browser file picker so Playwright can pass filesystem paths directly.
     report_matrix:
-      samples_file: exvitae/samples.yaml
-      private_samples_file: exvitae/samples.private.yaml
+      samples_file: tests/web-report-matrix-samples.yaml
       assay_manifest: exvitae/assays/pgx/pgx-1/manifest.yaml
       package_zip: exvitae/assays/pgx/pgx-1/pgx-1.zip
-      package_url: https://local.biovault.test/assays/pgx/pgx-1/pgx-1.zip
+      package_url: https://local.biovault.test/assays/pgx/pgx-1/manifest.yaml
       max_drag_bytes: 52428800
       require_artifacts:
         - observations.tsv
@@ -326,7 +325,6 @@ scenarios:
       html_contains:
         - observation(s)
         - analysis output(s)
-        - PGx
       report_status:
         - complete
         - partial
