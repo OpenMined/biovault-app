@@ -1,8 +1,20 @@
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { extname, join, resolve } from 'node:path';
 import { landingPageHtml } from './prepare-cloudflare-web-assets.mjs';
+
+const shareAssetsDir = resolve(process.cwd(), 'assets/share');
+const IMAGE_CONTENT_TYPES = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+};
 
 const listenHost = process.env.DEV_WEB_HOST ?? '0.0.0.0';
 const publicHost = process.env.DEV_WEB_DOMAIN ?? 'dev-app.biovault.net';
@@ -49,7 +61,24 @@ const handleRequest = (request, response) => {
     response.end(landingPageHtml({
       metricsScriptCacheBust: Date.now(),
       metricsSiteId: process.env.BIOVAULT_METRICS_SITE_ID ?? '4',
+      origin: publicOrigin,
     }));
+    return;
+  }
+
+  if (url.pathname.startsWith('/images/')) {
+    const name = url.pathname.slice('/images/'.length);
+    const filePath = join(shareAssetsDir, name);
+    if (!name || name.includes('/') || name.includes('..') || !existsSync(filePath)) {
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Not found\n');
+      return;
+    }
+    response.writeHead(200, {
+      'Content-Type': IMAGE_CONTENT_TYPES[extname(name).toLowerCase()] ?? 'application/octet-stream',
+      ...DEV_NO_STORE_HEADERS,
+    });
+    response.end(readFileSync(filePath));
     return;
   }
 

@@ -196,6 +196,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Single build id for this dev session so the splash page (/) and the web app
+# (/web/) show the identical string instead of "<version>+dev".
+export EXPO_PUBLIC_BUILD_ID="${EXPO_PUBLIC_BUILD_ID:-$(node scripts/build-id.mjs)}"
+echo "==> Build id: ${EXPO_PUBLIC_BUILD_ID}"
+
 echo "==> Starting local web shell on :${DEV_WEB_PORT}"
 DEV_WEB_DOMAIN="$DOMAIN" \
 DEV_WEB_PORT="$DEV_WEB_PORT" \
@@ -212,19 +217,20 @@ if ! kill -0 "$PROXY_PID" >/dev/null 2>&1; then
   exit 1
 fi
 
+PUBLIC_ORIGIN="${DEV_WEB_PROTOCOL}://${DOMAIN}"
+if [[ ! ( "$DEV_WEB_PROTOCOL" == "https" && "$DEV_WEB_PORT" == "443" ) && ! ( "$DEV_WEB_PROTOCOL" == "http" && "$DEV_WEB_PORT" == "80" ) ]]; then
+  PUBLIC_ORIGIN="${PUBLIC_ORIGIN}:${DEV_WEB_PORT}"
+fi
+
 echo "==> Starting Expo web dev server on :${EXPO_WEB_PORT}"
 APP_VARIANT=development \
 EXPO_BASE_URL=/web \
+EXPO_PUBLIC_SITE_ORIGIN="$PUBLIC_ORIGIN" \
 BIOVAULT_METRICS_SITE_ID="${BIOVAULT_METRICS_SITE_ID:-4}" \
 BIOVAULT_METRICS_DOMAIN="${BIOVAULT_METRICS_DOMAIN:-${DOMAIN}}" \
 BROWSER=none \
 npx expo start --web --localhost --clear --port "$EXPO_WEB_PORT" &
 EXPO_PID=$!
-
-PUBLIC_ORIGIN="${DEV_WEB_PROTOCOL}://${DOMAIN}"
-if [[ ! ( "$DEV_WEB_PROTOCOL" == "https" && "$DEV_WEB_PORT" == "443" ) && ! ( "$DEV_WEB_PROTOCOL" == "http" && "$DEV_WEB_PORT" == "80" ) ]]; then
-  PUBLIC_ORIGIN="${PUBLIC_ORIGIN}:${DEV_WEB_PORT}"
-fi
 
 echo "==> Waiting for Expo web app through ${PUBLIC_ORIGIN}/web/"
 for _ in {1..120}; do
