@@ -28,6 +28,23 @@ export default {
 			headers.set(name, value)
 		}
 
+		// Expo emits content-hashed filenames under these prefixes, so the
+		// bytes for a given URL never change. Cache them aggressively to stop
+		// repeat visitors re-downloading the JS bundle, WASM and fonts.
+		const p = url.pathname
+		if (p === '/version.json' || p.endsWith('/version.json')) {
+			headers.set('Cache-Control', 'no-store')
+		}
+		const isHashedAsset =
+			p.includes('/_expo/static/') ||
+			p.includes('/assets/') ||
+			/\.(?:wasm|wasm\.part\d+)$/.test(p)
+		if (isHashedAsset) {
+			headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+		} else if (p.endsWith('.html') || p.endsWith('/') || !p.includes('.')) {
+			headers.set('Cache-Control', 'public, max-age=0, must-revalidate')
+		}
+
 		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,

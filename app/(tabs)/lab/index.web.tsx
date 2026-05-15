@@ -3,6 +3,7 @@ import { OMIcon } from '@/components/ui/OMIcon'
 import { OMText } from '@/components/ui/OMText'
 import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
+import { APP_BUILD_ID } from '@/lib/app-build-id'
 import { getAnalytics } from '@/lib/analytics'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import { clearDeferredLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
@@ -3056,21 +3057,24 @@ export default function LabScreen() {
 										</>
 									) : null}
 								</View>
-								{showGettingStartedView && (useSidebarDrawer || gettingStartedRunButton) ? (
+								{showGettingStartedView && useSidebarDrawer ? (
 									<View style={[styles.heroHeaderAside, useCompactHeader ? styles.heroHeaderAsideCompact : null]}>
-										{useSidebarDrawer ? (
-											<SidebarToggleButton
-												compact={showGettingStartedView}
-												label={useCompactHeader ? 'Genome files' : undefined}
-												open={mobileSidebarOpen}
-												onPress={toggleSidebar}
-											/>
-										) : null}
-										{gettingStartedRunButton}
+										<SidebarToggleButton
+											compact={showGettingStartedView}
+											label={useCompactHeader ? 'Genome files' : undefined}
+											open={mobileSidebarOpen}
+											onPress={toggleSidebar}
+										/>
 									</View>
 								) : null}
 							</View>
 						</View>
+
+						{gettingStartedRunButton ? (
+							<View style={{ marginTop: omSpacing.m, marginBottom: omSpacing.l, alignItems: 'flex-start' }}>
+								{gettingStartedRunButton}
+							</View>
+						) : null}
 
 						{useWideSplit ? (
 							<View style={styles.workbenchGrid}>
@@ -4083,6 +4087,13 @@ function LabExplorerSidebar({
 				<SidebarSettingsMenu />
 				<WebThemeToggle scheme={scheme} />
 			</View>
+			<OMText
+				variant="caption"
+				selectable
+				style={{ paddingHorizontal: 16, paddingBottom: 12, opacity: 0.4, fontSize: 11 }}
+			>
+				Build {APP_BUILD_ID}
+			</OMText>
 		</View>
 	)
 }
@@ -5816,7 +5827,7 @@ function GettingStartedRunButton({
 			) : (
 				<OMIcon
 					name="play-outline"
-					size={18}
+					size={24}
 					color={palette.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : palette.invertText}
 					tone="inverse"
 				/>
@@ -6655,16 +6666,16 @@ function makeStyles(p: LabPalette) {
 		tryNowButton: {
 			alignSelf: 'flex-start',
 			marginTop: 0,
-			height: 50,
-			minHeight: 50,
-			paddingHorizontal: omSpacing.m,
-			flexShrink: 1,
+			height: 64,
+			minHeight: 64,
+			paddingHorizontal: omSpacing.xl,
+			flexShrink: 0,
 			backgroundColor: p.pageBg === LAB_LANDING_PAGE_FILL ? '#2f7d5d' : p.accent,
 		},
 		tryNowButtonText: {
 			color: p.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : p.invertText,
-			fontSize: 16,
-			lineHeight: 21,
+			fontSize: 19,
+			lineHeight: 25,
 		},
 		gettingStartedVideoBlock: {
 			alignSelf: 'stretch',

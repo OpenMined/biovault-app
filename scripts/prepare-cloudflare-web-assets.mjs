@@ -1,17 +1,33 @@
-import { closeSync, cpSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getBuildId } from './build-id.mjs';
 
 const sourceDir = 'dist';
 const deployDir = 'dist-cloudflare';
 const webDir = join(deployDir, 'web');
 const maxAssetBytes = 20 * 1024 * 1024;
 const metricsSiteId = process.env.BIOVAULT_METRICS_SITE_ID ?? '6';
+const siteOrigin =
+  process.env.BIOVAULT_SITE_ORIGIN ??
+  `https://${process.env.BIOVAULT_METRICS_DOMAIN ?? 'app.biovault.net'}`;
 
 export function prepareCloudflareWebAssets() {
   rmSync(deployDir, { force: true, recursive: true });
   mkdirSync(webDir, { recursive: true });
   cpSync(sourceDir, webDir, { recursive: true });
+
+  const shareAssetsDir = 'assets/share';
+  if (existsSync(shareAssetsDir)) {
+    cpSync(shareAssetsDir, join(deployDir, 'images'), { recursive: true });
+  }
+
+  const buildId = getBuildId();
+  writeFileSync(
+    join(deployDir, 'version.json'),
+    `${JSON.stringify({ buildId, builtAt: new Date().toISOString() })}\n`,
+  );
+
   writeFileSync(join(deployDir, 'index.html'), landingPageHtml());
 
   let splitCount = 0;
@@ -84,6 +100,8 @@ function splitAsset(filePath, totalSize) {
 
 export function landingPageHtml(options = {}) {
   const pageMetricsSiteId = options.metricsSiteId ?? metricsSiteId;
+  const origin = String(options.origin ?? siteOrigin).replace(/\/+$/, '');
+  const buildId = String(options.buildId ?? getBuildId());
   const metricsScriptUrl = options.metricsScriptCacheBust
     ? `https://metrics.syftbox.net/api/script.js?v=${encodeURIComponent(String(options.metricsScriptCacheBust))}`
     : 'https://metrics.syftbox.net/api/script.js';
@@ -92,7 +110,28 @@ export function landingPageHtml(options = {}) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BioVault</title>
+  <meta name="color-scheme" content="dark">
+  <style>html{background:#272532;color:#f7f4ef}</style>
+  <title>BioVault — Your DNA never leaves your browser</title>
+  <meta name="description" content="Run private genomic analysis locally on your device. No upload, no account, fully open source.">
+  <link rel="canonical" href="${origin}/">
+  <link rel="icon" type="image/png" sizes="32x32" href="${origin}/images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="${origin}/images/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="${origin}/images/apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${origin}/">
+  <meta property="og:title" content="BioVault — Your DNA never leaves your browser">
+  <meta property="og:description" content="Run private genomic analysis locally on your device. No upload, no account, fully open source.">
+  <meta property="og:image" content="${origin}/images/og-share-square.jpg">
+  <meta property="og:image:width" content="800">
+  <meta property="og:image:height" content="800">
+  <meta property="og:image" content="${origin}/images/og-share.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="BioVault — Your DNA never leaves your browser">
+  <meta name="twitter:description" content="Run private genomic analysis locally on your device. No upload, no account, fully open source.">
+  <meta name="twitter:image" content="${origin}/images/og-share.jpg">
   <script src="${escapeHtml(metricsScriptUrl)}" data-site-id="${escapeHtml(pageMetricsSiteId)}" defer></script>
   <style>
     :root {
@@ -189,6 +228,13 @@ export function landingPageHtml(options = {}) {
       font-weight: 600;
       line-height: 1.3;
     }
+    .build-tag {
+      margin-top: 12px;
+      margin-left: 6px;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: rgba(247, 244, 239, 0.4);
+    }
     .platforms {
       display: flex;
       flex-wrap: wrap;
@@ -223,6 +269,21 @@ export function landingPageHtml(options = {}) {
       font-size: 13px;
       font-weight: 700;
     }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .beta {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #17161d;
+      background: #53bea9;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
     .footer-note {
       margin-top: 18px;
       text-align: center;
@@ -251,13 +312,17 @@ export function landingPageHtml(options = {}) {
 <body>
   <main>
     <header class="topbar">
-      <div class="brand">BioVault</div>
+      <div class="brand-row">
+        <span class="brand">BioVault</span>
+        <span class="beta">Beta</span>
+      </div>
       <a class="contact-link" href="mailto:contact@biovault.net">Contact</a>
     </header>
     <section class="hero">
       <h1>Private genomic analysis on your device.</h1>
       <p>Run genomic analysis locally in your browser. Desktop and mobile apps are coming next.</p>
       <a class="primary-action" href="/web/"><strong>Run in Browser</strong><span>WASM / Rust</span></a>
+      <div class="build-tag">Build ${escapeHtml(buildId)}</div>
     </section>
     <footer>
       <nav class="platforms" aria-label="Coming soon platforms" aria-disabled="true">

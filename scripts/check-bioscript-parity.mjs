@@ -19,6 +19,10 @@ const wasmRunner = path.join(root, 'modules/expo-bioscript/scripts/run-bioscript
 const bioscriptShim = path.join(root, 'bioscript/bs')
 const bsWasmShim = path.join(root, 'tools/bs-wasm.mjs')
 const skipWasm = process.env.BIOSCRIPT_SKIP_WASM_PARITY === '1'
+const onlyFilter = process.env.PARITY_ONLY
+	? process.env.PARITY_ONLY.split(',').map((s) => s.trim()).filter(Boolean)
+	: null
+const caseSelected = (id) => !onlyFilter || onlyFilter.some((f) => id.includes(f))
 const exvitaeReportRoot = process.env.EXVITAE_REPORT_ROOT ?? process.env.HOME ?? path.parse(root).root
 const exvitaeDataRepo = process.env.EXVITAE_DATA_REPO ?? path.join(root, 'exvitae')
 const exvitaeProjects = process.env.EXVITAE_PROJECTS_DIR ?? path.join(exvitaeDataRepo, 'assays/pgx')
@@ -223,6 +227,7 @@ function assertArtifactEqual(cliDir, wasmDir, artifact, options = {}) {
 }
 
 function runExvitaeReportParityCase(caseDef) {
+	if (!caseSelected(caseDef.id)) return
 	const missing = caseDef.requiredFiles.find((file) => !existsSync(file))
 	if (missing) {
 		const message = `Skipping ExVitae report parity ${caseDef.id}; missing ${missing}`
@@ -295,6 +300,16 @@ if (!existsSync(inputPath) || !existsSync(variantsPath)) {
 	throw new Error('APOL1 parity fixtures are missing')
 }
 
+if (onlyFilter) {
+	// Filtered run (PARITY_ONLY set): skip the standalone WASM/PGx/thalassemia
+	// preamble for speed, but still build pkg-node so the bs-wasm cases below
+	// can run (the genotype preamble step normally builds it).
+	if (process.env.RUN_BIOSCRIPT_WASM_NO_BUILD !== '1') {
+		run('wasm-pack pkg-node', 'wasm-pack', ['build', '--target', 'nodejs', '--dev', '--out-dir', 'pkg-node'], {
+			cwd: path.join(root, 'bioscript/rust/bioscript-wasm'),
+		})
+	}
+} else {
 console.log('==> Rust CLI APOL1 text parity')
 const cliStdout = run('bioscript CLI', bioscriptShim, [
 	'--input-file',
@@ -468,6 +483,8 @@ if (existsSync(thalassemiaReleasePath) && existsSync(na06985VcfPath) && existsSy
 	console.warn('Skipping thalassemia NA06985 VCF parity; fixture or index is not present.')
 }
 
+}
+
 console.log('==> ExVitae test-report.sh vs WASM report artifact parity')
 runExvitaeReportParityCase({
 	id: '23andme-v5-apol1',
@@ -517,6 +534,55 @@ runExvitaeReportParityCase({
 	],
 	extraWasmArgs: [],
 	assertOutputs: assertPgxApoeReport,
+})
+
+runExvitaeReportParityCase({
+	id: 'apol1-cram',
+	dataAlias: 'apol1-cram',
+	assayAlias: 'apol1',
+	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+	inputFile: path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram'),
+	requiredFiles: [
+		path.join(root, 'exvitae/test-report.sh'),
+		path.join(exvitaeDataRepo, 'bioscript/bs'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram.crai'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa.fai'),
+	],
+	extraWasmArgs: [
+		'--input-index',
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram.crai'),
+		'--reference-file',
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa'),
+		'--reference-index',
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa.fai'),
+		'--allow-md5-mismatch',
+	],
+	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
+	assertOutputs: assertApol1Report,
+})
+
+runExvitaeReportParityCase({
+	id: 'apol1-bam',
+	dataAlias: 'apol1-bam',
+	assayAlias: 'apol1',
+	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+	inputFile: path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam'),
+	requiredFiles: [
+		path.join(root, 'exvitae/test-report.sh'),
+		path.join(exvitaeDataRepo, 'bioscript/bs'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam'),
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam.bai'),
+	],
+	extraWasmArgs: [
+		'--input-index',
+		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam.bai'),
+	],
+	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
+	assertOutputs: assertApol1Report,
 })
 
 runExvitaeReportParityCase({

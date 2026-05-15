@@ -16,6 +16,7 @@ import { Modal, Platform, StyleSheet, View } from 'react-native'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import 'react-native-reanimated'
 import { OnboardingAgreementCard } from '@/app/onboarding'
+import { BuildBadge } from '@/components/BuildBadge'
 
 // i dont like the expo dev button appearing so just disabling it here
 import { requireOptionalNativeModule } from 'expo';
@@ -209,6 +210,7 @@ export default function RootLayout() {
 		<KeyboardProvider>
 			<View style={{ flex: 1, backgroundColor: omColors.grayscale850 }}>
 				<RootNavigator />
+				<BuildBadge />
 			</View>
 			<StatusBar style="light" />
 		</KeyboardProvider>
