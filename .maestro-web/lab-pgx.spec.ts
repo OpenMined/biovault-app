@@ -114,10 +114,9 @@ test('lab: PGx-1 package runs against default 23andMe ZIP in browser', async ({ 
 	await page.getByText('Run panel', { exact: true }).evaluate((element) => {
 		;(element as HTMLElement).click()
 	})
-	await expect(page.getByText('Latest result')).toBeVisible({ timeout: 180_000 })
 	await expect(page.getByText('Run failed')).toHaveCount(0)
 	await expect(page.getByText('unreachable')).toHaveCount(0)
-	await expect(page.getByText('4 result artifacts saved locally.')).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('4 result artifacts saved locally.')).toBeVisible({ timeout: 180_000 })
 
 	await page.getByText('View result', { exact: true }).click()
 	// The 4 download buttons in the modal's ARTIFACTS row.

@@ -45,7 +45,7 @@ test.describe('lab layout, onboarding, and copy — web', () => {
 		await chooseGenomeFiles(page, GENOME_23ANDME)
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(1, { timeout: 30_000 })
 
-		const guideButton = page.getByLabel('Open the getting started guide')
+		const guideButton = page.getByRole('button', { name: 'Getting Started', exact: true })
 		await dismissRememberFilesPrompt(page)
 		await guideButton.evaluate((element) => {
 			;(element as HTMLElement).click()
@@ -66,6 +66,6 @@ test.describe('lab layout, onboarding, and copy — web', () => {
 		const themeBox = await theme.boundingBox()
 		expect(settingsBox?.y ?? 0).toBeGreaterThan(0)
 		expect(themeBox?.x ?? 0).toBeGreaterThan(settingsBox?.x ?? 0)
-		await expect(page.getByLabel(/Feedback or request a feature/)).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Contact', exact: true })).toBeVisible()
 	})
 })

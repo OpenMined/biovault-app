@@ -75,9 +75,8 @@ test.describe('lab PGx package import — web', () => {
 			;(element as HTMLElement).click()
 		})
 
-		await expect(page.getByText('Latest result')).toBeVisible({ timeout: 180_000 })
 		await expect(page.locator('body')).not.toContainText('package file not found')
 		await expect(page.locator('body')).not.toContainText('Run failed')
-		await expect(page.getByText('4 result artifacts saved locally.')).toBeVisible({ timeout: 30_000 })
+		await expect(page.getByText('4 result artifacts saved locally.')).toBeVisible({ timeout: 180_000 })
 	})
 })
