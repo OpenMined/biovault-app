@@ -443,8 +443,6 @@ runExvitaeReportParityCase({
 		'--allow-md5-mismatch',
 	],
 	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
-	normalizeEvidencePaths: true,
-	normalizeInputDebug: true,
 	assertOutputs: assertApol1Report,
 })
 
@@ -468,8 +466,6 @@ runExvitaeReportParityCase({
 		path.join(exvitaeDataRepo, 'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi'),
 	],
 	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
-	normalizeEvidencePaths: true,
-	normalizeInputDebug: true,
 	assertOutputs: assertApol1Report,
 })
 

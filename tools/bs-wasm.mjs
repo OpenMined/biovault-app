@@ -152,6 +152,10 @@ const reportOptions = {
       : metadataOutputDir
     : null,
   sampleSex: opts.sample_sex || null,
+  inputFilePath: inputFileAbs,
+  inputIndexPath: opts.input_index ? path.resolve(opts.input_index) : null,
+  referenceFilePath: opts.reference_file ? path.resolve(opts.reference_file) : null,
+  referenceIndexPath: opts.reference_index ? path.resolve(opts.reference_index) : null,
 }
 
 // Build a readAt(offset, length) -> Uint8Array callback over a file

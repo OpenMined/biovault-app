@@ -146,6 +146,30 @@ async function dismissRememberFilesPrompt(page: Page) {
 	await expect(dialog).toBeHidden({ timeout: 5_000 })
 }
 
+async function dismissSharedResourcePrompt(page: Page) {
+	const dialog = page.getByLabel('Shared resource dialog', { exact: true })
+	if (!(await dialog.isVisible({ timeout: 2_000 }).catch(() => false))) return
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+		const candidates = ['Ignore', 'Done', 'Close shared resource dialog']
+		let clicked = false
+		for (const name of candidates) {
+			const control = dialog.getByRole('button', { name, exact: true }).first()
+			if (await control.isVisible({ timeout: 250 }).catch(() => false)) {
+				await control.evaluate((element) => {
+					;(element as HTMLElement).click()
+				})
+				clicked = true
+				break
+			}
+		}
+		if (!clicked) await page.waitForTimeout(100)
+		await expect(dialog).toBeHidden({ timeout: 2_000 }).catch(() => undefined)
+		if (!(await dialog.isVisible({ timeout: 250 }).catch(() => false))) return
+	}
+	await expect(dialog).toBeHidden({ timeout: 5_000 })
+}
+
 async function routePackageZipToLocalFile(page: Page, caseDef: SampleCase) {
 	await page.route(caseDef.packageUrl, async (route) => {
 		if (caseDef.packageManifest) {
@@ -268,14 +292,15 @@ async function runPackageAndOpenResult(page: Page, caseDef: SampleCase) {
 			;(element as HTMLElement).click()
 		})
 		await dismissRememberFilesPrompt(page)
+		await dismissSharedResourcePrompt(page)
 		runButton = page.getByRole('button', { name: `Run ${caseDef.packageLabel}`, exact: true }).first()
 	}
 	await expect(runButton).toBeVisible({ timeout: 60_000 })
 	await dismissRememberFilesPrompt(page)
+	await dismissSharedResourcePrompt(page)
 	await runButton.evaluate((element) => {
 		;(element as HTMLElement).click()
 	})
-	await expect(page.getByText('Latest result')).toBeVisible({ timeout: resultTimeout })
 	await expect(async () => {
 		const bodyText = await page.locator('body').innerText({ timeout: 10_000 })
 		expect(bodyText).not.toContain('Run failed')

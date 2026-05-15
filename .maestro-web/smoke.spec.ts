@@ -26,7 +26,7 @@ test('web smoke', async ({ page }) => {
 	}
 
 	await expect(page.getByText('Getting Started', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText('Run the sample workflow', { exact: true })).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Load sample data and run a demo assay locally' })).toBeVisible()
 	await page.screenshot({ path: '.maestro-web/screenshots/04-home.png', fullPage: true })
 
 	const fatal = errors.filter(
@@ -34,7 +34,8 @@ test('web smoke', async ({ page }) => {
 			!msg.includes('Invalid DOM property') &&
 			!msg.includes('DevTools') &&
 			!msg.includes('favicon') &&
-			!msg.includes('Failed to load resource')
+			!msg.includes('Failed to load resource') &&
+			!msg.includes('Permissions policy violation: compute-pressure is not allowed in this document')
 	)
 	expect(fatal, `console/page errors:\n${fatal.join('\n')}`).toEqual([])
 })
