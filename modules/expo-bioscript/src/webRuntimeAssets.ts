@@ -14,6 +14,13 @@ function cacheBustDevAssetUrl(uri: string, key: string) {
 	return url.href
 }
 
+// Approximate uncompressed byte sizes, used as the progress-bar denominator
+// when the server can't give a reliable Content-Length (compression). The
+// progress bus clamps to <100% until the download truly completes, so a small
+// build-to-build drift only affects the last sliver of the bar.
+export const BIOSCRIPT_WASM_APPROX_BYTES = 9_500_000
+export const MONTY_WASM_APPROX_BYTES = 36_500_000
+
 export function getBioscriptWasmUrl() {
 	return cacheBustDevAssetUrl(Asset.fromModule(bioscriptWasmAsset).uri, 'bioscript_wasm_build')
 }

@@ -26,6 +26,7 @@ const wasmJsModule = require('./bioscript-wasm/bioscript_wasm.js') as {
 	generateFastaFaiFromReader: (name: string, readAt: (offset: number, length: number) => Uint8Array, length: number) => Uint8Array
 	generateVcfTbi: (name: string, bytes: Uint8Array) => Uint8Array
 	inspectBytes: (name: string, bytes: Uint8Array, optionsJson: string | null) => string
+	lookupBamVariants: (bam_read_at: Function, bam_len: number, bai_bytes: Uint8Array, variants_json: string) => string
 	lookupGenotypeBytesRsids: (name: string, bytes: Uint8Array, rsidsJson: string) => string
 	lookupGenotypeBytesVariants: (name: string, bytes: Uint8Array, variantsJson: string) => string
 	resolvePackageReleaseText: (sourceUrl: string, name: string, text: string) => string
@@ -289,6 +290,11 @@ export type VariantLookupResult = {
 export type CramVariantSpec = VariantSpec
 export type CramVariantObservation = VariantObservation
 export type CramVariantLookupResult = VariantLookupResult
+export type BamVariantLookupInput = {
+	bamFile: File
+	baiBytes: Uint8Array
+	variants: VariantSpec[]
+}
 
 export type CramVariantLookupInput = {
 	cramFile: File
@@ -312,6 +318,15 @@ type WorkerLookupCramRequest = {
 	craiBytes: Uint8Array
 	fastaFile: File
 	faiBytes: Uint8Array
+	variantsJson: string
+}
+
+type WorkerLookupBamRequest = {
+	type: 'lookupBam'
+	requestId: number
+	wasmUrl: string
+	bamFile: File
+	baiBytes: Uint8Array
 	variantsJson: string
 }
 
@@ -553,6 +568,7 @@ function serializeVariants(variants: VariantSpec[]): string {
 			rsid: v.rsid ?? null,
 			assembly: v.assembly ?? null,
 			kind: v.kind ?? null,
+			deletion_length: v.deletion_length ?? null,
 		})),
 	)
 }
@@ -623,6 +639,39 @@ export async function lookupCramVariants(
 			craiBytes: input.craiBytes,
 			fastaFile: input.fastaFile,
 			faiBytes: input.faiBytes,
+			variantsJson,
+		}
+		worker.postMessage(req)
+	})
+}
+
+export async function lookupBamVariants(
+	input: BamVariantLookupInput,
+): Promise<VariantLookupResult> {
+	const worker = ensureLookupWorker()
+	const { wasmUrl } = resolveWorkerUrls()
+	const requestId = nextLookupRequestId++
+	const variantsJson = serializeVariants(input.variants)
+	return new Promise<VariantLookupResult>((resolve, reject) => {
+		pendingLookupRequests.set(requestId, {
+			resolve: (raw) => {
+				try {
+					resolve({
+						observations: JSON.parse(raw.resultJson ?? '') as VariantObservation[],
+						durationMs: raw.durationMs,
+					})
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)))
+				}
+			},
+			reject,
+		})
+		const req: WorkerLookupBamRequest = {
+			type: 'lookupBam',
+			requestId,
+			wasmUrl,
+			bamFile: input.bamFile,
+			baiBytes: input.baiBytes,
 			variantsJson,
 		}
 		worker.postMessage(req)

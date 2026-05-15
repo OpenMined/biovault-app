@@ -11,15 +11,15 @@ fixtures:
   apol1_python_assay: exvitae/assays/risk/APOL1/apol1.py
   apol1_text: tests/fixtures/apol1-g0g0.txt
   apol1_cram:
-    - exvitae/assays/risk/APOL1/test-data/apol1.cram
-    - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-    - exvitae/assays/risk/APOL1/test-data/stub.fa
-    - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+    - test-data/apol1/apol1.cram
+    - test-data/apol1/apol1.cram.crai
+    - test-data/apol1/stub.fa
+    - test-data/apol1/stub.fa.fai
   apol1_bam:
-    - exvitae/assays/risk/APOL1/test-data/apol1.bam
-    - exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
-    - exvitae/assays/risk/APOL1/test-data/stub.fa
-    - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+    - test-data/apol1/apol1.bam
+    - test-data/apol1/apol1.bam.bai
+    - test-data/apol1/stub.fa
+    - test-data/apol1/stub.fa.fai
   optional_vcf:
     - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
     - test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
@@ -116,10 +116,10 @@ scenarios:
       source: local
       kind: cram
       files:
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-        - exvitae/assays/risk/APOL1/test-data/stub.fa
-        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+        - test-data/apol1/apol1.cram
+        - test-data/apol1/apol1.cram.crai
+        - test-data/apol1/stub.fa
+        - test-data/apol1/stub.fa.fai
       expect_display_name: apol1.cram
     assert:
       contains: G0/G0
@@ -140,10 +140,10 @@ scenarios:
       source: local
       kind: bam
       files:
-        - exvitae/assays/risk/APOL1/test-data/apol1.bam
-        - exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
-        - exvitae/assays/risk/APOL1/test-data/stub.fa
-        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+        - test-data/apol1/apol1.bam
+        - test-data/apol1/apol1.bam.bai
+        - test-data/apol1/stub.fa
+        - test-data/apol1/stub.fa.fai
       expect_display_name: apol1.bam
     assert:
       contains: G0/G0
@@ -166,10 +166,10 @@ scenarios:
       source: local
       kind: cram
       files:
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-        - exvitae/assays/risk/APOL1/test-data/stub.fa
-        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+        - test-data/apol1/apol1.cram
+        - test-data/apol1/apol1.cram.crai
+        - test-data/apol1/stub.fa
+        - test-data/apol1/stub.fa.fai
       expect_display_name: apol1.cram
     assert:
       contains: G0/G0
@@ -254,10 +254,10 @@ scenarios:
       source: local
       kind: cram
       files:
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-        - exvitae/assays/risk/APOL1/test-data/stub.fa
-        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+        - test-data/apol1/apol1.cram
+        - test-data/apol1/apol1.cram.crai
+        - test-data/apol1/stub.fa
+        - test-data/apol1/stub.fa.fai
       expect_display_name: apol1.cram
     assert:
       contains: APOL1_G1_rs73885319
@@ -297,10 +297,10 @@ scenarios:
       source: local
       kind: cram
       files:
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram
-        - exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-        - exvitae/assays/risk/APOL1/test-data/stub.fa
-        - exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+        - test-data/apol1/apol1.cram
+        - test-data/apol1/apol1.cram.crai
+        - test-data/apol1/stub.fa
+        - test-data/apol1/stub.fa.fai
       expect_display_name: apol1.cram
     assert:
       contains: apol1.cram

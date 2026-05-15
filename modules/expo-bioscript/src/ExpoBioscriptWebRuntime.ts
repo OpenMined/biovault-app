@@ -1,13 +1,26 @@
 import type { GenomeDescriptor, RunFileRequest, RunFileResult } from './ExpoBioscript.types';
 import {
   lookupGenotypeBytesRsids,
+  lookupBamVariants,
   lookupCramVariants,
   lookupVcfVariants,
   warmupBioscriptLookupWorker,
   type VariantObservation,
   type VariantSpec,
 } from './BioscriptWasm';
-import { getMontyWasmUrl } from './webRuntimeAssets';
+import {
+  BIOSCRIPT_WASM_APPROX_BYTES,
+  MONTY_WASM_APPROX_BYTES,
+  getBioscriptWasmUrl,
+  getMontyWasmUrl,
+} from './webRuntimeAssets';
+import {
+  beginWasmTask,
+  completeWasmTask,
+  failWasmTask,
+  fetchArrayBufferWithProgress,
+  reportWasmProgress,
+} from './webRuntimeProgress';
 
 type MontyBrowserModule = {
   Monty: {
@@ -41,6 +54,7 @@ type ExternalFunction = (...args: unknown[]) => unknown | Promise<unknown>;
 type GenomeStore =
   | { kind: 'genotype-bytes'; name: string; bytes: Uint8Array }
   | { kind: 'vcf'; descriptor: Extract<GenomeDescriptor, { kind: 'vcf' }> }
+  | { kind: 'bam'; descriptor: Extract<GenomeDescriptor, { kind: 'bam' }> }
   | { kind: 'cram'; descriptor: Extract<GenomeDescriptor, { kind: 'cram' }> };
 
 type RuntimeContext = {
@@ -56,6 +70,16 @@ export async function warmupWebRuntime(): Promise<void> {
   const startedAt = Date.now();
   console.info('[bioscript] warmup total started');
   try {
+    // Pull the bioscript wasm on the main thread first so we can stream a
+    // real progress bar. With immutable caching the lookup worker's own
+    // fetch then resolves from cache instead of re-downloading.
+    try {
+      await fetchArrayBufferWithProgress(getBioscriptWasmUrl(), 'bioscript', {
+        totalOverride: BIOSCRIPT_WASM_APPROX_BYTES,
+      });
+    } catch (error) {
+      console.warn('[bioscript] bioscript wasm prefetch failed; worker will fetch it', error);
+    }
     await warmupBioscriptLookupWorker();
     console.info(`[bioscript] warmup total completed in ${Date.now() - startedAt} ms`);
   } catch (error) {
@@ -189,11 +213,9 @@ async function fetchMontyWasmBytes(wasmUrl: string): Promise<ArrayBuffer> {
   const chunkedBytes = await fetchChunkedWasmBytes(wasmUrl);
   if (chunkedBytes) return chunkedBytes;
 
-  const res = await fetch(wasmUrl);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch monty wasm at ${wasmUrl}: ${res.status}`);
-  }
-  return res.arrayBuffer();
+  return fetchArrayBufferWithProgress(wasmUrl, 'monty', {
+    totalOverride: MONTY_WASM_APPROX_BYTES,
+  });
 }
 
 async function fetchChunkedWasmBytes(wasmUrl: string): Promise<ArrayBuffer | null> {
@@ -216,26 +238,49 @@ async function fetchChunkedWasmBytes(wasmUrl: string): Promise<ArrayBuffer | nul
 
   const bytes = new Uint8Array(manifest.totalSize);
   let offset = 0;
+  beginWasmTask('monty', manifest.totalSize);
 
-  for (const chunkPath of manifest.chunks) {
-    const chunkUrl = new URL(chunkPath, manifestUrl.href);
-    const chunkRes = await fetch(chunkUrl.href);
-    if (!chunkRes.ok) {
-      throw new Error(`Failed to fetch monty wasm chunk at ${chunkUrl.href}: ${chunkRes.status}`);
+  try {
+    for (const chunkPath of manifest.chunks) {
+      const chunkUrl = new URL(chunkPath, manifestUrl.href);
+      const chunkRes = await fetch(chunkUrl.href);
+      if (!chunkRes.ok) {
+        throw new Error(`Failed to fetch monty wasm chunk at ${chunkUrl.href}: ${chunkRes.status}`);
+      }
+
+      const reader = chunkRes.body?.getReader?.();
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+          if (offset + value.byteLength > bytes.byteLength) {
+            throw new Error(`Monty wasm chunks exceed manifest size from ${manifestUrl.href}`);
+          }
+          bytes.set(value, offset);
+          offset += value.byteLength;
+          reportWasmProgress('monty', offset, manifest.totalSize);
+        }
+      } else {
+        const chunk = new Uint8Array(await chunkRes.arrayBuffer());
+        if (offset + chunk.byteLength > bytes.byteLength) {
+          throw new Error(`Monty wasm chunks exceed manifest size from ${manifestUrl.href}`);
+        }
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+        reportWasmProgress('monty', offset, manifest.totalSize);
+      }
     }
 
-    const chunk = new Uint8Array(await chunkRes.arrayBuffer());
-    if (offset + chunk.byteLength > bytes.byteLength) {
-      throw new Error(`Monty wasm chunks exceed manifest size from ${manifestUrl.href}`);
+    if (offset !== bytes.byteLength) {
+      throw new Error(`Monty wasm chunks were incomplete from ${manifestUrl.href}`);
     }
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
+  } catch (error) {
+    failWasmTask('monty');
+    throw error;
   }
 
-  if (offset !== bytes.byteLength) {
-    throw new Error(`Monty wasm chunks were incomplete from ${manifestUrl.href}`);
-  }
-
+  completeWasmTask('monty');
   return bytes.buffer;
 }
 
@@ -482,7 +527,7 @@ async function loadGenotypes(context: RuntimeContext, request: RunFileRequest, p
     return loadGenome(context, request, path);
   }
   const format = detectInputFormat(path, request.inputFormat);
-  if (format === 'zip' || format === 'cram') {
+  if (format === 'zip' || format === 'cram' || format === 'bam') {
     throw new Error(`web genotype loading does not support ${format} inputs without a genome descriptor`);
   }
 
@@ -546,6 +591,13 @@ async function loadGenome(
     return storeId;
   }
 
+  if (descriptor.kind === 'bam') {
+    context.genotypeStores.set(storeId, { kind: 'bam', descriptor });
+
+    console.log(`[bioscript-web] load_genome bam ${handle} (${descriptor.bamFile.name})`);
+    return storeId;
+  }
+
   if (descriptor.kind === 'cram') {
     context.genotypeStores.set(storeId, { kind: 'cram', descriptor });
 
@@ -567,7 +619,7 @@ async function lookupVariant(
     const [genotype] = await lookupRsidGroups(store, [spec.rsids]);
     return genotype ?? null;
   }
-  // VCF / CRAM: single-variant lookup uses the same wasm path as batch.
+  // VCF / BAM / CRAM: single-variant lookup uses the same wasm path as batch.
   const results = await lookupVariantsDispatch(context, storeHandle, [variant]);
   return results[0] ?? null;
 }
@@ -587,7 +639,7 @@ async function lookupVariantsDispatch(
     );
   }
 
-  // VCF / CRAM: translate every Monty-side VariantSpec into a wasm VariantSpec
+  // VCF / BAM / CRAM: translate every Monty-side VariantSpec into a wasm VariantSpec
   // and batch through the Web Worker. Preserve plan order — apol1 depends on
   // destructuring `site1, site2, g2 = lookup_variants(PLAN)`.
   const wasmVariants: VariantSpec[] = variants.map((raw, index) =>
@@ -601,13 +653,19 @@ async function lookupVariantsDispatch(
           tbiBytes: store.descriptor.tbiBytes,
           variants: wasmVariants,
         })
-      : await lookupCramVariants({
-          cramFile: store.descriptor.cramFile,
-          craiBytes: store.descriptor.craiBytes,
-          fastaFile: store.descriptor.fastaFile,
-          faiBytes: store.descriptor.faiBytes,
-          variants: wasmVariants,
-        });
+      : store.kind === 'bam'
+        ? await lookupBamVariants({
+            bamFile: store.descriptor.bamFile,
+            baiBytes: store.descriptor.baiBytes,
+            variants: wasmVariants,
+          })
+        : await lookupCramVariants({
+            cramFile: store.descriptor.cramFile,
+            craiBytes: store.descriptor.craiBytes,
+            fastaFile: store.descriptor.fastaFile,
+            faiBytes: store.descriptor.faiBytes,
+            variants: wasmVariants,
+          });
 
    
   console.log(
@@ -772,9 +830,9 @@ function ensureWritablePath(path: string): void {
   }
 }
 
-function detectInputFormat(path: string, requested?: string): 'text' | 'vcf' | 'zip' | 'cram' {
+function detectInputFormat(path: string, requested?: string): 'text' | 'vcf' | 'zip' | 'cram' | 'bam' {
   const normalized = requested?.toLowerCase();
-  if (normalized === 'text' || normalized === 'vcf' || normalized === 'zip' || normalized === 'cram') {
+  if (normalized === 'text' || normalized === 'vcf' || normalized === 'zip' || normalized === 'cram' || normalized === 'bam') {
     return normalized;
   }
   const lower = path.toLowerCase();
@@ -786,6 +844,9 @@ function detectInputFormat(path: string, requested?: string): 'text' | 'vcf' | '
   }
   if (lower.endsWith('.cram')) {
     return 'cram';
+  }
+  if (lower.endsWith('.bam')) {
+    return 'bam';
   }
   return 'text';
 }

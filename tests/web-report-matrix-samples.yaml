@@ -42,10 +42,10 @@ samples:
             equals: mthfr_combined
 
   - id: apol1-bam
-    input_file: ../exvitae/assays/risk/APOL1/test-data/apol1.bam
-    input_index: ../exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
-    reference_file: ../exvitae/assays/risk/APOL1/test-data/stub.fa
-    reference_index: ../exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+    input_file: ../test-data/apol1/apol1.bam
+    input_index: ../test-data/apol1/apol1.bam.bai
+    reference_file: ../test-data/apol1/stub.fa
+    reference_index: ../test-data/apol1/stub.fa.fai
     package_manifest: ../exvitae/assays/risk/APOL1/APOL1.yaml
     package_zip: ../exvitae/assays/risk/APOL1/APOL1.zip
     package_input_file: true
@@ -65,10 +65,10 @@ samples:
             equals: G0/G0
 
   - id: apol1-cram
-    input_file: ../exvitae/assays/risk/APOL1/test-data/apol1.cram
-    input_index: ../exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-    reference_file: ../exvitae/assays/risk/APOL1/test-data/stub.fa
-    reference_index: ../exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+    input_file: ../test-data/apol1/apol1.cram
+    input_index: ../test-data/apol1/apol1.cram.crai
+    reference_file: ../test-data/apol1/stub.fa
+    reference_index: ../test-data/apol1/stub.fa.fai
     package_manifest: ../exvitae/assays/risk/APOL1/APOL1.yaml
     package_zip: ../exvitae/assays/risk/APOL1/APOL1.zip
     package_input_file: true

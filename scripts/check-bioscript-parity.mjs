@@ -26,6 +26,7 @@ const caseSelected = (id) => !onlyFilter || onlyFilter.some((f) => id.includes(f
 const exvitaeReportRoot = process.env.EXVITAE_REPORT_ROOT ?? process.env.HOME ?? path.parse(root).root
 const exvitaeDataRepo = process.env.EXVITAE_DATA_REPO ?? path.join(root, 'exvitae')
 const exvitaeProjects = process.env.EXVITAE_PROJECTS_DIR ?? path.join(exvitaeDataRepo, 'assays/pgx')
+const apol1TestDataRoot = path.join(root, 'test-data/apol1')
 const externalReportParityRoot = mkdtempSync(path.join(repoTempRoot, 'exvitae-report-parity-'))
 
 process.on('exit', () => {
@@ -541,23 +542,23 @@ runExvitaeReportParityCase({
 	dataAlias: 'apol1-cram',
 	assayAlias: 'apol1',
 	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
-	inputFile: path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram'),
+	inputFile: path.join(apol1TestDataRoot, 'apol1.cram'),
 	requiredFiles: [
 		path.join(root, 'exvitae/test-report.sh'),
 		path.join(exvitaeDataRepo, 'bioscript/bs'),
 		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram'),
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram.crai'),
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa'),
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa.fai'),
+		path.join(apol1TestDataRoot, 'apol1.cram'),
+		path.join(apol1TestDataRoot, 'apol1.cram.crai'),
+		path.join(apol1TestDataRoot, 'stub.fa'),
+		path.join(apol1TestDataRoot, 'stub.fa.fai'),
 	],
 	extraWasmArgs: [
 		'--input-index',
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.cram.crai'),
+		path.join(apol1TestDataRoot, 'apol1.cram.crai'),
 		'--reference-file',
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa'),
+		path.join(apol1TestDataRoot, 'stub.fa'),
 		'--reference-index',
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/stub.fa.fai'),
+		path.join(apol1TestDataRoot, 'stub.fa.fai'),
 		'--allow-md5-mismatch',
 	],
 	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
@@ -569,17 +570,17 @@ runExvitaeReportParityCase({
 	dataAlias: 'apol1-bam',
 	assayAlias: 'apol1',
 	manifest: path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
-	inputFile: path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam'),
+	inputFile: path.join(apol1TestDataRoot, 'apol1.bam'),
 	requiredFiles: [
 		path.join(root, 'exvitae/test-report.sh'),
 		path.join(exvitaeDataRepo, 'bioscript/bs'),
 		path.join(exvitaeDataRepo, 'assays/risk/APOL1/manifest.yaml'),
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam'),
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam.bai'),
+		path.join(apol1TestDataRoot, 'apol1.bam'),
+		path.join(apol1TestDataRoot, 'apol1.bam.bai'),
 	],
 	extraWasmArgs: [
 		'--input-index',
-		path.join(exvitaeDataRepo, 'assays/risk/APOL1/test-data/apol1.bam.bai'),
+		path.join(apol1TestDataRoot, 'apol1.bam.bai'),
 	],
 	artifacts: ['observations.tsv', 'analysis.jsonl', 'reports.jsonl'],
 	assertOutputs: assertApol1Report,

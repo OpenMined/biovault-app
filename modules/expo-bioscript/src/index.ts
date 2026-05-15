@@ -30,6 +30,13 @@ export function runFile(request: RunFileRequest): Promise<RunFileResult> {
 export { runAssay } from './ExpoBioscriptAssays';
 
 export {
+  subscribeWasmProgress,
+  getWasmProgressSnapshot,
+  type WasmProgressSnapshot,
+  type WasmTaskKey,
+} from './webRuntimeProgress';
+
+export {
   inspectBytes,
   compileVariantYamlText,
   generateBamBaiFile,
@@ -37,6 +44,7 @@ export {
   generateFastaFaiFile,
   generateVcfTbiFile,
   lookupGenotypeBytesVariants,
+  lookupBamVariants,
   lookupCramVariants,
   lookupVcfVariants,
   resolveRemoteResourceText,
@@ -58,6 +66,7 @@ export {
   type BioscriptInspection,
   type BioscriptInspectOptions,
   verifyPackageArtifactSha256,
+  type BamVariantLookupInput,
   type CramVariantLookupInput,
   type CramVariantLookupResult,
   type CramVariantObservation,

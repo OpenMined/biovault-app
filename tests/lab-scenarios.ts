@@ -146,16 +146,16 @@ export const sharedLabTestScenarios: SharedLabTestScenario[] = doc.scenarios.map
 export const labTestFixtures = {
 	apol1Text: 'tests/fixtures/apol1-g0g0.txt',
 	apol1Cram: [
-		'exvitae/assays/risk/APOL1/test-data/apol1.cram',
-		'exvitae/assays/risk/APOL1/test-data/apol1.cram.crai',
-		'exvitae/assays/risk/APOL1/test-data/stub.fa',
-		'exvitae/assays/risk/APOL1/test-data/stub.fa.fai',
+		'test-data/apol1/apol1.cram',
+		'test-data/apol1/apol1.cram.crai',
+		'test-data/apol1/stub.fa',
+		'test-data/apol1/stub.fa.fai',
 	],
 	apol1Bam: [
-		'exvitae/assays/risk/APOL1/test-data/apol1.bam',
-		'exvitae/assays/risk/APOL1/test-data/apol1.bam.bai',
-		'exvitae/assays/risk/APOL1/test-data/stub.fa',
-		'exvitae/assays/risk/APOL1/test-data/stub.fa.fai',
+		'test-data/apol1/apol1.bam',
+		'test-data/apol1/apol1.bam.bai',
+		'test-data/apol1/stub.fa',
+		'test-data/apol1/stub.fa.fai',
 	],
 	optionalVcf: [
 		'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz',

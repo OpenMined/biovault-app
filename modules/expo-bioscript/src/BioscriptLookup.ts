@@ -7,6 +7,7 @@ import type {
 	BioscriptPackageRelease,
 	BioscriptPackageResolution,
 	BioscriptPackageResource,
+	BamVariantLookupInput,
 	BioscriptRemoteDependency,
 	BioscriptRemoteResourceResolution,
 	CramVariantObservation,
@@ -32,6 +33,7 @@ export type {
 	BioscriptPackageRelease,
 	BioscriptPackageResolution,
 	BioscriptPackageResource,
+	BamVariantLookupInput,
 	BioscriptRemoteDependency,
 	BioscriptRemoteResourceResolution,
 	CramVariantObservation,
@@ -82,6 +84,10 @@ export async function lookupGenotypeBytesVariants(
 
 export async function lookupCramVariants(_input: CramVariantLookupInput): Promise<CramVariantLookupResult> {
 	nativeOnly('lookupCramVariants')
+}
+
+export async function lookupBamVariants(_input: BamVariantLookupInput): Promise<VariantLookupResult> {
+	nativeOnly('lookupBamVariants')
 }
 
 export async function lookupVcfVariants(_input: VcfVariantLookupInput): Promise<VariantLookupResult> {

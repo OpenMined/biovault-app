@@ -44,7 +44,15 @@ export async function buildGenomeDescriptorFromRef(
 		}
 	}
 	if (!genome.crai || !genome.fasta || !genome.fai) {
-		throw new Error('CRAM genome needs .cram.crai + reference .fa + .fa.fai')
+		throw new Error('Alignment genome needs .bam.bai/.cram.crai + reference .fa + .fa.fai')
+	}
+	if (genome.primary.kind === 'bam') {
+		return {
+			kind: 'bam',
+			name: genome.primary.name,
+			bamFile: requirePlatformFile(files, genome.primary, 'BAM genome'),
+			baiBytes: await files.readBytes(genome.crai),
+		}
 	}
 	return {
 		kind: 'cram',
@@ -156,6 +164,21 @@ export async function runLabAssayRef(
 		if (selectedGenome.kind === 'cram') {
 			if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
 				throw new Error('CRAM genome incomplete')
+			}
+			if (selectedGenome.primary.kind === 'bam') {
+				const result = await runtime.lookupBamVariants({
+					bamFile: requirePlatformFile(files, selectedGenome.primary, 'BAM genome'),
+					baiBytes: await files.readBytes(selectedGenome.crai),
+					variants,
+				})
+				return {
+					kind: 'variant_lookup',
+					result: {
+						status: 'done',
+						durationMs: result.durationMs,
+						observations: result.observations,
+					},
+				}
 			}
 			const result = await runtime.lookupCramVariants({
 				cramFile: requirePlatformFile(files, selectedGenome.primary, 'CRAM genome'),
@@ -349,13 +372,19 @@ export async function runLabVariantYamlRefs(
 			})
 			await yieldToBrowser()
 			try {
-				const result = await runtime.lookupCramVariants({
-					cramFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome'),
-					craiBytes,
-					fastaFile: requirePlatformFile(fileAdapter, selectedGenome.fasta, 'CRAM reference FASTA'),
-					faiBytes,
-					variants: compiled.variants,
-				})
+				const result = selectedGenome.primary.kind === 'bam'
+					? await runtime.lookupBamVariants({
+							bamFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'BAM genome'),
+							baiBytes: craiBytes,
+							variants: compiled.variants,
+						})
+					: await runtime.lookupCramVariants({
+							cramFile: requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome'),
+							craiBytes,
+							fastaFile: requirePlatformFile(fileAdapter, selectedGenome.fasta, 'CRAM reference FASTA'),
+							faiBytes,
+							variants: compiled.variants,
+						})
 				observations.push(...result.observations)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)

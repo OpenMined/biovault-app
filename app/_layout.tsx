@@ -5,7 +5,7 @@ import { applyGlobalBrandTypography } from '@/lib/brand-typography'
 import { deferLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
 import { identifyBioVaultWebUser } from '@/lib/rybbit-identify.web'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
-import { warmupBioscriptRuntime } from '@/modules/expo-bioscript'
+import { WasmLoadingGate } from '@/components/WasmLoadingGate'
 import { omColors, omRadius, omSpacing } from '@/styles/brand'
 import { useFonts } from 'expo-font'
 import { Stack, usePathname, useRouter } from 'expo-router'
@@ -196,10 +196,7 @@ export default function RootLayout() {
 	useEffect(() => {
 		if (Platform.OS !== 'web') return
 		identifyBioVaultWebUser()
-
-		void warmupBioscriptRuntime().catch((error) => {
-			console.warn('[bioscript] web runtime warmup failed', error)
-		})
+		// WASM warmup is owned by <WasmLoadingGate> so it can show progress.
 	}, [])
 
 	if (!fontsReady) {
@@ -209,7 +206,9 @@ export default function RootLayout() {
 	return (
 		<KeyboardProvider>
 			<View style={{ flex: 1, backgroundColor: omColors.grayscale850 }}>
-				<RootNavigator />
+				<WasmLoadingGate>
+					<RootNavigator />
+				</WasmLoadingGate>
 				<BuildBadge />
 			</View>
 			<StatusBar style="light" />

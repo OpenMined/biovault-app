@@ -1,4 +1,4 @@
-export type BioscriptInputFormat = 'auto' | 'text' | 'zip' | 'vcf' | 'cram';
+export type BioscriptInputFormat = 'auto' | 'text' | 'zip' | 'vcf' | 'cram' | 'bam';
 
 /** Descriptor passed from the web UI to the Monty runtime so `bioscript.load_genome`
  * (and the legacy `bioscript.load_genotypes`) can dispatch to the right backend.
@@ -12,6 +12,7 @@ export type GenomeDescriptor =
   | { kind: 'text'; name: string; text: string }
   | { kind: 'zip'; name: string; bytes: Uint8Array }
   | { kind: 'vcf'; name: string; vcfFile: File; tbiBytes: Uint8Array }
+  | { kind: 'bam'; name: string; bamFile: File; baiBytes: Uint8Array }
   | {
       kind: 'cram'
       name: string
