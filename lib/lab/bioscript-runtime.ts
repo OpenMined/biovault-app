@@ -1,6 +1,7 @@
 import {
 	compileVariantYamlText,
 	generateVcfTbiFile,
+	lookupBamVariants,
 	lookupCramVariants,
 	lookupGenotypeBytesVariants,
 	lookupVcfVariants,
@@ -12,6 +13,7 @@ import {
 	type BioscriptPackageFile,
 	type BioscriptPackageReportOptions,
 	type BioscriptPackageReportResult,
+	type BamVariantLookupInput,
 	type CramVariantLookupInput,
 	type CramVariantLookupResult,
 	type GenomeDescriptor,
@@ -37,6 +39,7 @@ export type {
 export type LabBioscriptRuntime = {
 	compileVariantYamlText: (fileName: string, yamlText: string) => Promise<VariantSpec[]>
 	generateVcfTbiFile: (vcfFile: File) => Promise<Uint8Array>
+	lookupBamVariants: (input: BamVariantLookupInput) => Promise<VariantLookupResult>
 	lookupCramVariants: (input: CramVariantLookupInput) => Promise<CramVariantLookupResult>
 	lookupGenotypeBytesVariants: (
 		fileName: string,
@@ -83,6 +86,7 @@ export type LabBioscriptRuntime = {
 export const expoBioscriptRuntime: LabBioscriptRuntime = {
 	compileVariantYamlText,
 	generateVcfTbiFile,
+	lookupBamVariants,
 	lookupCramVariants,
 	lookupGenotypeBytesVariants,
 	lookupVcfVariants,

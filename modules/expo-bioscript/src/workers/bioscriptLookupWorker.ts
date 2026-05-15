@@ -3,6 +3,7 @@ import initBioscriptWasm, {
 	generateCramCraiFromReader,
 	generateFastaFaiFromReader,
 	generateVcfTbi,
+	lookupBamVariants,
 	lookupCramVariants,
 	lookupVcfVariants,
 	runPackageReportBytes,
@@ -23,6 +24,15 @@ type LookupCramMessage = {
 	craiBytes: Uint8Array
 	fastaFile: File
 	faiBytes: Uint8Array
+	variantsJson: string
+}
+
+type LookupBamMessage = {
+	type: 'lookupBam'
+	requestId: number
+	wasmUrl: string
+	bamFile: File
+	baiBytes: Uint8Array
 	variantsJson: string
 }
 
@@ -106,6 +116,7 @@ type GenerateIndexMessage = {
 
 type LookupMessage =
 	| LookupCramMessage
+	| LookupBamMessage
 	| LookupVcfMessage
 	| WarmupMessage
 	| ReportFromBamMessage
@@ -251,6 +262,24 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 				message.bamFile.size,
 				message.baiBytes,
 				message.optionsJson,
+			)
+			self.postMessage({
+				type: 'done',
+				requestId: message.requestId,
+				resultJson,
+				durationMs: Date.now() - startedAt,
+			})
+			return
+		}
+
+		if (message.type === 'lookupBam') {
+			const bamReadAt = makeReadAt(message.bamFile, fileReader)
+			const startedAt = Date.now()
+			const resultJson = lookupBamVariants(
+				bamReadAt,
+				message.bamFile.size,
+				message.baiBytes,
+				message.variantsJson,
 			)
 			self.postMessage({
 				type: 'done',
