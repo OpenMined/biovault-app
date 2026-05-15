@@ -110,6 +110,20 @@ function assertApol1Report(outputDir) {
 	}
 }
 
+function assertThalassemiaReport(outputDir) {
+	const analyses = readJsonl(path.join(outputDir, 'analysis.jsonl'))
+	const thalassemia = analyses.find((analysis) => analysis.analysis_id === 'thalassemia_status')
+	if (!thalassemia) throw new Error('Thalassemia report did not emit thalassemia_status analysis')
+	const row = thalassemia.rows?.[0]
+	if (!row) throw new Error('Thalassemia analysis did not emit a row')
+	assertEqual(row.thalassemia_status, 'other_globin_chain_or_modifier_variant_observed', 'Thalassemia status')
+	assertEqual(row.other_globin_or_modifier_findings, '166', 'Thalassemia modifier finding count')
+	const observations = readFileSync(path.join(outputDir, 'observations.tsv'), 'utf8')
+	if (!observations.includes('thalassemia-MYH9-rs1005570') || !observations.includes('\tGG\t')) {
+		throw new Error('Thalassemia observations.tsv does not contain rs1005570 GG')
+	}
+}
+
 function normalizeTextArtifact(artifact, text, options = {}) {
 	const normalizedPathText = options.normalizeEvidencePaths
 		? text.replace(/(?:\/[^/\t\n:]+)+\/([^/\t\n:]+\.(?:vcf\.gz|cram|bam|txt|zip|csv)):/g, '$1:')
@@ -128,6 +142,7 @@ function normalizeTextArtifact(artifact, text, options = {}) {
 			.replace(/(&quot;manifest_path&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
 			.replace(/(&quot;script_path&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
 			.replace(/(&quot;output_file&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
+			.replace(/(&quot;observations_file&quot;:\s*&quot;)[^&]*(&quot;)/g, '$1<normalized>$2')
 			.replace(/(&quot;duration_ms&quot;:\s*)\d+/g, '$1<normalized>')
 			.trimEnd() + '\n'
 	}
@@ -144,6 +159,7 @@ function removeVolatileReportFields(value, options = {}) {
 		if (key === 'manifest_path') continue
 		if (key === 'script_path') continue
 		if (key === 'output_file') continue
+		if (key === 'observations_file') continue
 		if (options.normalizeInputDebug && key === 'debug') continue
 		normalized[key] = removeVolatileReportFields(child, options)
 	}
@@ -365,6 +381,29 @@ if (existsSync(pgxManifestPath) && existsSync(pgx23andmePath)) {
 	assertPgxApoeReport(pgxOutputDir)
 } else {
 	console.warn('Skipping PGx-1 23andMe APOE report parity; fixture is not present.')
+}
+
+const thalassemiaReleasePath = path.join(root, 'exvitae/assays/risk/thalassemia/thalassemia.yaml')
+if (existsSync(thalassemiaReleasePath) && existsSync(pgx23andmePath)) {
+	console.log('==> WASM thalassemia package-release 23andMe report')
+	const thalassemiaOutputDir = path.join(tempRoot, 'thalassemia-23andme-v5-wasm')
+	run('bioscript wasm thalassemia package-release 23andMe report', 'node', [
+		bsWasmShim,
+		'report',
+		path.relative(root, thalassemiaReleasePath),
+		'--root',
+		root,
+		'--input-file',
+		path.relative(root, pgx23andmePath),
+		'--detect-sex',
+		'--output-dir',
+		thalassemiaOutputDir,
+		'--analysis-max-duration-ms',
+		'30000',
+	])
+	assertThalassemiaReport(thalassemiaOutputDir)
+} else {
+	console.warn('Skipping thalassemia package-release 23andMe report; fixture is not present.')
 }
 
 console.log('==> ExVitae test-report.sh vs WASM report artifact parity')

@@ -200,23 +200,59 @@ function writeArtifacts(artifacts) {
   }
 }
 
+function localPathFromPackageArtifactUrl(artifactUrl) {
+  if (!artifactUrl) return null
+  try {
+    const url = new URL(artifactUrl)
+    if (url.protocol === 'file:') return url.pathname
+    return null
+  } catch {
+    return path.resolve(artifactUrl)
+  }
+}
+
+function packageFromZip(zipPath, sourceUrl = zipPath) {
+  const zipBytes = new Uint8Array(fs.readFileSync(zipPath))
+  const pkg = JSON.parse(wasm.resolvePackageZipBytes(sourceUrl, path.basename(zipPath), zipBytes))
+  return {
+    bytes: zipBytes,
+    files: pkg.files.map((file) => ({
+      path: file.path,
+      contents: file.contents,
+      sourceUrl: file.sourceUrl ?? file.source_url ?? null,
+    })),
+    entrypoint: pkg.entrypoint,
+  }
+}
+
 const wasm = await loadWasm()
 
 let packageFiles
 let manifestRel
 if (manifestAbs.toLowerCase().endsWith('.zip')) {
-  const zipBytes = new Uint8Array(fs.readFileSync(manifestAbs))
-  const pkg = JSON.parse(wasm.resolvePackageZipBytes(manifestAbs, path.basename(manifestAbs), zipBytes))
-  packageFiles = pkg.files.map((file) => ({
-    path: file.path,
-    contents: file.contents,
-    sourceUrl: file.sourceUrl ?? file.source_url ?? null,
-  }))
+  const pkg = packageFromZip(manifestAbs)
+  packageFiles = pkg.files
   manifestRel = opts.package_entrypoint || pkg.entrypoint
 } else {
-  const collected = collectPackageFiles(manifestAbs)
-  packageFiles = collected.files
-  manifestRel = collected.manifestRel
+  const manifestText = fs.readFileSync(manifestAbs, 'utf8')
+  if (/^\s*schema\s*:\s*["']?bioscript:package-release:1\.0["']?/m.test(manifestText)) {
+    const release = JSON.parse(wasm.resolvePackageReleaseText(manifestAbs, path.basename(manifestAbs), manifestText))
+    const artifactPath = localPathFromPackageArtifactUrl(release.artifactUrl)
+    if (!artifactPath) {
+      console.error(`bs-wasm: package release artifact is not a local path: ${release.artifactUrl}`)
+      process.exit(2)
+    }
+    const pkg = packageFromZip(artifactPath, release.artifactUrl)
+    if (release.artifactSha256) {
+      wasm.verifyPackageArtifactSha256(path.basename(artifactPath), pkg.bytes, release.artifactSha256)
+    }
+    packageFiles = pkg.files
+    manifestRel = opts.package_entrypoint || release.entrypoint || pkg.entrypoint
+  } else {
+    const collected = collectPackageFiles(manifestAbs)
+    packageFiles = collected.files
+    manifestRel = collected.manifestRel
+  }
 }
 
 let resultJson
