@@ -96,6 +96,7 @@ fs.mkdirSync(outputDirAbs, { recursive: true })
 const inputName = path.basename(inputFileAbs)
 const inputFormat = (opts.input_format || '').toLowerCase()
 const isCram = inputFormat === 'cram' || inputFileAbs.toLowerCase().endsWith('.cram')
+const isBam = inputFormat === 'bam' || inputFileAbs.toLowerCase().endsWith('.bam')
 const isVcf =
   inputFormat === 'vcf' ||
   inputFileAbs.toLowerCase().endsWith('.vcf.gz') ||
@@ -283,6 +284,26 @@ if (isCram) {
   } finally {
     cram.close()
     fasta.close()
+  }
+} else if (isBam) {
+  if (!opts.input_index) {
+    console.error('bs-wasm: BAM input requires --input-index (.bai)')
+    process.exit(2)
+  }
+  const bam = makeFsReadAt(inputFileAbs)
+  const baiBytes = new Uint8Array(fs.readFileSync(path.resolve(opts.input_index)))
+  try {
+    resultJson = wasm.runPackageReportFromBam(
+      manifestRel,
+      JSON.stringify(packageFiles),
+      inputName,
+      bam.readAt,
+      bam.len,
+      baiBytes,
+      JSON.stringify(reportOptions),
+    )
+  } finally {
+    bam.close()
   }
 } else if (isVcf) {
   if (!opts.input_index) {

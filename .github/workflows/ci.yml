@@ -172,7 +172,6 @@ jobs:
         run: |
           test -f bioscript/rust/Cargo.toml
           test -f exvitae/assays/risk/APOL1/apol1.py
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
           git submodule status bioscript exvitae
 
       - name: Install Playwright browsers
@@ -263,7 +262,6 @@ jobs:
         run: |
           test -f bioscript/rust/Cargo.toml
           test -f exvitae/assays/risk/APOL1/apol1.py
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
           git submodule status bioscript exvitae
 
       - name: Cache genomic test fixtures
@@ -281,6 +279,12 @@ jobs:
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
+          test -f test-data/apol1/apol1.bam
+          test -f test-data/apol1/apol1.bam.bai
+          test -f test-data/apol1/apol1.cram
+          test -f test-data/apol1/apol1.cram.crai
+          test -f test-data/apol1/stub.fa
+          test -f test-data/apol1/stub.fa.fai
 
       - name: Check BioScript CLI/WASM parity
         run: npm run check:bioscript-parity
@@ -316,7 +320,6 @@ jobs:
         run: |
           test -f bioscript/rust/Cargo.toml
           test -f exvitae/assays/risk/APOL1/apol1.py
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
           git submodule status bioscript exvitae
 
       - name: Install Playwright browsers
@@ -339,12 +342,12 @@ jobs:
           test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
           test -f exvitae/assays/risk/APOL1/APOL1.yaml
           test -f exvitae/assays/risk/APOL1/APOL1.zip
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.bam
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.bam.bai
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram
-          test -f exvitae/assays/risk/APOL1/test-data/apol1.cram.crai
-          test -f exvitae/assays/risk/APOL1/test-data/stub.fa
-          test -f exvitae/assays/risk/APOL1/test-data/stub.fa.fai
+          test -f test-data/apol1/apol1.bam
+          test -f test-data/apol1/apol1.bam.bai
+          test -f test-data/apol1/apol1.cram
+          test -f test-data/apol1/apol1.cram.crai
+          test -f test-data/apol1/stub.fa
+          test -f test-data/apol1/stub.fa.fai
 
       - name: Run selected PGx report browser matrix
         run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=2 WEB_REPORT_NO_PRIVATE=1 WEB_REPORT_SAMPLE_IDS=23andme-v5-hu50B3F5,NA06985-vcf,apol1-bam,apol1-cram ./test-web.sh --pgx-report-scenario

@@ -53,6 +53,7 @@ fetch_web_pgx_public() {
   BIOSCRIPT_TEST_DATA_REPO_ROOT="$REPO_ROOT" "$fetcher" --dataset genesforgood
   BIOSCRIPT_TEST_DATA_REPO_ROOT="$REPO_ROOT" "$fetcher" --dataset myheritage
   BIOSCRIPT_TEST_DATA_REPO_ROOT="$REPO_ROOT" "$fetcher" --dataset 1k-genomes --only "NA06985.clean.vcf.gz*"
+  BIOSCRIPT_TEST_DATA_REPO_ROOT="$REPO_ROOT" "$fetcher" --dataset apol1
 }
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then

@@ -24,6 +24,13 @@ export function generateVcfTbi(input_name: string, vcf_bytes: Uint8Array): Uint8
 export function inspectBytes(name: string, bytes: Uint8Array, options_json?: string | null): string;
 
 /**
+ * Observe a list of variants against an indexed BAM, with bulk bytes pulled
+ * on demand via a JS-supplied `readAt(offset, len)` callback and the `.bai`
+ * index passed inline.
+ */
+export function lookupBamVariants(bam_read_at: Function, bam_len: number, bai_bytes: Uint8Array, variants_json: string): string;
+
+/**
  * Observe a list of SNP variants against an indexed CRAM + reference FASTA,
  * with the bulk bytes pulled on demand via JS-supplied `readAt(offset, len)`
  * callbacks. The small index payloads (`.crai`, `.fai`) are passed inline.
@@ -126,6 +133,7 @@ export interface InitOutput {
     readonly generateFastaFai: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly generateFastaFaiFromReader: (a: number, b: number, c: any, d: number) => [number, number, number, number];
     readonly generateVcfTbi: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly lookupBamVariants: (a: any, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupCramVariants: (a: any, b: number, c: number, d: number, e: any, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly lookupGenotypeBytesRsids: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly lookupGenotypeBytesVariants: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
