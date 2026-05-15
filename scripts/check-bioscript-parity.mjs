@@ -78,6 +78,17 @@ function readJsonl(file) {
 		.map((line) => JSON.parse(line))
 }
 
+function readTsv(file) {
+	const [headerLine, ...lines] = readFileSync(file, 'utf8')
+		.split(/\r?\n/)
+		.filter(Boolean)
+	const headers = headerLine.split('\t')
+	return lines.map((line) => {
+		const values = line.split('\t')
+		return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']))
+	})
+}
+
 function assertPgxApoeReport(outputDir) {
 	const analyses = readJsonl(path.join(outputDir, 'analysis.jsonl'))
 	const apoe = analyses.find((analysis) => analysis.analysis_id === 'apoe_epsilon')
@@ -117,11 +128,34 @@ function assertThalassemiaReport(outputDir) {
 	const row = thalassemia.rows?.[0]
 	if (!row) throw new Error('Thalassemia analysis did not emit a row')
 	assertEqual(row.thalassemia_status, 'other_globin_chain_or_modifier_variant_observed', 'Thalassemia status')
-	assertEqual(row.other_globin_or_modifier_findings, '166', 'Thalassemia modifier finding count')
+	assertEqual(row.other_globin_or_modifier_findings, '83', 'Thalassemia modifier finding count')
 	const observations = readFileSync(path.join(outputDir, 'observations.tsv'), 'utf8')
 	if (!observations.includes('thalassemia-MYH9-rs1005570') || !observations.includes('\tGG\t')) {
 		throw new Error('Thalassemia observations.tsv does not contain rs1005570 GG')
 	}
+	assertSingleThalassemiaRs2541640(outputDir, {
+		assembly: 'GRCH37',
+		posStart: '223706',
+		genotypeDisplay: '??',
+	})
+}
+
+function assertSingleThalassemiaRs2541640(outputDir, expected) {
+	const rows = readTsv(path.join(outputDir, 'observations.tsv'))
+		.filter((row) => row.rsid === 'rs2541640')
+	assertEqual(rows.length, 1, 'Thalassemia rs2541640 observation count')
+	const [row] = rows
+	assertEqual(row.assembly, expected.assembly, 'Thalassemia rs2541640 assembly')
+	assertEqual(row.pos_start, expected.posStart, 'Thalassemia rs2541640 position')
+	assertEqual(row.genotype_display, expected.genotypeDisplay, 'Thalassemia rs2541640 genotype')
+}
+
+function assertSingleThalassemiaRs2541640Grch37Na06985(outputDir) {
+	assertSingleThalassemiaRs2541640(outputDir, {
+		assembly: 'GRCH37',
+		posStart: '223706',
+		genotypeDisplay: 'GG',
+	})
 }
 
 function normalizeTextArtifact(artifact, text, options = {}) {
@@ -404,6 +438,34 @@ if (existsSync(thalassemiaReleasePath) && existsSync(pgx23andmePath)) {
 	assertThalassemiaReport(thalassemiaOutputDir)
 } else {
 	console.warn('Skipping thalassemia package-release 23andMe report; fixture is not present.')
+}
+
+const na06985VcfPath = path.join(exvitaeDataRepo, 'test-data/1k-genomes/vcf/NA06985.clean.vcf.gz')
+const na06985VcfIndexPath = `${na06985VcfPath}.tbi`
+if (existsSync(thalassemiaReleasePath) && existsSync(na06985VcfPath) && existsSync(na06985VcfIndexPath)) {
+	console.log('==> ExVitae thalassemia NA06985 VCF rs2541640 CLI/WASM parity')
+	runExvitaeReportParityCase({
+		id: 'na06985-thalassemia-vcf',
+		manifest: thalassemiaReleasePath,
+		inputFile: na06985VcfPath,
+		requiredFiles: [
+			bioscriptShim,
+			bsWasmShim,
+			thalassemiaReleasePath,
+			na06985VcfPath,
+			na06985VcfIndexPath,
+		],
+		extraWasmArgs: [
+			'--input-format',
+			'vcf',
+			'--input-index',
+			na06985VcfIndexPath,
+		],
+		artifacts: ['observations.tsv'],
+		assertOutputs: assertSingleThalassemiaRs2541640Grch37Na06985,
+	})
+} else {
+	console.warn('Skipping thalassemia NA06985 VCF parity; fixture or index is not present.')
 }
 
 console.log('==> ExVitae test-report.sh vs WASM report artifact parity')
