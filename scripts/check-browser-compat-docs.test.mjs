@@ -121,7 +121,7 @@ test('rejects stale completion audit generated policy prose', () => {
 
 test('accepts provider runbook target list that matches the completion contract', () => {
 	const fixture = createFixture({
-		scripts: {},
+		scripts: renderScriptFixture(),
 		doc: '',
 		providerDoc: [
 			'# Browser Compatibility Provider Runs',
@@ -133,6 +133,7 @@ test('accepts provider runbook target list that matches the completion contract'
 			'Each target must run the same WASM demo/report happy path.',
 			...endpointInputLines(),
 			...resultContractLines(),
+			...providerRenderLines(),
 			'Use a pushed feature branch while validating, or `main` after the workflow changes are merged.',
 			'Run `gh workflow run CI -f compat_web_url=https://app.biovault.net/web/ -f compat_remote_dry_run=true` first.',
 			'Then run `gh workflow run CI -f compat_local_smoke=true -f compat_versions=true -f compat_android_local=true -f compat_include_ios=true -f compat_completion=true`.',
@@ -183,6 +184,7 @@ test('rejects provider docs that omit supported endpoint input aliases', () => {
 			'Each target must run the same WASM demo/report happy path.',
 			'Endpoint JSON can be supplied with WEB_COMPAT_REMOTE_ENDPOINTS_JSON.',
 			...resultContractLines(),
+			...providerRenderLines(),
 			'',
 		].join('\n'),
 		completionContract: completionContractFixture(),
@@ -208,6 +210,7 @@ test('rejects provider docs that omit result contract override details', () => {
 			'Each target must run the same WASM demo/report happy path.',
 			...endpointInputLines(),
 			'Rows are written to results.json.',
+			...providerRenderLines(),
 			'',
 		].join('\n'),
 		completionContract: completionContractFixture(),
@@ -217,6 +220,32 @@ test('rejects provider docs that omit result contract override details', () => {
 	assert.equal(result.status, 1)
 	assert.match(result.stderr, /missing result contract detail results\.md/)
 	assert.match(result.stderr, /missing result contract detail WEB_COMPAT_REQUIRED_ARTIFACTS/)
+})
+
+test('rejects provider docs that omit endpoint renderer placeholders', () => {
+	const fixture = createFixture({
+		scripts: {},
+		doc: '',
+		providerDoc: [
+			'# Browser Compatibility Provider Runs',
+			'',
+			'The current required provider targets are:',
+			'',
+			...targetList(),
+			'',
+			'Each target must run the same WASM demo/report happy path.',
+			...endpointInputLines(),
+			...resultContractLines(),
+			'Use `npm run --silent render:browser-compat-endpoints -- browserstack tests/browser-compat-provider-capabilities.example.json`.',
+			'Set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY before rendering.',
+			'',
+		].join('\n'),
+		completionContract: completionContractFixture(),
+	})
+
+	const result = runChecker(fixture)
+	assert.equal(result.status, 1)
+	assert.match(result.stderr, /missing provider build label placeholder: GITHUB_SHA/)
 })
 
 test('rejects provider-facing docs that omit the public compatibility web URL', () => {
@@ -297,7 +326,7 @@ test('rejects provider runbook that omits the full evidence dispatch inputs', ()
 
 test('accepts provider runbook with dry-run and full evidence dispatch inputs', () => {
 	const fixture = createFixture({
-		scripts: {},
+		scripts: renderScriptFixture(),
 		doc: '',
 		providerDoc: [
 			'# Browser Compatibility Provider Runs',
@@ -309,6 +338,7 @@ test('accepts provider runbook with dry-run and full evidence dispatch inputs', 
 			'Each target must run the same WASM demo/report happy path.',
 			...endpointInputLines(),
 			...resultContractLines(),
+			...providerRenderLines(),
 			'',
 			'Use a pushed feature branch while validating, or `main` after the workflow changes are merged.',
 			'Run `gh workflow run CI -f compat_web_url=https://app.biovault.net/web/ -f compat_remote_dry_run=true` first.',
@@ -625,6 +655,20 @@ function resultContractLines() {
 		'and custom Markdown summaries can be selected with WEB_COMPAT_RESULTS_MD_FILE',
 		'or required explicitly with WEB_COMPAT_REQUIRE_RESULTS_MD.',
 	]
+}
+
+function providerRenderLines() {
+	return [
+		'Render endpoints with GITHUB_SHA="$(git rev-parse HEAD)" and',
+		'BROWSERSTACK_USERNAME/BROWSERSTACK_ACCESS_KEY before running',
+		'npm run --silent render:browser-compat-endpoints -- browserstack tests/browser-compat-provider-capabilities.example.json.',
+	]
+}
+
+function renderScriptFixture() {
+	return {
+		'render:browser-compat-endpoints': 'node ./scripts/render-browser-compat-endpoints.mjs',
+	}
 }
 
 function targetScriptFixture() {

@@ -43,6 +43,13 @@ const resultContractTokens = [
 	'WEB_COMPAT_RESULTS_MD_FILE',
 	'WEB_COMPAT_REQUIRE_RESULTS_MD',
 ]
+const providerRenderTokens = [
+	['render:browser-compat-endpoints', 'endpoint renderer command'],
+	['tests/browser-compat-provider-capabilities.example.json', 'checked-in provider capability template'],
+	['GITHUB_SHA', 'provider build label placeholder'],
+	['BROWSERSTACK_USERNAME', 'BrowserStack username placeholder'],
+	['BROWSERSTACK_ACCESS_KEY', 'BrowserStack access key placeholder'],
+]
 
 for (const file of files) {
 	const absolute = path.resolve(root, file)
@@ -64,6 +71,7 @@ for (const file of files) {
 		errors.push(...remoteTargetListErrors(text, file, 'The current required provider targets are:'))
 		errors.push(...endpointInputErrors(text, file))
 		errors.push(...resultContractErrors(text, file))
+		errors.push(...providerRenderInstructionErrors(text, file))
 		errors.push(...providerDispatchCommandErrors(text, file))
 	}
 	errors.push(...workflowDispatchPrerequisiteErrors(text, file))
@@ -140,6 +148,12 @@ function endpointInputErrors(text, file) {
 function resultContractErrors(text, file) {
 	return resultContractTokens.flatMap((token) => (
 		text.includes(token) ? [] : [`${file} is missing result contract detail ${token}`]
+	))
+}
+
+function providerRenderInstructionErrors(text, file) {
+	return providerRenderTokens.flatMap(([token, label]) => (
+		text.includes(token) ? [] : [`${file} is missing ${label}: ${token}`]
 	))
 }
 
