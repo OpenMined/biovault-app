@@ -662,6 +662,8 @@ function providerRenderLines() {
 		'Render endpoints with GITHUB_SHA="$(git rev-parse HEAD)" and',
 		'BROWSERSTACK_USERNAME/BROWSERSTACK_ACCESS_KEY before running',
 		'npm run --silent render:browser-compat-endpoints -- browserstack tests/browser-compat-provider-capabilities.example.json.',
+		'For LambdaTest, set LT_USERNAME and LT_ACCESS_KEY before running',
+		'npm run --silent render:browser-compat-endpoints -- lambdatest tests/browser-compat-provider-capabilities.example.json.',
 	]
 }
 

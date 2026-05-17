@@ -221,6 +221,17 @@ npm run --silent render:browser-compat-endpoints -- browserstack tests/browser-c
 	> browser-compat-endpoints.json
 ```
 
+For LambdaTest, the checked-in template uses `LT_USERNAME` and
+`LT_ACCESS_KEY` instead:
+
+```sh
+GITHUB_SHA="$(git rev-parse HEAD)" \
+LT_USERNAME=... \
+LT_ACCESS_KEY=... \
+npm run --silent render:browser-compat-endpoints -- lambdatest tests/browser-compat-provider-capabilities.example.json \
+	> browser-compat-endpoints.json
+```
+
 The common generated filenames `browser-compat-endpoints*.json`,
 `browserstack-caps*.json`, `lambdatest-caps*.json`, `sauce-caps*.json`,
 `*-browser-compat-caps*.json`, and `*-browser-compat-endpoints*.json` are
