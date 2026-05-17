@@ -480,6 +480,9 @@ Manual CI inputs:
   `BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON` runs provider targets.
 - `compat_include_ios=true` includes the deferred iOS provider targets in the
   remote compatibility run and requires those result rows during validation.
+- `compat_remote_dry_run=true` validates endpoint secret visibility, target
+  selection, and provider-reachable `WEB_URL` without fetching fixtures,
+  opening provider browser sessions, or producing compatibility evidence.
 - `compat_completion=true` downloads `web-compat*-artifacts`, merges them,
   refreshes `lib/browser-support.generated.ts` and `TODO.md`, checks
   browser-compat docs/script references, runs the strict completion audit, and
@@ -516,11 +519,14 @@ gh workflow run CI \
 	--ref "$COMPAT_REF" \
 	-f deploy_ref="$COMPAT_REF" \
 	-f compat_web_url=https://app.biovault.net/web/ \
+	-f compat_remote_dry_run=true \
 	-f compat_include_ios=true
 ```
 
 Use `COMPAT_REF=main` after these workflow changes are merged; use a pushed
 feature branch while validating the compatibility workflow before merge.
+Remove `-f compat_remote_dry_run=true` when you are ready to open real provider
+browser sessions and produce evidence artifacts.
 
 If a single target needs to be rerun, add
 `-f compat_remote_targets=<target-id>` and keep `compat_include_ios=true` for

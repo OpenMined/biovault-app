@@ -627,6 +627,7 @@ function remoteProviderWorkflowFixture() {
 		'          WEB_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}',
 		'          WEB_URL: ${{ inputs.compat_web_url }}',
 		"          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}",
+		"          WEB_COMPAT_REMOTE_DRY_RUN: ${{ inputs.compat_remote_dry_run && '1' || '0' }}",
 		'      - name: Validate remote browser compatibility results',
 		'        run: npm run check:browser-compat-results',
 		'        env:',

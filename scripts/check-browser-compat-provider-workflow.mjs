@@ -15,6 +15,7 @@ const requiredInputs = [
 	'compat_remote_targets',
 	'compat_include_ios',
 	'compat_allow_local_web_url',
+	'compat_remote_dry_run',
 	'compat_local_smoke',
 	'compat_versions',
 	'compat_version_targets',
