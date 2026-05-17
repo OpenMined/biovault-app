@@ -51,6 +51,9 @@ for arg in "$@"; do
     --pgx-report-scenario|--pgx-report)
       MODE="pgx-report"
       ;;
+    --wasm-compat|--compat)
+      MODE="wasm-compat"
+      ;;
     --core-import)
       MODE="core-import"
       ;;
@@ -159,9 +162,37 @@ echo "==> Checking monty artifact freshness"
 node ./scripts/check-monty-artifacts.mjs
 
 echo "==> Ensuring Playwright browsers are installed"
-if ! env -u NO_COLOR -u FORCE_COLOR npx playwright install chromium; then
-  echo "Playwright Chromium install failed. Fix Playwright/browser setup and rerun." >&2
-  exit 1
+if [ -n "${PW_CONNECT_WS_ENDPOINT:-}" ]; then
+  PLAYWRIGHT_BROWSERS=()
+elif [[ "$MODE" == "wasm-compat" ]]; then
+  PLAYWRIGHT_BROWSERS=()
+  IFS=',' read -ra REQUESTED_BROWSER_PROJECTS <<< "${PW_BROWSER_PROJECTS:-chromium,firefox,webkit,mobile-chromium,mobile-firefox}"
+  for project in "${REQUESTED_BROWSER_PROJECTS[@]}"; do
+    case "${project// /}" in
+      chromium|mobile-chromium)
+        [[ " ${PLAYWRIGHT_BROWSERS[*]} " == *" chromium "* ]] || PLAYWRIGHT_BROWSERS+=(chromium)
+        ;;
+      firefox|mobile-firefox)
+        [[ " ${PLAYWRIGHT_BROWSERS[*]} " == *" firefox "* ]] || PLAYWRIGHT_BROWSERS+=(firefox)
+        ;;
+      webkit)
+        [[ " ${PLAYWRIGHT_BROWSERS[*]} " == *" webkit "* ]] || PLAYWRIGHT_BROWSERS+=(webkit)
+        ;;
+    esac
+  done
+  if [ "${#PLAYWRIGHT_BROWSERS[@]}" -eq 0 ]; then
+    PLAYWRIGHT_BROWSERS=(chromium)
+  fi
+else
+  PLAYWRIGHT_BROWSERS=(chromium)
+fi
+if [ "${#PLAYWRIGHT_BROWSERS[@]}" -gt 0 ]; then
+  if ! env -u NO_COLOR -u FORCE_COLOR PLAYWRIGHT_SKIP_BROWSER_GC=1 npx playwright install "${PLAYWRIGHT_BROWSERS[@]}"; then
+    echo "Playwright browser install failed. Fix Playwright/browser setup and rerun." >&2
+    exit 1
+  fi
+else
+  echo "==> Using remote Playwright browser endpoint"
 fi
 
 case "$MODE" in
@@ -207,6 +238,9 @@ case "$MODE" in
     ;;
   pgx-report)
     SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
+    ;;
+  wasm-compat)
+    SPECS=(.maestro-web/lab-wasm-compat.spec.ts)
     ;;
   index-generation)
     SPECS=(.maestro-web/lab-index-generation.spec.ts)

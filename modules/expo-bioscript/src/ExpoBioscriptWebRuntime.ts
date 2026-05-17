@@ -80,7 +80,11 @@ export async function warmupWebRuntime(): Promise<void> {
     } catch (error) {
       console.warn('[bioscript] bioscript wasm prefetch failed; worker will fetch it', error);
     }
-    await warmupBioscriptLookupWorker();
+    if (shouldSkipLookupWorkerWarmup()) {
+      console.info('[bioscript] skipping lookup worker warmup for this browser/dev-server combination');
+    } else {
+      await warmupBioscriptLookupWorker();
+    }
     console.info(`[bioscript] warmup total completed in ${Date.now() - startedAt} ms`);
   } catch (error) {
     console.warn(`[bioscript] warmup total failed after ${Date.now() - startedAt} ms`, error);
@@ -98,6 +102,13 @@ export async function warmupMontyWebRuntime(): Promise<void> {
     console.warn(`[bioscript] warmup monty failed after ${Date.now() - startedAt} ms`, error);
     throw error;
   }
+}
+
+function shouldSkipLookupWorkerWarmup(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent;
+  return /Version\/\d+.+Safari/.test(userAgent) && !/Chrome|Chromium|CriOS|Edg\//.test(userAgent);
 }
 
 export async function runFileOnWeb(request: RunFileRequest): Promise<RunFileResult> {

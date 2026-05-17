@@ -46,15 +46,33 @@ function normalizePattern(pattern) {
 }
 
 const contents = fs.readFileSync(EXCLUDE_FILE, 'utf8')
+const gitignore = fs.existsSync('.gitignore') ? fs.readFileSync('.gitignore', 'utf8') : ''
 const failures = []
 const secretScript = fs.existsSync('scripts/secrets-scan.sh') ? fs.readFileSync('scripts/secrets-scan.sh', 'utf8') : ''
 const ciWorkflow = fs.existsSync('.github/workflows/ci.yml') ? fs.readFileSync('.github/workflows/ci.yml', 'utf8') : ''
+const requiredCredentialFilePatterns = [
+	'browser-compat-endpoints.*\\.json',
+	'browserstack-caps.*\\.json',
+	'lambdatest-caps.*\\.json',
+	'sauce-caps.*\\.json',
+	'.*-browser-compat-caps.*\\.json',
+	'.*-browser-compat-endpoints.*\\.json',
+]
 
 if (!secretScript.includes('--exclude-paths=.trufflehog-exclude') || !secretScript.includes('--exclude-paths=/repo/.trufflehog-exclude')) {
 	failures.push('scripts/secrets-scan.sh must use .trufflehog-exclude for both local and Docker TruffleHog scans.')
 }
 if (!ciWorkflow.includes('extra_args: --exclude-paths=.trufflehog-exclude --results=verified,unknown')) {
 	failures.push('.github/workflows/ci.yml must run TruffleHog with the same .trufflehog-exclude file.')
+}
+for (const pattern of requiredCredentialFilePatterns) {
+	if (!contents.includes(pattern)) {
+		failures.push(`${EXCLUDE_FILE} must exclude generated browser compatibility credential file pattern: ${pattern}`)
+	}
+	const gitignorePattern = pattern.replace(/\.\\\./g, '.').replace(/\\\./g, '.').replace(/\.\*/g, '*')
+	if (!gitignore.includes(gitignorePattern)) {
+		failures.push(`.gitignore must ignore generated browser compatibility credential file pattern: ${gitignorePattern}`)
+	}
 }
 
 for (const [index, rawLine] of contents.split(/\r?\n/).entries()) {
