@@ -64,6 +64,7 @@ for (const file of files) {
 		errors.push(...remoteTargetListErrors(text, file, 'The current required provider targets are:'))
 		errors.push(...endpointInputErrors(text, file))
 		errors.push(...resultContractErrors(text, file))
+		errors.push(...providerDispatchCommandErrors(text, file))
 	}
 	errors.push(...workflowDispatchPrerequisiteErrors(text, file))
 	errors.push(...publicWebUrlErrors(text, file, path.basename(absolute)))
@@ -158,6 +159,20 @@ function workflowDispatchPrerequisiteErrors(text, file) {
 	return mentionsPushedRef && mentionsMergedRef ? [] : [
 		`${file} provider CI dispatch instructions must mention that workflow inputs need a pushed branch or merged main ref`,
 	]
+}
+
+function providerDispatchCommandErrors(text, file) {
+	const requiredTokens = [
+		['compat_remote_dry_run=true', 'safe remote provider dry-run dispatch'],
+		['compat_local_smoke=true', 'local smoke evidence dispatch'],
+		['compat_versions=true', 'historical browser evidence dispatch'],
+		['compat_android_local=true', 'Android-local evidence dispatch'],
+		['compat_include_ios=true', 'iOS provider evidence dispatch'],
+		['compat_completion=true', 'strict completion dispatch'],
+	]
+	return requiredTokens.flatMap(([token, label]) => (
+		text.includes(token) ? [] : [`${file} is missing ${label}: ${token}`]
+	))
 }
 
 function publicWebUrlErrors(text, file, basename) {

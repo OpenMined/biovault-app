@@ -133,6 +133,9 @@ test('accepts provider runbook target list that matches the completion contract'
 			'Each target must run the same WASM demo/report happy path.',
 			...endpointInputLines(),
 			...resultContractLines(),
+			'Use a pushed feature branch while validating, or `main` after the workflow changes are merged.',
+			'Run `gh workflow run CI -f compat_web_url=https://app.biovault.net/web/ -f compat_remote_dry_run=true` first.',
+			'Then run `gh workflow run CI -f compat_local_smoke=true -f compat_versions=true -f compat_android_local=true -f compat_include_ios=true -f compat_completion=true`.',
 			'',
 		].join('\n'),
 		completionContract: completionContractFixture(),
@@ -258,6 +261,61 @@ test('accepts provider CI dispatch docs that mention pushed branch and merged ma
 			'Use a pushed feature branch while validating, or `main` after the workflow changes are merged.',
 			'',
 		].join('\n'),
+	})
+
+	const result = runChecker(fixture)
+	assert.equal(result.status, 0, result.stderr || result.stdout)
+})
+
+test('rejects provider runbook that omits the full evidence dispatch inputs', () => {
+	const fixture = createFixture({
+		scripts: {},
+		doc: '',
+		providerDoc: [
+			'# Browser Compatibility Provider Runs',
+			'',
+			'The current required provider targets are:',
+			'',
+			...targetList(),
+			'',
+			'Each target must run the same WASM demo/report happy path.',
+			...endpointInputLines(),
+			...resultContractLines(),
+			'',
+			'Use a pushed feature branch while validating, or `main` after the workflow changes are merged.',
+			'Run `gh workflow run CI -f compat_web_url=https://app.biovault.net/web/ -f compat_remote_dry_run=true`.',
+			'',
+		].join('\n'),
+		completionContract: completionContractFixture(),
+	})
+
+	const result = runChecker(fixture)
+	assert.equal(result.status, 1)
+	assert.match(result.stderr, /missing local smoke evidence dispatch: compat_local_smoke=true/)
+	assert.match(result.stderr, /missing strict completion dispatch: compat_completion=true/)
+})
+
+test('accepts provider runbook with dry-run and full evidence dispatch inputs', () => {
+	const fixture = createFixture({
+		scripts: {},
+		doc: '',
+		providerDoc: [
+			'# Browser Compatibility Provider Runs',
+			'',
+			'The current required provider targets are:',
+			'',
+			...targetList(),
+			'',
+			'Each target must run the same WASM demo/report happy path.',
+			...endpointInputLines(),
+			...resultContractLines(),
+			'',
+			'Use a pushed feature branch while validating, or `main` after the workflow changes are merged.',
+			'Run `gh workflow run CI -f compat_web_url=https://app.biovault.net/web/ -f compat_remote_dry_run=true` first.',
+			'Then run `gh workflow run CI -f compat_local_smoke=true -f compat_versions=true -f compat_android_local=true -f compat_include_ios=true -f compat_completion=true`.',
+			'',
+		].join('\n'),
+		completionContract: completionContractFixture(),
 	})
 
 	const result = runChecker(fixture)
