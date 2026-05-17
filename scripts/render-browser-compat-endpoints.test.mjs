@@ -113,6 +113,27 @@ test('renders checked-in BrowserStack capability template with documented keys',
 	assert.equal(caps.browserVersion, undefined)
 })
 
+test('renders checked-in LambdaTest capability template with documented keys', () => {
+	const result = spawnSync(process.execPath, [renderer, 'lambdatest', 'tests/browser-compat-provider-capabilities.example.json'], {
+		cwd: root,
+		encoding: 'utf8',
+		env: {
+			...process.env,
+			WEB_COMPAT_ENDPOINT_ALLOW_PLACEHOLDERS: '1',
+		},
+	})
+	assert.equal(result.status, 0, result.stderr || result.stdout)
+	const endpoints = JSON.parse(result.stdout)
+	const safariEndpoint = endpoints['ios-safari-latest']?.wsEndpoint
+	assert.match(safariEndpoint, /^wss:\/\/cdp\.lambdatest\.com\/playwright\?capabilities=/)
+	const caps = JSON.parse(new URL(safariEndpoint).searchParams.get('capabilities'))
+	assert.equal(caps.browserName, 'Safari')
+	assert.equal(caps.browserVersion, 'latest')
+	assert.equal(caps.platformName, 'iOS')
+	assert.equal(caps.browser, undefined)
+	assert.equal(caps.browser_version, undefined)
+})
+
 function capabilityFile(username, accessKey, overrides = {}) {
 	const file = path.join(os.tmpdir(), `biovault-browser-compat-caps-${process.pid}-${tempFiles.length}.json`)
 	tempFiles.push(file)
