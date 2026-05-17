@@ -236,9 +236,9 @@ function workflowRemoteProviderErrors(text, file) {
 	const section = workflowJobSection(text, 'web-compat-remote')
 	const requiredTokens = [
 		'Render remote browser provider endpoints from provider secrets',
-		'BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}',
+		'BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME || vars.BROWSERSTACK_USERNAME }}',
 		'BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}',
-		'LT_USERNAME: ${{ secrets.LT_USERNAME }}',
+		'LT_USERNAME: ${{ secrets.LT_USERNAME || vars.LT_USERNAME }}',
 		'LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}',
 		'WEB_COMPAT_REMOTE_ENDPOINTS_FILE=$output_file',
 		'WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}',

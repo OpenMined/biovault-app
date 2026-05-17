@@ -141,9 +141,10 @@ additional permissions, but the workflow still receives them through
 `${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}`.
 If that endpoint JSON secret is absent, the manual `web-compat-remote` CI job
 also tries to render a gitignored endpoint file from provider credential
-secrets before the provider-secret preflight. It prefers
-`BROWSERSTACK_USERNAME` plus `BROWSERSTACK_ACCESS_KEY`, and falls back to
-`LT_USERNAME` plus `LT_ACCESS_KEY`, using
+secrets before the provider-secret preflight. It prefers a
+`BROWSERSTACK_USERNAME` secret or variable plus a `BROWSERSTACK_ACCESS_KEY`
+secret, and falls back to an `LT_USERNAME` secret or variable plus an
+`LT_ACCESS_KEY` secret, using
 `tests/browser-compat-provider-capabilities.example.json` and
 `npm run --silent render:browser-compat-endpoints -- <provider> ...`. The
 result is written to `WEB_COMPAT_REMOTE_ENDPOINTS_FILE` inside the runner temp
