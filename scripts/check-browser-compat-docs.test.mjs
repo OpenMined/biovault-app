@@ -644,7 +644,8 @@ function endpointInputLines() {
 		'BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON, WEB_COMPAT_REMOTE_ENDPOINTS_FILE,',
 		'BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE, or browser-compat-endpoints.json.',
 		'CI can render endpoints from BROWSERSTACK_USERNAME plus',
-		'BROWSERSTACK_ACCESS_KEY, or LT_USERNAME plus LT_ACCESS_KEY.',
+		'BROWSERSTACK_ACCESS_KEY or BROWSERSTACK_ACCESSKEY, or',
+		'LT_USERNAME/LAMBDATEST_USERNAME plus LT_ACCESS_KEY/LAMBDATEST_ACCESS_KEY.',
 	]
 }
 
@@ -714,9 +715,9 @@ function remoteProviderWorkflowFixture() {
 		'        env:',
 		'          BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}',
 		'          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME || vars.BROWSERSTACK_USERNAME }}',
-		'          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}',
-		'          LT_USERNAME: ${{ secrets.LT_USERNAME || vars.LT_USERNAME }}',
-		'          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}',
+		'          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY || secrets.BROWSERSTACK_ACCESSKEY }}',
+		'          LT_USERNAME: ${{ secrets.LT_USERNAME || vars.LT_USERNAME || secrets.LAMBDATEST_USERNAME || vars.LAMBDATEST_USERNAME }}',
+		'          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY || secrets.LAMBDATEST_ACCESS_KEY }}',
 		'      - name: Check remote browser provider secret',
 		'        run: npm run check:browser-compat-provider-secret',
 		'        env:',

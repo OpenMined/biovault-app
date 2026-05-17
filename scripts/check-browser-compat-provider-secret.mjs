@@ -77,7 +77,7 @@ function reportMissingSecret() {
 	console.error('Or set WEB_COMPAT_REMOTE_ENDPOINTS_FILE=browser-compat-endpoints.json.')
 	console.error('The BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON and BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE aliases are also accepted.')
 	console.error(`For a repository-level CI secret, configure it with: gh secret set ${secretName} --repo ${providerRepository} < browser-compat-endpoints.json`)
-	console.error('Alternatively, configure BROWSERSTACK_USERNAME plus BROWSERSTACK_ACCESS_KEY, or LT_USERNAME plus LT_ACCESS_KEY, so the manual remote CI job can render browser-compat-endpoints.json from tests/browser-compat-provider-capabilities.example.json in runner temp storage.')
+	console.error('Alternatively, configure BROWSERSTACK_USERNAME plus BROWSERSTACK_ACCESS_KEY/BROWSERSTACK_ACCESSKEY, or LT_USERNAME/LAMBDATEST_USERNAME plus LT_ACCESS_KEY/LAMBDATEST_ACCESS_KEY, so the manual remote CI job can render browser-compat-endpoints.json from tests/browser-compat-provider-capabilities.example.json in runner temp storage.')
 }
 
 function validateEndpointJson(value) {

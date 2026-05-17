@@ -85,8 +85,10 @@ an auto-detected repo-root `browser-compat-endpoints.json`, or
 In CI, the manual `web-compat-remote` job can also render a runner-temp
 endpoint file from provider credential secrets when endpoint JSON is absent:
 a `BROWSERSTACK_USERNAME` secret or variable plus a `BROWSERSTACK_ACCESS_KEY`
-secret, or an `LT_USERNAME` secret or variable plus an `LT_ACCESS_KEY` secret,
-using `tests/browser-compat-provider-capabilities.example.json`.
+secret, or the `BROWSERSTACK_ACCESSKEY` secret alias. The LambdaTest path
+accepts an `LT_USERNAME` secret or variable plus an `LT_ACCESS_KEY` secret, or
+the `LAMBDATEST_USERNAME` secret/variable and `LAMBDATEST_ACCESS_KEY` secret
+aliases, using `tests/browser-compat-provider-capabilities.example.json`.
 Endpoint JSON is validated against the same target set that the remote provider
 run would execute: all Android targets by default, selected targets when
 `WEB_COMPAT_REMOTE_TARGETS` is set, and deferred iOS targets only when
