@@ -3547,6 +3547,8 @@ function PersistentHandlePrompt({
 						</OMText>
 					</View>
 					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel="Close dialog"
 						onPress={onDismiss}
 						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
