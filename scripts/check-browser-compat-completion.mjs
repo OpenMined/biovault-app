@@ -80,7 +80,7 @@ if (errors.length) {
 			? '- WEB_COMPAT_INCLUDE_DEFERRED=1 npm run check:browser-compat-provider-secret'
 			: '- npm run check:browser-compat-provider-secret')
 		console.error(`- ${remoteInfraPreflightCommand({ includesAndroidTargets, includesIosTargets, includesDeferredTargets })}`)
-		console.error('Endpoint inputs can be supplied with WEB_COMPAT_REMOTE_ENDPOINTS_JSON, a repo-root browser-compat-endpoints.json file, WEB_COMPAT_REMOTE_ENDPOINTS_FILE, BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON, BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE, or a CI-visible BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON secret.')
+		console.error('Endpoint inputs can be supplied with WEB_COMPAT_REMOTE_ENDPOINTS_JSON, a repo-root browser-compat-endpoints.json file, WEB_COMPAT_REMOTE_ENDPOINTS_FILE, BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON, BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE, a CI-visible BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON secret, or CI-visible BrowserStack/LambdaTest credential secrets that render endpoint JSON in the manual remote workflow.')
 		console.error(`Missing remote target ids: ${missingRemoteProviderTargets.join(', ')}`)
 	}
 	process.exit(1)

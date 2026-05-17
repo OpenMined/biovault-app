@@ -139,6 +139,17 @@ also satisfy CI when it is visible to this repository; local `gh secret list
 --repo` validation may not be able to inspect org-level secrets without
 additional permissions, but the workflow still receives them through
 `${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}`.
+If that endpoint JSON secret is absent, the manual `web-compat-remote` CI job
+also tries to render a gitignored endpoint file from provider credential
+secrets before the provider-secret preflight. It prefers
+`BROWSERSTACK_USERNAME` plus `BROWSERSTACK_ACCESS_KEY`, and falls back to
+`LT_USERNAME` plus `LT_ACCESS_KEY`, using
+`tests/browser-compat-provider-capabilities.example.json` and
+`npm run --silent render:browser-compat-endpoints -- <provider> ...`. The
+result is written to `WEB_COMPAT_REMOTE_ENDPOINTS_FILE` inside the runner temp
+directory, so the existing preflight, infra check, and matrix runner validate
+the same endpoint contract without requiring a committed or artifacted secret
+file.
 
 When endpoint JSON is supplied through `WEB_COMPAT_REMOTE_ENDPOINTS_JSON`,
 `BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON`, `WEB_COMPAT_REMOTE_ENDPOINTS_FILE`,

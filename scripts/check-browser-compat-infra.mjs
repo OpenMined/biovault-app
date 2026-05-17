@@ -87,7 +87,7 @@ if (errors.length) {
 	console.error('Browser compatibility infrastructure is incomplete:')
 	for (const error of errors) console.error(`- ${error}`)
 	if (errors.some((error) => /^invalid remote (Android|iOS) endpoint\b/.test(error))) {
-		console.error('Remote endpoint inputs can be supplied with WEB_COMPAT_REMOTE_ENDPOINTS_JSON, a repo-root browser-compat-endpoints.json file, WEB_COMPAT_REMOTE_ENDPOINTS_FILE, BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON, or BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE.')
+		console.error('Remote endpoint inputs can be supplied with WEB_COMPAT_REMOTE_ENDPOINTS_JSON, a repo-root browser-compat-endpoints.json file, WEB_COMPAT_REMOTE_ENDPOINTS_FILE, BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON, BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE, or CI-visible BrowserStack/LambdaTest credential secrets that render endpoint JSON in the manual remote workflow.')
 	}
 	process.exit(1)
 }

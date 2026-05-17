@@ -231,6 +231,12 @@ function workflowRemoteProviderErrors(text, file) {
 	if (!text.includes('web-compat-remote:') || !text.includes('npm run test:web-compat:remote-matrix')) return []
 	const section = workflowJobSection(text, 'web-compat-remote')
 	const requiredTokens = [
+		'Render remote browser provider endpoints from provider secrets',
+		'BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}',
+		'BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}',
+		'LT_USERNAME: ${{ secrets.LT_USERNAME }}',
+		'LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}',
+		'WEB_COMPAT_REMOTE_ENDPOINTS_FILE=$output_file',
 		'WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}',
 		'WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && \'1\' || \'0\' }}',
 		'BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}',
