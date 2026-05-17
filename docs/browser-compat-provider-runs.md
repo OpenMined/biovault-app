@@ -512,8 +512,8 @@ or browser launch. If the workflow ref check fails, push these workflow changes
 to the selected branch or merge them to `main` before dispatching provider CI.
 
 After the endpoint secret is present and the browser-compat workflow inputs are
-available on the selected branch, launch all required Android and deferred iOS
-provider targets against the current deployed app with:
+available on the selected branch, validate secret visibility, target selection,
+and the provider-reachable URL without opening provider browser sessions with:
 
 ```sh
 COMPAT_REF=main
@@ -528,8 +528,27 @@ gh workflow run CI \
 
 Use `COMPAT_REF=main` after these workflow changes are merged; use a pushed
 feature branch while validating the compatibility workflow before merge.
-Remove `-f compat_remote_dry_run=true` when you are ready to open real provider
-browser sessions and produce evidence artifacts.
+When that dry-run reaches the provider-secret and infrastructure checks, launch
+the full evidence run against the same app revision:
+
+```sh
+COMPAT_REF=main
+gh workflow run CI \
+	--repo OpenMined/biovault-app \
+	--ref "$COMPAT_REF" \
+	-f deploy_ref="$COMPAT_REF" \
+	-f compat_local_smoke=true \
+	-f compat_versions=true \
+	-f compat_android_local=true \
+	-f compat_web_url=https://app.biovault.net/web/ \
+	-f compat_include_ios=true \
+	-f compat_completion=true
+```
+
+The second command opens real provider browser sessions, uploads local,
+historical, Android-local, Android-provider, and iOS-provider artifacts, then
+runs the completion job to merge evidence, refresh generated policy/TODO files,
+and audit `npm run check:browser-compat-completion`.
 
 If a single target needs to be rerun, add
 `-f compat_remote_targets=<target-id>` and keep `compat_include_ios=true` for
