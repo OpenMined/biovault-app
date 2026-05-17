@@ -5,6 +5,8 @@ on:
     branches: [ main, develop ]
   push:
     branches: [ main ]
+  schedule:
+    - cron: '0 3 * * 1'
   # Optionally, allow manual trigger for debugging
   workflow_dispatch:
     inputs:
@@ -12,6 +14,48 @@ on:
         description: Branch, tag, or SHA to deploy
         required: true
         default: main
+      compat_web_url:
+        description: Public BioVault web URL for remote browser compatibility runs
+        required: false
+        default: ''
+      compat_remote_targets:
+        description: Optional comma-separated remote target ids to run
+        required: false
+        default: ''
+      compat_include_ios:
+        description: Include deferred iOS browser provider targets in remote compatibility runs
+        required: false
+        default: false
+        type: boolean
+      compat_allow_local_web_url:
+        description: Allow localhost WEB_URL for remote compatibility runs when a provider tunnel maps it
+        required: false
+        default: false
+        type: boolean
+      compat_local_smoke:
+        description: Run local desktop/browser compatibility smoke
+        required: false
+        default: false
+        type: boolean
+      compat_versions:
+        description: Run historical browser version compatibility matrix
+        required: false
+        default: false
+        type: boolean
+      compat_version_targets:
+        description: Optional comma-separated historical browser target ids to run
+        required: false
+        default: ''
+      compat_android_local:
+        description: Run local Android-emulator browser compatibility smoke
+        required: false
+        default: false
+        type: boolean
+      compat_completion:
+        description: Merge compatibility artifacts and run strict all-target audit; use after local, version, Android provider, Android-local, and iOS provider runs
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -136,6 +180,51 @@ jobs:
 
       - name: Check runtime asset references
         run: npm run check:runtime-assets
+
+      - name: Test browser support assessment
+        run: npm run test:browser-support
+
+      - name: Test browser support policy checker
+        run: npm run test:browser-support-policy
+
+      - name: Test browser support policy updater
+        run: npm run test:browser-support-update
+
+      - name: Test browser compatibility TODO updater
+        run: npm run test:browser-compat-todo
+
+      - name: Check browser compatibility docs
+        run: npm run check:browser-compat-docs
+
+      - name: Test browser compatibility docs checker
+        run: npm run test:browser-compat-docs
+
+      - name: Test Android browser compatibility config
+        run: npm run test:android-browser-compat-config
+
+      - name: Test browser compatibility result validator
+        run: npm run test:browser-compat-results
+
+      - name: Test browser compatibility completion audit
+        run: npm run test:browser-compat-completion
+
+      - name: Test browser compatibility infrastructure preflight
+        run: npm run test:browser-compat-infra
+
+      - name: Test browser compatibility provider secret preflight
+        run: npm run test:browser-compat-provider-secret
+
+      - name: Test browser compatibility endpoint renderer
+        run: npm run test:browser-compat-endpoints
+
+      - name: Test browser compatibility result merger
+        run: npm run test:browser-compat-merge
+
+      - name: Test remote browser compatibility matrix runner
+        run: npm run test:browser-compat-remote-matrix
+
+      - name: Test remote browser compatibility wrapper
+        run: npm run test:web-compat-remote-wrapper
 
   web-core:
     if: github.event_name == 'pull_request'
@@ -361,6 +450,428 @@ jobs:
             .maestro-web/screenshots
             test-results
           if-no-files-found: ignore
+
+  web-compat:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright compatibility browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-web-pgx-v1
+          restore-keys: bioscript-test-data-
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify compatibility fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f exvitae/assays/pgx/pgx-1/manifest.yaml
+          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+
+      - name: Run WASM browser compatibility smoke
+        run: ./test-web-compat.sh
+
+      - name: Validate browser compatibility result coverage
+        run: npm run check:browser-compat-results
+
+      - name: Validate remote mobile compatibility matrix
+        run: npm run check:browser-compat-matrix
+
+      - name: Validate historical browser version matrix
+        run: npm run check:browser-version-matrix
+
+      - name: Check browser support policy
+        run: npm run check:browser-support
+
+      - name: Test browser support assessment
+        run: npm run test:browser-support
+
+      - name: Test browser support policy checker
+        run: npm run test:browser-support-policy
+
+      - name: Test browser support policy updater
+        run: npm run test:browser-support-update
+
+      - name: Test browser compatibility TODO updater
+        run: npm run test:browser-compat-todo
+
+      - name: Check browser compatibility docs
+        run: npm run check:browser-compat-docs
+
+      - name: Test browser compatibility docs checker
+        run: npm run test:browser-compat-docs
+
+      - name: Test Android browser compatibility config
+        run: npm run test:android-browser-compat-config
+
+      - name: Test browser compatibility result validator
+        run: npm run test:browser-compat-results
+
+      - name: Test browser compatibility completion audit
+        run: npm run test:browser-compat-completion
+
+      - name: Test browser compatibility infrastructure preflight
+        run: npm run test:browser-compat-infra
+
+      - name: Test browser compatibility provider secret preflight
+        run: npm run test:browser-compat-provider-secret
+
+      - name: Test browser compatibility endpoint renderer
+        run: npm run test:browser-compat-endpoints
+
+      - name: Test browser compatibility result merger
+        run: npm run test:browser-compat-merge
+
+      - name: Test remote browser compatibility matrix runner
+        run: npm run test:browser-compat-remote-matrix
+
+      - name: Test remote browser compatibility wrapper
+        run: npm run test:web-compat-remote-wrapper
+
+      - name: Upload browser compatibility artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-compat-artifacts
+          path: |
+            test-output/browser-compat
+            test-results
+          if-no-files-found: ignore
+
+  web-compat-remote:
+    if: github.event_name == 'workflow_dispatch' && inputs.compat_web_url != ''
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check remote browser provider secret
+        run: npm run check:browser-compat-provider-secret
+        env:
+          WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}
+          WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && '1' || '0' }}
+          BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
+          WEB_COMPAT_SKIP_GH_SECRET_LOOKUP: '1'
+
+      - name: Preflight remote browser provider endpoints
+        run: npm run check:browser-compat-infra
+        env:
+          WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}
+          WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && '1' || '0' }}
+          WEB_COMPAT_REQUIRE_REMOTE_ANDROID: ${{ (!inputs.compat_remote_targets || contains(inputs.compat_remote_targets, 'android-')) && '1' || '0' }}
+          WEB_COMPAT_REQUIRE_REMOTE_IOS: ${{ (inputs.compat_include_ios && (!inputs.compat_remote_targets || contains(inputs.compat_remote_targets, 'ios-'))) && '1' || '0' }}
+          WEB_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
+          WEB_URL: ${{ inputs.compat_web_url }}
+          WEB_COMPAT_CHECK_WEB_URL_REACHABLE: '1'
+          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify compatibility fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f exvitae/assays/pgx/pgx-1/manifest.yaml
+          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+
+      - name: Validate remote mobile compatibility matrix
+        run: npm run check:browser-compat-matrix
+
+      - name: Run remote browser compatibility matrix
+        run: npm run test:web-compat:remote-matrix
+        env:
+          WEB_URL: ${{ inputs.compat_web_url }}
+          WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}
+          WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && '1' || '0' }}
+          WEB_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
+          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}
+
+      - name: Validate remote browser compatibility results
+        run: npm run check:browser-compat-results
+        env:
+          WEB_COMPAT_REQUIRED_PROJECTS: ''
+          WEB_COMPAT_REQUIRED_TARGETS: ${{ inputs.compat_remote_targets || (inputs.compat_include_ios && 'android-chrome-latest,android-chrome-previous,android-firefox-latest,android-samsung-internet-latest,ios-safari-latest,ios-safari-oldest-supported,ios-chrome-latest,ios-firefox-latest' || 'android-chrome-latest,android-chrome-previous,android-firefox-latest,android-samsung-internet-latest') }}
+
+      - name: Upload remote browser compatibility artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-compat-remote-artifacts
+          path: |
+            test-output/browser-compat
+            test-results
+          if-no-files-found: ignore
+
+  web-compat-versions:
+    if: github.event_name == 'workflow_dispatch' && inputs.compat_versions
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 35
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify compatibility fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f exvitae/assays/pgx/pgx-1/manifest.yaml
+          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+
+      - name: Validate historical browser version matrix
+        run: npm run check:browser-version-matrix
+
+      - name: Install local historical browser caches
+        run: npm run install:browser-compat-history
+        env:
+          WEB_COMPAT_HISTORY_INSTALL_TARGETS: ${{ inputs.compat_version_targets }}
+
+      - name: Run historical browser version matrix
+        run: npm run test:web-compat:versions
+        env:
+          WEB_URL: ${{ inputs.compat_web_url }}
+          WEB_COMPAT_VERSION_TARGETS: ${{ inputs.compat_version_targets }}
+          WEB_COMPAT_ALLOW_MISSING_VERSION_TARGETS: '1'
+          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}
+          CHROMIUM_PREVIOUS_WS_ENDPOINT: ${{ secrets.CHROMIUM_PREVIOUS_WS_ENDPOINT }}
+          FIREFOX_PREVIOUS_WS_ENDPOINT: ${{ secrets.FIREFOX_PREVIOUS_WS_ENDPOINT }}
+          SAFARI_PREVIOUS_WS_ENDPOINT: ${{ secrets.SAFARI_PREVIOUS_WS_ENDPOINT }}
+
+      - name: Validate historical browser compatibility results
+        run: npm run check:browser-compat-results
+        env:
+          WEB_COMPAT_REQUIRED_PROJECTS: ''
+          WEB_COMPAT_REQUIRED_TARGETS: ${{ inputs.compat_version_targets || 'chromium-cache-127,chromium-cache-115,chromium-cache-105,chromium-cache-102,chromium-cache-98,chromium-cache-97,chromium-cache-96,firefox-cache-127,webkit-docker-17,webkit-docker-26' }}
+
+      - name: Update browser support policy from version results
+        run: npm run update:browser-support
+
+      - name: Upload historical browser compatibility artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-compat-versions-artifacts
+          path: |
+            test-output/browser-compat
+            test-results
+          if-no-files-found: ignore
+
+  web-compat-android-local:
+    if: github.event_name == 'workflow_dispatch' && inputs.compat_android_local
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 45
+    env:
+      ANDROID_API_LEVEL: "36"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ] && [ -d /etc/udev/rules.d ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          else
+            echo "KVM not applicable on this runner; skipping."
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify compatibility fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+
+      - name: Run local Android browser compatibility smoke
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -no-boot-anim -noaudio -camera-back none -gpu swiftshader_indirect
+          disable-animations: true
+          script: npm run test:web-compat:android-local
+
+      - name: Validate local Android browser compatibility results
+        run: npm run check:browser-compat-results
+        env:
+          WEB_COMPAT_REQUIRED_PROJECTS: ''
+          WEB_COMPAT_REQUIRED_TARGETS: android-local
+
+      - name: Upload local Android browser compatibility artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-compat-android-local-artifacts
+          path: |
+            test-output/browser-compat
+            .maestro-web/logs/android-web-compat.log
+          if-no-files-found: ignore
+
+  web-compat-completion:
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.compat_completion
+    needs:
+      - web-compat
+      - web-compat-remote
+      - web-compat-versions
+      - web-compat-android-local
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download browser compatibility artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: web-compat*-artifacts
+          path: compat-artifacts
+
+      - name: Merge browser compatibility results
+        run: npm run merge:browser-compat-results -- compat-artifacts
+
+      - name: Validate merged browser compatibility results
+        run: npm run check:browser-compat-results
+
+      - name: Update browser support policy from merged results
+        run: npm run update:browser-support
+
+      - name: Update browser compatibility TODO from merged results
+        run: npm run update:browser-compat-todo
+
+      - name: Check browser compatibility docs
+        run: npm run check:browser-compat-docs
+
+      - name: Validate browser support policy against merged results
+        run: npm run check:browser-support
+
+      - name: Test browser support assessment
+        run: npm run test:browser-support
+
+      - name: Run strict browser compatibility completion audit
+        run: npm run check:browser-compat-completion
+
+      - name: Upload merged browser compatibility audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-compat-completion-artifacts
+          path: |
+            test-output/browser-compat
+            lib/browser-support.generated.ts
+            TODO.md
+          if-no-files-found: error
 
   deploy-web-prod:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

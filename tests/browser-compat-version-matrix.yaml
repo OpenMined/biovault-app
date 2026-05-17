@@ -1,0 +1,154 @@
+# Optional historical browser targets for narrowing minimum browser versions.
+# These rows are intentionally executable only when the named local binary,
+# provider endpoint, or Docker image is available in the current environment.
+
+targets:
+  - id: chromium-system
+    family: chromium
+    version_label: system
+    project: chromium
+    executable_env: CHROMIUM_EXECUTABLE
+    fallback_executable: /usr/bin/chromium
+    required: optional
+
+  - id: chromium-cache-141
+    family: chromium
+    version_label: 141
+    project: chromium
+    executable_env: CHROMIUM_141_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-1194/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-127
+    family: chromium
+    version_label: 127
+    project: chromium
+    executable_env: CHROMIUM_127_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-1124/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-115
+    family: chromium
+    version_label: 115
+    project: chromium
+    executable_env: CHROMIUM_115_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-1067/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-105
+    family: chromium
+    version_label: 105
+    project: chromium
+    executable_env: CHROMIUM_105_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-1019/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-102
+    family: chromium
+    version_label: 102
+    project: chromium
+    executable_env: CHROMIUM_102_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-1005/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-98
+    family: chromium
+    version_label: 98
+    project: chromium
+    executable_env: CHROMIUM_98_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-939194/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-97
+    family: chromium
+    version_label: 97
+    project: chromium
+    executable_env: CHROMIUM_97_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-930007/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-96
+    family: chromium
+    version_label: 96
+    project: chromium
+    executable_env: CHROMIUM_96_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-920619/chrome-linux/chrome
+    required: optional
+
+  - id: chromium-cache-94
+    family: chromium
+    version_label: 94
+    project: chromium
+    executable_env: CHROMIUM_94_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/chromium-907428/chrome-linux/chrome
+    required: optional
+    expected_status: fail
+
+  - id: firefox-cache-127
+    family: firefox
+    version_label: 127
+    project: firefox
+    executable_env: FIREFOX_127_EXECUTABLE
+    fallback_executable: ~/.cache/ms-playwright/firefox-1454/firefox/firefox
+    runner_package: "@playwright/test"
+    runner_version: "1.45.0"
+    required: optional
+
+  - id: firefox-docker-99
+    family: firefox
+    version_label: 99
+    project: firefox
+    docker_image: mcr.microsoft.com/playwright:v1.22.0-focal
+    runner_package: "@playwright/test"
+    runner_version: "1.22.0"
+    required: optional
+    expected_status: fail
+
+  - id: webkit-docker-17
+    family: safari
+    version_label: 17
+    project: webkit
+    docker_image: mcr.microsoft.com/playwright:v1.45.0-jammy
+    runner_package: "@playwright/test"
+    runner_version: "1.45.0"
+    required: optional
+
+  - id: webkit-docker-15
+    family: safari
+    version_label: 15
+    project: webkit
+    docker_image: mcr.microsoft.com/playwright:v1.22.0-focal
+    runner_package: "@playwright/test"
+    runner_version: "1.22.0"
+    required: optional
+    expected_status: fail
+
+  - id: webkit-docker-26
+    family: safari
+    version_label: 26
+    project: webkit
+    docker_image: mcr.microsoft.com/playwright:v1.60.0-noble
+    runner_package: "@playwright/test"
+    runner_version: "1.60.0"
+    required: optional
+
+  - id: chromium-provider-previous
+    family: chromium
+    version_label: previous-major
+    project: chromium
+    endpoint_env: CHROMIUM_PREVIOUS_WS_ENDPOINT
+    required: optional
+
+  - id: firefox-provider-previous
+    family: firefox
+    version_label: previous-major
+    project: firefox
+    endpoint_env: FIREFOX_PREVIOUS_WS_ENDPOINT
+    required: optional
+
+  - id: safari-provider-previous
+    family: safari
+    version_label: previous-major
+    project: webkit
+    endpoint_env: SAFARI_PREVIOUS_WS_ENDPOINT
+    required: optional

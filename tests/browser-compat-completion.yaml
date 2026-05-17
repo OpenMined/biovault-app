@@ -1,0 +1,38 @@
+# Evidence contract for considering TODO.md's cross-browser WASM compatibility
+# plan complete. This is stricter than the everyday smoke-result checks.
+
+local_projects:
+  - chromium
+  - firefox
+  - webkit
+  - mobile-chromium
+  - mobile-firefox
+
+local_targets:
+  - android-local
+
+remote_targets:
+  - android-chrome-latest
+  - android-chrome-previous
+  - android-firefox-latest
+  - android-samsung-internet-latest
+  - ios-safari-latest
+  - ios-safari-oldest-supported
+  - ios-chrome-latest
+  - ios-firefox-latest
+
+minimum_brackets:
+  - chromium
+  - firefox
+  - safari
+
+policy_families:
+  - chromium
+  - firefox
+  - safari
+  - samsungInternet
+  - chromeIos
+  - firefoxIos
+  - unknown
+
+todo_file: TODO.md

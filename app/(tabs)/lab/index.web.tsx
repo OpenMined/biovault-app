@@ -5,6 +5,7 @@ import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { APP_BUILD_ID } from '@/lib/app-build-id'
 import { getAnalytics } from '@/lib/analytics'
+import { assessWebRuntimeSupport, type BrowserSupportAssessment } from '@/lib/browser-support'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import { clearDeferredLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
 import {
@@ -2775,6 +2776,11 @@ export default function LabScreen() {
 		setMobileSidebarOpen((value) => !value)
 	}, [])
 	const closeSidebarDrawer = useCallback(() => setMobileSidebarOpen(false), [])
+	const browserSupport = useMemo(
+		() => Platform.OS === 'web' ? assessWebRuntimeSupport() : null,
+		[],
+	)
+	const runtimeBlocked = browserSupport?.status === 'blocked'
 
 	const showGettingStartedView = !activeGenomeRef || forceGettingStarted
 	const assayPaneHeader = showGettingStartedView ? null : (
@@ -2927,7 +2933,7 @@ export default function LabScreen() {
 		/>
 	)
 	const gettingStartedRunButton =
-		showGettingStartedView && firstDemoBundle && firstDemoAssay ? (
+		!runtimeBlocked && showGettingStartedView && firstDemoBundle && firstDemoAssay ? (
 			<GettingStartedRunButton demoRunPending={demoRunPending} onTryDemoRun={startDemoRun} />
 		) : null
 
@@ -2937,7 +2943,7 @@ export default function LabScreen() {
 				{dragActive ? <DragOverlay /> : null}
 
 				<View style={styles.workspaceShell}>
-					{sidebarVisible ? (
+					{sidebarVisible && !runtimeBlocked ? (
 						useSidebarDrawer ? (
 							<View style={styles.labExplorerDrawerLayer}>
 								<Pressable
@@ -3076,18 +3082,26 @@ export default function LabScreen() {
 							</View>
 						) : null}
 
-						{useWideSplit ? (
-							<View style={styles.workbenchGrid}>
-								<View style={[styles.workbenchPane, styles.workbenchAssayPane]}>
-									{assayPaneHeader}
-									{assayBlocks}
-								</View>
-							</View>
+						<BrowserSupportBanner assessment={browserSupport} />
+
+						{runtimeBlocked ? (
+							<BrowserSupportBlocker assessment={browserSupport} />
 						) : (
-							labWorkBlocks
+							<>
+								{useWideSplit ? (
+									<View style={styles.workbenchGrid}>
+										<View style={[styles.workbenchPane, styles.workbenchAssayPane]}>
+											{assayPaneHeader}
+											{assayBlocks}
+										</View>
+									</View>
+								) : (
+									labWorkBlocks
+								)}
+							</>
 						)}
 					</ScrollView>
-					{useWideSplit && !showGettingStartedView ? (
+					{!runtimeBlocked && useWideSplit && !showGettingStartedView ? (
 						<View style={[styles.workbenchPane, styles.workbenchResultsPane]}>
 							{resultsPaneHeader}
 							{resultBlocks}
@@ -3149,6 +3163,73 @@ export default function LabScreen() {
 				/>
 			</SafeAreaView>
 		</ThemeCtx.Provider>
+	)
+}
+
+function BrowserSupportBanner({ assessment }: { assessment: BrowserSupportAssessment | null }) {
+	const { styles } = useTheme()
+	if (!assessment || assessment.status === 'supported') return null
+	const missingRequired = assessment.requiredMissing.map((item) => item.label).join(', ')
+	const missingOptional = assessment.optionalMissing.map((item) => item.label).join(', ')
+	return (
+		<View
+			accessibilityRole="alert"
+			style={[
+				styles.browserSupportBanner,
+				assessment.status === 'blocked' ? styles.browserSupportBannerBlocked : styles.browserSupportBannerWarning,
+			]}
+		>
+			<View style={styles.browserSupportIcon}>
+				<OMIcon name={assessment.status === 'blocked' ? 'alert-circle-outline' : 'construct-outline'} size={18} tone={assessment.status === 'blocked' ? 'danger' : 'accent'} />
+			</View>
+			<View style={styles.browserSupportText}>
+				<OMText variant="subtitle" style={styles.browserSupportTitle}>
+					{assessment.status === 'blocked' ? 'Browser runtime unsupported' : 'Browser runtime warning'}
+				</OMText>
+				<OMText variant="body" style={styles.browserSupportBody}>
+					{assessment.summary}
+				</OMText>
+				{missingRequired ? (
+					<OMText variant="caption" style={styles.browserSupportMeta}>
+						Required: {missingRequired}
+					</OMText>
+				) : null}
+				{missingOptional ? (
+					<OMText variant="caption" style={styles.browserSupportMeta}>
+						Optional: {missingOptional}
+					</OMText>
+				) : null}
+			</View>
+		</View>
+	)
+}
+
+function BrowserSupportBlocker({ assessment }: { assessment: BrowserSupportAssessment | null }) {
+	const { styles } = useTheme()
+	const missingRequired = assessment?.requiredMissing ?? []
+	if (!missingRequired.length) return null
+	return (
+		<View style={styles.browserSupportBlocker}>
+			<View style={styles.browserSupportBlockerIcon}>
+				<OMIcon name="alert-circle-outline" size={28} tone="danger" />
+			</View>
+			<OMText variant="headline" style={styles.browserSupportBlockerTitle}>
+				This browser cannot run BioVault assays
+			</OMText>
+			<OMText variant="body" style={styles.browserSupportBlockerBody}>
+				The Lab needs these browser runtime features before it can load files or start WebAssembly analysis.
+			</OMText>
+			<View style={styles.browserSupportMissingList}>
+				{missingRequired.map((item) => (
+					<View key={item.id} style={styles.browserSupportMissingItem}>
+						<OMIcon name="close-circle" size={16} tone="danger" />
+						<OMText variant="body" style={styles.browserSupportMissingText}>
+							{item.label}
+						</OMText>
+					</View>
+				))}
+			</View>
+		</View>
 	)
 }
 
@@ -7489,6 +7570,80 @@ function makeStyles(p: LabPalette) {
 			color: p.accentStrong,
 			fontSize: 12,
 			lineHeight: 17,
+		},
+		browserSupportBanner: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
+			marginBottom: omSpacing.l,
+			padding: omSpacing.m,
+			borderRadius: omRadius.m,
+			borderWidth: 1,
+		},
+		browserSupportBannerWarning: {
+			backgroundColor: p.warningBg,
+			borderColor: p.warningBorder,
+		},
+		browserSupportBannerBlocked: {
+			backgroundColor: p.dangerBg,
+			borderColor: p.dangerBorder,
+		},
+		browserSupportIcon: {
+			width: 30,
+			height: 30,
+			borderRadius: 8,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.surfaceRaised,
+		},
+		browserSupportText: {
+			flex: 1,
+			minWidth: 0,
+			gap: 3,
+		},
+		browserSupportTitle: { color: p.text },
+		browserSupportBody: { color: p.textMuted },
+		browserSupportMeta: { color: p.textFaint },
+		browserSupportBlocker: {
+			alignSelf: 'stretch',
+			maxWidth: 720,
+			gap: omSpacing.m,
+			paddingVertical: omSpacing.xxl,
+			paddingHorizontal: 0,
+		},
+		browserSupportBlockerIcon: {
+			width: 52,
+			height: 52,
+			borderRadius: 12,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.dangerBg,
+			borderWidth: 1,
+			borderColor: p.dangerBorder,
+		},
+		browserSupportBlockerTitle: {
+			color: p.text,
+			fontSize: 26,
+			lineHeight: 32,
+			fontWeight: '700',
+		},
+		browserSupportBlockerBody: {
+			color: p.textMuted,
+			fontSize: 16,
+			lineHeight: 24,
+			maxWidth: 620,
+		},
+		browserSupportMissingList: {
+			gap: omSpacing.s,
+			marginTop: omSpacing.s,
+		},
+		browserSupportMissingItem: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.s,
+		},
+		browserSupportMissingText: {
+			color: p.text,
 		},
 		pickerList: { gap: 8 },
 		panelAssayGroup: {
