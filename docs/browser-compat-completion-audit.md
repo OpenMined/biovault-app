@@ -126,12 +126,13 @@ Current repository/environment audit:
   `WEB_URL=https://app.biovault.net/web/ WEB_COMPAT_CHECK_WEB_URL_REACHABLE=1 WEB_COMPAT_REQUIRE_REMOTE_ANDROID=1 WEB_COMPAT_REQUIRE_REMOTE_IOS=1 WEB_COMPAT_INCLUDE_DEFERRED=1 npm run check:browser-compat-infra`,
   accepts the provider-reachable `WEB_URL` and still reports the missing
   Android/iOS endpoints.
-- The live `main` GitHub Actions workflow currently exposes only the legacy
-  `deploy_ref` manual input. The provider/completion inputs in this workspace
-  must be committed and pushed to a branch, or merged to `main`, before a CI
-  provider run can be dispatched with `compat_web_url`, `compat_include_ios`,
-  `compat_remote_targets`, or `compat_completion`. Check the selected ref with
-  `WEB_COMPAT_PROVIDER_REF="$COMPAT_REF" npm run check:browser-compat-provider-workflow`.
+- The pushed `madhava/browser-testing` branch passes
+  `WEB_COMPAT_PROVIDER_REF=madhava/browser-testing npm run check:browser-compat-provider-workflow`,
+  so CI provider runs can be dispatched from that ref once endpoint JSON is
+  available. The live `main` GitHub Actions workflow still exposes only the
+  legacy `deploy_ref` manual input and must be updated before `COMPAT_REF=main`
+  provider runs can use `compat_web_url`, `compat_include_ios`,
+  `compat_remote_targets`, or `compat_completion`.
 - Remote matrix dry-runs pass for both the default Android target set and the
   full Android+iOS target set using
   `tests/browser-compat-remote-endpoints.example.json`, which verifies target
