@@ -482,7 +482,8 @@ Manual CI inputs:
   remote compatibility run and requires those result rows during validation.
 - `compat_remote_dry_run=true` validates endpoint secret visibility, target
   selection, and provider-reachable `WEB_URL` without fetching fixtures,
-  opening provider browser sessions, or producing compatibility evidence.
+  opening provider browser sessions, deploying the web app, or producing
+  compatibility evidence.
 - `compat_completion=true` downloads `web-compat*-artifacts`, merges them,
   refreshes `lib/browser-support.generated.ts` and `TODO.md`, checks
   browser-compat docs/script references, runs the strict completion audit, and

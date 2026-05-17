@@ -883,7 +883,7 @@ jobs:
           if-no-files-found: error
 
   deploy-web-prod:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.compat_remote_dry_run)
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 30
     concurrency:
