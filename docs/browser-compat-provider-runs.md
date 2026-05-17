@@ -214,6 +214,7 @@ Use the renderer when you have raw provider capability JSON and want to produce
 the endpoint secret value without hand-encoding query parameters:
 
 ```sh
+GITHUB_SHA="$(git rev-parse HEAD)" \
 BROWSERSTACK_USERNAME=... \
 BROWSERSTACK_ACCESS_KEY=... \
 npm run --silent render:browser-compat-endpoints -- browserstack tests/browser-compat-provider-capabilities.example.json \
@@ -248,7 +249,7 @@ example at `tests/browser-compat-provider-capabilities.example.json` contains
 template entries for every remote target; copy it to a gitignored local file
 before adding real provider details. The renderer validates target ids against
 `tests/browser-compat-remote-matrix.yaml` and requires referenced environment
-variables to exist unless
+variables, including `GITHUB_SHA` for provider build labels, to exist unless
 `WEB_COMPAT_ENDPOINT_ALLOW_PLACEHOLDERS=1` is set for a template-only render.
 
 Sauce Labs currently documents Playwright remote execution through Selenium
