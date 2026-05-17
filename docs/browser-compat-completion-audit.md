@@ -82,6 +82,10 @@ These rows require real provider WebSocket endpoints via either
 `WEB_COMPAT_REMOTE_ENDPOINTS_JSON`/`BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON`,
 an auto-detected repo-root `browser-compat-endpoints.json`, or
 `WEB_COMPAT_REMOTE_ENDPOINTS_FILE`/`BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE`.
+In CI, the manual `web-compat-remote` job can also render a runner-temp
+endpoint file from provider credential secrets when endpoint JSON is absent:
+`BROWSERSTACK_USERNAME` plus `BROWSERSTACK_ACCESS_KEY`, or `LT_USERNAME` plus
+`LT_ACCESS_KEY`, using `tests/browser-compat-provider-capabilities.example.json`.
 Endpoint JSON is validated against the same target set that the remote provider
 run would execute: all Android targets by default, selected targets when
 `WEB_COMPAT_REMOTE_TARGETS` is set, and deferred iOS targets only when
@@ -115,6 +119,12 @@ Current repository/environment audit:
   the remote infrastructure preflight report `WEB_URL: available`.
 - The repo root has no `browser-compat-endpoints.json` file for the local
   provider endpoint auto-detection path.
+- The repository has no environments or variables, and the only repository
+  secret visible to this token is `CLOUDFLARE_API_TOKEN`. Organization
+  secrets/variables cannot be inspected with this token, but the latest
+  provider dry-run received empty `BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON`,
+  `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`, `LT_USERNAME`, and
+  `LT_ACCESS_KEY` values.
 - `test-output/browser-compat/results.json` currently contains local,
   historical, and `android-local` rows only; it has no passing
   `remote-provider` rows for the Android/iOS target ids listed above.
@@ -123,18 +133,21 @@ Current repository/environment audit:
   reports the missing `BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON` provider endpoint
   input and lists all eight Android/iOS endpoint target ids required for full
   completion. The endpoint input can come from env JSON, a local endpoint file,
-  a repo-root `browser-compat-endpoints.json`, or a CI-visible secret.
+  a repo-root `browser-compat-endpoints.json`, a CI-visible endpoint JSON
+  secret, or CI-visible BrowserStack/LambdaTest credential secrets that render
+  endpoint JSON inside the manual remote workflow.
 - The full remote infrastructure preflight,
   `WEB_URL=https://app.biovault.net/web/ WEB_COMPAT_CHECK_WEB_URL_REACHABLE=1 WEB_COMPAT_REQUIRE_REMOTE_ANDROID=1 WEB_COMPAT_REQUIRE_REMOTE_IOS=1 WEB_COMPAT_INCLUDE_DEFERRED=1 npm run check:browser-compat-infra`,
   accepts the provider-reachable `WEB_URL` and still reports the missing
   Android/iOS endpoints.
 - The live `main` GitHub Actions workflow passes
   `WEB_COMPAT_PROVIDER_REF=main npm run check:browser-compat-provider-workflow`,
-  so CI provider runs can be dispatched from `main` once endpoint JSON is
-  available. A safe `compat_remote_dry_run=true` workflow dispatch on `main`
-  reached `Check remote browser provider secret` and failed there with an empty
-  `BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON`, confirming that the endpoint secret
-  is not currently visible to the workflow.
+  so CI provider runs can be dispatched from `main` once endpoint JSON or a
+  complete provider credential pair is available. A safe
+  `compat_remote_dry_run=true` workflow dispatch on `main` ran the provider
+  credential render fallback, found no endpoint JSON or BrowserStack/LambdaTest
+  credential pair, then reached `Check remote browser provider secret` and
+  failed before fixture fetch or provider browser launch.
 - Remote matrix dry-runs pass for both the default Android target set and the
   full Android+iOS target set using
   `tests/browser-compat-remote-endpoints.example.json`, which verifies target

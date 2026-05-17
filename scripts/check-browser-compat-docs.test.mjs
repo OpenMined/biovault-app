@@ -643,6 +643,8 @@ function endpointInputLines() {
 		'Endpoint JSON can be supplied with WEB_COMPAT_REMOTE_ENDPOINTS_JSON,',
 		'BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON, WEB_COMPAT_REMOTE_ENDPOINTS_FILE,',
 		'BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE, or browser-compat-endpoints.json.',
+		'CI can render endpoints from BROWSERSTACK_USERNAME plus',
+		'BROWSERSTACK_ACCESS_KEY, or LT_USERNAME plus LT_ACCESS_KEY.',
 	]
 }
 

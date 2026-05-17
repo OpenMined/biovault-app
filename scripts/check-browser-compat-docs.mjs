@@ -34,6 +34,10 @@ const endpointInputTokens = [
 	'WEB_COMPAT_REMOTE_ENDPOINTS_FILE',
 	'BROWSER_COMPAT_REMOTE_ENDPOINTS_FILE',
 	'browser-compat-endpoints.json',
+	'BROWSERSTACK_USERNAME',
+	'BROWSERSTACK_ACCESS_KEY',
+	'LT_USERNAME',
+	'LT_ACCESS_KEY',
 ]
 const resultContractTokens = [
 	'results.md',
