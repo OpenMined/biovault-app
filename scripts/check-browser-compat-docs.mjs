@@ -36,8 +36,11 @@ const endpointInputTokens = [
 	'browser-compat-endpoints.json',
 	'BROWSERSTACK_USERNAME',
 	'BROWSERSTACK_ACCESS_KEY',
+	'BROWSERSTACK_ACCESSKEY',
 	'LT_USERNAME',
 	'LT_ACCESS_KEY',
+	'LAMBDATEST_USERNAME',
+	'LAMBDATEST_ACCESS_KEY',
 ]
 const resultContractTokens = [
 	'results.md',
@@ -237,9 +240,9 @@ function workflowRemoteProviderErrors(text, file) {
 	const requiredTokens = [
 		'Render remote browser provider endpoints from provider secrets',
 		'BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME || vars.BROWSERSTACK_USERNAME }}',
-		'BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}',
-		'LT_USERNAME: ${{ secrets.LT_USERNAME || vars.LT_USERNAME }}',
-		'LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY }}',
+		'BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY || secrets.BROWSERSTACK_ACCESSKEY }}',
+		'LT_USERNAME: ${{ secrets.LT_USERNAME || vars.LT_USERNAME || secrets.LAMBDATEST_USERNAME || vars.LAMBDATEST_USERNAME }}',
+		'LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY || secrets.LAMBDATEST_ACCESS_KEY }}',
 		'WEB_COMPAT_REMOTE_ENDPOINTS_FILE=$output_file',
 		'WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}',
 		'WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && \'1\' || \'0\' }}',
