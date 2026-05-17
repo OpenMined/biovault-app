@@ -148,6 +148,7 @@ function workflowDispatchPrerequisiteErrors(text, file) {
 		'compat_web_url',
 		'compat_include_ios',
 		'compat_remote_targets',
+		'compat_remote_dry_run',
 		'compat_completion',
 	].some((token) => text.includes(token))
 	if (!discussesProviderWorkflowInputs) return []
@@ -207,6 +208,7 @@ function workflowRemoteProviderErrors(text, file) {
 		'WEB_URL: ${{ inputs.compat_web_url }}',
 		'WEB_COMPAT_CHECK_WEB_URL_REACHABLE: \'1\'',
 		'WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url',
+		'WEB_COMPAT_REMOTE_DRY_RUN: ${{ inputs.compat_remote_dry_run && \'1\' || \'0\' }}',
 		'npm run check:browser-compat-provider-secret',
 		'npm run check:browser-compat-infra',
 		'npm run test:web-compat:remote-matrix',
