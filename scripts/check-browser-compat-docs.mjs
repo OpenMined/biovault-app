@@ -49,6 +49,8 @@ const providerRenderTokens = [
 	['GITHUB_SHA', 'provider build label placeholder'],
 	['BROWSERSTACK_USERNAME', 'BrowserStack username placeholder'],
 	['BROWSERSTACK_ACCESS_KEY', 'BrowserStack access key placeholder'],
+	['LT_USERNAME', 'LambdaTest username placeholder'],
+	['LT_ACCESS_KEY', 'LambdaTest access key placeholder'],
 ]
 
 for (const file of files) {
