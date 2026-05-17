@@ -82,6 +82,7 @@ bun.lockb
 bun.lock
 
 # Logs and diagnostics
+.clawpatch/
 *.log
 logs/
 npm-debug.log*
