@@ -505,6 +505,8 @@ WEB_COMPAT_PROVIDER_REF="$COMPAT_REF" npm run check:browser-compat-provider-work
 
 If that secret is missing, the remote-provider preflight will report missing
 Android/iOS endpoints and the strict completion audit cannot pass.
+The current provider endpoint/evidence handoff is tracked in
+[#66](https://github.com/OpenMined/biovault-app/issues/66).
 The manual remote-provider workflow runs the same check before fixture download
 or browser launch. If the workflow ref check fails, push these workflow changes
 to the selected branch or merge them to `main` before dispatching provider CI.

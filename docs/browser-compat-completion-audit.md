@@ -105,6 +105,8 @@ Markdown summary file, and Markdown requirement with `WEB_COMPAT_REQUIRED_SAMPLE
 
 Current repository/environment audit:
 
+- Provider endpoint setup and real Android/iOS evidence collection are tracked
+  in [issue #66](https://github.com/OpenMined/biovault-app/issues/66).
 - The local shell has no `WEB_COMPAT_REMOTE_ENDPOINTS_*`,
   `BROWSER_COMPAT_REMOTE_ENDPOINTS_*`, `BROWSERSTACK_*`, `LT_*`,
   `LAMBDATEST_*`, or `SAUCE_*` endpoint variables.
