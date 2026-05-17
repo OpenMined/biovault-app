@@ -30,6 +30,23 @@ test('renders provider endpoints after expanding required environment placeholde
 	assert.equal(caps['browserstack.accessKey'], 'key')
 })
 
+test('renders LambdaTest endpoints after expanding required environment placeholders', () => {
+	const file = lambdaCapabilityFile('${LT_USERNAME}', '${LT_ACCESS_KEY}')
+	const result = runRenderer(file, {
+		LT_USERNAME: 'user',
+		LT_ACCESS_KEY: 'key',
+	}, 'lambdatest')
+
+	assert.equal(result.status, 0, result.stderr || result.stdout)
+	const endpoints = JSON.parse(result.stdout)
+	const wsEndpoint = endpoints['android-chrome-latest']?.wsEndpoint
+	assert.match(wsEndpoint, /^wss:\/\/cdp\.lambdatest\.com\/playwright\?capabilities=/)
+	const url = new URL(wsEndpoint)
+	const caps = JSON.parse(url.searchParams.get('capabilities'))
+	assert.equal(caps.user, 'user')
+	assert.equal(caps.accessKey, 'key')
+})
+
 test('rejects missing or empty environment placeholders', () => {
 	const missing = runRenderer(capabilityFile('${BROWSERSTACK_USERNAME}', '${BROWSERSTACK_ACCESS_KEY}'), {
 		BROWSERSTACK_USERNAME: 'user',
@@ -154,8 +171,28 @@ function capabilityFile(username, accessKey, overrides = {}) {
 	return file
 }
 
-function runRenderer(file, env = {}) {
-	return spawnSync(process.execPath, [renderer, 'browserstack', file], {
+function lambdaCapabilityFile(username, accessKey, overrides = {}) {
+	const file = path.join(os.tmpdir(), `biovault-browser-compat-caps-${process.pid}-${tempFiles.length}.json`)
+	tempFiles.push(file)
+	fs.writeFileSync(file, JSON.stringify({
+		lambdatest: {
+			'android-chrome-latest': {
+				browserName: 'Chrome',
+				browserVersion: 'latest',
+				deviceName: 'Pixel 9',
+				platformVersion: '15',
+				name: 'android-chrome-latest',
+				user: username,
+				accessKey,
+				...overrides,
+			},
+		},
+	}, null, 2))
+	return file
+}
+
+function runRenderer(file, env = {}, provider = 'browserstack') {
+	return spawnSync(process.execPath, [renderer, provider, file], {
 		cwd: root,
 		encoding: 'utf8',
 		env: {
