@@ -5,7 +5,7 @@ import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { APP_BUILD_ID } from '@/lib/app-build-id'
 import { getAnalytics } from '@/lib/analytics'
-import { assessWebRuntimeSupport, WEB_RUNTIME_BROWSER_POLICY, type BrowserSupportAssessment } from '@/lib/browser-support'
+import { assessWebRuntimeSupport, type BrowserSupportAssessment } from '@/lib/browser-support'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import { clearDeferredLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
 import {
@@ -3083,7 +3083,6 @@ export default function LabScreen() {
 						) : null}
 
 						<BrowserSupportBanner assessment={browserSupport} />
-						<VerifiedBrowsersNote />
 
 						{runtimeBlocked ? (
 							<BrowserSupportBlocker assessment={browserSupport} />
@@ -3164,23 +3163,6 @@ export default function LabScreen() {
 				/>
 			</SafeAreaView>
 		</ThemeCtx.Provider>
-	)
-}
-
-function VerifiedBrowsersNote() {
-	const { styles } = useTheme()
-	if (Platform.OS !== 'web') return null
-	const verified = (['chromium', 'firefox', 'safari'] as const)
-		.map((key) => {
-			const policy = WEB_RUNTIME_BROWSER_POLICY[key]
-			return policy?.minimumKnownGood ? `${policy.label} ${policy.minimumKnownGood}+` : null
-		})
-		.filter((entry): entry is string => entry !== null)
-	if (!verified.length) return null
-	return (
-		<OMText variant="caption" style={styles.browserSupportMeta}>
-			Runs entirely in your browser via WebAssembly. Verified on {verified.join(', ')}. Mobile Safari/iOS coverage in progress.
-		</OMText>
 	)
 }
 

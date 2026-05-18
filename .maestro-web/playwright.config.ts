@@ -46,6 +46,10 @@ const projectDefinitions = {
 			userAgent: 'Mozilla/5.0 (Android 14; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0',
 		},
 	},
+	'mobile-webkit': {
+		name: 'mobile-webkit',
+		use: { ...devices['iPhone 15'] },
+	},
 }
 
 const projects = requestedProjects.map((name) => {

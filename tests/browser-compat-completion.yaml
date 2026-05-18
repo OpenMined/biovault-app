@@ -7,6 +7,7 @@ local_projects:
   - webkit
   - mobile-chromium
   - mobile-firefox
+  - mobile-webkit
 
 local_targets:
   - android-local

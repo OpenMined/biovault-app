@@ -26,7 +26,7 @@ if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
 fi
 
 STRICT=0
-PROJECTS="${PW_BROWSER_PROJECTS:-chromium,firefox,webkit,mobile-chromium,mobile-firefox}"
+PROJECTS="${PW_BROWSER_PROJECTS:-chromium,firefox,webkit,mobile-chromium,mobile-firefox,mobile-webkit}"
 FORWARD=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,7 +60,7 @@ engine_of() {
   case "$1" in
     chromium|mobile-chromium) echo chromium ;;
     firefox|mobile-firefox)   echo firefox ;;
-    webkit)                   echo webkit ;;
+    webkit|mobile-webkit)     echo webkit ;;
     *)                        echo "$1" ;;
   esac
 }
@@ -71,7 +71,22 @@ can_launch() {
 }
 
 echo "==> probing engines for: $PROJECTS"
-declare -A ENGINE_OK
+# Bash 3.2 (macOS system bash) has no associative arrays; memoize engine
+# launch results in a newline-delimited "engine=status" string instead.
+ENGINE_OK=""
+engine_status() {
+  local line status
+  line="$(printf '%s\n' "$ENGINE_OK" | grep "^$1=" | head -n1)"
+  if [[ -n "$line" ]]; then
+    echo "${line#*=}"
+    return
+  fi
+  if can_launch "$1"; then status=ok; else status=fail; fi
+  ENGINE_OK="${ENGINE_OK}
+$1=$status"
+  echo "$status"
+}
+
 RUN_PROJECTS=()
 SKIPPED=()
 IFS=',' read -ra PROJ_LIST <<< "$PROJECTS"
@@ -79,10 +94,7 @@ for proj in "${PROJ_LIST[@]}"; do
   proj="${proj// /}"
   [[ -z "$proj" ]] && continue
   eng="$(engine_of "$proj")"
-  if [[ -z "${ENGINE_OK[$eng]:-}" ]]; then
-    if can_launch "$eng"; then ENGINE_OK[$eng]=ok; else ENGINE_OK[$eng]=fail; fi
-  fi
-  if [[ "${ENGINE_OK[$eng]}" == "ok" ]]; then
+  if [[ "$(engine_status "$eng")" == "ok" ]]; then
     RUN_PROJECTS+=("$proj")
   else
     SKIPPED+=("$proj")
@@ -105,7 +117,7 @@ fi
 
 joined="$(IFS=,; echo "${RUN_PROJECTS[*]}")"
 echo "==> running browser compatibility smoke: $joined"
-PW_BROWSER_PROJECTS="$joined" ./test-web-compat.sh "${FORWARD[@]}"
+PW_BROWSER_PROJECTS="$joined" ./test-web-compat.sh ${FORWARD[@]+"${FORWARD[@]}"}
 
 echo
 echo "Results: test-output/browser-compat/results.md"

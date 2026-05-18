@@ -214,7 +214,7 @@ function validateCompletionContract(completion) {
 	const minimumBrackets = arrayValue(completion.minimum_brackets, 'minimum_brackets')
 	const policyFamilies = arrayValue(completion.policy_families, 'policy_families')
 	for (const project of localProjects) {
-		if (!['chromium', 'firefox', 'webkit', 'mobile-chromium', 'mobile-firefox'].includes(project)) {
+		if (!['chromium', 'firefox', 'webkit', 'mobile-chromium', 'mobile-firefox', 'mobile-webkit'].includes(project)) {
 			errors.push(`completion contract has unsupported local project ${project}`)
 		}
 	}

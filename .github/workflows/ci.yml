@@ -484,7 +484,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Playwright compatibility browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Cache genomic test fixtures
         uses: actions/cache@v4
@@ -505,10 +505,12 @@ jobs:
           test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
 
       - name: Run WASM browser compatibility smoke
-        run: ./test-web-compat.sh
+        run: PW_BROWSER_PROJECTS=chromium,firefox,mobile-chromium,mobile-firefox ./test-web-compat.sh
 
       - name: Validate browser compatibility result coverage
         run: npm run check:browser-compat-results
+        env:
+          WEB_COMPAT_REQUIRED_PROJECTS: chromium,firefox,mobile-chromium,mobile-firefox
 
       - name: Validate remote mobile compatibility matrix
         run: npm run check:browser-compat-matrix
@@ -569,6 +571,85 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: web-compat-artifacts
+          path: |
+            test-output/browser-compat
+            test-results
+          if-no-files-found: ignore
+
+  web-compat-ios:
+    # iOS/Safari web engine (Playwright WebKit) on a macOS runner — the
+    # closest CI proxy to real Mobile Safari without a cloud device
+    # provider. Mirrors the native `ios` job's mac runner + Homebrew
+    # pattern. Android web stays on Linux (mobile-chromium/mobile-firefox
+    # in web-compat) to match the native `android` job and
+    # web-compat-android-local, which both use Linux + KVM, never mac.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
+    runs-on: namespace-profile-mac-medium
+    timeout-minutes: 35
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install modern Bash
+        # The test-web-compat.sh -> test-web.sh chain uses Bash 4+ features
+        # (associative arrays, set -u array expansion). macOS ships Bash
+        # 3.2, so install a current Bash and put it ahead of /bin on PATH.
+        run: |
+          brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright WebKit
+        # No --with-deps: that flag shells out to apt-get (Linux only).
+        run: npx playwright install webkit
+
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-web-pgx-v1
+          restore-keys: bioscript-test-data-
+
+      - name: Fetch web genomic test fixtures
+        run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
+
+      - name: Verify compatibility fixtures
+        run: |
+          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
+          test -f exvitae/assays/pgx/pgx-1/manifest.yaml
+          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+
+      - name: Run iOS/Safari WASM browser compatibility smoke
+        run: PW_BROWSER_PROJECTS=webkit,mobile-webkit ./test-web-compat.sh
+
+      - name: Validate iOS/Safari browser compatibility result coverage
+        run: npm run check:browser-compat-results
+        env:
+          WEB_COMPAT_REQUIRED_PROJECTS: webkit,mobile-webkit
+
+      - name: Upload iOS/Safari browser compatibility artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-compat-ios-artifacts
           path: |
             test-output/browser-compat
             test-results
@@ -847,6 +928,7 @@ jobs:
     if: always() && github.event_name == 'workflow_dispatch' && inputs.compat_completion
     needs:
       - web-compat
+      - web-compat-ios
       - web-compat-remote
       - web-compat-versions
       - web-compat-android-local

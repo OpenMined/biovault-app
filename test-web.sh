@@ -175,7 +175,7 @@ elif [[ "$MODE" == "wasm-compat" ]]; then
       firefox|mobile-firefox)
         [[ " ${PLAYWRIGHT_BROWSERS[*]} " == *" firefox "* ]] || PLAYWRIGHT_BROWSERS+=(firefox)
         ;;
-      webkit)
+      webkit|mobile-webkit)
         [[ " ${PLAYWRIGHT_BROWSERS[*]} " == *" webkit "* ]] || PLAYWRIGHT_BROWSERS+=(webkit)
         ;;
     esac

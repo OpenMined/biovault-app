@@ -13,7 +13,7 @@ fi
 
 WEB_SECURE_ORIGIN="${WEB_SECURE_ORIGIN:-0}" \
 PW_IGNORE_HTTPS_ERRORS="${PW_IGNORE_HTTPS_ERRORS:-1}" \
-PW_BROWSER_PROJECTS="${PW_BROWSER_PROJECTS:-chromium,firefox,webkit,mobile-chromium,mobile-firefox}" \
+PW_BROWSER_PROJECTS="${PW_BROWSER_PROJECTS:-chromium,firefox,webkit,mobile-chromium,mobile-firefox,mobile-webkit}" \
 PW_WORKERS="${PW_WORKERS:-1}" \
 WEB_REPORT_NO_PRIVATE="${WEB_REPORT_NO_PRIVATE:-1}" \
 WEB_COMPAT_SAMPLE_ID="${WEB_COMPAT_SAMPLE_ID:-23andme-v5-hu50B3F5}" \
