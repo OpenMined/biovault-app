@@ -35,7 +35,7 @@ function RootNavigator() {
 	const pathname = usePathname()
 	const router = useRouter()
 	const [webAgreementAccepted, setWebAgreementAccepted] = useState(
-		() => Platform.OS !== 'web' || getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true'
+		() => Platform.OS !== 'web'
 	)
 	const [completedOnboarding, setCompletedOnboarding] = useState(
 		() => WEB_USES_FIRST_LOAD_AGREEMENT || getAppPreferenceSync('hasCompletedOnboarding') === 'true'
@@ -46,6 +46,10 @@ function RootNavigator() {
 	const canAccessApp = completedOnboarding && acceptedDisclaimer
 
 	useEffect(() => {
+		if (Platform.OS === 'web') {
+			setWebAgreementAccepted(getAppPreferenceSync('hasAcceptedResearchDisclaimer') === 'true')
+		}
+
 		const unsubscribeCompleted = subscribeToAppPreference('hasCompletedOnboarding', (value) => {
 			setCompletedOnboarding(WEB_USES_FIRST_LOAD_AGREEMENT || value === 'true')
 		})

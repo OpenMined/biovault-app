@@ -50,10 +50,17 @@ async function clickDialogControl(page: Page, dialogLabel: string, labels: strin
 
 export async function dismissDisclaimer(page: Page) {
 	const understand = page.getByText('I understand and want to continue', { exact: false })
-	if (await understand.isVisible().catch(() => false)) {
-		await understand.click()
-		await page.getByText(/^Continue$/).click({ timeout: 10_000 })
+	const continueButton = page.getByText(/^Continue$/)
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!(await understand.isVisible({ timeout: 500 }).catch(() => false))) return
+		await understand.click({ timeout: 2_000 }).catch(() => undefined)
+		if (await continueButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+			await continueButton.click({ timeout: 2_000 }).catch(() => undefined)
+		}
+		if (!(await understand.isVisible({ timeout: 1_000 }).catch(() => false))) return
+		await page.waitForTimeout(150)
 	}
+	await expect(understand).toBeHidden({ timeout: 5_000 })
 }
 
 export async function dismissRememberFilesPrompt(page: Page) {
