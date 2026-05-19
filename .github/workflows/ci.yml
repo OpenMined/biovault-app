@@ -18,15 +18,6 @@ on:
         description: Public BioVault web URL for remote browser compatibility runs
         required: false
         default: ''
-      compat_remote_targets:
-        description: Optional comma-separated remote target ids to run
-        required: false
-        default: ''
-      compat_include_ios:
-        description: Include deferred iOS browser provider targets in remote compatibility runs
-        required: false
-        default: false
-        type: boolean
       compat_allow_local_web_url:
         description: Allow localhost WEB_URL for remote compatibility runs when a provider tunnel maps it
         required: false
@@ -457,7 +448,7 @@ jobs:
           if-no-files-found: ignore
 
   web-compat:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 25
     steps:
@@ -577,15 +568,15 @@ jobs:
           if-no-files-found: ignore
 
   web-compat-ios:
-    # iOS/Safari web engine (Playwright WebKit) on a macOS runner — the
-    # closest CI proxy to real Mobile Safari without a cloud device
-    # provider. Mirrors the native `ios` job's mac runner + Homebrew
-    # pattern. Android web stays on Linux (mobile-chromium/mobile-firefox
-    # in web-compat) to match the native `android` job and
-    # web-compat-android-local, which both use Linux + KVM, never mac.
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
+    # REAL Mobile Safari (WebKit) on the iOS Simulator via Appium +
+    # appium-xcuitest-driver (WebDriverAgent) — drives the actual iOS
+    # browser runtime, not Playwright's desktop-WebKit emulation. Mirrors
+    # the native `ios` job's macOS-runner + Xcode/Simulator setup. Runs
+    # the real app demo (Monty + bioscript-wasm) and verifies the 4 PGx
+    # artifacts. See native-tests.md.
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
     runs-on: namespace-profile-mac-medium
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -605,9 +596,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install modern Bash
-        # The test-web-compat.sh -> test-web.sh chain uses Bash 4+ features
-        # (associative arrays, set -u array expansion). macOS ships Bash
-        # 3.2, so install a current Bash and put it ahead of /bin on PATH.
+        # test-web-compat.sh uses Bash 4+ features; macOS ships 3.2.
         run: |
           brew install bash
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
@@ -617,9 +606,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Playwright WebKit
-        # No --with-deps: that flag shells out to apt-get (Linux only).
-        run: npx playwright install webkit
+      - name: Install Appium + XCUITest driver
+        run: |
+          npm i -g appium
+          appium driver install xcuitest@8
+
+      - name: Show available iOS Simulator runtimes
+        run: xcrun simctl list runtimes | grep -i ios || true
 
       - name: Cache genomic test fixtures
         uses: actions/cache@v4
@@ -631,34 +624,34 @@ jobs:
       - name: Fetch web genomic test fixtures
         run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
 
-      - name: Verify compatibility fixtures
-        run: |
-          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
-          test -f exvitae/assays/pgx/pgx-1/manifest.yaml
-          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+      - name: Run REAL Mobile Safari demo (iOS Simulator)
+        # The script picks/boots a stable simulator itself and starts its
+        # own Expo server. WEB_COMPAT_IOS_VERSION can pin a runtime if the
+        # runner has more than one installed.
+        run: ./test-web-compat.sh --ios
 
-      - name: Run iOS/Safari WASM browser compatibility smoke
-        run: PW_BROWSER_PROJECTS=webkit,mobile-webkit ./test-web-compat.sh
-
-      - name: Validate iOS/Safari browser compatibility result coverage
-        run: npm run check:browser-compat-results
-        env:
-          WEB_COMPAT_REQUIRED_PROJECTS: webkit,mobile-webkit
-
-      - name: Upload iOS/Safari browser compatibility artifacts
+      - name: Upload iOS browser compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: web-compat-ios-artifacts
           path: |
             test-output/browser-compat
-            test-results
+            .maestro-web/logs
           if-no-files-found: ignore
 
-  web-compat-remote:
-    if: github.event_name == 'workflow_dispatch' && inputs.compat_web_url != ''
+  web-compat-android:
+    # REAL Chrome on a real Android emulator via Appium +
+    # appium-uiautomator2-driver (+ chromedriver) — drives the actual
+    # Android browser runtime, not Playwright _android over CDP. Mirrors
+    # the native `android` job's Linux + KVM + android-emulator-runner
+    # setup. Runs the real app demo (Monty + bioscript-wasm) and verifies
+    # the 4 PGx artifacts. See native-tests.md.
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.compat_local_smoke)
     runs-on: namespace-profile-linux-medium
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      ANDROID_API_LEVEL: "36"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -669,10 +662,26 @@ jobs:
       - name: Initialize CI submodules
         run: ./scripts/init-ci-submodules.sh
 
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ] && [ -d /etc/udev/rules.d ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          else
+            echo "KVM not applicable on this runner; skipping."
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v6
@@ -682,91 +691,41 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Render remote browser provider endpoints from provider secrets
+      - name: Install Appium + UiAutomator2 driver
         run: |
-          set -euo pipefail
-          if [ -n "${BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON:-}" ]; then
-            echo "Using BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON for remote provider endpoints."
-            exit 0
-          fi
+          npm i -g appium
+          appium driver install uiautomator2@3
 
-          capability_template="tests/browser-compat-provider-capabilities.example.json"
-          output_file="${RUNNER_TEMP}/browser-compat-endpoints.json"
-          if [ -n "${BROWSERSTACK_USERNAME:-}" ] && [ -n "${BROWSERSTACK_ACCESS_KEY:-}" ]; then
-            npm run --silent render:browser-compat-endpoints -- browserstack "$capability_template" > "$output_file"
-          elif [ -n "${LT_USERNAME:-}" ] && [ -n "${LT_ACCESS_KEY:-}" ]; then
-            npm run --silent render:browser-compat-endpoints -- lambdatest "$capability_template" > "$output_file"
-          else
-            echo "No provider credential pair found; provider-secret preflight will report the missing endpoint input."
-            exit 0
-          fi
-
-          echo "WEB_COMPAT_REMOTE_ENDPOINTS_FILE=$output_file" >> "$GITHUB_ENV"
-          echo "Rendered remote provider endpoints to WEB_COMPAT_REMOTE_ENDPOINTS_FILE."
-        env:
-          BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
-          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME || vars.BROWSERSTACK_USERNAME }}
-          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY || secrets.BROWSERSTACK_ACCESSKEY }}
-          LT_USERNAME: ${{ secrets.LT_USERNAME || vars.LT_USERNAME || secrets.LAMBDATEST_USERNAME || vars.LAMBDATEST_USERNAME }}
-          LT_ACCESS_KEY: ${{ secrets.LT_ACCESS_KEY || secrets.LAMBDATEST_ACCESS_KEY }}
-
-      - name: Check remote browser provider secret
-        run: npm run check:browser-compat-provider-secret
-        env:
-          WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}
-          WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && '1' || '0' }}
-          BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
-          WEB_COMPAT_SKIP_GH_SECRET_LOOKUP: '1'
-
-      - name: Preflight remote browser provider endpoints
-        run: npm run check:browser-compat-infra
-        env:
-          WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}
-          WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && '1' || '0' }}
-          WEB_COMPAT_REQUIRE_REMOTE_ANDROID: ${{ (!inputs.compat_remote_targets || contains(inputs.compat_remote_targets, 'android-')) && '1' || '0' }}
-          WEB_COMPAT_REQUIRE_REMOTE_IOS: ${{ (inputs.compat_include_ios && (!inputs.compat_remote_targets || contains(inputs.compat_remote_targets, 'ios-'))) && '1' || '0' }}
-          WEB_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
-          WEB_URL: ${{ inputs.compat_web_url }}
-          WEB_COMPAT_CHECK_WEB_URL_REACHABLE: '1'
-          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}
+      - name: Cache genomic test fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.bioscript/cache/test-data
+          key: bioscript-test-data-web-pgx-v1
+          restore-keys: bioscript-test-data-
 
       - name: Fetch web genomic test fixtures
         run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
 
-      - name: Verify compatibility fixtures
-        run: |
-          test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
-          test -f exvitae/assays/pgx/pgx-1/manifest.yaml
-          test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+      - name: Run REAL Chrome demo (Android emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -no-boot-anim -noaudio -camera-back none -gpu swiftshader_indirect
+          disable-animations: true
+          script: ./test-web-compat.sh --android
 
-      - name: Validate remote mobile compatibility matrix
-        run: npm run check:browser-compat-matrix
-
-      - name: Run remote browser compatibility matrix
-        run: npm run test:web-compat:remote-matrix
-        env:
-          WEB_URL: ${{ inputs.compat_web_url }}
-          WEB_COMPAT_REMOTE_TARGETS: ${{ inputs.compat_remote_targets }}
-          WEB_COMPAT_INCLUDE_DEFERRED: ${{ inputs.compat_include_ios && '1' || '0' }}
-          WEB_COMPAT_REMOTE_ENDPOINTS_JSON: ${{ secrets.BROWSER_COMPAT_REMOTE_ENDPOINTS_JSON }}
-          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}
-          WEB_COMPAT_REMOTE_DRY_RUN: ${{ inputs.compat_remote_dry_run && '1' || '0' }}
-
-      - name: Validate remote browser compatibility results
-        if: ${{ !inputs.compat_remote_dry_run }}
-        run: npm run check:browser-compat-results
-        env:
-          WEB_COMPAT_REQUIRED_PROJECTS: ''
-          WEB_COMPAT_REQUIRED_TARGETS: ${{ inputs.compat_remote_targets || (inputs.compat_include_ios && 'android-chrome-latest,android-chrome-previous,android-firefox-latest,android-samsung-internet-latest,ios-safari-latest,ios-safari-oldest-supported,ios-chrome-latest,ios-firefox-latest' || 'android-chrome-latest,android-chrome-previous,android-firefox-latest,android-samsung-internet-latest') }}
-
-      - name: Upload remote browser compatibility artifacts
+      - name: Upload Android browser compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: web-compat-remote-artifacts
+          name: web-compat-android-artifacts
           path: |
             test-output/browser-compat
-            test-results
+            .maestro-web/logs
           if-no-files-found: ignore
 
   web-compat-versions:
@@ -929,7 +888,7 @@ jobs:
     needs:
       - web-compat
       - web-compat-ios
-      - web-compat-remote
+      - web-compat-android
       - web-compat-versions
       - web-compat-android-local
     runs-on: namespace-profile-linux-medium

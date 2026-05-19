@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Real-device runtimes (not Playwright engine/viewport emulation):
+#   ./test-web-compat.sh --ios       REAL Mobile Safari on the iOS Simulator (Appium/XCUITest)
+#   ./test-web-compat.sh --android   REAL Chrome on a real Android emulator (Playwright _android)
+# Both load the app, run the demo genome through Monty + bioscript-wasm,
+# and verify the report's 4 artifacts. Configure via env, e.g.:
+#   WEB_COMPAT_IOS_VERSION=18.3 WEB_COMPAT_IOS_UDID=<udid> ./test-web-compat.sh --ios
+#   ANDROID_SERIAL=emulator-5554 WEB_URL=http://localhost:8082 ./test-web-compat.sh --android
+case "${1:-}" in
+  --ios)
+    shift
+    exec node "$HERE/scripts/run-local-ios-browser-compat.mjs" "$@"
+    ;;
+  --android)
+    shift
+    exec node "$HERE/scripts/run-local-android-browser-compat-demo.mjs" "$@"
+    ;;
+esac
+
 OUTPUT_DIR="${WEB_COMPAT_OUTPUT_DIR:-test-output/browser-compat}"
 if [[ "${WEB_COMPAT_APPEND_RESULTS:-0}" != "1" ]]; then
   rm -rf "$OUTPUT_DIR"
