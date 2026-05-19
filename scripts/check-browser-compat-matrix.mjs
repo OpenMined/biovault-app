@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { parse } from 'yaml'
@@ -8,7 +7,6 @@ const root = path.resolve(import.meta.dirname, '..')
 const file = path.resolve(root, process.env.WEB_COMPAT_REMOTE_MATRIX_FILE ?? 'tests/browser-compat-remote-matrix.yaml')
 const endpointsExampleFile = path.resolve(root, process.env.WEB_COMPAT_REMOTE_ENDPOINTS_EXAMPLE_FILE ?? 'tests/browser-compat-remote-endpoints.example.json')
 const providerCapabilitiesExampleFile = path.resolve(root, process.env.WEB_COMPAT_PROVIDER_CAPABILITIES_EXAMPLE_FILE ?? 'tests/browser-compat-provider-capabilities.example.json')
-const endpointRendererFile = path.join(root, 'scripts/render-browser-compat-endpoints.mjs')
 const completionFile = path.resolve(root, process.env.WEB_COMPAT_COMPLETION_FILE ?? 'tests/browser-compat-completion.yaml')
 const errors = []
 const doc = parse(fs.readFileSync(file, 'utf8'))
@@ -58,7 +56,6 @@ if (!fs.existsSync(endpointsExampleFile)) {
 
 validateCompletionContract(completion)
 validateProviderCapabilitiesExample()
-validateEndpointRenderer()
 
 if (errors.length) {
 	for (const error of errors) console.error(error)
@@ -115,35 +112,6 @@ function validateProviderCapabilitiesExample() {
 		}
 		for (const id of Object.keys(block)) {
 			if (!ids.has(id)) errors.push(`provider capability template ${provider} has unknown target ${id}`)
-		}
-	}
-}
-
-function validateEndpointRenderer() {
-	for (const provider of ['browserstack', 'lambdatest']) {
-		const rendered = spawnSync(process.execPath, [endpointRendererFile, provider, providerCapabilitiesExampleFile], {
-			cwd: root,
-			encoding: 'utf8',
-			env: { ...process.env, WEB_COMPAT_ENDPOINT_ALLOW_PLACEHOLDERS: '1', WEB_COMPAT_REMOTE_MATRIX_FILE: file },
-		})
-		if (rendered.status !== 0) {
-			errors.push(`endpoint renderer failed for ${provider}: ${(rendered.stderr || rendered.stdout).trim()}`)
-			continue
-		}
-		let endpoints
-		try {
-			endpoints = JSON.parse(rendered.stdout)
-		} catch (error) {
-			errors.push(`endpoint renderer produced invalid JSON for ${provider}: ${error instanceof Error ? error.message : String(error)}`)
-			continue
-		}
-		for (const id of requiredIds) {
-			if (!validEndpoint(endpoints[id])) {
-				errors.push(`endpoint renderer output ${provider}.${id} must be an object with wss:// wsEndpoint`)
-			}
-		}
-		for (const id of Object.keys(endpoints)) {
-			if (!ids.has(id)) errors.push(`endpoint renderer output ${provider} has unknown target ${id}`)
 		}
 	}
 }

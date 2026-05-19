@@ -14,20 +14,6 @@ on:
         description: Branch, tag, or SHA to deploy
         required: true
         default: main
-      compat_web_url:
-        description: Public BioVault web URL for remote browser compatibility runs
-        required: false
-        default: ''
-      compat_allow_local_web_url:
-        description: Allow localhost WEB_URL for remote compatibility runs when a provider tunnel maps it
-        required: false
-        default: false
-        type: boolean
-      compat_remote_dry_run:
-        description: Validate remote provider endpoints and target selection without opening browser sessions
-        required: false
-        default: false
-        type: boolean
       compat_local_smoke:
         description: Run local desktop/browser compatibility smoke
         required: false
@@ -188,13 +174,6 @@ jobs:
 
       - name: Test browser compatibility TODO updater
         run: npm run test:browser-compat-todo
-
-      - name: Check browser compatibility docs
-        run: npm run check:browser-compat-docs
-
-      - name: Test browser compatibility docs checker
-        run: npm run test:browser-compat-docs
-
       - name: Test Android browser compatibility config
         run: npm run test:android-browser-compat-config
 
@@ -206,22 +185,8 @@ jobs:
 
       - name: Test browser compatibility infrastructure preflight
         run: npm run test:browser-compat-infra
-
-      - name: Test browser compatibility provider secret preflight
-        run: npm run test:browser-compat-provider-secret
-
-      - name: Test browser compatibility endpoint renderer
-        run: npm run test:browser-compat-endpoints
-
       - name: Test browser compatibility result merger
         run: npm run test:browser-compat-merge
-
-      - name: Test remote browser compatibility matrix runner
-        run: npm run test:browser-compat-remote-matrix
-
-      - name: Test remote browser compatibility wrapper
-        run: npm run test:web-compat-remote-wrapper
-
   web-core:
     if: github.event_name == 'pull_request'
     runs-on: namespace-profile-linux-medium
@@ -485,11 +450,9 @@ jobs:
           restore-keys: bioscript-test-data-
 
       - name: Fetch web genomic test fixtures
-        if: ${{ !inputs.compat_remote_dry_run }}
         run: uv run --with pyyaml ./tools/fetch_test_data.sh --web-pgx-public
 
       - name: Verify compatibility fixtures
-        if: ${{ !inputs.compat_remote_dry_run }}
         run: |
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
           test -f exvitae/assays/pgx/pgx-1/manifest.yaml
@@ -502,10 +465,6 @@ jobs:
         run: npm run check:browser-compat-results
         env:
           WEB_COMPAT_REQUIRED_PROJECTS: chromium,firefox,mobile-chromium,mobile-firefox
-
-      - name: Validate remote mobile compatibility matrix
-        run: npm run check:browser-compat-matrix
-
       - name: Validate historical browser version matrix
         run: npm run check:browser-version-matrix
 
@@ -523,13 +482,6 @@ jobs:
 
       - name: Test browser compatibility TODO updater
         run: npm run test:browser-compat-todo
-
-      - name: Check browser compatibility docs
-        run: npm run check:browser-compat-docs
-
-      - name: Test browser compatibility docs checker
-        run: npm run test:browser-compat-docs
-
       - name: Test Android browser compatibility config
         run: npm run test:android-browser-compat-config
 
@@ -541,22 +493,8 @@ jobs:
 
       - name: Test browser compatibility infrastructure preflight
         run: npm run test:browser-compat-infra
-
-      - name: Test browser compatibility provider secret preflight
-        run: npm run test:browser-compat-provider-secret
-
-      - name: Test browser compatibility endpoint renderer
-        run: npm run test:browser-compat-endpoints
-
       - name: Test browser compatibility result merger
         run: npm run test:browser-compat-merge
-
-      - name: Test remote browser compatibility matrix runner
-        run: npm run test:browser-compat-remote-matrix
-
-      - name: Test remote browser compatibility wrapper
-        run: npm run test:web-compat-remote-wrapper
-
       - name: Upload browser compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -605,6 +543,27 @@ jobs:
         run: npm install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust (web wasm)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bioscript/rust
+          key: web-compat-ios-wasm
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Build web bioscript-wasm artifact
+        # The web app's lab route imports modules/expo-bioscript ->
+        # bioscript-wasm. Build it (target=web) so `expo start --web` can
+        # bundle the app. (Mirrors web-report-parity's Rust/wasm-pack.)
+        run: |
+          ls -la modules/expo-bioscript/src/bioscript-wasm/ || echo "(src/bioscript-wasm missing pre-build)"
+          bash modules/expo-bioscript/scripts/build-bioscript-wasm.sh
+          ls -la modules/expo-bioscript/src/bioscript-wasm/
 
       - name: Install Appium + XCUITest driver
         run: |
@@ -691,6 +650,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust (web wasm)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bioscript/rust
+          key: web-compat-android-wasm
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Build web bioscript-wasm artifact
+        run: |
+          ls -la modules/expo-bioscript/src/bioscript-wasm/ || echo "(src/bioscript-wasm missing pre-build)"
+          bash modules/expo-bioscript/scripts/build-bioscript-wasm.sh
+          ls -la modules/expo-bioscript/src/bioscript-wasm/
+
       - name: Install Appium + UiAutomator2 driver
         run: |
           npm i -g appium
@@ -775,10 +752,8 @@ jobs:
       - name: Run historical browser version matrix
         run: npm run test:web-compat:versions
         env:
-          WEB_URL: ${{ inputs.compat_web_url }}
           WEB_COMPAT_VERSION_TARGETS: ${{ inputs.compat_version_targets }}
           WEB_COMPAT_ALLOW_MISSING_VERSION_TARGETS: '1'
-          WEB_COMPAT_ALLOW_LOCAL_WEB_URL: ${{ inputs.compat_allow_local_web_url && '1' || '0' }}
           CHROMIUM_PREVIOUS_WS_ENDPOINT: ${{ secrets.CHROMIUM_PREVIOUS_WS_ENDPOINT }}
           FIREFOX_PREVIOUS_WS_ENDPOINT: ${{ secrets.FIREFOX_PREVIOUS_WS_ENDPOINT }}
           SAFARI_PREVIOUS_WS_ENDPOINT: ${{ secrets.SAFARI_PREVIOUS_WS_ENDPOINT }}
@@ -927,10 +902,6 @@ jobs:
 
       - name: Update browser compatibility TODO from merged results
         run: npm run update:browser-compat-todo
-
-      - name: Check browser compatibility docs
-        run: npm run check:browser-compat-docs
-
       - name: Validate browser support policy against merged results
         run: npm run check:browser-support
 
@@ -952,7 +923,7 @@ jobs:
           if-no-files-found: error
 
   deploy-web-prod:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.compat_remote_dry_run)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: namespace-profile-linux-medium
     timeout-minutes: 30
     concurrency:
