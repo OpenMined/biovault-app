@@ -137,20 +137,22 @@ test('detects Samsung Internet separately from generic Chromium', () => {
 	assert.equal(assessment.untestedWarning, 'Samsung Internet has not completed compatibility testing for this WebAssembly demo yet.')
 })
 
-test('detects iOS Chrome and Firefox shells separately', () => {
+test('treats iOS Chrome and Firefox shells as tested WebKit runtime shells', () => {
 	installBrowserEnvironment('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0 Mobile/15E148 Safari/604.1')
 	const chrome = assessWebRuntimeSupport()
-	assert.equal(chrome.status, 'warning')
+	assert.equal(chrome.status, 'supported')
 	assert.equal(chrome.browserName, 'Chrome iOS')
 	assert.equal(chrome.browserVersion, 126)
-	assert.equal(chrome.untestedWarning, 'Chrome iOS has not completed compatibility testing for this WebAssembly demo yet.')
+	assert.equal(chrome.untestedWarning, null)
+	assert.equal(chrome.summary, 'Browser runtime checks passed.')
 
 	installBrowserEnvironment('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/127.0 Mobile/15E148 Safari/605.1.15')
 	const firefox = assessWebRuntimeSupport()
-	assert.equal(firefox.status, 'warning')
+	assert.equal(firefox.status, 'supported')
 	assert.equal(firefox.browserName, 'Firefox iOS')
 	assert.equal(firefox.browserVersion, 127)
-	assert.equal(firefox.untestedWarning, 'Firefox iOS has not completed compatibility testing for this WebAssembly demo yet.')
+	assert.equal(firefox.untestedWarning, null)
+	assert.equal(firefox.summary, 'Browser runtime checks passed.')
 })
 
 test('warns but does not block when only optional capabilities are missing', () => {
