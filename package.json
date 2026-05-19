@@ -54,7 +54,7 @@
 		"rybbit": "node ./scripts/rybbit-api.mjs",
 		"rybbit:report": "node ./scripts/rybbit-report.mjs",
 		"rybbit:user-report": "node ./scripts/rybbit-user-report.mjs",
-		"deploy-web-prod": "node ./scripts/check-bioscript-wasm-artifacts.mjs && export EXPO_PUBLIC_BUILD_ID=\"$(node scripts/build-id.mjs)\" && EXPO_BASE_URL=/web expo export --platform web && npm run prepare-cloudflare-web && wrangler deploy",
+		"deploy-web-prod": "BIOSCRIPT_WASM_PROFILE=${BIOSCRIPT_WASM_PROFILE:-release} npm run bioscript-wasm && export EXPO_PUBLIC_BUILD_ID=\"$(node scripts/build-id.mjs)\" && EXPO_BASE_URL=/web expo export --platform web && npm run prepare-cloudflare-web && wrangler deploy",
 		"deploy-preview-android": "eas build --profile preview --platform android --clear-cache",
 		"deploy-dev": "eas build --profile development --platform ios --clear-cache",
 		"deploy-dev-all": "eas build --profile development --platform all --clear-cache",

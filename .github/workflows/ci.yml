@@ -180,6 +180,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # bioscript-wasm is untracked; build it so `tsc` can resolve the
+      # generated bindings (uses lint's existing Rust + bioscript/rust cache).
+      - name: Install wasm-pack
+        run: command -v wasm-pack >/dev/null 2>&1 || curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Ensure bioscript-wasm artifacts
+        run: node ./scripts/check-bioscript-wasm-artifacts.mjs
+
       - name: Run ./lint.sh --check
         run: ./lint.sh --check
 
