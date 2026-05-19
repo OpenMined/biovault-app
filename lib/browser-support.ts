@@ -48,6 +48,9 @@ export function assessWebRuntimeSupport(): BrowserSupportAssessment {
 	}
 	const browser = detectBrowser(global.navigator?.userAgent ?? '')
 	const policy = WEB_RUNTIME_BROWSER_POLICY[browser.name] ?? WEB_RUNTIME_BROWSER_POLICY.unknown!
+	const completionPolicy = iOSWebKitShells.has(browser.name)
+		? WEB_RUNTIME_BROWSER_POLICY.safari!
+		: policy
 	const capabilities: WebRuntimeCapability[] = [
 		capability('wasm', 'WebAssembly', true, typeof WebAssembly !== 'undefined'),
 		capability('wasm-validate', 'WebAssembly validation', true, supportsWebAssemblyValidate()),
@@ -71,7 +74,7 @@ export function assessWebRuntimeSupport(): BrowserSupportAssessment {
 	const knownFailureWarning = browser.version && policy.knownFailing.includes(browser.version)
 		? `${policy.label} ${browser.version} has a known WebAssembly compatibility failure.`
 		: null
-	const untestedWarning = !policy.minimumKnownGood || !policy.latestKnownGood
+	const untestedWarning = !completionPolicy.minimumKnownGood || !completionPolicy.latestKnownGood
 		? `${policy.label} has not completed compatibility testing for this WebAssembly demo yet.`
 		: null
 	const status = requiredMissing.length ? 'blocked' : knownFailureWarning || versionWarning || untestedWarning || optionalMissing.length ? 'warning' : 'supported'
@@ -90,6 +93,8 @@ export function assessWebRuntimeSupport(): BrowserSupportAssessment {
 		capabilities,
 	}
 }
+
+const iOSWebKitShells = new Set<keyof typeof WEB_RUNTIME_BROWSER_POLICY>(['chromeIos', 'firefoxIos'])
 
 function capability(id: string, label: string, required: boolean, supported: boolean): WebRuntimeCapability {
 	return { id, label, required, supported }

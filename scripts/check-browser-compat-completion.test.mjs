@@ -232,7 +232,7 @@ test('strict completion audit rejects stale Markdown summary row count', () => {
 
 	const audit = runNode(completionChecker, fixture, { WEB_COMPAT_REQUIRE_RESULTS_MD: '1' })
 	assert.equal(audit.status, 1)
-	assert.match(audit.stderr, /results\.md has 1 result row\(s\), expected 17/)
+	assert.match(audit.stderr, /results\.md has 1 result row\(s\), expected 18/)
 })
 
 test('strict completion audit rejects duplicate result ids and invalid timing', () => {
@@ -440,6 +440,7 @@ function completeRows() {
 		localRow('webkit', 'webkit', '26.4'),
 		localRow('mobile-chromium', 'chromium', '148.0.0.0'),
 		localRow('mobile-firefox', 'firefox', '150.0'),
+		localRow('mobile-webkit', 'webkit', '26.4'),
 		failedRow('chromium-cache-94', 'chromium', '94.0.0.0'),
 		failedRow('firefox-docker-99', 'firefox', '99.0'),
 		failedRow('webkit-docker-15', 'webkit', '15.4'),

@@ -1,7 +1,36 @@
-import { closeSync, cpSync, existsSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getBuildId } from './build-id.mjs';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+function verifiedBrowsersLine() {
+  try {
+    const text = readFileSync(join(repoRoot, 'lib/browser-support.generated.ts'), 'utf8');
+    const match = text.match(/export const GENERATED_BROWSER_SUPPORT_POLICY = ([\s\S]*?) as const/);
+    if (!match?.[1]) return null;
+    const policy = JSON.parse(
+      match[1]
+        .replace(/([,{]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":')
+        .replace(/'/g, '"'),
+    );
+    const parts = [
+      ['Chrome', 'chromium'],
+      ['Firefox', 'firefox'],
+      ['Safari', 'safari'],
+    ]
+      .map(([label, key]) => {
+        const min = policy?.[key]?.minimumKnownGood;
+        return typeof min === 'number' ? `${label} ${min}+` : null;
+      })
+      .filter(Boolean);
+    if (!parts.length) return null;
+    return `Runs locally via WebAssembly. Verified on ${parts.join(', ')}, including mobile Safari on iOS.`;
+  } catch {
+    return null;
+  }
+}
 
 const sourceDir = 'dist';
 const deployDir = 'dist-cloudflare';
@@ -102,6 +131,7 @@ export function landingPageHtml(options = {}) {
   const pageMetricsSiteId = options.metricsSiteId ?? metricsSiteId;
   const origin = String(options.origin ?? siteOrigin).replace(/\/+$/, '');
   const buildId = String(options.buildId ?? getBuildId());
+  const browserSupport = verifiedBrowsersLine();
   const metricsScriptUrl = options.metricsScriptCacheBust
     ? `https://metrics.syftbox.net/api/script.js?v=${encodeURIComponent(String(options.metricsScriptCacheBust))}`
     : 'https://metrics.syftbox.net/api/script.js';
@@ -213,15 +243,47 @@ export function landingPageHtml(options = {}) {
       text-decoration: none;
       background: #53bea9;
       box-shadow: 0 18px 48px rgba(83, 190, 169, 0.24);
+      position: relative;
+      overflow: hidden;
+    }
+    .primary-action::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-120%);
+      background: linear-gradient(
+        110deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.55) 50%,
+        transparent 70%
+      );
+      pointer-events: none;
+    }
+    .primary-action:hover::after,
+    .primary-action:focus-visible::after {
+      animation: primary-action-shimmer 1.25s ease-in-out infinite;
+    }
+    @keyframes primary-action-shimmer {
+      to { transform: translateX(120%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .primary-action:hover::after,
+      .primary-action:focus-visible::after {
+        animation: none;
+      }
     }
     .primary-action strong {
       display: block;
+      position: relative;
+      z-index: 1;
       color: #17161d;
       font-size: 20px;
       line-height: 1.1;
     }
     .primary-action span {
       display: block;
+      position: relative;
+      z-index: 1;
       margin-top: 6px;
       color: rgba(23, 22, 29, 0.78);
       font-size: 14px;
@@ -234,6 +296,14 @@ export function landingPageHtml(options = {}) {
       font-size: 12px;
       font-variant-numeric: tabular-nums;
       color: rgba(247, 244, 239, 0.4);
+    }
+    .browser-support {
+      max-width: 680px;
+      margin: 6px 0 0;
+      margin-left: 6px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: rgba(247, 244, 239, 0.38);
     }
     .platforms {
       display: flex;
@@ -323,6 +393,7 @@ export function landingPageHtml(options = {}) {
       <p>Run genomic analysis locally in your browser. Desktop and mobile apps are coming next.</p>
       <a class="primary-action" href="/web/"><strong>Run in Browser</strong><span>WASM / Rust</span></a>
       <div class="build-tag">Build ${escapeHtml(buildId)}</div>
+      ${browserSupport ? `<p class="browser-support">${escapeHtml(browserSupport)}</p>` : ''}
     </section>
     <footer>
       <nav class="platforms" aria-label="Coming soon platforms" aria-disabled="true">

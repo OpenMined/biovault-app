@@ -21,6 +21,7 @@ const requiredProjects = csvEnv('WEB_COMPAT_REQUIRED_PROJECTS', [
 	'webkit',
 	'mobile-chromium',
 	'mobile-firefox',
+	'mobile-webkit',
 ])
 const requiredTargets = [
 	...csvEnv('WEB_COMPAT_REQUIRED_TARGETS', []),
