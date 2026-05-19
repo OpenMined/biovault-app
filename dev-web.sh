@@ -196,6 +196,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# bioscript-wasm + monty-wasm are untracked build outputs; regenerate them
+# from the submodule source if missing/stale before the web app starts.
+echo "==> Ensuring web wasm artifacts are up to date"
+node scripts/check-monty-artifacts.mjs || true
+node scripts/check-bioscript-wasm-artifacts.mjs
+
 # Single build id for this dev session so the splash page (/) and the web app
 # (/web/) show the identical string instead of "<version>+dev".
 export EXPO_PUBLIC_BUILD_ID="${EXPO_PUBLIC_BUILD_ID:-$(node scripts/build-id.mjs)}"

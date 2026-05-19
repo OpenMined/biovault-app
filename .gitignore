@@ -169,3 +169,13 @@ screenshots/
 test-results/
 test-output/
 .bioscript-cache/
+
+# bioscript-wasm: build outputs, regenerated from the bioscript submodule by
+# modules/expo-bioscript/scripts/build-bioscript-wasm.sh (see
+# scripts/check-bioscript-wasm-artifacts.mjs). Not tracked — like monty-wasm.
+modules/expo-bioscript/src/bioscript-wasm/bioscript_wasm.js
+modules/expo-bioscript/src/bioscript-wasm/bioscript_wasm.d.ts
+modules/expo-bioscript/src/bioscript-wasm/bioscript_wasm_bg.wasm
+modules/expo-bioscript/web-runtime/bioscript-wasm/bioscript_wasm.mjs
+modules/expo-bioscript/web-runtime/bioscript-wasm/bioscript_wasm_bg.wasm
+modules/expo-bioscript/src/bioscript-wasm/.bioscript-wasm-source.sha256

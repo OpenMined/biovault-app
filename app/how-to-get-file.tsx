@@ -59,7 +59,7 @@ const dataProviders = [
 		name: 'CariGenetics',
 		icon: '🏝️',
 		description: 'Caribbean genetic heritage',
-		available: false,
+		available: true,
 	},
 ]
 
