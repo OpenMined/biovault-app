@@ -1,0 +1,65 @@
+name: Deploy Web (prod)
+
+# Split out of ci.yml: web prod deploys only happen after a merge to main,
+# or on an explicit manual run. The bioscript-wasm bundle is no longer
+# committed, so this workflow builds it (Rust + wasm-pack) before exporting.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: Branch, tag, or SHA to deploy
+        required: false
+        default: main
+
+concurrency:
+  group: cloudflare-web-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy-web-prod:
+    runs-on: namespace-profile-linux-medium
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.ref }}
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust (bioscript/rust)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bioscript/rust
+          key: bioscript-wasm
+
+      - name: Install wasm-pack
+        run: command -v wasm-pack >/dev/null 2>&1 || curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Install npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy web app to Cloudflare
+        # `deploy-web-prod` runs check-bioscript-wasm-artifacts.mjs first,
+        # which rebuilds the (untracked) wasm bundle from submodule source.
+        run: npm run deploy-web-prod
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          BIOSCRIPT_WASM_PROFILE: release
