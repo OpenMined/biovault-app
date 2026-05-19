@@ -1,0 +1,21 @@
+version: 1
+defaults:
+  remote: github
+  revision: main
+  scheme: ssh
+remotes:
+  github:
+    host: github.com
+projects:
+- name: openmined/bioscript
+  path: repos/bioscript
+  revision: madhava/libs
+provides:
+- openmined/bioscript
+links:
+- repo: openmined/bioscript
+  at: bioscript
+  branch: madhava/libs
+- repo: openmined/bioscript
+  at: exvitae/bioscript
+  branch: madhava/libs
