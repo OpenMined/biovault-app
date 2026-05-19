@@ -18,6 +18,7 @@ import path from 'node:path'
 const root = path.resolve(import.meta.dirname, '..')
 const port = Number(process.env.PORT ?? '8082')
 const appiumPort = Number(process.env.APPIUM_PORT ?? '4723')
+const hostName = process.env.WEB_COMPAT_IOS_HOST ?? 'localhost'
 const deviceName = process.env.WEB_COMPAT_IOS_DEVICE ?? 'iPhone 16'
 // Default to a known-stable installed runtime. Letting Appium pick the
 // newest (e.g. a just-released iOS 26.x) and cold-create a sim reliably
@@ -105,25 +106,30 @@ try {
 	sessionId = created.value.sessionId
 	// W3C async-script timeout defaults to ~0ms in XCUITest -> set it
 	// generously so the WASM/worker probe can complete.
-	await w3c('POST', `/session/${sessionId}/timeouts`, { script: sessionTimeoutMs, pageLoad: 300000, implicit: 0 })
+	await w3c('POST', `/session/${sessionId}/timeouts`, { script: sessionTimeoutMs, pageLoad: 10000, implicit: 0 })
 	const negotiated = created.value.capabilities ?? {}
 	const iosVersion = String(negotiated.platformVersion ?? platformVersion ?? 'unknown')
 	const device = String(negotiated.deviceName ?? deviceName)
 
 	const baseUrl = hostUrl.replace(/\/$/, '')
-	const wantHost = new URL(baseUrl).host
+	const wantUrl = new URL(baseUrl)
+	const acceptedHosts = new Set([
+		wantUrl.host,
+		`localhost:${wantUrl.port}`,
+		`127.0.0.1:${wantUrl.port}`,
+	])
 	const evalSync = (script) =>
 		w3c('POST', `/session/${sessionId}/execute/sync`, { script, args: [] }).then((r) => r.value)
 	const waitForOrigin = async (label) => {
 		const dl = Date.now() + 120000
 		while (Date.now() < dl) {
 			const onOrigin = await evalSync(
-				`return (location.host === ${JSON.stringify(wantHost)}) && !!document.body`,
+				`return ${JSON.stringify([...acceptedHosts])}.includes(location.host) && !!document.body`,
 			).catch(() => false)
 			if (onOrigin) return
 			await sleep(1500)
 		}
-		throw new Error(`Mobile Safari never reached ${label} (${wantHost})`)
+		throw new Error(`Mobile Safari never reached ${label} (${[...acceptedHosts].join(' or ')})`)
 	}
 
 	// 1) Seed onboarding-accepted, then load the lab (getting-started view).
@@ -297,8 +303,9 @@ async function startAppium() {
 
 async function startLocalWebServer(serverPort) {
 	fs.mkdirSync(logDir, { recursive: true })
-	const url = `http://localhost:${serverPort}`
-	if (await isServing(url)) return url
+	const targetUrl = `http://${hostName}:${serverPort}`
+	const localUrl = `http://localhost:${serverPort}`
+	if ((await isServing(targetUrl)) || (await isServing(localUrl))) return targetUrl
 	const fd = fs.openSync(path.join(logDir, 'ios-web-compat.log'), 'w')
 	serverProcess = spawn('npx', ['expo', 'start', '--web', '--localhost', '--port', String(serverPort)], {
 		cwd: root,
@@ -306,11 +313,11 @@ async function startLocalWebServer(serverPort) {
 		stdio: ['ignore', fd, fd],
 	})
 	for (let i = 0; i < 120; i += 1) {
-		if (await isServing(url)) return url
+		if ((await isServing(targetUrl)) || (await isServing(localUrl))) return targetUrl
 		if (serverProcess.exitCode !== null) break
 		await sleep(1000)
 	}
-	throw new Error(`Expo web failed to start at ${url}; see .maestro-web/logs/ios-web-compat.log`)
+	throw new Error(`Expo web failed to start at ${targetUrl}; see .maestro-web/logs/ios-web-compat.log`)
 }
 
 async function isServing(url) {
