@@ -62,3 +62,4 @@ jobs:
         run: npm run deploy-web-prod
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          BIOSCRIPT_WASM_PROFILE: release
