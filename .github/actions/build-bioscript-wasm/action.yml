@@ -20,8 +20,13 @@ runs:
 
     - name: Install wasm-pack
       shell: bash
-      run: command -v wasm-pack >/dev/null 2>&1 || curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      run: |
+        export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+        rustup target add wasm32-unknown-unknown
+        command -v wasm-pack >/dev/null 2>&1 || curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
     - name: Ensure bioscript-wasm artifacts
       shell: bash
-      run: node ./scripts/check-bioscript-wasm-artifacts.mjs
+      run: |
+        export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+        node ./scripts/check-bioscript-wasm-artifacts.mjs
