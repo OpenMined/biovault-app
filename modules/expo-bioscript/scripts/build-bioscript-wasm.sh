@@ -74,4 +74,8 @@ cp "${JS_TARGET}" "${WORKER_DEST}/bioscript_wasm.mjs"
 cp "${DEST}/bioscript_wasm_bg.wasm" "${WORKER_DEST}/bioscript_wasm_bg.wasm"
 echo "[build-bioscript-wasm] mirrored bindings + wasm into ${WORKER_DEST}"
 
+# Record the source-hash marker so check-bioscript-wasm-artifacts.mjs can
+# prove these (untracked) outputs match the current bioscript source.
+node "${APP_ROOT}/scripts/check-bioscript-wasm-artifacts.mjs" --write || true
+
 echo "[build-bioscript-wasm] done — artifacts live in ${DEST} (+ worker copy in ${WORKER_DEST})"

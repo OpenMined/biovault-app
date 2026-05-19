@@ -300,6 +300,9 @@ jobs:
       - name: Check BioScript app/core boundary
         run: npm run check:bioscript-boundary
 
+      - name: Build bioscript-wasm
+        uses: ./.github/actions/build-bioscript-wasm
+
       - name: Run web tests
         run: ./test-web-core.sh --core-${{ matrix.chunk }}
 
@@ -380,6 +383,9 @@ jobs:
           test -f test-data/apol1/stub.fa
           test -f test-data/apol1/stub.fa.fai
 
+      - name: Ensure bioscript-wasm artifacts
+        run: node ./scripts/check-bioscript-wasm-artifacts.mjs
+
       - name: Check BioScript CLI/WASM parity
         run: npm run check:bioscript-parity
 
@@ -443,6 +449,9 @@ jobs:
           test -f test-data/apol1/stub.fa
           test -f test-data/apol1/stub.fa.fai
 
+      - name: Build bioscript-wasm
+        uses: ./.github/actions/build-bioscript-wasm
+
       - name: Run selected PGx report browser matrix
         run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=2 WEB_REPORT_NO_PRIVATE=1 WEB_REPORT_SAMPLE_IDS=23andme-v5-hu50B3F5,NA06985-vcf,apol1-bam,apol1-cram ./test-web.sh --pgx-report-scenario
 
@@ -503,6 +512,9 @@ jobs:
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
           test -f exvitae/assays/pgx/pgx-1/manifest.yaml
           test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
+
+      - name: Build bioscript-wasm
+        uses: ./.github/actions/build-bioscript-wasm
 
       - name: Run WASM browser compatibility smoke
         run: ./test-web-compat.sh
@@ -815,6 +827,9 @@ jobs:
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
           test -f exvitae/assays/pgx/pgx-1/pgx-1.zip
 
+      - name: Build bioscript-wasm
+        uses: ./.github/actions/build-bioscript-wasm
+
       - name: Run local Android browser compatibility smoke
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -910,38 +925,8 @@ jobs:
             TODO.md
           if-no-files-found: error
 
-  deploy-web-prod:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.compat_remote_dry_run)
-    runs-on: namespace-profile-linux-medium
-    timeout-minutes: 30
-    concurrency:
-      group: cloudflare-web-prod
-      cancel-in-progress: false
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.ref }}
-          submodules: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Initialize CI submodules
-        run: ./scripts/init-ci-submodules.sh
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-
-      - name: Install npm dependencies
-        run: npm install
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Deploy web app to Cloudflare
-        run: npm run deploy-web-prod
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  # NOTE: web prod deploy moved to .github/workflows/deploy-web.yml
+  # (manual workflow_dispatch + push to main only).
 
   desktop-linux:
     # Disabled while focusing CI on rust, lint, and web stability.
