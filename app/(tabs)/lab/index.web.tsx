@@ -187,6 +187,17 @@ const FEATURED_CATALOG: LabAssay[] = [
 		tags: ['pgx', 'panel', 'featured'],
 	},
 	{
+		id: 'featured-glp1-pgx',
+		title: 'GLP1 Genetic Predictors Test',
+		subtitle: 'BioScript package',
+		description: 'A GLP1 pharmacogenomics package covering GLP1R response and side-effect predictor variants.',
+		category: 'panel',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/pgx/glp1/glp1.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['glp1', 'pgx', 'panel', 'featured'],
+	},
+	{
 		id: 'featured-apol1-risk',
 		title: 'APOL1 Risk Assay',
 		subtitle: 'BioScript package',
