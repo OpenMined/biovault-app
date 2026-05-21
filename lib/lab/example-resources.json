@@ -13,6 +13,18 @@
 			"tags": ["pgx", "panel", "remote", "bioscript-package"]
 		},
 		{
+			"id": "glp1-pgx",
+			"title": "GLP1 Genetic Predictors Test",
+			"subtitle": "BioScript package",
+			"description": "Loads the GLP1 BioScript package release from GitHub.",
+			"category": "panel",
+			"language": "yaml",
+			"url": "https://github.com/madhavajay/exvitae/blob/main/assays/pgx/glp1/glp1.yaml",
+			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/pgx/glp1/glp1.yaml",
+			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
+			"tags": ["glp1", "pgx", "panel", "remote", "bioscript-package"]
+		},
+		{
 			"id": "apol1-risk",
 			"title": "APOL1 Risk Assay",
 			"subtitle": "BioScript package",
