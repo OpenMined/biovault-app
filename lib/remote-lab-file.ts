@@ -24,6 +24,7 @@ export type CachedRemoteLabFile = {
 
 export type FetchRemoteLabFileOptions = {
 	bypassCache?: boolean
+	onProgress?: (progress: { loadedBytes: number; totalBytes: number | null }) => void
 }
 
 const DB_NAME = 'biovault-remote-lab-files'
@@ -128,6 +129,12 @@ function cachedRecordFile(record: CachedRemoteLabFile): File | null {
 	return new File([body], record.name, { type: record.contentType })
 }
 
+function plainArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	const buffer = new ArrayBuffer(bytes.byteLength)
+	new Uint8Array(buffer).set(bytes)
+	return buffer
+}
+
 function getCachedRemoteLabFile(sourceUrl: string): Promise<CachedRemoteLabFile | null> {
 	return openDb().then((db) => withTimeout(new Promise<CachedRemoteLabFile | null>((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, 'readonly')
@@ -209,6 +216,25 @@ export function deleteCachedRemoteLabFile(sourceUrl: string): Promise<void> {
 	})
 }
 
+export async function cacheRemoteLabFile(sourceUrl: string, file: File): Promise<RemoteLabFile> {
+	const contentType = file.type ?? ''
+	const bytes = await file.arrayBuffer()
+	await putCachedRemoteLabFile({
+		bytes,
+		cachedAt: new Date().toISOString(),
+		contentType,
+		name: file.name,
+		size: file.size,
+		sourceUrl,
+	})
+	return {
+		cacheStatus: 'stored',
+		file,
+		fileKind: classifyLabFile(file.name),
+		sourceUrl,
+	}
+}
+
 export function remoteLabFileName(input: string): string {
 	return fileNameFromUrl(repairNestedArtifactUrl(normalizeSourceUrl(input)))
 }
@@ -229,6 +255,7 @@ export async function fetchRemoteLabFile(
 	if (cached) {
 		const file = cachedRecordFile(cached)
 		if (file) {
+			options.onProgress?.({ loadedBytes: file.size, totalBytes: file.size })
 			return {
 				cacheStatus: 'hit',
 				file,
@@ -254,7 +281,26 @@ export async function fetchRemoteLabFile(
 	if (!response.ok) {
 		throw new Error(`Unable to fetch remote file (${response.status}).`)
 	}
-	const blob = await response.blob()
+	const contentLength = Number(response.headers.get('content-length'))
+	const totalBytes = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : null
+	let blob: Blob
+	if (response.body) {
+		const reader = response.body.getReader()
+		const chunks: Uint8Array[] = []
+		let loadedBytes = 0
+		for (;;) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (!value) continue
+			chunks.push(value)
+			loadedBytes += value.byteLength
+			options.onProgress?.({ loadedBytes, totalBytes })
+		}
+		blob = new Blob(chunks.map(plainArrayBuffer))
+	} else {
+		blob = await response.blob()
+		options.onProgress?.({ loadedBytes: blob.size, totalBytes: totalBytes ?? blob.size })
+	}
 	const contentType = response.headers.get('content-type') ?? blob.type ?? ''
 	const file = new File([blob], name, { type: contentType })
 	if (blob.size <= REMOTE_LAB_FILE_CACHE_MAX_BYTES) {

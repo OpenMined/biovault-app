@@ -28,9 +28,11 @@ import {
 	ASSAY_INPUT_FORMAT_LABELS,
 	type AssayCategory,
 	getAssayById,
+	getTestFileById,
 	type LabAssay,
 	LAB_ASSAYS,
 	LAB_TEST_FILES,
+	type LabTestFileBundleLoadProgress,
 	type LabTestFileBundle,
 	loadAssayFile,
 	loadTestFileBundle,
@@ -93,6 +95,7 @@ import {
 	type RegistryOrigin,
 } from '@/lib/lab/assay-registry'
 import {
+	cacheRemoteLabFile,
 	deleteCachedRemoteLabFile,
 	fetchRemoteLabFile,
 	listCachedRemoteLabFiles,
@@ -262,6 +265,13 @@ type AssaySourceFile = {
 type SourceViewerState = {
 	files: AssaySourceFile[]
 	title: string
+}
+type SampleLoadProgress = LabTestFileBundleLoadProgress & {
+	bundleId: string
+}
+type PendingDemoRun = {
+	assayId: string
+	primaryFileName: string
 }
 
 type PendingVcfIndexRun = {
@@ -547,6 +557,18 @@ function genomeRelatedFileExtensions(genome: LabGenomeRef): string[] {
 
 function demoBundleForRemoteUrl(url: string): LabTestFileBundle | null {
 	return LAB_TEST_FILES.find((bundle) => bundle.remoteUrl === url) ?? null
+}
+
+function demoBundleCacheSourceUrl(bundle: LabTestFileBundle, fileName: string): string {
+	return `biovault-demo://${bundle.id}/${encodeURIComponent(fileName)}`
+}
+
+function demoBundleForCachedRemoteFile(remoteFile: RemoteLabFile): LabTestFileBundle | null {
+	const cacheMatch = remoteFile.sourceUrl.match(/^biovault-demo:\/\/([^/]+)\//)
+	if (cacheMatch) return getTestFileById(cacheMatch[1]) ?? null
+	return demoBundleForRemoteUrl(remoteFile.sourceUrl) ??
+		LAB_TEST_FILES.find((bundle) => bundle.files.some((file) => file.name === remoteFile.file.name)) ??
+		null
 }
 
 function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string, unknown> {
@@ -988,8 +1010,21 @@ function sampleBundleMatchesGenome(bundle: LabTestFileBundle, genome: LabGenomeR
 
 function sampleBundleMatchesCachedRemoteFile(bundle: LabTestFileBundle, remoteFile: RemoteLabFile): boolean {
 	if (bundle.remoteUrl && remoteFile.sourceUrl === bundle.remoteUrl) return true
+	if (remoteFile.sourceUrl.startsWith(`biovault-demo://${bundle.id}/`)) return true
 	const sampleNames = new Set(bundle.files.map((file) => file.name))
 	return sampleNames.has(remoteFile.file.name)
+}
+
+function cachedFilesForSampleBundle(bundle: LabTestFileBundle, cachedRemoteFiles: RemoteLabFile[]): RemoteLabFile[] {
+	const byName = new Map<string, RemoteLabFile>()
+	for (const remoteFile of cachedRemoteFiles) {
+		if (!sampleBundleMatchesCachedRemoteFile(bundle, remoteFile)) continue
+		byName.set(remoteFile.file.name, remoteFile)
+	}
+	return bundle.files.flatMap((file) => {
+		const cached = byName.get(file.name)
+		return cached ? [cached] : []
+	})
 }
 
 /** Avoid double “selected” rows when cached URL storage or persisted handles share filenames with this session genome. */
@@ -1094,6 +1129,7 @@ export default function LabScreen() {
 	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
 	const [sampleLoadingId, setSampleLoadingId] = useState<string | null>(null)
 	const [sampleLoadError, setSampleLoadError] = useState<string | null>(null)
+	const [sampleLoadProgress, setSampleLoadProgress] = useState<SampleLoadProgress | null>(null)
 	const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null)
 	const [runtimeWarmupStatus, setRuntimeWarmupStatus] = useState<RuntimeWarmupStatus>('loading')
 	const [remoteIntent, setRemoteIntent] = useState<RemoteIntentState>({ status: 'idle' })
@@ -1128,12 +1164,13 @@ export default function LabScreen() {
 	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
 	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
 	const [cachedRemotePackageArtifactUrls, setCachedRemotePackageArtifactUrls] = useState<Set<string>>(() => new Set())
-	const [pendingDemoRunAssayId, setPendingDemoRunAssayId] = useState<string | null>(null)
+	const [pendingDemoRun, setPendingDemoRun] = useState<PendingDemoRun | null>(null)
 	const [pendingVcfIndexRun, setPendingVcfIndexRun] = useState<PendingVcfIndexRun | null>(null)
 	const [pendingAlignmentIndexRun, setPendingAlignmentIndexRun] = useState<PendingAlignmentIndexRun | null>(null)
 	const promptedAlignmentIndexGenomeIdsRef = useRef<Set<string>>(new Set())
 	const vcfIndexGenerationSeqRef = useRef(0)
 	const alignmentIndexGenerationSeqRef = useRef(0)
+	const rehydratedDemoBundleIdsRef = useRef<Set<string>>(new Set())
 
 	const activeGenomeRef = useMemo(
 		() => {
@@ -1528,6 +1565,19 @@ export default function LabScreen() {
 	}, [refreshCachedRemoteFiles])
 
 	useEffect(() => {
+		if (!cachedRemoteFiles.length) return
+		for (const bundle of LAB_TEST_FILES) {
+			if (rehydratedDemoBundleIdsRef.current.has(bundle.id)) continue
+			const primaryName = bundle.files[0]?.name
+			if (!primaryName || genomes.some((genome) => genome.primary.name === primaryName)) continue
+			const cachedBundleFiles = cachedFilesForSampleBundle(bundle, cachedRemoteFiles)
+			if (cachedBundleFiles.length !== bundle.files.length) continue
+			rehydratedDemoBundleIdsRef.current.add(bundle.id)
+			ingestMany(cachedBundleFiles.map((cached) => cached.file), 'bundled', demoBundleAnalyticsProperties(bundle))
+		}
+	}, [cachedRemoteFiles, genomes, ingestMany])
+
+	useEffect(() => {
 		if (Platform.OS !== 'web') return
 		const seenIntentUrls = new Set<string>()
 		const syncIntent = () => {
@@ -1816,12 +1866,20 @@ export default function LabScreen() {
 			if (bundle.remoteUrl) {
 				setSampleLoadingId(bundle.id)
 				setSampleLoadError(null)
+				setSampleLoadProgress({ bundleId: bundle.id, label: `Downloading ${bundle.title}`, loadedBytes: 0, totalBytes: null })
 				trackEvent('lab_sample_genome_remote_requested', {
 					...demoBundleAnalyticsProperties(bundle),
 					bundleId: bundle.id,
 				})
 				try {
-					const remoteFile = await fetchRemoteLabFile(bundle.remoteUrl)
+					const remoteFile = await fetchRemoteLabFile(bundle.remoteUrl, {
+						onProgress: (progress) => setSampleLoadProgress({
+							bundleId: bundle.id,
+							label: `Downloading ${remoteLabFileName(bundle.remoteUrl ?? bundle.title)}`,
+							loadedBytes: progress.loadedBytes,
+							totalBytes: progress.totalBytes,
+						}),
+					})
 					ingestMany([remoteFile.file], 'bundled', demoBundleAnalyticsProperties(bundle))
 					if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
 						await refreshCachedRemoteFiles()
@@ -1843,21 +1901,45 @@ export default function LabScreen() {
 					})
 				} finally {
 					setSampleLoadingId(null)
+					setSampleLoadProgress(null)
 				}
 				return
 			}
 			setSampleLoadingId(bundle.id)
 			setSampleLoadError(null)
+			setSampleLoadProgress({ bundleId: bundle.id, label: `Preparing ${bundle.title}`, loadedBytes: 0, totalBytes: null })
 			trackEvent('lab_sample_genome_requested', {
 				...demoBundleAnalyticsProperties(bundle),
 				bundleId: bundle.id,
 			})
 			try {
-				const files = await loadTestFileBundle(bundle)
+				const cachedBundleFiles = cachedFilesForSampleBundle(bundle, cachedRemoteFiles)
+				if (cachedBundleFiles.length === bundle.files.length) {
+					ingestMany(cachedBundleFiles.map((cached) => cached.file), 'bundled', demoBundleAnalyticsProperties(bundle))
+					trackEvent('lab_sample_genome_loaded', {
+						...demoBundleAnalyticsProperties(bundle),
+						bundleId: bundle.id,
+						cacheStatus: 'hit',
+						totalFiles: cachedBundleFiles.length,
+					})
+					return
+				}
+				const files = await loadTestFileBundle(bundle, {
+					onProgress: (progress) => setSampleLoadProgress({ ...progress, bundleId: bundle.id }),
+				})
+				let cacheStatus = 'uncached'
+				try {
+					await Promise.all(files.map((file) => cacheRemoteLabFile(demoBundleCacheSourceUrl(bundle, file.name), file)))
+					await refreshCachedRemoteFiles()
+					cacheStatus = 'stored'
+				} catch (cacheError) {
+					console.warn('[lab] demo genome cache failed', cacheError)
+				}
 				ingestMany(files, 'bundled', demoBundleAnalyticsProperties(bundle))
 				trackEvent('lab_sample_genome_loaded', {
 					...demoBundleAnalyticsProperties(bundle),
 					bundleId: bundle.id,
+					cacheStatus,
 					totalFiles: files.length,
 				})
 			} catch (err) {
@@ -1870,9 +1952,10 @@ export default function LabScreen() {
 				})
 			} finally {
 				setSampleLoadingId(null)
+				setSampleLoadProgress(null)
 			}
 		},
-		[ingestMany, refreshCachedRemoteFiles, trackEvent],
+		[cachedRemoteFiles, ingestMany, refreshCachedRemoteFiles, trackEvent],
 	)
 
 	useEffect(() => {
@@ -2138,26 +2221,33 @@ export default function LabScreen() {
 	}, [addResolvedSessionAssays, ingestMany, refreshCachedRemoteFiles, remoteIntent, trackEvent])
 
 	const restoreCachedRemoteFile = useCallback((remoteFile: RemoteLabFile) => {
-		const demoBundle = demoBundleForRemoteUrl(remoteFile.sourceUrl)
+		const demoBundle = demoBundleForCachedRemoteFile(remoteFile)
 		const demoProperties = demoBundle ? demoBundleAnalyticsProperties(demoBundle) : {}
-		ingestMany([remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
+		const files = demoBundle
+			? cachedFilesForSampleBundle(demoBundle, cachedRemoteFiles).map((cached) => cached.file)
+			: [remoteFile.file]
+		ingestMany(files.length ? files : [remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
 		trackEvent('lab_remote_file_cache_restored', {
 			...demoProperties,
 			fileKind: remoteFile.fileKind,
 			size: remoteFile.file.size,
 			sourceUrl: remoteFile.sourceUrl,
 		})
-	}, [ingestMany, trackEvent])
+	}, [cachedRemoteFiles, ingestMany, trackEvent])
 
 	const removeCachedRemoteFile = useCallback(async (remoteFile: RemoteLabFile) => {
-		await deleteCachedRemoteLabFile(remoteFile.sourceUrl)
-		removeAssayPackageSourceUrl(remoteFile.sourceUrl)
+		const demoBundle = demoBundleForCachedRemoteFile(remoteFile)
+		const filesToDelete = demoBundle ? cachedFilesForSampleBundle(demoBundle, cachedRemoteFiles) : [remoteFile]
+		await Promise.all(filesToDelete.map((file) => deleteCachedRemoteLabFile(file.sourceUrl)))
+		for (const file of filesToDelete) removeAssayPackageSourceUrl(file.sourceUrl)
 		await refreshCachedRemoteFiles()
 		trackEvent('lab_remote_file_cache_deleted', {
+			...(demoBundle ? demoBundleAnalyticsProperties(demoBundle) : {}),
 			fileKind: remoteFile.fileKind,
 			sourceUrl: remoteFile.sourceUrl,
+			totalFiles: filesToDelete.length,
 		})
-	}, [refreshCachedRemoteFiles, trackEvent])
+	}, [cachedRemoteFiles, refreshCachedRemoteFiles, trackEvent])
 
 	const removeSessionGenome = useCallback(async (genome: LabGenomeRef) => {
 		const relatedNames = new Set(genomeRelatedFileNames(genome))
@@ -2733,19 +2823,20 @@ export default function LabScreen() {
 	}, [activeGenomeRef, runningAssayId, runAssay, runtimeWarmupStatus])
 
 	useEffect(() => {
-		if (!pendingDemoRunAssayId) return
+		if (!pendingDemoRun) return
 		if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
+		if (activeGenomeRef.primary.name !== pendingDemoRun.primaryFileName) return
 		if (runningAssayId) return
-		const assay = getAssayById(pendingDemoRunAssayId)
+		const assay = getAssayById(pendingDemoRun.assayId)
 		if (!assay) {
-			setPendingDemoRunAssayId(null)
+			setPendingDemoRun(null)
 			return
 		}
 		if (!isAssayCompatible(assay, activeGenomeRef)) return
 		if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(assay, activeGenomeRef)) return
-		setPendingDemoRunAssayId(null)
+		setPendingDemoRun(null)
 		void runAssay(assay)
-	}, [activeGenomeRef, pendingDemoRunAssayId, runningAssayId, runAssay, runtimeWarmupStatus])
+	}, [activeGenomeRef, pendingDemoRun, runningAssayId, runAssay, runtimeWarmupStatus])
 
 	// Auto-scroll to latest run when it starts / completes
 	const scrollRef = useRef<ScrollView>(null)
@@ -2783,20 +2874,41 @@ export default function LabScreen() {
 	const previousRuns = runs.slice(1)
 	const visiblePreviousRuns = showAllResultRuns ? previousRuns : previousRuns.slice(0, RESULT_RECENT_RUN_LIMIT)
 	const hiddenPreviousRunCount = Math.max(0, previousRuns.length - visiblePreviousRuns.length)
-	const firstDemoBundle = LAB_TEST_FILES[0]
-	const firstDemoAssay = firstDemoBundle
-		? LAB_ASSAYS.find((assay) => assay.inputFormats.includes(firstDemoBundle.format)) ?? null
-		: null
-	const demoRunPending = Boolean(
-		pendingDemoRunAssayId ||
-		(firstDemoBundle && sampleLoadingId === firstDemoBundle.id),
+	const drugDemoBundle = getTestFileById('biovault-23andme-sample')
+	const drugDemoAssay = getAssayById('pgx-1')
+	const vcfDemoBundle = getTestFileById('na06985-vcf')
+	const vcfDemoAssay = getAssayById('prostate-cancer-prs')
+	const demoRuns = [
+		{
+			id: 'drug-interactions',
+			label: 'Run 23andMe + Drug Interactions Example',
+			assay: drugDemoAssay,
+			bundle: drugDemoBundle,
+		},
+		{
+			id: 'prostate-vcf',
+			label: 'Run 1000 Genomes VCF + Prostate Cancer Example',
+			assay: vcfDemoAssay,
+			bundle: vcfDemoBundle,
+		},
+	].filter((item): item is { id: string; label: string; assay: LabAssay; bundle: LabTestFileBundle } =>
+		Boolean(item.assay && item.bundle),
 	)
-	const startDemoRun = useCallback(() => {
-		if (!firstDemoBundle || !firstDemoAssay) return
+	const demoRunPendingById = Object.fromEntries(demoRuns.map((item) => [
+		item.id,
+		Boolean(
+			(pendingDemoRun?.assayId === item.assay.id && pendingDemoRun.primaryFileName === item.bundle.files[0]?.name) ||
+			sampleLoadingId === item.bundle.id,
+		),
+	]))
+	const demoRunPending = Object.values(demoRunPendingById).some(Boolean)
+	const startDemoRun = useCallback((bundle: LabTestFileBundle, assay: LabAssay) => {
+		const primaryFileName = bundle.files[0]?.name
+		if (!primaryFileName) return
 		setForceGettingStarted(false)
-		setPendingDemoRunAssayId(firstDemoAssay.id)
-		void pickSample(firstDemoBundle)
-	}, [firstDemoAssay, firstDemoBundle, pickSample])
+		setPendingDemoRun({ assayId: assay.id, primaryFileName })
+		void pickSample(bundle)
+	}, [pickSample])
 	const openGettingStarted = useCallback(() => {
 		setForceGettingStarted(true)
 		scrollRef.current?.scrollTo({ y: 0, animated: true })
@@ -2866,8 +2978,10 @@ export default function LabScreen() {
 				<LabGettingStartedPanel
 					showIntro={false}
 					demoRunPending={demoRunPending}
-					assayTitle={firstDemoAssay?.title}
-					sampleTitle={firstDemoBundle?.title}
+					demoRuns={demoRuns}
+					demoRunPendingById={demoRunPendingById}
+					sampleLoadProgress={sampleLoadProgress}
+					onTryDemoRun={startDemoRun}
 				/>
 			</View>
 		</>
@@ -2965,11 +3079,6 @@ export default function LabScreen() {
 			onRestoreSavedHandle={restoreSavedHandle}
 		/>
 	)
-	const gettingStartedRunButton =
-		!runtimeBlocked && showGettingStartedView && firstDemoBundle && firstDemoAssay ? (
-			<GettingStartedRunButton demoRunPending={demoRunPending} onTryDemoRun={startDemoRun} />
-		) : null
-
 	return (
 		<ThemeCtx.Provider value={themeValue}>
 			<SafeAreaView style={styles.safe} edges={['top']}>
@@ -3109,12 +3218,6 @@ export default function LabScreen() {
 							</View>
 						</View>
 
-						{gettingStartedRunButton ? (
-							<View style={{ marginTop: omSpacing.m, marginBottom: omSpacing.l, alignItems: 'flex-start' }}>
-								{gettingStartedRunButton}
-							</View>
-						) : null}
-
 						<BrowserSupportBanner assessment={browserSupport} />
 
 						{runtimeBlocked ? (
@@ -3183,6 +3286,7 @@ export default function LabScreen() {
 					loadedSampleBundleIds={loadedSampleBundleIds}
 					sampleLoadError={sampleLoadError}
 					sampleLoadingId={sampleLoadingId}
+					sampleLoadProgress={sampleLoadProgress}
 					shareAssayUrl={shareAssayUrl}
 					onChooseGenomeFiles={() => {
 						setImportGenomeModalOpen(false)
@@ -3739,6 +3843,7 @@ function ImportGenomeModal({
 	sampleBundles,
 	sampleLoadError,
 	sampleLoadingId,
+	sampleLoadProgress,
 	shareAssayUrl,
 }: {
 	assayUrlCopied: boolean
@@ -3755,6 +3860,7 @@ function ImportGenomeModal({
 	sampleBundles: LabTestFileBundle[]
 	sampleLoadError: string | null
 	sampleLoadingId: string | null
+	sampleLoadProgress: SampleLoadProgress | null
 	shareAssayUrl: string
 }) {
 	const { styles, mutedIconTone, palette } = useTheme()
@@ -3827,13 +3933,15 @@ function ImportGenomeModal({
 							{sampleBundles.map((bundle) => {
 								const loading = sampleLoadingId === bundle.id
 								const loaded = loadedSampleBundleIds.has(bundle.id)
+								const progress = loading && sampleLoadProgress?.bundleId === bundle.id ? sampleLoadProgress : null
+								const progressRatio =
+									progress?.totalBytes ? Math.max(0, Math.min(1, progress.loadedBytes / progress.totalBytes)) : 0
 								return (
 									<Pressable
 										key={bundle.id}
 										disabled={loading || loaded}
 										onPress={() => {
 											onPickSample(bundle)
-											onClose()
 										}}
 										style={[styles.labExplorerSampleRow, loading || loaded ? styles.labExplorerSampleRowMuted : null]}
 										accessibilityLabel={
@@ -3854,6 +3962,31 @@ function ImportGenomeModal({
 											<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={2}>
 												{ASSAY_INPUT_FORMAT_LABELS[bundle.format]} · {bundle.description}
 											</OMText>
+											{progress ? (
+												<View style={styles.sampleDownloadProgress}>
+													<View style={styles.sampleDownloadProgressHead}>
+														<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={1}>
+															{progress.label}
+														</OMText>
+														<OMText variant="caption" style={styles.labExplorerRowMeta}>
+															{progress.totalBytes
+																? `${humanLabSize(progress.loadedBytes)} / ${humanLabSize(progress.totalBytes)}`
+																: humanLabSize(progress.loadedBytes)}
+														</OMText>
+													</View>
+													<View style={styles.sampleDownloadProgressTrack}>
+														<View
+															style={[
+																styles.sampleDownloadProgressFill,
+																{
+																	backgroundColor: palette.accent,
+																	width: progress.totalBytes ? `${progressRatio * 100}%` : '35%',
+																},
+															]}
+														/>
+													</View>
+												</View>
+											) : null}
 										</View>
 										{loaded ? null : loading ? (
 											<ActivityIndicator size="small" color={palette.accent} />
@@ -3941,7 +4074,7 @@ function LabExplorerSidebar({
 	const cachedRemotePickers = useMemo(() => {
 		return cachedRemoteFiles.filter(
 			(r) =>
-				isGenomeLabFileKind(r.fileKind) &&
+				isPrimaryGenomeFileKind(r.fileKind) &&
 				!cachedRemotePackageArtifactUrls.has(r.sourceUrl) &&
 				!sessionPrimaryNames.has(r.file.name),
 		)
@@ -5916,43 +6049,135 @@ function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 	)
 }
 
+type DemoRunOption = {
+	id: string
+	label: string
+	assay: LabAssay
+	bundle: LabTestFileBundle
+}
+
+function GettingStartedRunButtons({
+	demoRunPendingById,
+	demoRuns,
+	onTryDemoRun,
+	sampleLoadProgress,
+}: {
+	demoRunPendingById: Record<string, boolean>
+	demoRuns: DemoRunOption[]
+	onTryDemoRun: (bundle: LabTestFileBundle, assay: LabAssay) => void
+	sampleLoadProgress?: SampleLoadProgress | null
+}) {
+	const { palette, styles } = useTheme()
+	return (
+		<View style={styles.gettingStartedRunButtonRow}>
+			{demoRuns.map((run) => {
+				const progress = sampleLoadProgress?.bundleId === run.bundle.id ? sampleLoadProgress : null
+				const progressRatio =
+					progress?.totalBytes ? Math.max(0, Math.min(1, progress.loadedBytes / progress.totalBytes)) : 0
+				return (
+					<View key={run.id} style={styles.gettingStartedRunButtonStack}>
+						<GettingStartedRunButton
+							demoRunPending={Boolean(demoRunPendingById[run.id])}
+							label={run.label}
+							onTryDemoRun={() => onTryDemoRun(run.bundle, run.assay)}
+						/>
+						{progress ? (
+							<View style={styles.gettingStartedDemoProgress}>
+								<View style={styles.sampleDownloadProgressHead}>
+									<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={1}>
+										{progress.label}
+									</OMText>
+									<OMText variant="caption" style={styles.labExplorerRowMeta}>
+										{progress.totalBytes
+											? `${humanLabSize(progress.loadedBytes)} / ${humanLabSize(progress.totalBytes)}`
+											: humanLabSize(progress.loadedBytes)}
+									</OMText>
+								</View>
+								<View style={styles.sampleDownloadProgressTrack}>
+									<View
+										style={[
+											styles.sampleDownloadProgressFill,
+											{
+												backgroundColor: palette.accent,
+												width: progress.totalBytes ? `${progressRatio * 100}%` : '35%',
+											},
+										]}
+									/>
+								</View>
+							</View>
+						) : null}
+					</View>
+				)
+			})}
+		</View>
+	)
+}
+
 function GettingStartedRunButton({
 	demoRunPending,
+	label,
 	onTryDemoRun,
 }: {
 	demoRunPending: boolean
+	label: string
 	onTryDemoRun: () => void
 }) {
 	const { palette, styles } = useTheme()
+	const [hovered, setHovered] = useState(false)
 	return (
 		<Pressable
 			onPress={onTryDemoRun}
 			disabled={demoRunPending}
+			onHoverIn={() => setHovered(true)}
+			onHoverOut={() => setHovered(false)}
 			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.intentPrimaryButton,
 				styles.tryNowButton,
-				hovered && !demoRunPending && styles.buttonHover,
+				hovered && !demoRunPending && styles.tryNowButtonHover,
 				pressed && styles.gettingStartedBtnPressed,
 				demoRunPending && styles.gettingStartedBtnDisabled,
 			]}
 			accessibilityRole="button"
-			accessibilityLabel="Load sample data and run a demo assay locally"
+			accessibilityLabel={label}
 		>
+			{hovered && !demoRunPending ? <RunButtonShimmer /> : null}
 			{demoRunPending ? (
 				<ActivityIndicator size="small" color="#fff" />
 			) : (
 				<OMIcon
 					name="play-outline"
-					size={24}
+					size={20}
 					color={palette.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : palette.invertText}
 					tone="inverse"
 				/>
 			)}
 			<OMText variant="subtitle" style={[styles.primaryButtonText, styles.tryNowButtonText]}>
-				{demoRunPending ? 'Loading sample...' : 'Run Example'}
+				{demoRunPending ? 'Loading sample...' : label}
 			</OMText>
 		</Pressable>
 	)
+}
+
+function RunButtonShimmer() {
+	if (Platform.OS !== 'web') return null
+	return createElement('span', {
+		'aria-hidden': true,
+		style: {
+			animation: 'biovault-run-button-shimmer 1.8s ease-in-out infinite',
+			background:
+				'linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0.45) 50%, rgba(255,255,255,0.18) 55%, transparent 100%)',
+			bottom: 0,
+			left: '-45%',
+			pointerEvents: 'none',
+			position: 'absolute',
+			top: 0,
+			transform: 'skewX(-16deg)',
+			width: '35%',
+		},
+		children: createElement('style', {
+			children: '@keyframes biovault-run-button-shimmer{from{left:-45%}to{left:125%}}',
+		}),
+	})
 }
 
 function GettingStartedFeatureStrip({ compact }: { compact: boolean }) {
@@ -6013,18 +6238,20 @@ function GettingStartedFeatureStrip({ compact }: { compact: boolean }) {
 }
 
 function LabGettingStartedPanel({
-	assayTitle,
 	demoRunPending = false,
+	demoRunPendingById = {},
+	demoRuns = [],
 	layout = 'page',
 	onTryDemoRun,
-	sampleTitle,
+	sampleLoadProgress,
 	showIntro: showIntroProp,
 }: {
-	assayTitle?: string
 	demoRunPending?: boolean
+	demoRunPendingById?: Record<string, boolean>
+	demoRuns?: DemoRunOption[]
 	layout?: 'modal' | 'page'
-	onTryDemoRun?: () => void
-	sampleTitle?: string
+	onTryDemoRun?: (bundle: LabTestFileBundle, assay: LabAssay) => void
+	sampleLoadProgress?: SampleLoadProgress | null
 	showIntro?: boolean
 }) {
 	const { styles } = useTheme()
@@ -6032,7 +6259,14 @@ function LabGettingStartedPanel({
 	const compact = width < 640
 	const wide = width >= 1040
 	const showIntro = showIntroProp ?? layout === 'page'
-	const demoButton = onTryDemoRun ? <GettingStartedRunButton demoRunPending={demoRunPending} onTryDemoRun={onTryDemoRun} /> : null
+	const demoButton = onTryDemoRun && demoRuns.length ? (
+		<GettingStartedRunButtons
+			demoRunPendingById={demoRunPendingById}
+			demoRuns={demoRuns}
+			onTryDemoRun={onTryDemoRun}
+			sampleLoadProgress={sampleLoadProgress}
+		/>
+	) : null
 	const featureStrip = <GettingStartedFeatureStrip compact={compact} />
 	const videoBlock = (
 		<View
@@ -6066,7 +6300,7 @@ function LabGettingStartedPanel({
 									<OMText variant="body" style={[styles.gettingStartedLead, compact ? styles.gettingStartedLeadCompact : null]}>
 										{demoRunPending
 											? 'Preparing the sample genome and assay run locally. Nothing is uploaded.'
-											: `Add a genome from the sidebar, or load ${sampleTitle ?? 'sample data'} and queue ${assayTitle ?? 'a demo assay'} locally.`}
+											: 'Add a genome from the sidebar, or run a demo workflow locally.'}
 									</OMText>
 								</View>
 							) : null}
@@ -6779,19 +7013,46 @@ function makeStyles(p: LabPalette) {
 			lineHeight: 18,
 			fontStyle: 'italic',
 		},
+		gettingStartedRunButtonRow: {
+			flexDirection: 'row',
+			alignItems: 'stretch',
+			flexWrap: 'wrap',
+			gap: omSpacing.m,
+			flexShrink: 1,
+		},
+		gettingStartedRunButtonStack: {
+			alignItems: 'stretch',
+			gap: 8,
+			maxWidth: '100%',
+		},
+		gettingStartedDemoProgress: {
+			gap: 6,
+			width: '100%',
+			maxWidth: 520,
+		},
 		tryNowButton: {
+			position: 'relative',
 			alignSelf: 'flex-start',
 			marginTop: 0,
-			height: 64,
-			minHeight: 64,
-			paddingHorizontal: omSpacing.xl,
+			height: 48,
+			minHeight: 48,
+			paddingHorizontal: omSpacing.l,
 			flexShrink: 0,
+			overflow: 'hidden',
 			backgroundColor: p.pageBg === LAB_LANDING_PAGE_FILL ? '#2f7d5d' : p.accent,
 		},
+		tryNowButtonHover: Platform.OS === 'web'
+			? ({
+					opacity: 1,
+					boxShadow: `0 0 0 1px ${p.accentBorder}, 0 12px 32px rgba(83, 190, 169, 0.28)`,
+					transform: [{ translateY: -1 }],
+				} as object)
+			: {},
 		tryNowButtonText: {
 			color: p.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : p.invertText,
-			fontSize: 19,
-			lineHeight: 25,
+			fontSize: 14,
+			lineHeight: 18,
+			flexShrink: 1,
 		},
 		gettingStartedVideoBlock: {
 			alignSelf: 'stretch',
@@ -7300,6 +7561,29 @@ function makeStyles(p: LabPalette) {
 		},
 		labExplorerSampleError: {
 			marginTop: omSpacing.xs,
+		},
+		sampleDownloadProgress: {
+			marginTop: 8,
+			gap: 6,
+			width: '100%',
+		},
+		sampleDownloadProgressHead: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: 8,
+		},
+		sampleDownloadProgressTrack: {
+			height: 6,
+			borderRadius: 999,
+			overflow: 'hidden',
+			backgroundColor: p.surfaceSunken,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.border,
+		},
+		sampleDownloadProgressFill: {
+			height: '100%',
+			borderRadius: 999,
 		},
 		webThemeButton: {
 			...buttonMotion,

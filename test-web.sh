@@ -51,6 +51,9 @@ for arg in "$@"; do
     --pgx-report-scenario|--pgx-report)
       MODE="pgx-report"
       ;;
+    --demo-examples)
+      MODE="demo-examples"
+      ;;
     --wasm-compat|--compat)
       MODE="wasm-compat"
       ;;
@@ -238,6 +241,9 @@ case "$MODE" in
     ;;
   pgx-report)
     SPECS=(.maestro-web/lab-pgx-report-matrix.spec.ts)
+    ;;
+  demo-examples)
+    SPECS=(.maestro-web/lab-demo-examples.spec.ts)
     ;;
   wasm-compat)
     SPECS=(.maestro-web/lab-wasm-compat.spec.ts)

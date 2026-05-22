@@ -75,6 +75,43 @@
 					"kind": "zip"
 				}
 			]
+		},
+		{
+			"id": "na06985-vcf",
+			"title": "NA06985 VCF",
+			"description": "A VCF on GRCh37 from the 1000 Genomes Project of sample NA06985 - 150 MB download.",
+			"format": "vcf_gz",
+			"archive": {
+				"format": "split-tar-gz",
+				"outputName": "NA06985.clean.vcf.gz",
+				"parts": [
+					{
+						"name": "NA06985.clean.vcf.gz.tar.gz.aa",
+						"sizeBytes": 99614720,
+						"url": "https://raw.githubusercontent.com/OpenMined/biovault-data/main/vcf/NA06985/NA06985.clean.vcf.gz.tar.gz.aa"
+					},
+					{
+						"name": "NA06985.clean.vcf.gz.tar.gz.ab",
+						"sizeBytes": 51987609,
+						"url": "https://raw.githubusercontent.com/OpenMined/biovault-data/main/vcf/NA06985/NA06985.clean.vcf.gz.tar.gz.ab"
+					}
+				],
+				"expectedSizeBytes": 151559916
+			},
+			"files": [
+				{
+					"name": "NA06985.clean.vcf.gz",
+					"sizeBytes": 151559916,
+					"url": "https://github.com/OpenMined/biovault-data/tree/main/vcf/NA06985",
+					"kind": "vcf_gz"
+				},
+				{
+					"name": "NA06985.clean.vcf.gz.tbi",
+					"sizeBytes": 1600475,
+					"url": "https://raw.githubusercontent.com/OpenMined/biovault-data/main/vcf/NA06985/NA06985.clean.vcf.gz.tbi",
+					"kind": "tbi"
+				}
+			]
 		}
 	]
 }

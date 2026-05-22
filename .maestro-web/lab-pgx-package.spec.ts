@@ -29,7 +29,7 @@ test.describe('lab PGx package import — web', () => {
 		const panelRows = page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' })
 		await expect(panelRows).toHaveCount(1)
 		await expect(panelRows.first().getByText('Run panel', { exact: true })).toBeVisible()
-		await expect(page.getByText('Download', { exact: true })).toHaveCount(0)
+		await expect(panelRows.first().getByText('Download', { exact: true })).toHaveCount(0)
 
 		await dismissRememberFilesPrompt(page)
 		await panelRows.first().evaluate((element) => {
