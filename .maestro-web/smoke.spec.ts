@@ -26,7 +26,8 @@ test('web smoke', async ({ page }) => {
 	}
 
 	await expect(page.getByText('Getting Started', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByRole('button', { name: 'Load sample data and run a demo assay locally' })).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Run 23andMe + Drug Interactions Example' })).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Run 1000 Genomes VCF + Prostate Cancer Example' })).toBeVisible()
 	await page.screenshot({ path: '.maestro-web/screenshots/04-home.png', fullPage: true })
 
 	const fatal = errors.filter(
