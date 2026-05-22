@@ -208,6 +208,28 @@ const FEATURED_CATALOG: LabAssay[] = [
 		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
 		tags: ['apol1', 'risk', 'assay', 'featured'],
 	},
+	{
+		id: 'featured-prostate-cancer-prs',
+		title: 'Prostate Cancer PRS Panel',
+		subtitle: 'BioScript package',
+		description: 'A prostate cancer polygenic risk score package built from Schumacher PRS markers.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/prostate-cancer-prs/prostate-cancer-prs.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['prostate', 'prs', 'risk', 'panel', 'featured'],
+	},
+	{
+		id: 'featured-longevity',
+		title: 'Longevity Panel',
+		subtitle: 'BioScript package',
+		description: 'A longevity-focused package covering APOE epsilon status and FOXO3 longevity markers.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/longevity/longevity.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['longevity', 'apoe', 'foxo3', 'risk', 'panel', 'featured'],
+	},
 ]
 function clearWebLaunchIntentHash() {
 	if (Platform.OS !== 'web' || !window.location.hash) return

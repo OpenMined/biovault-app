@@ -35,6 +35,30 @@
 			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/APOL1/APOL1.yaml",
 			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
 			"tags": ["apol1", "risk", "assay", "remote", "bioscript-package"]
+		},
+		{
+			"id": "prostate-cancer-prs",
+			"title": "Prostate Cancer PRS Panel",
+			"subtitle": "BioScript package",
+			"description": "Loads the prostate cancer polygenic risk score BioScript package release from GitHub.",
+			"category": "risk",
+			"language": "yaml",
+			"url": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/prostate-cancer-prs/prostate-cancer-prs.yaml",
+			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/prostate-cancer-prs/prostate-cancer-prs.yaml",
+			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
+			"tags": ["prostate", "prs", "risk", "panel", "remote", "bioscript-package"]
+		},
+		{
+			"id": "longevity",
+			"title": "Longevity Panel",
+			"subtitle": "BioScript package",
+			"description": "Loads the longevity BioScript package release from GitHub.",
+			"category": "risk",
+			"language": "yaml",
+			"url": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/longevity/longevity.yaml",
+			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/longevity/longevity.yaml",
+			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
+			"tags": ["longevity", "apoe", "foxo3", "risk", "panel", "remote", "bioscript-package"]
 		}
 	],
 	"testFiles": [
