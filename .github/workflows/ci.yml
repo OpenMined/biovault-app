@@ -655,7 +655,19 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install npm dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3; do
+            npm install \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=20000 \
+              --fetch-retry-maxtimeout=120000 && exit 0
+            echo "npm install failed on attempt ${attempt}; retrying..." >&2
+            sleep $((attempt * 10))
+          done
+          npm install \
+            --fetch-retries=5 \
+            --fetch-retry-mintimeout=20000 \
+            --fetch-retry-maxtimeout=120000
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -812,7 +824,19 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install npm dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3; do
+            npm install \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=20000 \
+              --fetch-retry-maxtimeout=120000 && exit 0
+            echo "npm install failed on attempt ${attempt}; retrying..." >&2
+            sleep $((attempt * 10))
+          done
+          npm install \
+            --fetch-retries=5 \
+            --fetch-retry-mintimeout=20000 \
+            --fetch-retry-maxtimeout=120000
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
