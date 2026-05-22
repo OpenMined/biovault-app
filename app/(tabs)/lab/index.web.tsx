@@ -566,9 +566,7 @@ function demoBundleCacheSourceUrl(bundle: LabTestFileBundle, fileName: string): 
 function demoBundleForCachedRemoteFile(remoteFile: RemoteLabFile): LabTestFileBundle | null {
 	const cacheMatch = remoteFile.sourceUrl.match(/^biovault-demo:\/\/([^/]+)\//)
 	if (cacheMatch) return getTestFileById(cacheMatch[1]) ?? null
-	return demoBundleForRemoteUrl(remoteFile.sourceUrl) ??
-		LAB_TEST_FILES.find((bundle) => bundle.files.some((file) => file.name === remoteFile.file.name)) ??
-		null
+	return demoBundleForRemoteUrl(remoteFile.sourceUrl)
 }
 
 function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string, unknown> {
@@ -1011,8 +1009,7 @@ function sampleBundleMatchesGenome(bundle: LabTestFileBundle, genome: LabGenomeR
 function sampleBundleMatchesCachedRemoteFile(bundle: LabTestFileBundle, remoteFile: RemoteLabFile): boolean {
 	if (bundle.remoteUrl && remoteFile.sourceUrl === bundle.remoteUrl) return true
 	if (remoteFile.sourceUrl.startsWith(`biovault-demo://${bundle.id}/`)) return true
-	const sampleNames = new Set(bundle.files.map((file) => file.name))
-	return sampleNames.has(remoteFile.file.name)
+	return false
 }
 
 function cachedFilesForSampleBundle(bundle: LabTestFileBundle, cachedRemoteFiles: RemoteLabFile[]): RemoteLabFile[] {
@@ -4290,6 +4287,7 @@ function LabExplorerSidebar({
 								<Pressable
 									disabled={savedHandlesLoading}
 									onPress={() => onRemoveCachedRemote(remoteFile)}
+									testID="saved-local-file-forget"
 									style={[
 										styles.labExplorerRowGhostHit,
 										savedHandlesLoading ? styles.labExplorerRowGhostMuted : null,
