@@ -99,7 +99,7 @@ test.describe('lab demo examples — web', () => {
 		await page.getByRole('button', { name: 'Run 1000 Genomes VCF + Prostate Cancer Example' }).click()
 
 		await expect(page.getByText('NA06985.clean.vcf.gz', { exact: true }).first()).toBeVisible({ timeout: 180_000 })
-		await expect(page.getByText('Latest result')).toBeVisible({ timeout: 360_000 })
+		await expect(page.getByTestId('assay-result-row').filter({ hasText: 'Prostate Cancer PRS Panel' })).toBeVisible({ timeout: 360_000 })
 		await expect(page.locator('body')).not.toContainText('Run failed')
 		await expect(page.locator('body')).not.toContainText('unreachable')
 		await expect(page.getByText(/result artifacts saved locally\./)).toBeVisible({ timeout: 120_000 })
