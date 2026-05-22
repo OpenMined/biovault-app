@@ -60,8 +60,11 @@ test.describe('lab remote cache — web', () => {
 		await dialog.getByRole('button', { name: 'Done' }).click()
 
 		await page.reload({ waitUntil: 'domcontentloaded' })
-		await expect(page.getByTestId('saved-local-file-title').filter({ hasText: 'genome_hu50B3F5_v5_Full.zip' })).toBeVisible({ timeout: 30_000 })
-		await page.getByLabel('Forget cached file genome_hu50B3F5_v5_Full.zip').click()
+		const cachedRow = page.getByTestId('saved-local-file-row').filter({ hasText: 'genome_hu50B3F5_v5_Full.zip' })
+		await expect(cachedRow.getByTestId('saved-local-file-title')).toBeVisible({ timeout: 30_000 })
+		await cachedRow.getByTestId('saved-local-file-forget').evaluate((element) => {
+			;(element as HTMLElement).click()
+		})
 		await expect(await cachedUrls(page)).not.toContain(REMOTE_GENOME_URL)
 	})
 

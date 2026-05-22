@@ -412,12 +412,17 @@ jobs:
           test -f test-data/apol1/apol1.cram.crai
           test -f test-data/apol1/stub.fa
           test -f test-data/apol1/stub.fa.fai
+          test -f exvitae/assays/risk/prostate-cancer-prs/prostate-cancer-prs.yaml
+          test -f exvitae/assays/risk/prostate-cancer-prs/prostate-cancer-prs.zip
 
       - name: Build bioscript-wasm
         uses: ./.github/actions/build-bioscript-wasm
 
       - name: Run selected PGx report browser matrix
         run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=2 WEB_REPORT_NO_PRIVATE=1 WEB_REPORT_SAMPLE_IDS=23andme-v5-hu50B3F5,NA06985-vcf,apol1-bam,apol1-cram ./test-web.sh --pgx-report-scenario
+
+      - name: Run browser demo examples
+        run: WEB_SECURE_ORIGIN=1 PW_IGNORE_HTTPS_ERRORS=1 PW_WORKERS=1 ./test-web.sh --demo-examples
 
       - name: Upload browser matrix artifacts
         if: always()
@@ -650,7 +655,19 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install npm dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3; do
+            npm install \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=20000 \
+              --fetch-retry-maxtimeout=120000 && exit 0
+            echo "npm install failed on attempt ${attempt}; retrying..." >&2
+            sleep $((attempt * 10))
+          done
+          npm install \
+            --fetch-retries=5 \
+            --fetch-retry-mintimeout=20000 \
+            --fetch-retry-maxtimeout=120000
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -807,7 +824,19 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install npm dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3; do
+            npm install \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=20000 \
+              --fetch-retry-maxtimeout=120000 && exit 0
+            echo "npm install failed on attempt ${attempt}; retrying..." >&2
+            sleep $((attempt * 10))
+          done
+          npm install \
+            --fetch-retries=5 \
+            --fetch-retry-mintimeout=20000 \
+            --fetch-retry-maxtimeout=120000
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

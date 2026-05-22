@@ -152,7 +152,7 @@ try {
 
 	// 3) Click the real demo run button -> Monty + bioscript-wasm process
 	//    the bundled demo genome through the actual app pipeline.
-	const sel = '[aria-label="Load sample data and run a demo assay locally"]'
+	const sel = '[aria-label="Run 23andMe + Drug Interactions Example"]'
 	const ELKEY = 'element-6066-11e4-a52e-4f735466cecf'
 	let elId = null
 	const findDeadline = Date.now() + 90000

@@ -93,7 +93,7 @@ test.describe('lab requested user scenarios — web', () => {
 
 		await routeDemoAndPgxFixtures(page)
 		await gotoLab(page)
-		await page.getByRole('button', { name: 'Load sample data and run a demo assay locally' }).click()
+		await page.getByRole('button', { name: 'Run 23andMe + Drug Interactions Example' }).click()
 		await expect(page.getByText('Latest result')).toBeVisible({ timeout: 240_000 })
 		await expect(page.getByText('4 result artifacts saved locally.')).toBeVisible({ timeout: 30_000 })
 		await page.getByText('View result', { exact: true }).first().click()
