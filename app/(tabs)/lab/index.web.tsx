@@ -3313,7 +3313,7 @@ export default function LabScreen() {
 
 function BrowserSupportBanner({ assessment }: { assessment: BrowserSupportAssessment | null }) {
 	const { styles } = useTheme()
-	if (!assessment || assessment.status === 'supported') return null
+	if (!assessment || assessment.status !== 'blocked') return null
 	const missingRequired = assessment.requiredMissing.map((item) => item.label).join(', ')
 	const missingOptional = assessment.optionalMissing.map((item) => item.label).join(', ')
 	return (
@@ -3927,6 +3927,22 @@ function ImportGenomeModal({
 					</OMText>
 				</Pressable>
 
+				<Pressable
+					onPress={() => openDataHowTo('import_genome')}
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+						styles.importGenomeHelpLink,
+						hovered && styles.buttonHover,
+						pressed && styles.buttonPressed,
+					]}
+					accessibilityRole="link"
+					accessibilityLabel="Open How to Download your Data guide"
+				>
+					<OMIcon name="book-outline" tone="danger" size={15} />
+					<OMText variant="subtitle" style={styles.importGenomeHelpLinkText}>
+						How to Download your Data: 23andMe and provider guides
+					</OMText>
+				</Pressable>
+
 				<View style={styles.importGenomeActionGrid}>
 					<View style={styles.importGenomeSampleCard}>
 						<View style={styles.importGenomeSectionHead}>
@@ -4321,6 +4337,14 @@ function LabExplorerSidebar({
 					label="Getting Started"
 					onPress={() => {
 						onOpenGettingStarted()
+						onRequestClose?.()
+					}}
+				/>
+				<SidebarUtilityButton
+					icon="cloud-download-outline"
+					label="Download your Data"
+					onPress={() => {
+						openDataHowTo('sidebar')
 						onRequestClose?.()
 					}}
 				/>
@@ -6311,6 +6335,21 @@ function LabGettingStartedPanel({
 											? 'Preparing the sample genome and assay run locally. Nothing is uploaded.'
 											: 'Add a genome from the sidebar, or run a demo workflow locally.'}
 									</OMText>
+									<Pressable
+										onPress={() => openDataHowTo('getting_started')}
+										style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+											styles.dataHowToInlineLink,
+											hovered && styles.buttonHover,
+											pressed && styles.buttonPressed,
+										]}
+										accessibilityRole="link"
+										accessibilityLabel="Open How to Download your Data guide"
+									>
+										<OMIcon name="book-outline" tone="accent" size={15} />
+										<OMText variant="subtitle" style={styles.dataHowToInlineLinkText}>
+											How to Download your Data
+										</OMText>
+									</Pressable>
 								</View>
 							) : null}
 							{demoButton}
@@ -6334,11 +6373,22 @@ function openContactEmail(source: 'header' | 'footer') {
 }
 
 const GITHUB_URL = 'https://github.com/openmined/biovault-app'
+const DATA_HOW_TO_PATH = '/data-how-to/'
 
 function openGithub() {
 	getAnalytics()?.trackEvent('lab_github_clicked', { url: GITHUB_URL })
 	if (typeof window === 'undefined') return
 	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
+}
+
+function openDataHowTo(source: 'getting_started' | 'import_genome' | 'sidebar') {
+	const url =
+		typeof window === 'undefined'
+			? DATA_HOW_TO_PATH
+			: new URL(DATA_HOW_TO_PATH, window.location.origin).toString()
+	getAnalytics()?.trackEvent('lab_data_how_to_clicked', { source, url })
+	if (typeof window === 'undefined') return
+	window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 function SidebarToggleButton({
@@ -6957,6 +7007,25 @@ function makeStyles(p: LabPalette) {
 		gettingStartedLeadCompact: {
 			fontSize: 18,
 			lineHeight: 25,
+		},
+		dataHowToInlineLink: {
+			...buttonMotion,
+			alignSelf: 'flex-start',
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 7,
+			minHeight: 34,
+			marginTop: 4,
+			paddingHorizontal: omSpacing.s,
+			paddingVertical: 6,
+			borderRadius: omRadius.s,
+			cursor: 'pointer',
+		} as object,
+		dataHowToInlineLinkText: {
+			color: p.accentStrong,
+			fontSize: 13,
+			lineHeight: 18,
+			fontWeight: '700',
 		},
 		gettingStartedFeatureStrip: {
 			alignSelf: 'stretch',
@@ -8832,6 +8901,25 @@ function makeStyles(p: LabPalette) {
 			color: p.textMuted,
 			textAlign: 'center',
 			lineHeight: 17,
+		},
+		importGenomeHelpLink: {
+			...buttonMotion,
+			alignSelf: 'flex-start',
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 7,
+			minHeight: 34,
+			marginTop: -omSpacing.s,
+			paddingHorizontal: omSpacing.s,
+			paddingVertical: 6,
+			borderRadius: omRadius.s,
+			cursor: 'pointer',
+		} as object,
+		importGenomeHelpLinkText: {
+			color: p.dangerText,
+			fontSize: 13,
+			lineHeight: 18,
+			fontWeight: '800',
 		},
 		importGenomeActionGrid: {
 			gap: omSpacing.m,
