@@ -223,6 +223,17 @@ const FEATURED_CATALOG: LabAssay[] = [
 		tags: ['prostate', 'prs', 'risk', 'panel', 'featured'],
 	},
 	{
+		id: 'featured-pcsk9-ldl',
+		title: 'PCSK9 LDL-Lowering Variant Panel',
+		subtitle: 'BioScript package',
+		description: 'A PCSK9 panel covering R46L, Y142X, and C679X LDL-lowering variants.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/pcsk9-ldl/pcsk9-ldl.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['pcsk9', 'ldl', 'cholesterol', 'risk', 'panel', 'featured'],
+	},
+	{
 		id: 'featured-longevity',
 		title: 'Longevity Panel',
 		subtitle: 'BioScript package',

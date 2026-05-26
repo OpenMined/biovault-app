@@ -49,6 +49,18 @@
 			"tags": ["prostate", "prs", "risk", "panel", "remote", "bioscript-package"]
 		},
 		{
+			"id": "pcsk9-ldl",
+			"title": "PCSK9 LDL-Lowering Variant Panel",
+			"subtitle": "BioScript package",
+			"description": "Loads the PCSK9 LDL-lowering variant panel BioScript package release from GitHub.",
+			"category": "risk",
+			"language": "yaml",
+			"url": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/pcsk9-ldl/pcsk9-ldl.yaml",
+			"remoteResourceUrl": "https://github.com/madhavajay/exvitae/blob/main/assays/risk/pcsk9-ldl/pcsk9-ldl.yaml",
+			"inputFormats": ["cram", "vcf_gz", "genotype_text", "zip"],
+			"tags": ["pcsk9", "ldl", "cholesterol", "risk", "panel", "remote", "bioscript-package"]
+		},
+		{
 			"id": "longevity",
 			"title": "Longevity Panel",
 			"subtitle": "BioScript package",
