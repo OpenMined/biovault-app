@@ -40,7 +40,7 @@ const wizardSteps = [
 		title: 'Step 2: Open Settings',
 		icon: '⚙️',
 		description: 'Go to the top right menu and click on Settings to access your account options.',
-		image: require('@/assets/guides/23andme/2.png'),
+		image: require('@/assets/guides/23andme/1-settings.jpg'),
 		link: 'https://you.23andme.com/user/',
 		linkText: 'Go to Settings →',
 		backgroundColor: '#f8fffe',
@@ -50,7 +50,7 @@ const wizardSteps = [
 		title: 'Step 3: Go to Download Data',
 		icon: '📊',
 		description: 'Find the section that says 23andMe Data and click the "View" button.',
-		image: require('@/assets/guides/23andme/3.png'),
+		image: require('@/assets/guides/23andme/2-view-data.jpg'),
 		backgroundColor: '#e8f5f0',
 	},
 	{
@@ -58,7 +58,7 @@ const wizardSteps = [
 		title: 'Step 4: Verify Your Identity',
 		icon: '📅',
 		description: 'Enter your date of birth to confirm your identity and proceed with the download.',
-		image: require('@/assets/guides/23andme/4.png'),
+		image: require('@/assets/guides/23andme/3-dob.jpg'),
 		backgroundColor: '#f0f9f6',
 	},
 	{
@@ -66,7 +66,7 @@ const wizardSteps = [
 		title: 'Step 5: Select Raw Data',
 		icon: '📥',
 		description: 'Scroll down to the "Raw Data" section and click "Download Raw Data".',
-		image: require('@/assets/guides/23andme/5.png'),
+		image: require('@/assets/guides/23andme/4-download-request.jpg'),
 		link: 'https://you.23andme.com/tools/data/download/',
 		linkText: 'Direct Download Link →',
 		backgroundColor: '#e0f2e7',
@@ -77,7 +77,7 @@ const wizardSteps = [
 		icon: '✅',
 		description:
 			'Scroll down, check "I understand" and click "Submit request" to initiate the download process.',
-		image: require('@/assets/guides/23andme/6.png'),
+		image: require('@/assets/guides/23andme/4-download-request.jpg'),
 		backgroundColor: '#f8fffe',
 	},
 	{
@@ -86,7 +86,7 @@ const wizardSteps = [
 		icon: '📧',
 		description:
 			'Wait for the download email from 23andMe. It will contain a link to download your file (e.g., genome_YourName_v4_Full_date.zip).',
-		image: require('@/assets/guides/23andme/7.png'),
+		image: require('@/assets/guides/23andme/5-email.jpg'),
 		backgroundColor: '#e8f5f0',
 	},
 	{
@@ -99,7 +99,7 @@ const wizardSteps = [
 			{
 				title: 'Option A: AirDrop (Mac)',
 				description: 'Right-click the file, select Share → AirDrop, choose your iPhone',
-				image: require('@/assets/guides/23andme/8a.png'),
+				image: require('@/assets/guides/23andme/7-share-to-phone.jpg'),
 			},
 			{
 				title: 'Option B: Cloud Storage',
@@ -117,7 +117,7 @@ const wizardSteps = [
 		icon: '🚀',
 		description:
 			'Once the file is on your phone, tap the "Load" button in BioVault and select a genome file from your phone\'s file system.',
-		image: require('@/assets/guides/23andme/9.jpg'),
+		image: require('@/assets/guides/23andme/8-ios-picker.jpg'),
 		backgroundColor: '#e0f2e7',
 		isLast: true,
 	},

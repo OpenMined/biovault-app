@@ -3,9 +3,10 @@ import https from 'node:https';
 import net from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
-import { landingPageHtml } from './prepare-cloudflare-web-assets.mjs';
+import { dataHowToPageHtml, landingPageHtml } from './prepare-cloudflare-web-assets.mjs';
 
 const shareAssetsDir = resolve(process.cwd(), 'assets/share');
+const guideAssetsDir = resolve(process.cwd(), 'assets/guides');
 const IMAGE_CONTENT_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -66,10 +67,45 @@ const handleRequest = (request, response) => {
     return;
   }
 
+  if (url.pathname === '/data-how-to') {
+    response.writeHead(308, { Location: '/data-how-to/' });
+    response.end();
+    return;
+  }
+
+  if (url.pathname === '/data-how-to/') {
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      ...DEV_NO_STORE_HEADERS,
+    });
+    response.end(dataHowToPageHtml({
+      metricsScriptCacheBust: Date.now(),
+      metricsSiteId: process.env.BIOVAULT_METRICS_SITE_ID ?? '4',
+      origin: publicOrigin,
+    }));
+    return;
+  }
+
   if (url.pathname.startsWith('/images/')) {
     const name = url.pathname.slice('/images/'.length);
     const filePath = join(shareAssetsDir, name);
     if (!name || name.includes('/') || name.includes('..') || !existsSync(filePath)) {
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Not found\n');
+      return;
+    }
+    response.writeHead(200, {
+      'Content-Type': IMAGE_CONTENT_TYPES[extname(name).toLowerCase()] ?? 'application/octet-stream',
+      ...DEV_NO_STORE_HEADERS,
+    });
+    response.end(readFileSync(filePath));
+    return;
+  }
+
+  if (url.pathname.startsWith('/guides/')) {
+    const name = decodeURIComponent(url.pathname.slice('/guides/'.length));
+    const filePath = join(guideAssetsDir, name);
+    if (!name || name.includes('..') || name.includes('\0') || !existsSync(filePath)) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
       return;
