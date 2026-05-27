@@ -79,13 +79,13 @@ links:
   at: bioscript/ports/vntyper/vntyper
   branch: main
 - repo: madhavajay/bcftools
-  at: bioscript/vendor/rust/bcftools-rs/bcftools
+  at: bioscript/vendor/rust/bcftools-rs/repos/bcftools
   branch: develop
 - repo: madhavajay/monty
   at: bioscript/monty
   branch: madhava/bioscript
 - repo: madhavajay/samtools
-  at: bioscript/vendor/rust/samtools-rs/samtools
+  at: bioscript/vendor/rust/samtools-rs/repos/samtools
   branch: develop
 - repo: madhavajay/vntyper
   at: bioscript/vendor/rust/kestrel-rs/kestrel/integration/VNtyper
@@ -103,7 +103,7 @@ links:
   at: bioscript/vendor/python/pysam
   branch: master
 - repo: madhavajay/htslib
-  at: bioscript/vendor/rust/htslib-rs/htslib
+  at: bioscript/vendor/rust/htslib-rs/repos/htslib
   branch: htslib-rs-compat
 - repo: madhavajay/kestrel
   at: bioscript/vendor/rust/kestrel-rs/kestrel
