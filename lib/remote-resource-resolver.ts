@@ -83,6 +83,7 @@ const GITHUB_BLOB_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\
 const ALLOWED_REMOTE_RESOURCE_HOSTS = new Set(['github.com', 'raw.githubusercontent.com'])
 const DEV_REMOTE_RESOURCE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 const PACKAGE_CACHE_PREFIX = 'biovault-remote-package:'
+const memoryPackageCache = new Map<string, CachedRemotePackage>()
 
 function fileNameFromUrl(url: URL): string {
 	const parts = url.pathname.split('/').filter(Boolean)
@@ -130,83 +131,16 @@ function isAllowedRemoteResourceHost(hostname: string): boolean {
 		hostname.endsWith('.biovault.test')
 }
 
-function hasLocalStorage(): boolean {
-	try {
-		return typeof globalThis !== 'undefined' && typeof (globalThis as { localStorage?: Storage }).localStorage !== 'undefined'
-	} catch {
-		return false
-	}
-}
-
 function packageCacheKey(sourceUrl: string, artifactSha256: string | null): string {
 	return `${PACKAGE_CACHE_PREFIX}${sourceUrl}#${artifactSha256 ?? 'no-sha'}`
 }
 
 function getCachedRemotePackage(sourceUrl: string, artifactSha256: string | null): CachedRemotePackage | null {
-	if (!hasLocalStorage()) return null
-	try {
-		const raw = globalThis.localStorage.getItem(packageCacheKey(sourceUrl, artifactSha256))
-		if (!raw) return null
-		const parsed = JSON.parse(raw) as Partial<CachedRemotePackage>
-		if (
-			typeof parsed.sourceUrl !== 'string' ||
-			typeof parsed.artifactUrl !== 'string' ||
-			typeof parsed.entrypoint !== 'string' ||
-			typeof parsed.name !== 'string' ||
-			!Array.isArray(parsed.resourceUrls)
-		) {
-			return null
-		}
-		return {
-			artifactSha256: typeof parsed.artifactSha256 === 'string' ? parsed.artifactSha256 : null,
-			artifactUrl: repairNestedArtifactUrl(parsed.artifactUrl),
-			cachedAt: typeof parsed.cachedAt === 'string' ? parsed.cachedAt : new Date(0).toISOString(),
-			entrypoint: parsed.entrypoint,
-			files: normalizePackageFiles(parsed.files),
-			name: parsed.name,
-			resourceUrls: parsed.resourceUrls.filter((url): url is string => typeof url === 'string'),
-			sourceUrl: parsed.sourceUrl,
-		}
-	} catch {
-		return null
-	}
+	return memoryPackageCache.get(packageCacheKey(sourceUrl, artifactSha256)) ?? null
 }
 
 export function listCachedRemotePackages(): CachedRemotePackage[] {
-	if (!hasLocalStorage()) return []
-	const packages: CachedRemotePackage[] = []
-	try {
-		const storage = globalThis.localStorage
-		for (let index = 0; index < storage.length; index += 1) {
-			const key = storage.key(index)
-			if (!key?.startsWith(PACKAGE_CACHE_PREFIX)) continue
-			const raw = storage.getItem(key)
-			if (!raw) continue
-			const parsed = JSON.parse(raw) as Partial<CachedRemotePackage>
-			if (
-				typeof parsed.sourceUrl !== 'string' ||
-				typeof parsed.artifactUrl !== 'string' ||
-				typeof parsed.entrypoint !== 'string' ||
-				typeof parsed.name !== 'string' ||
-				!Array.isArray(parsed.resourceUrls)
-			) {
-				continue
-			}
-			packages.push({
-				artifactSha256: typeof parsed.artifactSha256 === 'string' ? parsed.artifactSha256 : null,
-				artifactUrl: repairNestedArtifactUrl(parsed.artifactUrl),
-				cachedAt: typeof parsed.cachedAt === 'string' ? parsed.cachedAt : new Date(0).toISOString(),
-				entrypoint: parsed.entrypoint,
-				files: normalizePackageFiles(parsed.files),
-				name: parsed.name,
-				resourceUrls: parsed.resourceUrls.filter((url): url is string => typeof url === 'string'),
-				sourceUrl: parsed.sourceUrl,
-			})
-		}
-	} catch {
-		return []
-	}
-	return packages
+	return Array.from(memoryPackageCache.values()).sort((left, right) => right.cachedAt.localeCompare(left.cachedAt))
 }
 
 function normalizePackageFiles(files: unknown): BioscriptPackageFile[] | undefined {
@@ -231,15 +165,10 @@ function normalizePackageFiles(files: unknown): BioscriptPackageFile[] | undefin
 }
 
 function putCachedRemotePackage(record: CachedRemotePackage): void {
-	if (!hasLocalStorage()) return
-	try {
-		globalThis.localStorage.setItem(packageCacheKey(record.sourceUrl, record.artifactSha256), JSON.stringify({
-			...record,
-			files: normalizePackageFiles(record.files),
-		}))
-	} catch {
-		// Best-effort package metadata cache.
-	}
+	memoryPackageCache.set(packageCacheKey(record.sourceUrl, record.artifactSha256), {
+		...record,
+		files: normalizePackageFiles(record.files),
+	})
 }
 
 async function resolvedPackageFromCache(

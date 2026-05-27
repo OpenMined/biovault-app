@@ -16,23 +16,20 @@ declare global {
 
 async function openLab(page: Page) {
 	await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
-	const understand = page.getByText('I understand and want to continue', { exact: false })
-	if (await understand.isVisible().catch(() => false)) {
-		await understand.click()
-		await page.getByText(/^Continue$/).click({ timeout: 10_000 })
-	}
-	await expect(page.getByRole('heading', { name: 'Lab' })).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('Getting Started', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText('Native Rust runtime', { exact: true })).toBeVisible()
 }
 
 async function pickDesktopPaths(page: Page, paths: string[]) {
 	await page.evaluate((nextPaths) => {
 		window.__BIOVAULT_DESKTOP_TEST_PICK_PATHS__ = nextPaths
 	}, paths)
-	await page.getByRole('button', { name: 'Choose Files' }).click()
+	await page.getByText('Import genome', { exact: true }).click()
+	await page.getByRole('button', { name: 'Choose genome files' }).click()
 }
 
 async function dropDesktopPaths(page: Page, paths: string[]) {
-	await page.locator('section').filter({ hasText: 'Local files' }).first().evaluate((element, nextPaths) => {
+	await page.locator('body').evaluate((element, nextPaths) => {
 		const transfer = new DataTransfer()
 		transfer.setData('text/plain', nextPaths.join('\n'))
 		element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
@@ -42,8 +39,24 @@ async function dropDesktopPaths(page: Page, paths: string[]) {
 async function runScenario(page: Page, scenario: SharedLabTestScenario, paths: string[]) {
 	await pickDesktopPaths(page, paths)
 	await expect(page.getByText(scenario.genome?.expectDisplayName ?? '', { exact: false }).first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByRole('button', { name: 'Run Assay' })).toBeEnabled({ timeout: 30_000 })
-	await page.getByRole('button', { name: 'Run Assay' }).click()
+	const notNow = page.getByText('Not now', { exact: true })
+	if (await notNow.isVisible().catch(() => false)) {
+		await notNow.click()
+	}
+	if (scenario.assay?.path) {
+		const assayFileName = path.basename(scenario.assay.path)
+		await page
+			.getByRole('textbox', { name: 'Search assays or import from URL…' })
+			.fill(assayFileName.replace(/\.[^.]+$/, ''))
+		await page.getByRole('button', { name: /Assays \d+/ }).click({ force: true })
+		const runButton = page.getByRole('button', { name: `Run ${assayFileName}` }).first()
+		await expect(runButton).toBeEnabled({ timeout: 30_000 })
+		await runButton.click()
+	} else {
+		const runButton = page.getByRole('button', { name: /^Run / }).first()
+		await expect(runButton).toBeEnabled({ timeout: 30_000 })
+		await runButton.click()
+	}
 	await expect(page.getByText(scenario.assert.contains, { exact: false })).toBeVisible({ timeout: 180_000 })
 	const body = (await page.textContent('body')) ?? ''
 	for (const text of scenario.assert.notContains ?? []) {
@@ -57,7 +70,7 @@ function fixturePath(relativePath: string): string {
 
 function createZipFixture(sourcePath: string, outputDir: string): string {
 	mkdirSync(outputDir, { recursive: true })
-	const zipPath = path.join(outputDir, 'desktop-ui-apol1-g0g0.zip')
+	const zipPath = path.join(outputDir, 'apol1-g0g0.zip')
 	const bytes = zipSync({
 		'apol1-g0g0.txt': strToU8(fs.readFileSync(sourcePath, 'utf8')),
 	})
@@ -85,7 +98,7 @@ test.describe('desktop Lab UI via WebSocket bridge', () => {
 			test.skip(Boolean(missing), scenario.optional ? scenario.missingMessage : `missing fixture: ${missing}`)
 
 			if (scenario.action === 'app_smoke') {
-				await expect(page.getByRole('heading', { name: scenario.assert.contains })).toBeVisible()
+				await expect(page.getByText('Getting Started', { exact: true }).first()).toBeVisible()
 				return
 			}
 

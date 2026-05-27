@@ -38,6 +38,17 @@ function open(): Promise<{
 	})
 }
 
+async function nextState(
+	c: { next: () => Promise<ServerMsg> },
+	predicate: (state: State) => boolean,
+): Promise<State> {
+	for (let attempt = 0; attempt < 5; attempt += 1) {
+		const msg = await c.next()
+		if (msg.type === 'state' && predicate(msg.state)) return msg.state
+	}
+	throw new Error('expected state was not received')
+}
+
 test('rpc: drive app via WebSocket (no UI)', async () => {
 	const c = await open()
 	c.send({ type: 'command', command: { type: 'reset' } })
@@ -49,16 +60,16 @@ test('rpc: drive app via WebSocket (no UI)', async () => {
 	expect(first.state.agreed).toBe(false)
 
 	c.send({ type: 'command', command: { type: 'set_agreed', agreed: true } })
-	const agreed = await c.next()
-	expect(agreed.type === 'state' && agreed.state.agreed).toBe(true)
+	const agreed = await nextState(c, (state) => state.agreed)
+	expect(agreed.agreed).toBe(true)
 
 	c.send({ type: 'command', command: { type: 'continue' } })
-	const home = await c.next()
-	expect(home.type === 'state' && home.state.screen).toBe('home')
+	const home = await nextState(c, (state) => state.screen === 'home')
+	expect(home.screen).toBe('home')
 
 	c.send({ type: 'command', command: { type: 'reset' } })
-	const reset = await c.next()
-	expect(reset.type === 'state' && reset.state.screen).toBe('warning')
+	const reset = await nextState(c, (state) => state.screen === 'warning')
+	expect(reset.screen).toBe('warning')
 
 	c.close()
 })

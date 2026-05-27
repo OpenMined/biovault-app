@@ -1,5 +1,5 @@
 [package]
-name = "biovault-desktop"
+name = "biovault-app-desktop"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,11 +16,17 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"]
 axum = { version = "0.7", features = ["ws"] }
 futures-util = "0.3"
 bioscript-ffi = { path = "../../bioscript/rust/bioscript-ffi" }
+bioscript-core = { path = "../../bioscript/rust/bioscript-core" }
+bioscript-formats = { path = "../../bioscript/rust/bioscript-formats" }
+bioscript-schema = { path = "../../bioscript/rust/bioscript-schema" }
+bioscript-reporting = { path = "../../bioscript/rust/bioscript-reporting" }
+bioscript-runtime = { path = "../../bioscript/rust/bioscript-runtime" }
+monty = { path = "../../bioscript/monty/crates/monty" }
+noodles = { version = "0.110.0", features = ["bam", "bgzf", "core", "cram", "csi", "fasta", "sam", "tabix", "vcf"] }
 reqwest = { version = "0.13.2", features = ["blocking"] }
 zip = "2.4.2"
-
-# Reuse existing Rust crates. Uncomment as you wire commands up.
-# bioscript-runtime = { path = "../../bioscript/rust/bioscript-runtime" }
+sha2 = "0.10"
+url = "2"
 
 [features]
 default = ["custom-protocol"]
