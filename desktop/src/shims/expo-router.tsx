@@ -21,7 +21,7 @@ function navigate(href: Href, replace = false) {
   } else {
     window.history.pushState({}, '', target)
   }
-  window.dispatchEvent(new Event('biovault-desktop-route'))
+  window.dispatchEvent(new Event('biovault-app-desktop-route'))
 }
 
 export const router = {

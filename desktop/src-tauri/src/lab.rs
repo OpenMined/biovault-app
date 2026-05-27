@@ -571,7 +571,7 @@ pub async fn lab_download_url_file(
     let cache_dir = app
         .path()
         .app_cache_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-desktop"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-app-desktop"))
         .join("lab-url-files");
     tauri::async_runtime::spawn_blocking(move || download_url_file_blocking(cache_dir, request))
         .await
@@ -712,7 +712,7 @@ pub async fn lab_prepare_runtime_root(
     let base = app
         .path()
         .app_cache_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-desktop"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-app-desktop"))
         .join("lab-runtime")
         .join(format!(
             "run-{}-{}",
@@ -991,7 +991,7 @@ pub async fn handle_ws_lab_request(
             let payload: Payload = serde_json::from_value(payload)
                 .map_err(|error| format!("invalid download_url_file payload: {error}"))?;
             let cache_dir = std::env::temp_dir()
-                .join("biovault-desktop")
+                .join("biovault-app-desktop")
                 .join("lab-url-files");
             let file = tauri::async_runtime::spawn_blocking(move || {
                 download_url_file_blocking(cache_dir, payload.request)
@@ -1008,7 +1008,7 @@ pub async fn handle_ws_lab_request(
             let payload: Payload = serde_json::from_value(payload)
                 .map_err(|error| format!("invalid cache_remote_url_file payload: {error}"))?;
             let cache_dir = std::env::temp_dir()
-                .join("biovault-desktop")
+                .join("biovault-app-desktop")
                 .join("remote-lab-files");
             let file = cache_remote_url_file_blocking(cache_dir, payload.request)?;
             serde_json::to_value(file)
@@ -1022,7 +1022,7 @@ pub async fn handle_ws_lab_request(
             let payload: Payload = serde_json::from_value(payload)
                 .map_err(|error| format!("invalid cache_remote_bytes payload: {error}"))?;
             let cache_dir = std::env::temp_dir()
-                .join("biovault-desktop")
+                .join("biovault-app-desktop")
                 .join("remote-lab-files");
             let file = cache_remote_bytes_blocking(cache_dir, payload.request)?;
             serde_json::to_value(file)
@@ -1030,7 +1030,7 @@ pub async fn handle_ws_lab_request(
         }
         "list_cached_remote_lab_files" => {
             let cache_dir = std::env::temp_dir()
-                .join("biovault-desktop")
+                .join("biovault-app-desktop")
                 .join("remote-lab-files");
             serde_json::to_value(list_cached_remote_lab_files_blocking(cache_dir)?)
                 .map_err(|error| format!("encode cached file list: {error}"))
@@ -1044,7 +1044,7 @@ pub async fn handle_ws_lab_request(
             let payload: Payload = serde_json::from_value(payload)
                 .map_err(|error| format!("invalid delete_cached_remote_lab_file payload: {error}"))?;
             let cache_dir = std::env::temp_dir()
-                .join("biovault-desktop")
+                .join("biovault-app-desktop")
                 .join("remote-lab-files");
             delete_cached_remote_lab_file_blocking(cache_dir, &payload.source_url)?;
             Ok(serde_json::Value::Null)
@@ -1136,7 +1136,7 @@ pub async fn handle_ws_lab_request(
             let payload: Payload = serde_json::from_value(payload)
                 .map_err(|error| format!("invalid prepare_runtime_root payload: {error}"))?;
             let base = std::env::temp_dir()
-                .join("biovault-desktop")
+                .join("biovault-app-desktop")
                 .join("lab-runtime")
                 .join(format!("run-{}-{}", now_millis(), std::process::id()));
             fs::create_dir_all(base.join("inputs"))
@@ -3225,7 +3225,7 @@ fn download_url_file_blocking(
 fn remote_lab_file_cache_dir(app: &AppHandle) -> PathBuf {
     app.path()
         .app_cache_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-desktop"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-app-desktop"))
         .join("remote-lab-files")
 }
 
@@ -3366,7 +3366,7 @@ fn cached_record_to_js(record: CachedRemoteLabFileRecord) -> Result<CachedRemote
 
 fn desktop_fs_root_for_bridge() -> PathBuf {
     std::env::temp_dir()
-        .join("biovault-desktop")
+        .join("biovault-app-desktop")
         .join("expo-file-system")
 }
 
@@ -3386,7 +3386,7 @@ fn desktop_fs_uri_path(app: &AppHandle, uri: &str) -> Result<PathBuf, String> {
     let root = app
         .path()
         .app_cache_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-desktop"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("biovault-app-desktop"))
         .join("expo-file-system");
     desktop_fs_uri_path_for_root(root, uri)
 }

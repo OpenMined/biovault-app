@@ -1,0 +1,137 @@
+name: Desktop Builds
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-builds-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  APPIMAGE_EXTRACT_AND_RUN: 1
+
+jobs:
+  desktop-build:
+    name: Build desktop package (${{ matrix.target }})
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runs-on: namespace-profile-mac-medium
+            rust-target: aarch64-apple-darwin
+          - target: macos-x64
+            runs-on: macos-15-intel
+            rust-target: x86_64-apple-darwin
+          - target: windows-x64
+            runs-on: namespace-profile-windows-medium
+            rust-target: x86_64-pc-windows-msvc
+          - target: linux-x64
+            runs-on: namespace-profile-linux-medium
+            rust-target: x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Enable Windows long paths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CI submodules
+        shell: bash
+        run: ./scripts/init-ci-submodules.sh
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            desktop-file-utils \
+            file \
+            libfuse2 \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libxdo-dev \
+            patchelf \
+            pkg-config \
+            rpm \
+            squashfs-tools \
+            wget \
+            xdg-utils \
+            zsync \
+            appstream
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            bioscript/rust
+            desktop/src-tauri
+          key: desktop-build-${{ matrix.rust-target }}
+
+      - name: Install root npm dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install desktop npm dependencies
+        working-directory: desktop
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check desktop has no WASM dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n -E "bioscript-wasm|wasm-bindgen|wasm-pack|\\.wasm" -- desktop/src desktop/src-tauri desktop/index.html desktop/vite.config.ts desktop/tsconfig.json; then
+            exit 1
+          fi
+          cd desktop/src-tauri
+          cargo tree -i bioscript-wasm >/tmp/bioscript-wasm-tree.txt 2>&1 || true
+          if grep -q '^bioscript-wasm ' /tmp/bioscript-wasm-tree.txt; then
+            cat /tmp/bioscript-wasm-tree.txt
+            exit 1
+          fi
+          cargo tree -i wasm-bindgen >/tmp/wasm-bindgen-tree.txt 2>&1 || true
+          if grep -q '^wasm-bindgen ' /tmp/wasm-bindgen-tree.txt; then
+            cat /tmp/wasm-bindgen-tree.txt
+            exit 1
+          fi
+
+      - name: Build desktop frontend
+        working-directory: desktop
+        run: npm run build
+
+      - name: Build Tauri package
+        shell: bash
+        run: TAURI_TARGET="${{ matrix.rust-target }}" ./build.sh
+
+      - name: List package outputs
+        shell: bash
+        run: find desktop/src-tauri/target -maxdepth 8 -path "*/release/bundle/*" -type f -print | sort

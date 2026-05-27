@@ -21,7 +21,7 @@ export type BrowserSupportAssessment = {
 export function assessWebRuntimeSupport(): BrowserSupportAssessment {
   return {
     status: 'supported',
-    browserName: 'BioVault Desktop',
+    browserName: 'BioVaultApp Desktop',
     browserVersion: null,
     requiredMissing: [],
     optionalMissing: [],

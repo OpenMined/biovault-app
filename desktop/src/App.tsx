@@ -46,17 +46,17 @@ function DesktopShell() {
   useEffect(() => {
     const syncRoute = () => setActiveTab(tabFromPath(window.location.pathname))
     window.addEventListener('popstate', syncRoute)
-    window.addEventListener('biovault-desktop-route', syncRoute)
+    window.addEventListener('biovault-app-desktop-route', syncRoute)
     return () => {
       window.removeEventListener('popstate', syncRoute)
-      window.removeEventListener('biovault-desktop-route', syncRoute)
+      window.removeEventListener('biovault-app-desktop-route', syncRoute)
     }
   }, [])
 
   const openTab = (tabId: DesktopTabId) => {
     const path = tabId === 'lab' ? '/' : `/${tabId}`
     window.history.pushState({}, '', path)
-    window.dispatchEvent(new Event('biovault-desktop-route'))
+    window.dispatchEvent(new Event('biovault-app-desktop-route'))
     setActiveTab(tabId)
   }
 
@@ -65,7 +65,7 @@ function DesktopShell() {
       <View style={styles.sidebar}>
         <View style={styles.brand}>
           <OMText variant="headline" style={styles.brandTitle}>
-            BioVault
+            BioVaultApp
           </OMText>
           <OMText variant="caption" style={styles.brandMeta}>
             Desktop

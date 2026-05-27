@@ -16,7 +16,7 @@ const analytics = initBioVaultAnalytics({
 analytics.setUserAgent(
   [
     navigator.userAgent,
-    `BioVaultDesktop/0.1.0`,
+    `BioVaultAppDesktop/0.1.0`,
     `Tauri`,
     `Variant/${analyticsVariant}`,
     `OS/${navigator.platform || 'desktop'}`,

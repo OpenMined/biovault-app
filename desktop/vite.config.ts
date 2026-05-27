@@ -5,7 +5,7 @@ import path from 'node:path'
 export default defineConfig({
   plugins: [
     {
-      name: 'biovault-desktop-asset-require',
+      name: 'biovault-app-desktop-asset-require',
       enforce: 'pre',
       transform(code, id) {
         if (!/\.[cm]?[jt]sx?$/.test(id) || !code.includes('require(')) return null
@@ -18,7 +18,7 @@ export default defineConfig({
     },
     react(),
     {
-      name: 'biovault-desktop-native-copy',
+      name: 'biovault-app-desktop-native-copy',
       generateBundle(_, bundle) {
         for (const chunk of Object.values(bundle)) {
           if (chunk.type !== 'chunk') continue
