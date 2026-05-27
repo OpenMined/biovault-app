@@ -87,7 +87,7 @@ export function buildLabInputAnalyticsContext(
 	if (inspection) {
 		const vendor = inspection.source?.vendor ?? ''
 		const sourceVersion = inspection.source?.platformVersion ?? ''
-		const is23AndMeImputed = vendor === '23andMe' && inspection.detectedKind === 'bcf' && /^r\d+$/i.test(sourceVersion)
+		const isImputedBcfRelease = Boolean(vendor) && inspection.detectedKind === 'bcf' && /^r\d+$/i.test(sourceVersion)
 		context.input_assembly = inspection.assembly ?? ''
 		context.input_detected_kind = inspection.detectedKind ?? ''
 		context.detectedKind = inspection.detectedKind ?? ''
@@ -102,14 +102,14 @@ export function buildLabInputAnalyticsContext(
 		context.input_selected_entry_extension = inspection.selectedEntry ? safeLabAnalyticsExtension(inspection.selectedEntry) : ''
 		context.selectedEntryExtension = context.input_selected_entry_extension
 		context.input_vendor = vendor
-		context.input_vendor_version = is23AndMeImputed ? '' : sourceVersion
-		context.input_source_product = is23AndMeImputed ? '23andMe imputed genotype' : vendor
-		context.input_source_type = is23AndMeImputed ? 'imputed' : (vendor ? 'direct_to_consumer' : '')
-		context.input_imputation_version = is23AndMeImputed ? sourceVersion : ''
+		context.input_vendor_version = isImputedBcfRelease ? '' : sourceVersion
+		context.input_source_product = isImputedBcfRelease ? `${vendor} imputed genotype` : vendor
+		context.input_source_type = isImputedBcfRelease ? 'imputed' : (vendor ? 'direct_to_consumer' : '')
+		context.input_imputation_version = isImputedBcfRelease ? sourceVersion : ''
 		context.input_source_confidence = inspection.source?.confidence ?? ''
 		context.input_source_evidence_count = inspection.source?.evidence?.length ?? 0
 		context.sourceVendor = vendor
-		context.platformVersion = is23AndMeImputed ? '' : sourceVersion
+		context.platformVersion = isImputedBcfRelease ? '' : sourceVersion
 		context.assembly = inspection.assembly ?? ''
 	}
 	return context
