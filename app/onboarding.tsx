@@ -88,27 +88,27 @@ export function OnboardingAgreementCard({
 				toValue: 1,
 				duration: 220,
 				easing: Easing.out(Easing.quad),
-				useNativeDriver: true,
+				useNativeDriver: Platform.OS !== 'web',
 			}),
 			Animated.timing(stackTranslateY, {
 				toValue: 0,
 				duration: 220,
 				easing: Easing.out(Easing.quad),
-				useNativeDriver: true,
+				useNativeDriver: Platform.OS !== 'web',
 			}),
 			Animated.timing(infoCardOpacity, {
 				toValue: 1,
 				duration: 260,
 				delay: 50,
 				easing: Easing.out(Easing.quad),
-				useNativeDriver: true,
+				useNativeDriver: Platform.OS !== 'web',
 			}),
 			Animated.timing(infoCardTranslateY, {
 				toValue: 0,
 				duration: 260,
 				delay: 50,
 				easing: Easing.out(Easing.quad),
-				useNativeDriver: true,
+				useNativeDriver: Platform.OS !== 'web',
 			}),
 		]).start()
 	}, [infoCardOpacity, infoCardTranslateY, stackOpacity, stackTranslateY])

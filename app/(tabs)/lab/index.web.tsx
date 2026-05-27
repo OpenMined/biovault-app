@@ -727,10 +727,19 @@ function resourceSchemaKind(resource: { schema: string | null; kind: ResolvedRem
 }
 
 function resourceRegistryId(resource: ResolvedRemoteResource): string {
+	const source = normalizeRemoteAssayUrl(resource.sourceUrl || '')
+	const sourceKey = source
+		.toLowerCase()
+		.replace(/^https?:\/\//, '')
+		.replace(/[^a-z0-9._/-]+/g, '-')
+		.replace(/\/+/g, '/')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 160)
+	if (sourceKey) return `source:${sourceKey}`
 	const fromName = (resource as { name?: string }).name
-	if (typeof fromName === 'string' && fromName.trim()) return fromName.trim()
-	if (resource.title) return resource.title
-	return resource.sha256.slice(0, 16)
+	if (typeof fromName === 'string' && fromName.trim()) return `name:${fromName.trim()}`
+	if (resource.title) return `title:${resource.title}`
+	return `sha:${resource.sha256.slice(0, 16)}`
 }
 
 function packageFileSourceUrl(file: BioscriptPackageFile): string | null {
@@ -3038,6 +3047,7 @@ export default function LabScreen() {
 			{latestRun ? (
 				<View style={styles.resultSection}>
 					<RunCard
+						key={latestRun.id}
 						record={latestRun}
 						onViewSource={() => {
 							setSourceViewer({ files: latestRun.sourceFiles, title: latestRun.assay.title })
@@ -5193,7 +5203,10 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	const { result, assay } = record
 	const html = result.status === 'done' ? htmlArtifactForResult(result) : null
-	const artifacts = result.status === 'done' ? result.artifacts ?? [] : []
+	const artifacts = useMemo(
+		() => result.status === 'done' ? result.artifacts ?? [] : [],
+		[result],
+	)
 	// Use a blob URL instead of srcDoc so in-document hash navigation
 	// (the rust report's #observations / #analysis anchors) works correctly.
 	const [htmlBlobUrl, setHtmlBlobUrl] = useState<string | null>(null)
