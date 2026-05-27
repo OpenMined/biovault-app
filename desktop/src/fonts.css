@@ -1,0 +1,88 @@
+@font-face {
+  font-family: 'Inter';
+  src: url('../../node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../../node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../../node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../../node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Rubik';
+  src: url('../../node_modules/@expo-google-fonts/rubik/400Regular/Rubik_400Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Rubik';
+  src: url('../../node_modules/@expo-google-fonts/rubik/500Medium/Rubik_500Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Rubik';
+  src: url('../../node_modules/@expo-google-fonts/rubik/700Bold/Rubik_700Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  position: fixed;
+  inset: 0;
+  overscroll-behavior: none;
+}
+
+#root {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+#root > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}

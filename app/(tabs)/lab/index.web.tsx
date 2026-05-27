@@ -245,6 +245,12 @@ const FEATURED_CATALOG: LabAssay[] = [
 		tags: ['longevity', 'apoe', 'foxo3', 'risk', 'panel', 'featured'],
 	},
 ]
+
+function isDesktopRuntimeShell(): boolean {
+	if (process.env.EXPO_PUBLIC_BIOVAULT_DESKTOP === '1') return true
+	return Platform.OS === 'web' && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 function clearWebLaunchIntentHash() {
 	if (Platform.OS !== 'web' || !window.location.hash) return
 	const nextUrl = `${window.location.pathname}${window.location.search}`
@@ -397,6 +403,9 @@ function searchSessionAssays(assays: LabAssay[], query: string, category: AssayC
 
 function sortAssaysForPicker(assays: LabAssay[]): LabAssay[] {
 	return [...assays].sort((left, right) => {
+		const leftLocal = isLocalSessionAssay(left)
+		const rightLocal = isLocalSessionAssay(right)
+		if (leftLocal !== rightLocal) return leftLocal ? -1 : 1
 		const leftPanel = assayDisplayKind(left) === 'panel'
 		const rightPanel = assayDisplayKind(right) === 'panel'
 		if (leftPanel !== rightPanel) return leftPanel ? -1 : 1
@@ -408,9 +417,13 @@ function isSessionLabAssay(assay: LabAssay): assay is SessionLabAssay {
 	return 'file' in assay && assay.file instanceof File
 }
 
+function isLocalSessionAssay(assay: LabAssay): assay is SessionLabAssay {
+	return isSessionLabAssay(assay) && assay.url.startsWith('local://')
+}
+
 function assayDisplayKind(assay: LabAssay): 'assay' | 'panel' | 'variant' | 'other' {
 	if (isSessionLabAssay(assay)) {
-		if (assay.remoteKind === 'python') return 'other'
+		if (assay.remoteKind === 'python') return 'assay'
 		const schema = assay.remoteSchema?.toLowerCase() ?? ''
 		if (schema.startsWith('bioscript:panel')) return 'panel'
 		if (schema.startsWith('bioscript:variant')) return 'variant'
@@ -1736,7 +1749,7 @@ export default function LabScreen() {
 					verifiedName: stored?.primary?.name ?? null,
 				})
 				if (!stored?.primary) {
-					failed.push(`${item.fileName}: IndexedDB write verification failed`)
+						failed.push(`${item.fileName}: file handle persistence verification failed`)
 					continue
 				}
 				storedRows.push(documentId)
@@ -3353,6 +3366,7 @@ function BrowserSupportBlocker({ assessment }: { assessment: BrowserSupportAsses
 	const { styles } = useTheme()
 	const missingRequired = assessment?.requiredMissing ?? []
 	if (!missingRequired.length) return null
+	const desktop = isDesktopRuntimeShell()
 	return (
 		<View style={styles.browserSupportBlocker}>
 			<View style={styles.browserSupportBlockerIcon}>
@@ -3362,7 +3376,9 @@ function BrowserSupportBlocker({ assessment }: { assessment: BrowserSupportAsses
 				This browser cannot run BioVault assays
 			</OMText>
 			<OMText variant="body" style={styles.browserSupportBlockerBody}>
-				The Lab needs these browser runtime features before it can load files or start WebAssembly analysis.
+				{desktop
+					? 'The Lab needs these desktop runtime features before it can load files or start analysis.'
+					: 'The Lab needs these browser runtime features before it can load files or start WebAssembly analysis.'}
 			</OMText>
 			<View style={styles.browserSupportMissingList}>
 				{missingRequired.map((item) => (
@@ -4729,7 +4745,7 @@ function AssayPicker({
 		const isRunning = runningAssayId === assay.id
 		const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length && !packageReady)
 		const formatMeta = assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')
-		const sourceMeta = isRemote ? 'Cached remote' : ''
+		const sourceMeta = isLocalSessionAssay(assay) ? 'Local file' : isRemote ? 'Cached remote' : ''
 		const detailMeta = [formatMeta, sourceMeta].filter(Boolean).join(' · ')
 		return (
 			<Pressable
@@ -5041,6 +5057,8 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 	const { assay, result } = record
 	const [resultOpen, setResultOpen] = useState(false)
 	const artifactCount = result.status === 'done' ? result.artifacts?.length ?? 0 : 0
+	const textOutput = result.status === 'done' ? result.textOutput?.trim() ?? '' : ''
+	const observations = result.status === 'done' ? result.observations ?? [] : []
 	const compact = width < 560
 	const openResult = useCallback(() => {
 		if (result.status === 'done') {
@@ -5121,15 +5139,43 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 			) : null}
 
 			{result.status === 'done' ? (
-				artifactCount > 0 ? (
-					<OMText variant="caption" style={styles.runCardHint}>
-						{artifactCount} result artifact{artifactCount === 1 ? '' : 's'} saved locally.
-					</OMText>
-				) : (
-					<OMText variant="caption" style={styles.runCardHint}>
-						No rust HTML report. Load the assay/panel as a package zip — every run must go through `bioscript report`.
-					</OMText>
-				)
+				<>
+					{textOutput ? (
+						<View style={styles.preBlock}>
+							<OMText selectable variant="caption" style={styles.preText}>
+								{textOutput}
+							</OMText>
+						</View>
+					) : null}
+					{observations.length ? (
+						<View style={styles.preBlock}>
+							{observations.map((observation, index) => (
+								<OMText
+									key={`${observation.name}-${index}`}
+									selectable
+									variant="caption"
+									style={styles.preText}
+								>
+									{[
+										observation.name,
+										observation.genotype,
+										observation.decision,
+										observation.evidence.join('; '),
+									].filter(Boolean).join(' · ')}
+								</OMText>
+							))}
+						</View>
+					) : null}
+					{artifactCount > 0 ? (
+						<OMText variant="caption" style={styles.runCardHint}>
+							{artifactCount} result artifact{artifactCount === 1 ? '' : 's'} saved locally.
+						</OMText>
+					) : !textOutput && !observations.length ? (
+						<OMText variant="caption" style={styles.runCardHint}>
+							No native report output was produced. Load the assay/panel as a package zip for the full report view.
+						</OMText>
+					) : null}
+				</>
 			) : null}
 
 			{result.status === 'error' && result.error ? (
@@ -5531,7 +5577,7 @@ function RunProgress({ progress }: { progress: RunResult['progress'] }) {
 					<View style={[styles.runProgressFill, { backgroundColor: palette.accent, width: `${ratio * 100}%` }]} />
 				</View>
 			) : (
-				// `runPackageReportBytes` is a single opaque wasm call so we don't
+				// `runPackageReportBytes` is a single opaque native/runtime call so we don't
 				// know how many variants are left. Show an indeterminate animated
 				// bar instead of nothing so users know work is happening.
 				<IndeterminateProgressBar accent={palette.accent} />
@@ -6216,26 +6262,48 @@ function RunButtonShimmer() {
 function GettingStartedFeatureStrip({ compact }: { compact: boolean }) {
 	const { styles } = useTheme()
 	const featureStyles = styles as typeof styles & Record<string, any>
+	const desktop = isDesktopRuntimeShell()
 	const items = compact
-		? [
-				{ title: 'Local processing', body: 'Files stay in this browser.' },
-				{ title: 'WASM runtime', body: 'Assays run locally with WebAssembly.' },
-				{ title: 'You control files', body: 'Clear local storage anytime.' },
-			]
-		: [
-				{
-					title: 'Local by default',
-					body: 'Genome files are processed in your browser and are not uploaded to run assays.',
-				},
-				{
-					title: 'WASM runtime',
-					body: 'BioScript and genomics readers run through WebAssembly with worker-backed execution.',
-				},
-				{
-					title: 'You control files',
-					body: 'Use local files, cached remote resources, or sample data, then clear storage from settings.',
-				},
-			]
+		? desktop
+			? [
+					{ title: 'Local processing', body: 'Files stay on this computer.' },
+					{ title: 'Native Rust runtime', body: 'Assays run locally through BioScript Rust.' },
+					{ title: 'You control files', body: 'Clear local storage anytime.' },
+				]
+			: [
+					{ title: 'Local processing', body: 'Files stay in this browser.' },
+					{ title: 'WASM runtime', body: 'Assays run locally with WebAssembly.' },
+					{ title: 'You control files', body: 'Clear local storage anytime.' },
+				]
+		: desktop
+			? [
+					{
+						title: 'Local by default',
+						body: 'Genome files are processed on this computer and are not uploaded to run assays.',
+					},
+					{
+						title: 'Native Rust runtime',
+						body: 'BioScript and genomics readers run through the native Rust code linked into the desktop app.',
+					},
+					{
+						title: 'You control files',
+						body: 'Use local files, cached remote resources, or sample data, then clear storage from settings.',
+					},
+				]
+			: [
+					{
+						title: 'Local by default',
+						body: 'Genome files are processed in your browser and are not uploaded to run assays.',
+					},
+					{
+						title: 'WASM runtime',
+						body: 'BioScript and genomics readers run through WebAssembly with worker-backed execution.',
+					},
+					{
+						title: 'You control files',
+						body: 'Use local files, cached remote resources, or sample data, then clear storage from settings.',
+					},
+				]
 	return (
 		<View style={[featureStyles.gettingStartedFeatureStrip, compact ? featureStyles.gettingStartedFeatureStripCompact : null]}>
 			{items.map((item) => (

@@ -293,6 +293,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bioscript-reporting"
+version = "0.2.0"
+dependencies = [
+ "bioscript-core",
+ "bioscript-formats",
+ "bioscript-schema",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "bioscript-runtime"
 version = "0.2.0"
 dependencies = [
@@ -318,16 +329,25 @@ name = "biovault-desktop"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bioscript-core",
  "bioscript-ffi",
+ "bioscript-formats",
+ "bioscript-reporting",
+ "bioscript-runtime",
+ "bioscript-schema",
  "futures-util",
+ "monty",
+ "noodles",
  "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tokio",
+ "url",
  "zip",
 ]
 
@@ -2845,6 +2865,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34e7ed524a472dbd0dc69cc7b63408f37552e48460028af44a3024f2eb77f036"
 dependencies = [
  "noodles-bam",
+ "noodles-bcf",
  "noodles-bgzf",
  "noodles-core",
  "noodles-cram",
@@ -2866,6 +2887,20 @@ dependencies = [
  "noodles-core",
  "noodles-csi",
  "noodles-sam",
+]
+
+[[package]]
+name = "noodles-bcf"
+version = "0.86.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b724e6dd33b8327a59e500edec383da46d54ddb743e972b88f742836838e31b"
+dependencies = [
+ "indexmap 2.14.0",
+ "memchr",
+ "noodles-bgzf",
+ "noodles-core",
+ "noodles-csi",
+ "noodles-vcf",
 ]
 
 [[package]]
@@ -4480,6 +4515,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap 2.14.0",
  "itoa",
  "memchr",
  "serde",

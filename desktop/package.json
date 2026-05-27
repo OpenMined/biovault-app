@@ -14,6 +14,10 @@
   "dependencies": {
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-native-web": "^0.21.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "expo-asset": "~55.0.14",
+    "prism-react-renderer": "^2.4.1",
     "@tauri-apps/api": "^2.1.1"
   },
   "devDependencies": {
