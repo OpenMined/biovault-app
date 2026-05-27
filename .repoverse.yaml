@@ -34,7 +34,7 @@ projects:
 - name: pysam-developers/pysam
   path: repos/pysam
   revision: master
-- name: samtools/htslib
+- name: madhavajay/htslib
   path: repos/htslib
   revision: htslib-rs-compat
 - name: madhavajay/kestrel
@@ -62,7 +62,7 @@ provides:
 - paudano/kescases
 - paudano/kestrel
 - pysam-developers/pysam
-- samtools/htslib
+- madhavajay/htslib
 - madhavajay/kestrel
 - madhavajay/kestrel-rs
 - madhavajay/samtools-rs
@@ -102,7 +102,7 @@ links:
 - repo: pysam-developers/pysam
   at: bioscript/vendor/python/pysam
   branch: master
-- repo: samtools/htslib
+- repo: madhavajay/htslib
   at: bioscript/vendor/rust/htslib-rs/htslib
   branch: htslib-rs-compat
 - repo: madhavajay/kestrel
