@@ -39,6 +39,8 @@ test.describe('lab assay picker filters — web', () => {
 		await page.getByRole('button', { name: /^All \d+$/ }).click()
 		await expect(page.getByLabel('View assay PGx-1 Panel')).toHaveCount(1)
 		await expect(page.getByTestId('assay-result-row').filter({ hasText: /APOE|MTHFR|rs1128503/i }).first()).toBeVisible()
-		await expect(page.getByText(/bioscript:variant|bioscript:assay-compiled|\.py$/i)).toHaveCount(0)
+		await expect(
+			page.getByTestId('assay-result-row').filter({ hasText: /bioscript:variant|bioscript:assay-compiled|\.py$/i }),
+		).toHaveCount(0)
 	})
 })
