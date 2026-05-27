@@ -1,8 +1,8 @@
 name: Desktop Builds
 
 on:
-  pull_request:
-    branches: [ main ]
+  # Temporarily manual-only so web releases can merge/deploy without waiting
+  # on desktop package runners.
   workflow_dispatch:
 
 concurrency:
