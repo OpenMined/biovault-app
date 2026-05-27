@@ -43,12 +43,21 @@ projects:
 - name: madhavajay/kestrel-rs
   path: repos/kestrel-rs
   revision: main
+- name: madhavajay/htslib-rs
+  path: repos/htslib-rs
+  revision: main
+  consumes: [madhavajay/noodles]
+- name: madhavajay/noodles
+  path: repos/noodles
+  revision: madhava/bioscript
 - name: madhavajay/samtools-rs
   path: repos/samtools-rs
   revision: main
+  consumes: [madhavajay/htslib-rs]
 - name: madhavajay/bcftools-rs
   path: repos/bcftools-rs
   revision: main
+  consumes: [madhavajay/htslib-rs]
 - name: madhavajay/exvitae
   path: repos/exvitae
   revision: main
@@ -65,6 +74,8 @@ provides:
 - madhavajay/htslib
 - madhavajay/kestrel
 - madhavajay/kestrel-rs
+- madhavajay/htslib-rs
+- madhavajay/noodles
 - madhavajay/samtools-rs
 - madhavajay/bcftools-rs
 - madhavajay/exvitae
@@ -117,6 +128,18 @@ links:
 - repo: madhavajay/bcftools-rs
   at: bioscript/vendor/rust/bcftools-rs
   branch: main
+- repo: madhavajay/htslib-rs
+  at: bioscript/vendor/rust/htslib-rs
+  branch: main
+- repo: madhavajay/htslib-rs
+  at: bioscript/vendor/rust/bcftools-rs/repos/htslib-rs
+  branch: main
+- repo: madhavajay/htslib-rs
+  at: bioscript/vendor/rust/samtools-rs/repos/htslib-rs
+  branch: main
+- repo: madhavajay/noodles
+  at: repos/htslib-rs/repos/noodles
+  branch: madhava/bioscript
 - repo: madhavajay/exvitae
   at: exvitae
   branch: main
