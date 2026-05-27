@@ -7,6 +7,7 @@ export type FileRef =
 export type DetectedKind =
 	| 'genotype_text'
 	| 'vcf'
+	| 'bcf'
 	| 'alignment_cram'
 	| 'alignment_bam'
 	| 'reference_fasta'

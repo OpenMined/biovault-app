@@ -96,9 +96,7 @@ test('lab: PGx-1 package runs against default 23andMe ZIP in browser', async ({ 
 	await expect(page.getByTestId('assay-result-row').filter({ hasText: 'PGx-1 Panel' }).first().getByText('Run panel', { exact: true })).toBeVisible({ timeout: 60_000 })
 	const closeSharedResource = dialog.getByRole('button', { name: 'Close shared resource dialog' })
 	if (await closeSharedResource.isVisible({ timeout: 1_000 }).catch(() => false)) {
-		await closeSharedResource.evaluate((element) => {
-			;(element as HTMLElement).click()
-		})
+		await closeSharedResource.click({ force: true, timeout: 5_000 }).catch(() => {})
 	}
 	if (await dialog.isVisible({ timeout: 1_000 }).catch(() => false)) {
 		await expect(dialog).toBeHidden({ timeout: 10_000 })

@@ -15,9 +15,11 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30000
 const BIOSCRIPT_NAME_CACHE = new Map()
 
 const PRODUCT_EVENTS = new Set([
+	'lab_input_ready',
 	'lab_files_added',
 	'using_file_heuristics',
 	'lab_run_started',
+	'lab_run_metadata_ready',
 	'lab_report_generated',
 	'lab_run_completed',
 	'lab_run_failed',
@@ -62,7 +64,11 @@ async function buildReport(options) {
 		const config = getConfig(site, options)
 		const cachePath = path.join(cacheDir, `${config.siteId}-${minutes}-${eventLimit}-events.json`)
 		let events
-		if (options.useCache && fs.existsSync(cachePath)) {
+		if (options.inputEvents) {
+			const inputPath = path.resolve(process.cwd(), String(options.inputEvents))
+			console.error(`Using fixture/raw events for ${config.label}: ${inputPath}`)
+			events = loadInputEvents(inputPath)
+		} else if (options.useCache && fs.existsSync(cachePath)) {
 			console.error(`Using cached ${config.label} events: ${cachePath}`)
 			events = JSON.parse(fs.readFileSync(cachePath, 'utf8'))
 		} else {
@@ -71,9 +77,17 @@ async function buildReport(options) {
 			fs.mkdirSync(cacheDir, { recursive: true })
 			fs.writeFileSync(cachePath, JSON.stringify(events, null, 2), 'utf8')
 		}
-		siteReports.push(analyzeSite(config, events, eventLimit))
+		siteReports.push(analyzeSite(config, events, eventLimit, minutes))
 	}
 	return { eventLimit, generatedAt, minutes, sites: siteReports }
+}
+
+function loadInputEvents(inputPath) {
+	const value = JSON.parse(fs.readFileSync(inputPath, 'utf8'))
+	if (Array.isArray(value)) return value
+	if (Array.isArray(value?.data)) return value.data
+	if (Array.isArray(value?.events)) return value.events
+	throw new Error(`Input events file must contain an array, { data }, or { events }: ${inputPath}`)
 }
 
 async function fetchEvents(config, timeParams, eventLimit) {
@@ -96,9 +110,11 @@ async function fetchEvents(config, timeParams, eventLimit) {
 	return events
 }
 
-function analyzeSite(config, rawEvents, eventLimit) {
+function analyzeSite(config, rawEvents, eventLimit, minutes) {
+	const cutoffMs = minutes ? Date.now() - Number(minutes) * 60_000 : 0
 	const events = rawEvents
 		.map(normalizeEvent)
+		.filter((event) => !cutoffMs || event.timeMs >= cutoffMs)
 		.filter((event) => event.name === 'pageview' || PRODUCT_EVENTS.has(event.name))
 		.sort((a, b) => a.timeMs - b.timeMs)
 	const users = new Map()
@@ -119,7 +135,7 @@ function analyzeSite(config, rawEvents, eventLimit) {
 		eventsFetched: rawEvents.length,
 		eventsUsed: events.length,
 		eventLimit,
-		dailyRows: dailyRows(daily),
+		dailyRows: dailyRows(daily, users),
 		summary: siteSummary(userRows),
 		totalUsers: users.size,
 		activeProductUsers: activeProductUsers.length,
@@ -147,6 +163,7 @@ function applyEvent(user, event, daily) {
 	addUnique(user.identifiedUsers, event.identified_user_id)
 	addUnique(user.usernames, event.traits?.username)
 	addEnvironment(user, event)
+	addTrafficSource(user, event)
 	if (event.sessionId) user.sessions.add(String(event.sessionId))
 	if (event.timestamp) {
 		user.activeDays.add(brisbaneDate(event.timeMs))
@@ -167,6 +184,7 @@ function applyEvent(user, event, daily) {
 		user.demoRequests += 1
 		day.demoRequests += 1
 		addDemo(user, props)
+		markDemoActivity(user, day)
 		user.currentInput = makeInputContext('demo', props, event)
 		return
 	}
@@ -175,6 +193,8 @@ function applyEvent(user, event, daily) {
 		user.demoLoads += count
 		day.demoFiles += count
 		addDemo(user, props)
+		addInputType(user, props, 'demo')
+		markDemoActivity(user, day)
 		user.currentInput = makeInputContext('demo', props, event)
 		return
 	}
@@ -188,15 +208,39 @@ function applyEvent(user, event, daily) {
 		const sources = arrayProp(props.fileSources)
 		const totalFiles = numberProp(props.totalFiles, Math.max(1, sources.length))
 		user.filesAdded += totalFiles
-		const isDemo = props.is_demo_file === true || props.data_source === 'demo' || sources.includes('bundled')
-		const kind = isDemo ? 'demo' : 'real'
-		if (isDemo) {
+		const kind = inputKindFromProps(props)
+		if (kind === 'demo') {
 			user.demoFileAdds += totalFiles
 			day.demoFiles += totalFiles
 			addDemo(user, props)
+			addInputType(user, props, 'demo')
+			markDemoActivity(user, day)
 		} else {
 			user.realFileAdds += totalFiles
 			day.realFiles += totalFiles
+			addRealFile(user, props)
+			addInputType(user, props, 'real')
+			markRealActivity(user, day)
+		}
+		user.currentInput = makeInputContext(kind, props, event)
+		return
+	}
+	if (event.name === 'lab_input_ready') {
+		const totalFiles = numberProp(props.input_related_file_count, numberProp(props.totalFiles, 1))
+		user.filesAdded += totalFiles
+		const kind = inputKindFromProps(props)
+		if (kind === 'demo') {
+			user.demoFileAdds += totalFiles
+			day.demoFiles += totalFiles
+			addDemo(user, props)
+			addInputType(user, props, 'demo')
+			markDemoActivity(user, day)
+		} else {
+			user.realFileAdds += totalFiles
+			day.realFiles += totalFiles
+			addRealFile(user, props)
+			addInputType(user, props, 'real')
+			markRealActivity(user, day)
 		}
 		user.currentInput = makeInputContext(kind, props, event)
 		return
@@ -204,13 +248,32 @@ function applyEvent(user, event, daily) {
 	if (event.name === 'using_file_heuristics') {
 		user.heuristics += 1
 		mergeHeuristics(user.currentInput, props)
-		if (user.currentInput?.kind !== 'demo') addRealFile(user, props)
+		if (user.currentInput && shouldCoerceLegacyDemoInput(propsFromInput(user.currentInput), props)) {
+			user.currentInput.kind = 'demo'
+		}
+		if (user.currentInput?.kind !== 'demo') {
+			addRealFile(user, props)
+			addInputType(user, props, 'real')
+		} else {
+			addInputType(user, props, 'demo')
+		}
+		return
+	}
+	if (event.name === 'lab_run_metadata_ready') {
+		const input = hasExplicitInputProps(props) ? makeInputContext(inputKindFromProps(props), props, event) : user.currentInput
+		if (input) {
+			user.currentInput = input
+			if (user.currentRun) user.currentRun.input = inputSummary(input) || user.currentRun.input
+		}
 		return
 	}
 	if (event.name === 'lab_run_started') {
 		user.runsStarted += 1
 		day.runsStarted += 1
-		const run = makeRun(props, event, user.currentInput)
+		const input = hasExplicitInputProps(props) ? makeInputContext(inputKindFromProps(props), props, event) : user.currentInput
+		if (input?.kind === 'demo') markDemoActivity(user, day)
+		else if (input) markRealActivity(user, day)
+		const run = makeRun(props, event, input)
 		user.runs.push(run)
 		user.currentRun = run
 		addAssay(user, props)
@@ -221,14 +284,45 @@ function applyEvent(user, event, daily) {
 		const report = makeReport(props, event, user.currentInput, user.currentRun)
 		user.reports.push(report)
 		addReportSummary(user, report)
-		if (report.input.startsWith('demo')) day.demoReports += 1
-		else day.realReports += 1
+		if (report.input.startsWith('demo')) {
+			day.demoReports += 1
+			markDemoActivity(user, day)
+		} else {
+			day.realReports += 1
+			markRealActivity(user, day)
+		}
 		return
 	}
 	if (event.name === 'lab_run_completed') {
 		user.runsCompleted += 1
 		day.runsCompleted += 1
-		if (user.currentRun) user.currentRun.status = 'completed'
+		const input = hasExplicitInputProps(props) ? makeInputContext(inputKindFromProps(props), props, event) : user.currentInput
+		if (input?.kind === 'demo') {
+			day.demoReports += 1
+			markDemoActivity(user, day)
+		} else if (input) {
+			day.realReports += 1
+			markRealActivity(user, day)
+		}
+		if (input && input.kind !== 'demo') {
+			const inputProps = propsFromInput(input)
+			addRealFile(user, inputProps)
+			addInputType(user, inputProps, 'real')
+		}
+		addAssay(user, props)
+		if (user.currentRun) {
+			user.currentRun.status = 'completed'
+			user.currentRun.input = inputSummary(input) || user.currentRun.input
+		} else {
+			const run = makeRun(props, event, input)
+			run.status = 'completed'
+			user.runs.push(run)
+			user.currentRun = run
+		}
+		addReportSummary(user, {
+			assay: reportLabel(props, user.currentRun?.assay),
+			input: inputSummary(input || user.currentRun?.input),
+		})
 		return
 	}
 	if (event.name === 'lab_run_failed') {
@@ -249,41 +343,81 @@ function makeInputContext(kind, props, event) {
 		assayContext: '',
 		demo: '',
 		extensions: new Set(),
-		format: '',
-		genomeKind: props.genomeKind ? String(props.genomeKind) : '',
+		format: firstValue(props.input_format, props.file_format),
+		genomeKind: props.genomeKind ? String(props.genomeKind) : firstValue(props.input_type),
+		id: firstValue(props.input_id),
 		kind,
 		metadata: new Set(),
 		source: '',
 		timeMs: event.timeMs,
-		vendor: '',
+		vendor: firstValue(props.input_vendor),
 	}
-	for (const value of arrayProp(props.fileSources)) input.metadata.add(`source:${value}`)
-	for (const value of arrayProp(props.fileKinds).concat(arrayProp(props.demo_file_kinds))) input.metadata.add(`kind:${value}`)
-	for (const value of arrayProp(props.demo_file_extensions)) addExtension(input.extensions, value)
+	for (const value of arrayProp(props.fileSources).concat(arrayProp(props.input_source))) input.metadata.add(`source:${value}`)
+	for (const value of arrayProp(props.fileKind).concat(arrayProp(props.fileKinds)).concat(arrayProp(props.demo_file_kinds)).concat(arrayProp(props.input_file_kinds)).concat(arrayProp(props.input_related_file_kinds))) input.metadata.add(`kind:${value}`)
+	for (const value of arrayProp(props.demo_file_extensions).concat(arrayProp(props.input_file_extensions)).concat(arrayProp(props.input_additional_file_extensions))) addExtension(input.extensions, value)
 	addExtension(input.extensions, props.fileExtension)
+	addExtension(input.extensions, props.input_primary_file_extension)
 	addExtension(input.extensions, props.selectedEntryExtension)
+	addExtension(input.extensions, props.input_selected_entry_extension)
 	input.demo = firstValue(props.demo_title, props.demo_filename, props.demo_bundle_id, props.bundleId)
-	input.source = firstValue(props.data_source, props.source, props.remoteKind)
+	input.source = firstValue(props.input_source, props.data_source, props.source, props.remoteKind)
 	mergeHeuristics(input, props)
 	return input
 }
 
 function mergeHeuristics(input, props) {
 	if (!input) return
-	input.format ||= firstValue(props.inputFormat, props.detectedKind)
-	input.vendor ||= firstValue(props.sourceVendor)
+	input.format ||= firstValue(props.inputFormat, props.input_format, props.file_format, props.detectedKind, props.input_detected_kind)
+	input.vendor ||= firstValue(props.sourceVendor, props.input_vendor)
 	input.genomeKind ||= firstValue(props.genomeKind)
-	for (const value of arrayProp(props.relatedFileExtensions)) addExtension(input.extensions, value)
+	for (const value of arrayProp(props.relatedFileExtensions).concat(arrayProp(props.input_file_extensions)).concat(arrayProp(props.input_additional_file_extensions))) addExtension(input.extensions, value)
 	addExtension(input.extensions, props.fileExtension)
+	addExtension(input.extensions, props.input_primary_file_extension)
 	addExtension(input.extensions, props.selectedEntryExtension)
-	for (const key of ['assembly', 'confidence', 'sourceConfidence', 'platformVersion', 'container', 'detectedKind']) {
+	addExtension(input.extensions, props.input_selected_entry_extension)
+	for (const key of ['input_id', 'assembly', 'input_assembly', 'confidence', 'input_confidence', 'sourceConfidence', 'input_source_confidence', 'platformVersion', 'input_vendor_version', 'input_source_product', 'input_source_type', 'input_imputation_version', 'container', 'input_container', 'detectedKind', 'input_detected_kind', 'input_hash_sha256', 'file_hash_sha256']) {
 		if (props[key] !== undefined && props[key] !== null && props[key] !== '') input.metadata.add(`${key}:${props[key]}`)
 	}
 }
 
+function hasExplicitInputProps(props) {
+	return props.input_id || props.input_format || props.file_format || props.input_type || props.is_demo_file !== undefined || props.is_user_supplied_data !== undefined
+}
+
+function inputKindFromProps(props) {
+	if (props.is_demo_file === true || props.is_demo_file === 'true' || props.input_source === 'demo' || props.data_source === 'demo' || arrayProp(props.fileSources).includes('bundled')) return 'demo'
+	if (props.is_user_supplied_data === true || props.is_user_supplied_data === 'true' || props.input_source === 'local' || props.input_source === 'url') return 'real'
+	if (shouldCoerceLegacyDemoInput(props)) return 'demo'
+	return 'real'
+}
+
+function shouldCoerceLegacyDemoInput(...propSets) {
+	const props = Object.assign({}, ...propSets.filter(Boolean))
+	if (hasExplicitModernInputOwnership(props)) return false
+	const sourceUrl = firstValue(props.sourceUrl, props.packageSourceUrl, props.url)
+	const bundleId = firstValue(props.bundleId, props.demo_bundle_id)
+	const title = firstValue(props.demo_title, props.demo_filename)
+	if (bundleId === 'biovault-23andme-sample') return true
+	if (/sample 23andme zip|genome_hu50b3f5_v5_full/i.test(title)) return true
+	if (/biovault-data\/blob\/main\/snp\/23andme\/v5\/hu50b3f5\/genome_hu50b3f5_v5_full\.zip/i.test(sourceUrl)) return true
+	if (/openmined\/biovault-data/i.test(sourceUrl) && /23andme\/v5\/hu50b3f5/i.test(sourceUrl)) return true
+
+	const normalized = normalizedInputFromProps(props)
+	if (normalized.type === 'snp' && normalized.source === '23andMe v5') return true
+	return false
+}
+
+function hasExplicitModernInputOwnership(props) {
+	return props.is_demo_file !== undefined ||
+		props.is_user_supplied_data !== undefined ||
+		props.input_source === 'demo' ||
+		props.input_source === 'local' ||
+		props.input_source === 'url'
+}
+
 function makeRun(props, event, input) {
 	return {
-		assay: reportLabel(props, firstValue(props.assayId, props.internalAssayId, 'unknown')),
+		assay: normalizeAssayName(reportLabel(props, firstValue(props.assayId, props.internalAssayId, 'unknown'))),
 		genomeKind: firstValue(props.genomeKind, input?.genomeKind),
 		input: inputSummary(input),
 		inputKind: typeof input === 'string' ? inputKindFromSummary(input) : (input?.kind ?? ''),
@@ -297,7 +431,7 @@ function makeRun(props, event, input) {
 function makeReport(props, event, input, run) {
 	return {
 		artifacts: arrayProp(props.artifactNames),
-		assay: reportLabel(props, run?.assay),
+		assay: normalizeAssayName(reportLabel(props, run?.assay)),
 		genomeKind: firstValue(props.genomeKind, run?.genomeKind, input?.genomeKind),
 		input: inputSummary(input || run?.input),
 		remoteKind: firstValue(props.remoteKind, run?.remoteKind),
@@ -323,6 +457,7 @@ function inputKindFromSummary(value) {
 }
 
 function metadataValue(input, key) {
+	if (!input || typeof input === 'string' || !input.metadata) return ''
 	const prefix = `${key}:`
 	const value = [...input.metadata].find((item) => item.startsWith(prefix))
 	return value ? value.slice(prefix.length) : ''
@@ -338,15 +473,29 @@ function addRealFile(user, props) {
 	const normalized = normalizedInputFromProps(props)
 	increment(user.realInputLabels, normalized.label)
 	if (normalized.extra) increment(user.realInputExtras, normalized.extra)
+	increment(user.realInputSourceGroups, inputSourceGroup(normalized.source))
+	incrementNested(user.realInputSourceDetails, inputSourceGroup(normalized.source), normalized.source)
+}
+
+function addInputType(user, props, kind) {
+	const normalized = normalizedInputFromProps(props)
+	const identity = inputIdentityKey(props, normalized)
+	if (kind === 'demo') {
+		increment(user.demoInputTypes, normalized.type)
+		user.demoFileIdentities.set(identity, normalized.type)
+	} else {
+		increment(user.realInputTypes, normalized.type)
+		user.realFileIdentities.set(identity, normalized.type)
+	}
 }
 
 function addAssay(user, props) {
-	const assay = firstValue(props.assayId, props.internalAssayId)
+	const assay = normalizeAssayName(reportLabel(props, firstValue(props.assayId, props.internalAssayId)))
 	if (assay) increment(user.assays, assay)
 }
 
 function addReportSummary(user, report) {
-	const assay = report.assay || 'unknown'
+	const assay = normalizeAssayName(report.assay || 'unknown')
 	if (report.input.startsWith('demo')) increment(user.demoReports, assay)
 	else increment(user.realReports, assay)
 }
@@ -365,11 +514,15 @@ function normalizedInputFromProps(props) {
 
 function normalizedInputType(props) {
 	const rawType = firstValue(props.input_type, props.inputType).toLowerCase()
-	if (['snp', 'vcf', 'cram', 'bam', 'fasta', 'unknown'].includes(rawType)) return rawType
+	if (['snp', 'vcf', 'bcf', 'cram', 'bam', 'fasta', 'unknown'].includes(rawType)) return rawType
 	const detectedKind = String(props.detectedKind ?? props.input_detected_kind ?? '').toLowerCase()
-	const inputFormat = String(props.inputFormat ?? props.input_format ?? '').toLowerCase()
+	const inputFormat = String(props.inputFormat ?? props.input_format ?? props.file_format ?? '').toLowerCase()
 	const genomeKind = String(props.genomeKind ?? '').toLowerCase()
-	const fileKinds = arrayProp(props.fileKinds).map((value) => value.toLowerCase())
+	const fileKinds = arrayProp(props.fileKinds)
+		.concat(arrayProp(props.fileKind))
+		.concat(arrayProp(props.input_file_kinds))
+		.concat(arrayProp(props.input_related_file_kinds))
+		.map((value) => value.toLowerCase())
 	if (
 		detectedKind === 'genotype_text' ||
 		inputFormat === 'genotype_text' ||
@@ -377,9 +530,11 @@ function normalizedInputType(props) {
 		inputFormat === 'zip' ||
 		genomeKind === 'text' ||
 		genomeKind === 'zip' ||
+		genomeKind === 'snp' ||
 		fileKinds.some((kind) => kind === 'genotype_text' || kind === 'zip')
 	) return 'snp'
 	if (detectedKind === 'vcf' || inputFormat === 'vcf' || inputFormat === 'vcf_gz' || genomeKind === 'vcf' || genomeKind === 'vcf_gz' || fileKinds.some((kind) => kind === 'vcf_gz' || kind === 'vcf' || kind === 'tbi')) return 'vcf'
+	if (detectedKind === 'bcf' || inputFormat === 'bcf' || genomeKind === 'bcf' || fileKinds.some((kind) => kind === 'bcf')) return 'bcf'
 	if (detectedKind === 'alignment_cram' || inputFormat === 'cram' || genomeKind === 'cram' || fileKinds.some((kind) => kind === 'cram' || kind === 'crai')) return 'cram'
 	if (detectedKind === 'alignment_bam' || inputFormat === 'bam' || genomeKind === 'bam' || fileKinds.some((kind) => kind === 'bam' || kind === 'bai')) return 'bam'
 	if (detectedKind === 'reference_fasta' || inputFormat === 'fasta' || genomeKind === 'fasta' || fileKinds.some((kind) => kind === 'fasta' || kind === 'fai')) return 'fasta'
@@ -390,6 +545,10 @@ function normalizedInputSource(props, type) {
 	if (type !== 'snp') return 'Unknown'
 	const explicit = firstValue(props.input_source_label, props.inputSourceLabel)
 	if (explicit) return explicit
+	const product = firstValue(props.input_source_product)
+	const sourceType = firstValue(props.input_source_type)
+	const imputationVersion = firstValue(props.input_imputation_version)
+	if (product && sourceType === 'imputed') return imputationVersion ? `${product} ${imputationVersion}` : product
 	const vendor = firstValue(props.input_vendor, props.inputVendor, props.sourceVendor)
 	const version = firstValue(props.input_vendor_version, props.inputVendorVersion, props.platformVersion)
 	if (!vendor) return 'Unknown'
@@ -399,10 +558,16 @@ function normalizedInputSource(props, type) {
 
 function normalizedInputExtra(props) {
 	const type = normalizedInputType(props)
-	const related = normalizedExtensions(arrayProp(props.relatedFileExtensions))
-	const fileExtension = normalizeExtension(props.fileExtension)
-	const selectedEntryExtension = normalizeExtension(props.selectedEntryExtension)
-	const fileKinds = arrayProp(props.fileKinds).map((value) => value.toLowerCase())
+	const related = normalizedExtensions(arrayProp(props.relatedFileExtensions)
+		.concat(arrayProp(props.input_file_extensions))
+		.concat(arrayProp(props.input_additional_file_extensions)))
+	const fileExtension = normalizeExtension(firstValue(props.fileExtension, props.input_primary_file_extension))
+	const selectedEntryExtension = normalizeExtension(firstValue(props.selectedEntryExtension, props.input_selected_entry_extension))
+	const fileKinds = arrayProp(props.fileKinds)
+		.concat(arrayProp(props.fileKind))
+		.concat(arrayProp(props.input_file_kinds))
+		.concat(arrayProp(props.input_related_file_kinds))
+		.map((value) => value.toLowerCase())
 	const extensions = normalizedExtensions([
 		...related,
 		fileExtension,
@@ -410,6 +575,7 @@ function normalizedInputExtra(props) {
 		...fileKinds.map(extensionForKind),
 	])
 	if (type === 'vcf') return extensionExtra(extensions, [['.vcf.gz', '.vcf.gz.tbi'], ['.vcf', '.vcf.tbi']], ['.vcf.gz', '.vcf'])
+	if (type === 'bcf') return extensionExtra(extensions, [], ['.bcf'])
 	if (type === 'cram') return extensionExtra(extensions, [['.cram', '.cram.crai'], ['.fa', '.fa.fai'], ['.fasta', '.fasta.fai']], ['.cram'])
 	if (type === 'bam') return extensionExtra(extensions, [['.bam', '.bam.bai'], ['.fa', '.fa.fai'], ['.fasta', '.fasta.fai']], ['.bam'])
 	if (type === 'fasta') return extensionExtra(extensions, [['.fa', '.fa.fai'], ['.fasta', '.fasta.fai']], ['.fa', '.fasta'])
@@ -449,20 +615,31 @@ function sourceFromLabel(value) {
 
 function propsFromInput(input) {
 	const props = {
-		detectedKind: input.format,
+		detectedKind: firstValue(metadataValue(input, 'input_detected_kind'), metadataValue(input, 'detectedKind'), input.format),
+		input_hash_sha256: firstValue(metadataValue(input, 'input_hash_sha256'), metadataValue(input, 'file_hash_sha256')),
+		input_id: firstValue(input.id, metadataValue(input, 'input_id')),
 		genomeKind: input.genomeKind,
-		platformVersion: metadataValue(input, 'platformVersion'),
+		input_vendor: input.vendor,
+		input_imputation_version: metadataValue(input, 'input_imputation_version'),
+		input_source_product: metadataValue(input, 'input_source_product'),
+		input_source_type: metadataValue(input, 'input_source_type'),
+		input_vendor_version: firstValue(metadataValue(input, 'input_vendor_version'), metadataValue(input, 'platformVersion')),
+		input_format: input.format,
+		platformVersion: firstValue(metadataValue(input, 'input_vendor_version'), metadataValue(input, 'platformVersion')),
 		sourceVendor: input.vendor,
 	}
 	const extensions = [...input.extensions].filter(Boolean)
 	props.relatedFileExtensions = extensions
+	props.input_file_extensions = extensions
 	props.fileExtension = extensions.includes('.zip') ? '.zip' : extensions[0] || ''
+	props.input_primary_file_extension = props.fileExtension
 	props.selectedEntryExtension = extensions.includes('.zip') && extensions.includes('.txt') ? '.txt' : ''
+	props.input_selected_entry_extension = props.selectedEntryExtension
 	return props
 }
 
 function reportLabel(props, fallback) {
-	const explicit = firstValue(props.assayName, props.panelName, props.bioscriptName, props.name)
+	const explicit = firstValue(props.assay_name, props.assayName, props.panelName, props.bioscriptName, props.name)
 	if (explicit) return explicit
 	const sourceUrl = firstValue(props.sourceUrl, props.packageSourceUrl)
 	const localName = localBioscriptNameFromUrl(sourceUrl)
@@ -490,6 +667,27 @@ function reportLabelFromUrl(value) {
 	const fileMatch = decoded.match(/\/([^/]+)\.ya?ml$/i)
 	if (fileMatch && fileMatch[1] !== 'manifest' && fileMatch[1] !== 'assay') return fileMatch[1]
 	return ''
+}
+
+function normalizeAssayName(value) {
+	const raw = String(value ?? '').trim()
+	if (!raw) return ''
+	const key = raw
+		.toLowerCase()
+		.replace(/[_\s]+/g, '-')
+		.replace(/-+/g, '-')
+	if (key === 'pgx' || key === 'pgx-1' || key === 'pgx-1-panel' || key === 'gpx') return 'PGx'
+	if (key === 'glp1' || key === 'glp1-medication-response') return 'GLP1'
+	if (key === 'prostate-cancer-prs' || key === 'prostate-cancer-prs-schumacher') return 'Prostate cancer PRS'
+	if (key === 'apol1') return 'APOL1'
+	if (key === 'apoe' || key === 'apoe-epsilon-pgx' || key === 'apoe-assay') return 'APOE'
+	if (key === 'foxo3-longevity' || key === 'longevity') return 'FOXO3 longevity'
+	if (key === 'pcsk9-ldl' || key === 'pcsk9') return 'PCSK9'
+	if (key === 'thalassemia' || key === 'thalassemia-status') return 'Thalassemia'
+	if (key === 'mthfr-c677t-a1298c' || key === 'mthfr') return 'PGx'
+	if (/^(abcb1|abcg2|adra2a|cyp|slco|dpyd|tpmt|nudt15|vkorc1|hla)-/.test(key)) return 'PGx'
+	if (key === 'unknown' || key === 'unknown-manifest' || key === 'manifest') return 'unknown'
+	return raw
 }
 
 function localBioscriptNameFromUrl(value) {
@@ -530,24 +728,33 @@ function getUser(users, id) {
 			currentRun: null,
 			demoExtensions: new Map(),
 			demoFileAdds: 0,
+			demoFileIdentities: new Map(),
 			demoFiles: new Map(),
+			demoInputTypes: new Map(),
 			demoLoads: 0,
 			demoReports: new Map(),
 			demoRequests: 0,
+			didDemo: false,
+			didReal: false,
 			events: 0,
 			environments: new Map(),
 			filesAdded: 0,
+			firstTrafficSource: '',
 			firstSeenMs: 0,
 			heuristics: 0,
 			id,
-				identifiedUsers: new Set(),
-				lastSeenMs: 0,
-				pageviews: 0,
-				realFileAdds: 0,
-				realInputExtras: new Map(),
-				realInputLabels: new Map(),
-				realReports: new Map(),
-				remoteFileLoads: 0,
+			identifiedUsers: new Set(),
+			lastSeenMs: 0,
+			pageviews: 0,
+			realFileAdds: 0,
+			realFileIdentities: new Map(),
+			realInputExtras: new Map(),
+			realInputLabels: new Map(),
+			realInputSourceDetails: new Map(),
+			realInputSourceGroups: new Map(),
+			realInputTypes: new Map(),
+			realReports: new Map(),
+			remoteFileLoads: 0,
 			reportOpens: 0,
 			reports: [],
 			reportsGenerated: 0,
@@ -567,12 +774,15 @@ function getDaily(daily, event) {
 	if (!daily.has(date)) {
 		daily.set(date, {
 			date,
+			demoUsers: new Set(),
 			demoFiles: 0,
 			demoReports: 0,
 			demoRequests: 0,
 			pageviews: 0,
+			realUsers: new Set(),
 			realFiles: 0,
 			realReports: 0,
+			returnUsers: new Set(),
 			remoteFiles: 0,
 			reportOpens: 0,
 			runsCompleted: 0,
@@ -585,11 +795,21 @@ function getDaily(daily, event) {
 	return daily.get(date)
 }
 
-function dailyRows(daily) {
+function dailyRows(daily, users) {
+	for (const user of users.values()) {
+		if (user.sessions.size <= 1) continue
+		for (const date of user.activeDays) {
+			const day = daily.get(date)
+			if (day) day.returnUsers.add(user.id)
+		}
+	}
 	return [...daily.values()]
 		.sort((a, b) => a.date.localeCompare(b.date))
 		.map((row) => ({
 			...row,
+			demoUsers: row.demoUsers.size,
+			realUsers: row.realUsers.size,
+			returnUsers: row.returnUsers.size,
 			sessions: row.sessions.size,
 			users: row.users.size,
 		}))
@@ -654,34 +874,88 @@ function renderHtml(report) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style>
-:root { color-scheme: light; --bg: #f7f7f4; --panel: #fff; --ink: #17201b; --muted: #66706a; --line: #d9ded7; --accent: #2f7d57; --soft: #eef3ef; }
+:root {
+	color-scheme: light;
+	--bg: #fbfcfb;
+	--panel: #ffffff;
+	--ink: #18211d;
+	--ink-2: #47564f;
+	--muted: #6c7972;
+	--line: #e3e8e5;
+	--line-2: #eef2f0;
+	--accent: #10b981;
+	--accent-2: #0f766e;
+	--accent-soft: #dff8ed;
+	--blue: #2563eb;
+	--violet: #7c3aed;
+	--warn: #f59e0b;
+	--rose: #e11d48;
+	--soft: #f2f7f4;
+	--shadow: 0 1px 2px rgba(24, 33, 29, .04), 0 10px 30px rgba(24, 33, 29, .06);
+	--radius: 14px;
+}
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-header { padding: 26px 32px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
-main { padding: 0 32px 36px; }
-h1 { margin: 0 0 6px; font-size: 26px; line-height: 1.15; letter-spacing: 0; }
-h2 { margin: 26px 0 10px; font-size: 20px; }
-h3 { margin: 18px 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-th { background: var(--soft); font-size: 11px; color: #435047; white-space: nowrap; }
+html, body { margin: 0; padding: 0; }
+body {
+	background:
+		radial-gradient(circle at top left, rgba(16, 185, 129, .10), transparent 34rem),
+		linear-gradient(180deg, #f8fbf9 0%, var(--bg) 22rem);
+	color: var(--ink);
+	font: 13px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+header {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	background: rgba(255, 255, 255, .88);
+	backdrop-filter: blur(18px);
+	border-bottom: 1px solid var(--line);
+	padding: 14px 32px;
+}
+main { margin: 0 auto; max-width: 1440px; padding: 0 32px 40px; }
+h1 { margin: 0; font-size: 20px; line-height: 1.15; letter-spacing: 0; }
+h2 { margin: 28px 0 12px; font-size: 24px; letter-spacing: 0; }
+h3 { margin: 20px 0 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+th, td { padding: 9px 10px; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; }
+th { background: #f5f8f6; font-size: 11px; color: #405048; white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
-.site { margin-top: 24px; padding-top: 8px; border-top: 3px solid var(--accent); }
-.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-.metric strong { display: block; font-size: 22px; line-height: 1.15; }
+.brandbar { align-items: center; display: flex; justify-content: space-between; gap: 16px; }
+.brand { align-items: center; display: flex; gap: 10px; font-weight: 700; }
+.logo { align-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-radius: 9px; color: white; display: inline-flex; font-size: 13px; height: 30px; justify-content: center; width: 30px; }
+.site { margin-top: 26px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.metric { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+.metric strong { display: block; font-size: 27px; font-weight: 700; line-height: 1.1; margin-top: 5px; }
 .muted, .metric span { color: var(--muted); }
-.pill { display: inline-block; margin: 0 4px 4px 0; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; background: #fafbf9; white-space: nowrap; }
+.chart { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); margin: 16px 0 18px; padding: 18px; }
+.chart svg { display: block; height: auto; width: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.legend-item { align-items: center; display: inline-flex; gap: 5px; }
+.swatch { border-radius: 999px; display: inline-block; height: 9px; width: 9px; }
+details summary { cursor: pointer; font-weight: 650; }
+.badges { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
+.badge { border: 1px solid var(--line); border-radius: 999px; display: inline-flex; font-size: 11px; font-weight: 700; line-height: 1; padding: 5px 8px; white-space: nowrap; }
+.badge-assay { background: #ecfdf5; border-color: #bbf7d0; color: #047857; }
+.badge-demo { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.badge-real { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.badge-kind { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; text-transform: uppercase; }
+.pair-detail { color: var(--muted); margin-top: 6px; }
+.pill { display: inline-block; margin: 0 4px 4px 0; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; background: #fbfdfc; white-space: nowrap; }
 .sub { margin-top: 4px; color: var(--muted); }
 .nowrap { white-space: nowrap; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-.filter-button { border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); cursor: pointer; font: inherit; padding: 4px 10px; }
+.filter-button { border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); cursor: pointer; font: inherit; font-weight: 600; padding: 5px 11px; }
 .filter-button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tabbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 12px; }
+.tab-button { border: 0; border-radius: 9px; background: #eef3f0; color: var(--ink-2); cursor: pointer; font: inherit; font-weight: 650; padding: 8px 13px; }
+.tab-button[aria-selected="true"] { background: var(--ink); color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.tab-panel[hidden] { display: none; }
 th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
 th button::after { color: var(--muted); content: "sort"; font-size: 10px; font-weight: 400; }
 th button[aria-sort="ascending"]::after { content: "asc"; }
 th button[aria-sort="descending"]::after { content: "desc"; }
-@media (max-width: 900px) { header, main { padding-left: 14px; padding-right: 14px; } table { display: block; overflow-x: auto; white-space: nowrap; } td { min-width: 130px; } }
+@media (max-width: 900px) { header, main { padding-left: 14px; padding-right: 14px; } table { display: block; overflow-x: auto; white-space: nowrap; } td { min-width: 130px; } .brandbar { align-items: flex-start; flex-direction: column; } }
 </style>
 <script>
 function toggleCountry(siteId, country) {
@@ -741,12 +1015,24 @@ function compareSortValue(a, b, type) {
 	if (type === 'number' || type === 'time') return (Number(a) || 0) - (Number(b) || 0)
 	return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
 }
+function switchSiteTab(siteId, tab) {
+	const section = document.querySelector('[data-site="' + siteId + '"]')
+	if (!section) return
+	for (const button of section.querySelectorAll('[data-tab-button]')) {
+		button.setAttribute('aria-selected', button.dataset.tabButton === tab ? 'true' : 'false')
+	}
+	for (const panel of section.querySelectorAll('[data-tab-panel]')) {
+		panel.hidden = panel.dataset.tabPanel !== tab
+	}
+}
 </script>
 </head>
 <body>
 <header>
-<h1>BioVault per-user Rybbit report</h1>
+<div class="brandbar">
+<div class="brand"><span class="logo">BV</span><div><h1>BioVault Analytics</h1><div class="muted">Per-user Rybbit report</div></div></div>
 <div class="muted">Generated ${escapeHtml(dateTime(report.generatedAt))}. Window: previous ${formatNumber(report.minutes)} minutes. Raw event cap per site: ${formatNumber(report.eventLimit)}.</div>
+</div>
 </header>
 <main>
 ${report.sites.map(renderSite).join('\n')}
@@ -770,6 +1056,7 @@ function renderSite(site) {
 </div>
 <div class="sub">Users in fetched events: ${formatNumber(site.totalUsers)}. Completed panels: ${formatNumber(site.summary.completedPanels)} total, ${formatNumber(site.summary.completedRealPanels)} on non-demo inputs.</div>
 ${site.eventsFetched >= site.eventLimit ? `<p class="muted">This site reached the raw-event cap of ${formatNumber(site.eventLimit)}. Increase <code>--event-limit</code> for a complete older-history user rollup.</p>` : ''}
+<<<<<<< HEAD
 <h3>Non-Demo File Types Used</h3>
 ${nonDemoFileCounts(site.summary.nonDemoFileCounts)}
 <h3>User Rows</h3>
@@ -778,7 +1065,62 @@ ${activityFilterControls(site)}
 ${userTable(site.userRows)}
 <h3>Daily Product Rollup</h3>
 ${dailyTable(site.dailyRows)}
+=======
+${dailyChart(site.dailyRows)}
+${siteTabs(site)}
+>>>>>>> origin/main
 </section>`
+}
+
+function siteTabs(site) {
+	const tabs = [
+		['overview', 'Overview'],
+		['users', 'Users'],
+		['daily', 'Daily'],
+		['breakdowns', 'Breakdowns'],
+	]
+	return `<div class="tabbar" role="tablist" aria-label="${escapeHtml(site.config.label)} report tabs">${tabs
+		.map(([id, label], index) => `<button class="tab-button" type="button" role="tab" data-tab-button="${id}" aria-selected="${index === 0 ? 'true' : 'false'}" onclick="switchSiteTab('${escapeHtml(site.config.siteId)}', '${id}')">${escapeHtml(label)}</button>`)
+		.join('')}</div>
+<div class="tab-panel" data-tab-panel="overview">${productQuestions(site)}</div>
+<div class="tab-panel" data-tab-panel="users" hidden><h3>User Rows</h3>${countryFilterControls(site)}${userTable(site.userRows)}</div>
+<div class="tab-panel" data-tab-panel="daily" hidden><h3>Daily Product Rollup</h3>${dailyTable(site.dailyRows)}</div>
+<div class="tab-panel" data-tab-panel="breakdowns" hidden>${breakdownTables(site)}</div>`
+}
+
+function productQuestions(site) {
+	const summary = summarizeSiteUsers(site.userRows)
+	const rows = [
+		['How many unique visitors?', formatNumber(site.totalUsers), 'Distinct stable users in fetched pageview/product events.'],
+		['How many come back?', formatNumber(summary.returningUsers), 'Users with more than one session in fetched raw events.'],
+		['How many do demo examples?', formatNumber(summary.demoInputUsers), 'Users who loaded at least one demo input.'],
+		['How many run demo examples?', formatNumber(summary.demoRunUsers), 'Users with a demo run/report journey.'],
+		['How many run their own files?', formatNumber(summary.realRunUsers), 'Users with a real-file run/report journey.'],
+	]
+	return `<h3>Product Questions</h3><table><thead><tr><th>Question</th><th>Answer</th><th>Signal</th></tr></thead><tbody>${rows
+		.map((row) => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td></tr>`)
+		.join('')}</tbody></table>
+${assayInputPairTable(summary.assayInputPairs)}
+<div class="grid" style="margin-top:12px">
+<div>${hierarchicalTable('Real File Metadata', summary.realFileMetadataGroups, summary.realFileMetadataDetails)}</div>
+<div>${smallTable('File Kind Users', sideBySideRows(summary.demoFileKindUsers, summary.realFileKindUsers, 'demo users', 'real users').slice(0, 20), ['value', 'demo users', 'real users'])}</div>
+<div>${smallTable('Traffic Sources By Run User Type', sideBySideRows(summary.demoTrafficSources, summary.realTrafficSources, 'demo run users', 'real run users').slice(0, 20), ['value', 'demo run users', 'real run users'])}</div>
+<div>${smallTable('Country Run Users By Type', summary.countryRows.slice(0, 20), ['country', 'all users', 'demo run users', 'real run users'])}</div>
+<div>${smallTable('Popular Assays By User Type', sideBySideRows(summary.demoReports, summary.realReports, 'demo', 'real').slice(0, 20), ['value', 'demo', 'real'])}</div>
+</div>`
+}
+
+function breakdownTables(site) {
+	const summary = summarizeSiteUsers(site.userRows)
+	return `<h3>Breakdowns</h3>
+<div class="grid">
+<div>${smallTable('Assays', mapRows(summary.assays).slice(0, 20), ['value', 'count'])}</div>
+<div>${smallTable('Real Reports', mapRows(summary.realReports).slice(0, 20), ['value', 'count'])}</div>
+<div>${smallTable('Demo Reports', mapRows(summary.demoReports).slice(0, 20), ['value', 'count'])}</div>
+<div>${smallTable('Real File Extras', mapRows(summary.realFileExtras).slice(0, 20), ['value', 'count'])}</div>
+<div>${hierarchicalTable('Real Source Groups', summary.realSourceGroups, summary.realSourceDetails)}</div>
+<div>${smallTable('Demo Files', mapRows(summary.demoFiles).slice(0, 20), ['value', 'count'])}</div>
+</div>`
 }
 
 function countryFilterControls(site) {
@@ -812,9 +1154,166 @@ function userTable(users) {
 
 function dailyTable(rows) {
 	if (!rows.length) return '<p class="muted">No daily product activity.</p>'
-	return `<table><thead><tr><th>Date</th><th>Users</th><th>Sessions</th><th>Demo files</th><th>Real files</th><th>Runs</th><th>Completed</th><th>Failed</th><th>Demo reports</th><th>Real reports</th><th>Report opens</th></tr></thead><tbody>${rows
-		.map((row) => `<tr><td>${escapeHtml(row.date)}</td><td>${formatNumber(row.users)}</td><td>${formatNumber(row.sessions)}</td><td>${formatNumber(row.demoFiles)}</td><td>${formatNumber(row.realFiles)}</td><td>${formatNumber(row.runsStarted)}</td><td>${formatNumber(row.runsCompleted)}</td><td>${formatNumber(row.runsFailed)}</td><td>${formatNumber(row.demoReports)}</td><td>${formatNumber(row.realReports)}</td><td>${formatNumber(row.reportOpens)}</td></tr>`)
+	return `<table><thead><tr><th>Date</th><th>Users</th><th>Return users</th><th>Demo users</th><th>Real users</th><th>Sessions</th><th>Demo files</th><th>Real files</th><th>Runs</th><th>Completed</th><th>Failed</th><th>Demo reports</th><th>Real reports</th><th>Report opens</th></tr></thead><tbody>${rows
+		.map((row) => `<tr><td>${escapeHtml(row.date)}</td><td>${formatNumber(row.users)}</td><td>${formatNumber(row.returnUsers)}</td><td>${formatNumber(row.demoUsers)}</td><td>${formatNumber(row.realUsers)}</td><td>${formatNumber(row.sessions)}</td><td>${formatNumber(row.demoFiles)}</td><td>${formatNumber(row.realFiles)}</td><td>${formatNumber(row.runsStarted)}</td><td>${formatNumber(row.runsCompleted)}</td><td>${formatNumber(row.runsFailed)}</td><td>${formatNumber(row.demoReports)}</td><td>${formatNumber(row.realReports)}</td><td>${formatNumber(row.reportOpens)}</td></tr>`)
 		.join('')}</tbody></table>`
+}
+
+function dailyChart(rows) {
+	const visibleRows = rows.filter((row) => row.date !== 'unknown')
+	if (!visibleRows.length) return ''
+	const series = [
+		['users', 'Unique users', '#2f7d57'],
+		['returnUsers', 'Return users', '#5b6bb2'],
+		['demoUsers', 'Demo users', '#b06b2c'],
+		['realUsers', 'Real users', '#b23f55'],
+	]
+	const width = 900
+	const height = 220
+	const pad = { bottom: 38, left: 36, right: 16, top: 18 }
+	const maxValue = Math.max(1, ...visibleRows.flatMap((row) => series.map(([key]) => Number(row[key]) || 0)))
+	const x = (index) => visibleRows.length === 1 ? pad.left : pad.left + (index * (width - pad.left - pad.right)) / (visibleRows.length - 1)
+	const y = (value) => height - pad.bottom - ((Number(value) || 0) * (height - pad.top - pad.bottom)) / maxValue
+	const gridLines = [0, Math.ceil(maxValue / 2), maxValue]
+	return `<section class="chart"><h3>Daily User Mix</h3><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily unique users, return users, demo users, and real users">
+${gridLines.map((value) => `<line x1="${pad.left}" y1="${y(value).toFixed(1)}" x2="${width - pad.right}" y2="${y(value).toFixed(1)}" stroke="#d9ded7"/><text x="4" y="${(y(value) + 4).toFixed(1)}" fill="#66706a" font-size="11">${formatNumber(value)}</text>`).join('')}
+${visibleRows.map((row, index) => index % Math.ceil(visibleRows.length / 8 || 1) === 0 ? `<text x="${x(index).toFixed(1)}" y="${height - 12}" fill="#66706a" font-size="10" text-anchor="middle">${escapeHtml(shortDateLabel(row.date))}</text>` : '').join('')}
+${series.map(([key, label, color]) => `<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${visibleRows.map((row, index) => `${x(index).toFixed(1)},${y(row[key]).toFixed(1)}`).join(' ')}"><title>${escapeHtml(label)}</title></polyline>`).join('')}
+</svg><div class="legend">${series.map(([, label, color]) => `<span class="legend-item"><span class="swatch" style="background:${color}"></span>${escapeHtml(label)}</span>`).join('')}</div></section>`
+}
+
+function smallTable(title, rows, keys) {
+	const body = rows.length
+		? rows.map((row) => `<tr>${keys.map((key) => `<td>${escapeHtml(String(row[key] ?? ''))}</td>`).join('')}</tr>`).join('')
+		: `<tr><td colspan="${keys.length}" class="muted">No data</td></tr>`
+	return `<section><h3>${escapeHtml(title)}</h3><table><thead><tr>${keys.map((key) => `<th>${escapeHtml(key)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></section>`
+}
+
+function assayInputPairTable(pairs) {
+	const rows = [...pairs.entries()]
+		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.slice(0, 30)
+	if (!rows.length) return smallTable('Assay/Input Pairs', [], ['assay/input', 'count'])
+	const body = rows.map(([value, count]) => {
+		const parsed = parseAssayInputPair(value)
+		return `<tr><td>${assayInputPairCell(parsed)}</td><td>${formatNumber(count)}</td></tr>`
+	}).join('')
+	return `<section style="margin-top:14px"><h3>Assay/Input Pairs</h3><table><thead><tr><th>pair</th><th>count</th></tr></thead><tbody>${body}</tbody></table></section>`
+}
+
+function parseAssayInputPair(value) {
+	const parts = String(value).split(' | ').map((part) => part.trim()).filter(Boolean)
+	const assay = normalizeAssayName(parts[0] || 'unknown') || 'unknown'
+	const ownership = parts[1] === 'demo' || parts[1] === 'real' ? parts[1] : 'unknown'
+	const input = parts.slice(2).join(' | ')
+	return {
+		assay,
+		ownership,
+		type: typeFromLabel(input) || 'unknown',
+		input,
+	}
+}
+
+function assayInputPairCell(pair) {
+	const ownershipClass = pair.ownership === 'real' ? 'badge-real' : pair.ownership === 'demo' ? 'badge-demo' : ''
+	return `<div class="badges">${badge(pair.assay, 'badge-assay')}${badge(pair.ownership, ownershipClass)}${badge(pair.type, 'badge-kind')}</div><div class="pair-detail">${escapeHtml(pair.input || 'unknown input')}</div>`
+}
+
+function badge(label, className = '') {
+	return `<span class="badge ${className}">${escapeHtml(label || 'unknown')}</span>`
+}
+
+function hierarchicalTable(title, groups, details) {
+	const rows = [...groups.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+	if (!rows.length) return smallTable(title, [], ['value', 'count'])
+	const body = rows.map(([group, count]) => {
+		const detailRows = mapRows(details.get(group) ?? new Map())
+		const detail = detailRows.length
+			? `<details><summary>${escapeHtml(group)}</summary>${smallTable('Versions', detailRows, ['value', 'count'])}</details>`
+			: escapeHtml(group)
+		return `<tr><td>${detail}</td><td>${formatNumber(count)}</td></tr>`
+	}).join('')
+	return `<section><h3>${escapeHtml(title)}</h3><table><thead><tr><th>value</th><th>count</th></tr></thead><tbody>${body}</tbody></table></section>`
+}
+
+function summarizeSiteUsers(users) {
+	const summary = {
+		assayInputPairs: new Map(),
+		assays: new Map(),
+		demoFiles: new Map(),
+		demoFileKinds: new Map(),
+		demoFileKindUsers: new Map(),
+		demoInputUsers: 0,
+		demoTrafficSources: new Map(),
+		demoReports: new Map(),
+		demoRunUsers: 0,
+		realFileKinds: new Map(),
+		realFileKindUsers: new Map(),
+		realFileExtras: new Map(),
+		realFileMetadata: new Map(),
+		realFileMetadataDetails: new Map(),
+		realFileMetadataGroups: new Map(),
+		realSourceDetails: new Map(),
+		realSourceGroups: new Map(),
+		realReports: new Map(),
+		realTrafficSources: new Map(),
+		realRunUsers: 0,
+		returningUsers: 0,
+	}
+	const countries = new Map()
+	for (const user of users) {
+		const isReturning = user.sessions.size > 1
+		const isDemoUser = user.didDemo || user.demoFileAdds + user.demoLoads > 0
+		const isRealUser = user.didReal || user.realFileAdds > 0
+		const hasDemoRun = totalCount(user.demoReports) > 0 || user.runs.some((run) => String(run.input).startsWith('demo'))
+		const hasRealRun = totalCount(user.realReports) > 0 || user.runs.some((run) => String(run.input).startsWith('real'))
+		if (isReturning) summary.returningUsers += 1
+		if (isDemoUser) summary.demoInputUsers += 1
+		if (hasDemoRun) summary.demoRunUsers += 1
+		if (hasRealRun) summary.realRunUsers += 1
+		const trafficSource = normalizeTrafficSource(user.firstTrafficSource)
+		if (hasDemoRun) increment(summary.demoTrafficSources, trafficSource)
+		if (hasRealRun) increment(summary.realTrafficSources, trafficSource)
+		for (const country of [...user.countries].filter(Boolean).length ? user.countries : ['unknown']) {
+			const row = getCountrySummary(countries, country)
+			row.all.add(user.id)
+			if (hasDemoRun) row.demo.add(user.id)
+			if (hasRealRun) row.real.add(user.id)
+		}
+		mergeCounts(summary.assays, user.assays)
+		mergeCounts(summary.demoFiles, user.demoFiles)
+		mergeCounts(summary.demoFileKinds, user.demoInputTypes)
+		mergeCounts(summary.demoReports, user.demoReports)
+		mergeCounts(summary.realFileKinds, user.realInputTypes)
+		mergeCounts(summary.realReports, user.realReports)
+		mergeCounts(summary.realFileExtras, user.realInputExtras)
+		mergeCounts(summary.realFileMetadata, user.realInputLabels)
+		mergeUniqueFileKinds(summary.demoFileKindUsers, user.demoFileIdentities)
+		mergeUniqueFileKinds(summary.realFileKindUsers, user.realFileIdentities)
+		for (const [label, count] of user.realInputLabels.entries()) {
+			const group = inputMetadataGroupLabel(label)
+			increment(summary.realFileMetadataGroups, group, count)
+			incrementNested(summary.realFileMetadataDetails, group, label, count)
+		}
+		mergeCounts(summary.realSourceGroups, user.realInputSourceGroups)
+		mergeNestedCounts(summary.realSourceDetails, user.realInputSourceDetails)
+		for (const run of user.runs) {
+			increment(summary.assayInputPairs, `${run.assay || 'unknown assay'} | ${run.input || 'unknown input'}`)
+		}
+		for (const report of user.reports) {
+			increment(summary.assayInputPairs, `${report.assay || 'unknown assay'} | ${report.input || 'unknown input'}`)
+		}
+	}
+	summary.countryRows = [...countries.entries()]
+		.map(([country, row]) => ({
+			country,
+			'all users': formatNumber(row.all.size),
+			'demo run users': formatNumber(row.demo.size),
+			'real run users': formatNumber(row.real.size),
+			sort: row.all.size,
+		}))
+		.sort((a, b) => b.sort - a.sort || a.country.localeCompare(b.country))
+	return summary
 }
 
 function userRow(user) {
@@ -873,6 +1372,77 @@ function countryFilters(users) {
 function normalizeCountry(value) {
 	const country = String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().toUpperCase()
 	return /^[A-Z]{2}$/.test(country) ? country : 'unknown'
+}
+
+function normalizeTrafficSource(value) {
+	const raw = String(value ?? '').trim()
+	if (!raw) return 'Direct / none'
+	const lower = raw.toLowerCase()
+	let host = lower
+	try {
+		host = new URL(raw).hostname.toLowerCase().replace(/^www\./, '')
+	} catch {}
+	if (!host || host === 'direct' || host === '(direct)' || host === 'none' || host === 'direct / none') return 'Direct / none'
+	if (host.includes('facebook.com') || host === 'fb' || host === 'facebook') return 'Facebook'
+	if (host.includes('instagram.com') || host === 'instagram') return 'Instagram'
+	if (host.includes('twitter.com') || host.includes('x.com') || host === 'x' || host === 'twitter' || host === 't.co') return 'X'
+	if (host.includes('linkedin.com') || host === 'linkedin') return 'LinkedIn'
+	if (host.includes('google.') || host === 'google') return 'Google'
+	if (host.includes('bing.') || host === 'bing') return 'Bing'
+	if (host.includes('github.com') || host === 'github') return 'GitHub'
+	if (host.includes('biovault.net') || host === 'biovault') return 'BioVault'
+	if (host.includes('localhost') || host.includes('127.0.0.1')) return 'Local dev'
+	return host
+}
+
+function inputSourceGroup(value) {
+	const source = String(value ?? '').trim()
+	if (!source) return 'Unknown'
+	const lower = source.toLowerCase()
+	if (lower.includes('23andme')) return '23andMe'
+	if (lower.includes('ancestry')) return 'AncestryDNA'
+	if (lower.includes('myheritage')) return 'MyHeritage'
+	if (lower.includes('vcf')) return 'VCF'
+	if (lower.includes('cram')) return 'CRAM'
+	if (lower.includes('bam')) return 'BAM'
+	return source
+}
+
+function inputMetadataGroupLabel(label) {
+	const type = typeFromLabel(label) || 'unknown'
+	const source = sourceFromLabel(label) || 'Unknown'
+	return `type: ${type} source: ${inputSourceGroup(source)}`
+}
+
+function inputIdentityKey(props, normalized = normalizedInputFromProps(props)) {
+	const hash = firstValue(props.input_hash_sha256, props.file_hash_sha256)
+	if (hash) return `hash:${hash}`
+	const inputId = firstValue(props.input_id)
+	if (inputId) return `input:${inputId}`
+	const demoId = firstValue(props.demo_bundle_id, props.bundleId, props.demo_title, props.demo_filename)
+	if (demoId) return `demo:${demoId}`
+	const sourceUrl = firstValue(props.sourceUrl, props.packageSourceUrl, props.url)
+	if (sourceUrl) return `url:${sourceUrl}`
+	const size = firstValue(props.input_total_file_size, props.input_primary_file_size, props.file_size, props.size)
+	const extra = normalizedInputExtra(props)
+	return `legacy:${normalized.type}:${normalized.source}:${extra}:${size || 'unknown-size'}`
+}
+
+function mergeUniqueFileKinds(target, identities) {
+	const types = new Set([...identities.values()].filter(Boolean))
+	for (const type of types) increment(target, type)
+}
+
+function getCountrySummary(countries, country) {
+	const key = normalizeCountry(country)
+	if (!countries.has(key)) {
+		countries.set(key, {
+			all: new Set(),
+			demo: new Set(),
+			real: new Set(),
+		})
+	}
+	return countries.get(key)
 }
 
 async function rybbitGet(config, endpointPath, params = {}) {
@@ -996,6 +1566,8 @@ function extensionForKind(kind) {
 			return '.zip'
 		case 'vcf':
 			return '.vcf'
+		case 'bcf':
+			return '.bcf'
 		case 'vcf_gz':
 			return '.vcf.gz'
 		case 'tbi':
@@ -1041,15 +1613,79 @@ function addEnvironment(user, event) {
 	if (parts.length) increment(user.environments, parts.join(' / '))
 }
 
+function addTrafficSource(user, event) {
+	if (user.firstTrafficSource) return
+	user.firstTrafficSource = normalizeTrafficSource(firstValue(
+		event.referrer,
+		event.referrer_url,
+		event.referrerUrl,
+		event.referer,
+		event.props?.utm_source,
+		event.props?.referrer,
+		event.props?.source,
+	))
+}
+
+function markDemoActivity(user, day) {
+	user.didDemo = true
+	if (day) day.demoUsers.add(user.id)
+}
+
+function markRealActivity(user, day) {
+	user.didReal = true
+	if (day) day.realUsers.add(user.id)
+}
+
 function increment(map, value, amount = 1) {
 	if (value === undefined || value === null || value === '') return
 	map.set(String(value), (map.get(String(value)) ?? 0) + amount)
+}
+
+function incrementNested(map, group, value, amount = 1) {
+	if (!group || !value) return
+	if (!map.has(group)) map.set(group, new Map())
+	increment(map.get(group), value, amount)
+}
+
+function mergeNestedCounts(target, source) {
+	for (const [group, values] of source.entries()) {
+		if (!target.has(group)) target.set(group, new Map())
+		mergeCounts(target.get(group), values)
+	}
 }
 
 function mapLabels(map) {
 	return [...map.entries()]
 		.sort((a, b) => b[1] - a[1])
 		.map(([value, count]) => `${value} (${formatNumber(count)})`)
+}
+
+function mapRows(map) {
+	return [...map.entries()]
+		.filter(([value]) => value !== undefined && value !== null && value !== '')
+		.map(([value, count]) => ({ value, count: formatNumber(count) }))
+		.sort((a, b) => Number(String(b.count).replace(/,/g, '')) - Number(String(a.count).replace(/,/g, '')))
+}
+
+function firstMapLabel(map) {
+	const [first] = mapRows(map)
+	return first ? `${first.value} (${first.count})` : 'No data'
+}
+
+function mergeCounts(target, source) {
+	for (const [value, count] of source.entries()) increment(target, value, count)
+}
+
+function sideBySideRows(left, right, leftKey, rightKey) {
+	const values = new Set([...left.keys(), ...right.keys()])
+	return [...values]
+		.map((value) => ({
+			value,
+			[leftKey]: formatNumber(left.get(value) ?? 0),
+			[rightKey]: formatNumber(right.get(value) ?? 0),
+			sort: (left.get(value) ?? 0) + (right.get(value) ?? 0),
+		}))
+		.sort((a, b) => b.sort - a.sort || String(a.value).localeCompare(String(b.value)))
 }
 
 function totalCount(map) {
@@ -1109,6 +1745,12 @@ function dateTime(date) {
 		timeStyle: 'short',
 		timeZone: 'Australia/Brisbane',
 	}).format(date)
+}
+
+function shortDateLabel(value) {
+	const parts = String(value).split('-')
+	if (parts.length !== 3) return value
+	return `${parts[2]}/${parts[1]}`
 }
 
 function formatNumber(value) {
@@ -1229,6 +1871,7 @@ Options:
   --minutes 43200               Lookback window; defaults to 30 days
   --event-limit 50000           Raw event cap per site
   --out reports/users.html      Output HTML path
+  --input-events events.json    Read raw events from a local JSON file instead of Rybbit
   --use-cache                   Re-render from reports/rybbit-user-cache when available
   --cache-dir reports/cache     Override cache directory
 `)

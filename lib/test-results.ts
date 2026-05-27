@@ -191,12 +191,15 @@ function safelyParseUnsupportedVariantsJson(value: string): UnsupportedAssayVari
 			return undefined
 		}
 		return parsed.filter(
-			(item): item is UnsupportedAssayVariant =>
-				!!item &&
-				typeof item === 'object' &&
-				typeof (item as UnsupportedAssayVariant).variantName === 'string' &&
-				typeof (item as UnsupportedAssayVariant).target === 'string' &&
-				typeof (item as UnsupportedAssayVariant).reason === 'string'
+			(item): item is UnsupportedAssayVariant => {
+				if (!item || typeof item !== 'object') return false
+				const candidate = item as Record<string, unknown>
+				return (
+					typeof candidate.variantName === 'string' &&
+					typeof candidate.target === 'string' &&
+					typeof candidate.reason === 'string'
+				)
+			}
 		)
 	} catch {
 		return undefined

@@ -5,6 +5,7 @@ import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { APP_BUILD_ID } from '@/lib/app-build-id'
 import { getAnalytics } from '@/lib/analytics'
+import { assessWebRuntimeSupport, type BrowserSupportAssessment } from '@/lib/browser-support'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import { clearDeferredLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
 import {
@@ -27,9 +28,11 @@ import {
 	ASSAY_INPUT_FORMAT_LABELS,
 	type AssayCategory,
 	getAssayById,
+	getTestFileById,
 	type LabAssay,
 	LAB_ASSAYS,
 	LAB_TEST_FILES,
+	type LabTestFileBundleLoadProgress,
 	type LabTestFileBundle,
 	loadAssayFile,
 	loadTestFileBundle,
@@ -65,6 +68,11 @@ import {
 	pairLabGenomeCompanionRef,
 	type LabGenomeRef,
 } from '@/lib/lab/core/refs'
+import {
+	buildHashedLabInputAnalyticsContext,
+	buildLabInputAnalyticsContext,
+	type LabInputAnalyticsContext,
+} from '@/lib/lab/analytics-context'
 import { clearAllAppStorage } from '@/lib/clear-app-storage'
 import {
 	addAssayPackageSourceUrl,
@@ -92,6 +100,7 @@ import {
 	type RegistryOrigin,
 } from '@/lib/lab/assay-registry'
 import {
+	cacheRemoteLabFile,
 	deleteCachedRemoteLabFile,
 	fetchRemoteLabFile,
 	listCachedRemoteLabFiles,
@@ -186,6 +195,17 @@ const FEATURED_CATALOG: LabAssay[] = [
 		tags: ['pgx', 'panel', 'featured'],
 	},
 	{
+		id: 'featured-glp1-pgx',
+		title: 'GLP1 Genetic Predictors Test',
+		subtitle: 'BioScript package',
+		description: 'A GLP1 pharmacogenomics package covering GLP1R response and side-effect predictor variants.',
+		category: 'panel',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/pgx/glp1/glp1.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['glp1', 'pgx', 'panel', 'featured'],
+	},
+	{
 		id: 'featured-apol1-risk',
 		title: 'APOL1 Risk Assay',
 		subtitle: 'BioScript package',
@@ -196,7 +216,46 @@ const FEATURED_CATALOG: LabAssay[] = [
 		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
 		tags: ['apol1', 'risk', 'assay', 'featured'],
 	},
+	{
+		id: 'featured-prostate-cancer-prs',
+		title: 'Prostate Cancer PRS Panel',
+		subtitle: 'BioScript package',
+		description: 'A prostate cancer polygenic risk score package built from Schumacher PRS markers.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/prostate-cancer-prs/prostate-cancer-prs.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['prostate', 'prs', 'risk', 'panel', 'featured'],
+	},
+	{
+		id: 'featured-pcsk9-ldl',
+		title: 'PCSK9 LDL-Lowering Variant Panel',
+		subtitle: 'BioScript package',
+		description: 'A PCSK9 panel covering R46L, Y142X, and C679X LDL-lowering variants.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/pcsk9-ldl/pcsk9-ldl.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['pcsk9', 'ldl', 'cholesterol', 'risk', 'panel', 'featured'],
+	},
+	{
+		id: 'featured-longevity',
+		title: 'Longevity Panel',
+		subtitle: 'BioScript package',
+		description: 'A longevity-focused package covering APOE epsilon status and FOXO3 longevity markers.',
+		category: 'risk',
+		language: 'yaml',
+		url: 'https://github.com/madhavajay/exvitae/blob/main/assays/risk/longevity/longevity.yaml',
+		inputFormats: ['cram', 'vcf_gz', 'genotype_text', 'zip'],
+		tags: ['longevity', 'apoe', 'foxo3', 'risk', 'panel', 'featured'],
+	},
 ]
+
+function isDesktopRuntimeShell(): boolean {
+	if (process.env.EXPO_PUBLIC_BIOVAULT_DESKTOP === '1') return true
+	return Platform.OS === 'web' && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 function clearWebLaunchIntentHash() {
 	if (Platform.OS !== 'web' || !window.location.hash) return
 	const nextUrl = `${window.location.pathname}${window.location.search}`
@@ -215,6 +274,7 @@ type RunRecord = {
 	id: string
 	assay: LabAssay
 	genomeName: string
+	inputAnalyticsContext: LabInputAnalyticsContext
 	sourceFiles: AssaySourceFile[]
 	startedAt: number
 	result: RunResult
@@ -228,6 +288,13 @@ type AssaySourceFile = {
 type SourceViewerState = {
 	files: AssaySourceFile[]
 	title: string
+}
+type SampleLoadProgress = LabTestFileBundleLoadProgress & {
+	bundleId: string
+}
+type PendingDemoRun = {
+	assayId: string
+	primaryFileName: string
 }
 
 type PendingVcfIndexRun = {
@@ -342,6 +409,9 @@ function searchSessionAssays(assays: LabAssay[], query: string, category: AssayC
 
 function sortAssaysForPicker(assays: LabAssay[]): LabAssay[] {
 	return [...assays].sort((left, right) => {
+		const leftLocal = isLocalSessionAssay(left)
+		const rightLocal = isLocalSessionAssay(right)
+		if (leftLocal !== rightLocal) return leftLocal ? -1 : 1
 		const leftPanel = assayDisplayKind(left) === 'panel'
 		const rightPanel = assayDisplayKind(right) === 'panel'
 		if (leftPanel !== rightPanel) return leftPanel ? -1 : 1
@@ -353,9 +423,13 @@ function isSessionLabAssay(assay: LabAssay): assay is SessionLabAssay {
 	return 'file' in assay && assay.file instanceof File
 }
 
+function isLocalSessionAssay(assay: LabAssay): assay is SessionLabAssay {
+	return isSessionLabAssay(assay) && assay.url.startsWith('local://')
+}
+
 function assayDisplayKind(assay: LabAssay): 'assay' | 'panel' | 'variant' | 'other' {
 	if (isSessionLabAssay(assay)) {
-		if (assay.remoteKind === 'python') return 'other'
+		if (assay.remoteKind === 'python') return 'assay'
 		const schema = assay.remoteSchema?.toLowerCase() ?? ''
 		if (schema.startsWith('bioscript:panel')) return 'panel'
 		if (schema.startsWith('bioscript:variant')) return 'variant'
@@ -432,14 +506,28 @@ function remoteResourceAnalyticsId(resource: ResolvedRemoteResource, catalogAssa
 
 function assayAnalyticsProperties(assay: LabAssay): Record<string, string> {
 	const properties: Record<string, string> = {
+		assay_id: assayAnalyticsId(assay),
+		assay_name: assay.title,
+		assay_title: assay.title,
+		assay_kind: assayDisplayKind(assay),
+		assay_language: assay.language,
 		assayId: assayAnalyticsId(assay),
+		assayName: assay.title,
+		assayLanguage: assay.language,
 	}
 	if (isSessionLabAssay(assay)) {
 		properties.internalAssayId = assay.id
 		properties.remoteKind = assay.remoteKind
 		properties.sourceUrl = assay.url
-		if (assay.packageSourceUrl) properties.packageSourceUrl = assay.packageSourceUrl
-		if (assay.packageEntrypoint) properties.packageEntrypoint = assay.packageEntrypoint
+		properties.source_url = assay.url
+		if (assay.packageSourceUrl) {
+			properties.packageSourceUrl = assay.packageSourceUrl
+			properties.package_source_url = assay.packageSourceUrl
+		}
+		if (assay.packageEntrypoint) {
+			properties.packageEntrypoint = assay.packageEntrypoint
+			properties.package_entrypoint = assay.packageEntrypoint
+		}
 	}
 	return properties
 }
@@ -490,6 +578,7 @@ function safeGenomicExtension(name: string): string {
 		'.fasta.fai',
 		'.fa.fai',
 		'.vcf.gz',
+		'.bcf',
 		'.fasta',
 		'.bam',
 		'.bai',
@@ -507,12 +596,24 @@ function safeGenomicExtension(name: string): string {
 	return match ?? (lower.match(/\.[a-z0-9]+$/)?.[0] ?? '')
 }
 
-function genomeRelatedFileExtensions(genome: LabGenomeRef): string[] {
-	return genomeRelatedFileNames(genome).map(safeGenomicExtension).filter(Boolean)
-}
-
 function demoBundleForRemoteUrl(url: string): LabTestFileBundle | null {
 	return LAB_TEST_FILES.find((bundle) => bundle.remoteUrl === url) ?? null
+}
+
+function demoBundleCacheSourceUrl(bundle: LabTestFileBundle, fileName: string): string {
+	return `biovault-demo://${bundle.id}/${encodeURIComponent(fileName)}`
+}
+
+function demoBundleForCachedRemoteFile(remoteFile: RemoteLabFile): LabTestFileBundle | null {
+	const cacheMatch = remoteFile.sourceUrl.match(/^biovault-demo:\/\/([^/]+)\//)
+	if (cacheMatch) return getTestFileById(cacheMatch[1]) ?? null
+	return demoBundleForRemoteUrl(remoteFile.sourceUrl)
+}
+
+function demoBundleForGenome(genome: LabGenomeRef): LabTestFileBundle | null {
+	if (genome.primary.source !== 'bundled') return null
+	const relatedNames = new Set(genomeRelatedFileNames(genome))
+	return LAB_TEST_FILES.find((bundle) => bundle.files.some((file) => relatedNames.has(file.name))) ?? null
 }
 
 function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string, unknown> {
@@ -525,33 +626,6 @@ function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string
 		demo_title: bundle.title,
 		is_demo_file: true,
 		is_user_supplied_data: false,
-	}
-}
-
-function fileHeuristicAnalyticsProperties(
-	genome: LabGenomeRef,
-	inspection: BioscriptInspection,
-): Record<string, unknown> {
-	return {
-		assembly: inspection.assembly ?? '',
-		confidence: inspection.confidence,
-		container: inspection.container,
-		detectedKind: inspection.detectedKind,
-		durationMs: inspection.durationMs,
-		evidenceCount: inspection.evidence.length,
-		fileExtension: safeGenomicExtension(inspection.fileName),
-		genomeKind: genome.kind,
-		hasIndex: inspection.hasIndex ?? false,
-		inputFormat: labGenomeInputFormat(genome),
-		phased: inspection.phased ?? false,
-		platformVersion: inspection.source?.platformVersion ?? '',
-		referenceMatches: inspection.referenceMatches ?? false,
-		relatedFileExtensions: genomeRelatedFileExtensions(genome),
-		selectedEntryExtension: inspection.selectedEntry ? safeGenomicExtension(inspection.selectedEntry) : '',
-		sourceConfidence: inspection.source?.confidence ?? '',
-		sourceEvidenceCount: inspection.source?.evidence.length ?? 0,
-		sourceVendor: inspection.source?.vendor ?? '',
-		warnings: inspection.warnings,
 	}
 }
 
@@ -666,10 +740,19 @@ function resourceSchemaKind(resource: { schema: string | null; kind: ResolvedRem
 }
 
 function resourceRegistryId(resource: ResolvedRemoteResource): string {
+	const source = normalizeRemoteAssayUrl(resource.sourceUrl || '')
+	const sourceKey = source
+		.toLowerCase()
+		.replace(/^https?:\/\//, '')
+		.replace(/[^a-z0-9._/-]+/g, '-')
+		.replace(/\/+/g, '/')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 160)
+	if (sourceKey) return `source:${sourceKey}`
 	const fromName = (resource as { name?: string }).name
-	if (typeof fromName === 'string' && fromName.trim()) return fromName.trim()
-	if (resource.title) return resource.title
-	return resource.sha256.slice(0, 16)
+	if (typeof fromName === 'string' && fromName.trim()) return `name:${fromName.trim()}`
+	if (resource.title) return `title:${resource.title}`
+	return `sha:${resource.sha256.slice(0, 16)}`
 }
 
 function packageFileSourceUrl(file: BioscriptPackageFile): string | null {
@@ -954,8 +1037,20 @@ function sampleBundleMatchesGenome(bundle: LabTestFileBundle, genome: LabGenomeR
 
 function sampleBundleMatchesCachedRemoteFile(bundle: LabTestFileBundle, remoteFile: RemoteLabFile): boolean {
 	if (bundle.remoteUrl && remoteFile.sourceUrl === bundle.remoteUrl) return true
-	const sampleNames = new Set(bundle.files.map((file) => file.name))
-	return sampleNames.has(remoteFile.file.name)
+	if (remoteFile.sourceUrl.startsWith(`biovault-demo://${bundle.id}/`)) return true
+	return false
+}
+
+function cachedFilesForSampleBundle(bundle: LabTestFileBundle, cachedRemoteFiles: RemoteLabFile[]): RemoteLabFile[] {
+	const byName = new Map<string, RemoteLabFile>()
+	for (const remoteFile of cachedRemoteFiles) {
+		if (!sampleBundleMatchesCachedRemoteFile(bundle, remoteFile)) continue
+		byName.set(remoteFile.file.name, remoteFile)
+	}
+	return bundle.files.flatMap((file) => {
+		const cached = byName.get(file.name)
+		return cached ? [cached] : []
+	})
 }
 
 /** Avoid double “selected” rows when cached URL storage or persisted handles share filenames with this session genome. */
@@ -1044,6 +1139,8 @@ export default function LabScreen() {
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const fileAdapterRef = useRef(createWebLabFileAdapter())
 	const filePickerRef = useRef(createLabFilePickerAdapter())
+	const inputEventPropertiesRef = useRef<Map<string, Record<string, unknown>>>(new Map())
+	const runIndexByInputRef = useRef<Map<string, number>>(new Map())
 
 	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
@@ -1060,6 +1157,7 @@ export default function LabScreen() {
 	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
 	const [sampleLoadingId, setSampleLoadingId] = useState<string | null>(null)
 	const [sampleLoadError, setSampleLoadError] = useState<string | null>(null)
+	const [sampleLoadProgress, setSampleLoadProgress] = useState<SampleLoadProgress | null>(null)
 	const [sourceViewer, setSourceViewer] = useState<SourceViewerState | null>(null)
 	const [runtimeWarmupStatus, setRuntimeWarmupStatus] = useState<RuntimeWarmupStatus>('loading')
 	const [remoteIntent, setRemoteIntent] = useState<RemoteIntentState>({ status: 'idle' })
@@ -1094,12 +1192,13 @@ export default function LabScreen() {
 	const [savedHandlesError, setSavedHandlesError] = useState<string | null>(null)
 	const [cachedRemoteFiles, setCachedRemoteFiles] = useState<RemoteLabFile[]>([])
 	const [cachedRemotePackageArtifactUrls, setCachedRemotePackageArtifactUrls] = useState<Set<string>>(() => new Set())
-	const [pendingDemoRunAssayId, setPendingDemoRunAssayId] = useState<string | null>(null)
+	const [pendingDemoRun, setPendingDemoRun] = useState<PendingDemoRun | null>(null)
 	const [pendingVcfIndexRun, setPendingVcfIndexRun] = useState<PendingVcfIndexRun | null>(null)
 	const [pendingAlignmentIndexRun, setPendingAlignmentIndexRun] = useState<PendingAlignmentIndexRun | null>(null)
 	const promptedAlignmentIndexGenomeIdsRef = useRef<Set<string>>(new Set())
 	const vcfIndexGenerationSeqRef = useRef(0)
 	const alignmentIndexGenerationSeqRef = useRef(0)
+	const rehydratedDemoBundleIdsRef = useRef<Set<string>>(new Set())
 
 	const activeGenomeRef = useMemo(
 		() => {
@@ -1208,7 +1307,7 @@ export default function LabScreen() {
 		})
 	}, [])
 
-	const ingestRef = useCallback((ref: LabFileRef) => {
+	const ingestRef = useCallback((ref: LabFileRef, eventProperties?: Record<string, unknown>) => {
 		const file = fileAdapterRef.current.getFile(ref)
 		const kind = ref.kind
 		if (kind === 'unknown') {
@@ -1224,10 +1323,15 @@ export default function LabScreen() {
 			if (!genomeRef) return
 			setGenomes((prev) => [...prev, genomeRef])
 			setSelectedGenomeId(genomeRef.id)
+			inputEventPropertiesRef.current.set(genomeRef.id, eventProperties ?? {})
+			trackEvent('lab_input_ready', {
+				...buildLabInputAnalyticsContext(genomeRef, { demoBundle: demoBundleForGenome(genomeRef) }),
+				...eventProperties,
+			})
 			return
 		}
 		setGenomes((prev) => pairLabGenomeCompanionRef(prev, ref))
-	}, [ingestLocalAssayRef])
+	}, [ingestLocalAssayRef, trackEvent])
 
 	const ingestManyRefs = useCallback(
 		(refs: LabFileRef[], eventProperties?: Record<string, unknown>) => {
@@ -1258,12 +1362,6 @@ export default function LabScreen() {
 				const otherRefs = ordered.filter(
 					(ref) => !localPackageRefs.has(ref.id) && !assayRefs.includes(ref) && !genomeRefs.includes(ref),
 				)
-				trackEvent('lab_files_added', {
-					fileKinds: ordered.map((ref) => localPackageRefs.has(ref.id) ? 'assay_zip' : ref.kind),
-					fileSources: ordered.map((ref) => ref.source),
-					totalFiles: ordered.length,
-					...eventProperties,
-				})
 				for (const ref of assayRefs) ingestLocalAssayRef(ref)
 				const primaryCount = genomeRefs.filter((ref) => isPrimaryGenomeFileKind(ref.kind)).length
 				if (primaryCount === 1) {
@@ -1274,15 +1372,20 @@ export default function LabScreen() {
 							bundle.genomeRef,
 						])
 						setSelectedGenomeId(bundle.genomeRef.id)
+						inputEventPropertiesRef.current.set(bundle.genomeRef.id, eventProperties ?? {})
+						trackEvent('lab_input_ready', {
+							...buildLabInputAnalyticsContext(bundle.genomeRef, { demoBundle: demoBundleForGenome(bundle.genomeRef) }),
+							...eventProperties,
+						})
 						if (bundle.unknowns.length) {
 							setUnknowns((prev) => [...prev, ...bundle.unknowns.map(createUnknownEntry)])
 						}
-						for (const ref of otherRefs) ingestRef(ref)
+						for (const ref of otherRefs) ingestRef(ref, eventProperties)
 						return
 					}
 				}
-				for (const ref of genomeRefs) ingestRef(ref)
-				for (const ref of otherRefs) ingestRef(ref)
+				for (const ref of genomeRefs) ingestRef(ref, eventProperties)
+				for (const ref of otherRefs) ingestRef(ref, eventProperties)
 			})().catch((error) => {
 				console.error('[lab] failed to ingest files', error)
 			})
@@ -1494,6 +1597,19 @@ export default function LabScreen() {
 	}, [refreshCachedRemoteFiles])
 
 	useEffect(() => {
+		if (!cachedRemoteFiles.length) return
+		for (const bundle of LAB_TEST_FILES) {
+			if (rehydratedDemoBundleIdsRef.current.has(bundle.id)) continue
+			const primaryName = bundle.files[0]?.name
+			if (!primaryName || genomes.some((genome) => genome.primary.name === primaryName)) continue
+			const cachedBundleFiles = cachedFilesForSampleBundle(bundle, cachedRemoteFiles)
+			if (cachedBundleFiles.length !== bundle.files.length) continue
+			rehydratedDemoBundleIdsRef.current.add(bundle.id)
+			ingestMany(cachedBundleFiles.map((cached) => cached.file), 'bundled', demoBundleAnalyticsProperties(bundle))
+		}
+	}, [cachedRemoteFiles, genomes, ingestMany])
+
+	useEffect(() => {
 		if (Platform.OS !== 'web') return
 		const seenIntentUrls = new Set<string>()
 		const syncIntent = () => {
@@ -1644,7 +1760,7 @@ export default function LabScreen() {
 					verifiedName: stored?.primary?.name ?? null,
 				})
 				if (!stored?.primary) {
-					failed.push(`${item.fileName}: IndexedDB write verification failed`)
+						failed.push(`${item.fileName}: file handle persistence verification failed`)
 					continue
 				}
 				storedRows.push(documentId)
@@ -1782,12 +1898,20 @@ export default function LabScreen() {
 			if (bundle.remoteUrl) {
 				setSampleLoadingId(bundle.id)
 				setSampleLoadError(null)
+				setSampleLoadProgress({ bundleId: bundle.id, label: `Downloading ${bundle.title}`, loadedBytes: 0, totalBytes: null })
 				trackEvent('lab_sample_genome_remote_requested', {
 					...demoBundleAnalyticsProperties(bundle),
 					bundleId: bundle.id,
 				})
 				try {
-					const remoteFile = await fetchRemoteLabFile(bundle.remoteUrl)
+					const remoteFile = await fetchRemoteLabFile(bundle.remoteUrl, {
+						onProgress: (progress) => setSampleLoadProgress({
+							bundleId: bundle.id,
+							label: `Downloading ${remoteLabFileName(bundle.remoteUrl ?? bundle.title)}`,
+							loadedBytes: progress.loadedBytes,
+							totalBytes: progress.totalBytes,
+						}),
+					})
 					ingestMany([remoteFile.file], 'bundled', demoBundleAnalyticsProperties(bundle))
 					if (remoteFile.cacheStatus === 'stored' || remoteFile.cacheStatus === 'hit') {
 						await refreshCachedRemoteFiles()
@@ -1809,21 +1933,45 @@ export default function LabScreen() {
 					})
 				} finally {
 					setSampleLoadingId(null)
+					setSampleLoadProgress(null)
 				}
 				return
 			}
 			setSampleLoadingId(bundle.id)
 			setSampleLoadError(null)
+			setSampleLoadProgress({ bundleId: bundle.id, label: `Preparing ${bundle.title}`, loadedBytes: 0, totalBytes: null })
 			trackEvent('lab_sample_genome_requested', {
 				...demoBundleAnalyticsProperties(bundle),
 				bundleId: bundle.id,
 			})
 			try {
-				const files = await loadTestFileBundle(bundle)
+				const cachedBundleFiles = cachedFilesForSampleBundle(bundle, cachedRemoteFiles)
+				if (cachedBundleFiles.length === bundle.files.length) {
+					ingestMany(cachedBundleFiles.map((cached) => cached.file), 'bundled', demoBundleAnalyticsProperties(bundle))
+					trackEvent('lab_sample_genome_loaded', {
+						...demoBundleAnalyticsProperties(bundle),
+						bundleId: bundle.id,
+						cacheStatus: 'hit',
+						totalFiles: cachedBundleFiles.length,
+					})
+					return
+				}
+				const files = await loadTestFileBundle(bundle, {
+					onProgress: (progress) => setSampleLoadProgress({ ...progress, bundleId: bundle.id }),
+				})
+				let cacheStatus = 'uncached'
+				try {
+					await Promise.all(files.map((file) => cacheRemoteLabFile(demoBundleCacheSourceUrl(bundle, file.name), file)))
+					await refreshCachedRemoteFiles()
+					cacheStatus = 'stored'
+				} catch (cacheError) {
+					console.warn('[lab] demo genome cache failed', cacheError)
+				}
 				ingestMany(files, 'bundled', demoBundleAnalyticsProperties(bundle))
 				trackEvent('lab_sample_genome_loaded', {
 					...demoBundleAnalyticsProperties(bundle),
 					bundleId: bundle.id,
+					cacheStatus,
 					totalFiles: files.length,
 				})
 			} catch (err) {
@@ -1836,9 +1984,10 @@ export default function LabScreen() {
 				})
 			} finally {
 				setSampleLoadingId(null)
+				setSampleLoadProgress(null)
 			}
 		},
-		[ingestMany, refreshCachedRemoteFiles, trackEvent],
+		[cachedRemoteFiles, ingestMany, refreshCachedRemoteFiles, trackEvent],
 	)
 
 	useEffect(() => {
@@ -1987,7 +2136,7 @@ export default function LabScreen() {
 	const loadAssayUrl = useCallback((url: string) => {
 		const trimmed = url.trim()
 		if (!trimmed || Platform.OS !== 'web') return
-		window.location.hash = `url=${encodeURIComponent(trimmed)}`
+		setRemoteIntent({ intent: { kind: 'remote-resource', source: 'in-app', url: trimmed }, status: 'pending' })
 	}, [])
 
 	const shareAssayUrl = useMemo(() => {
@@ -2104,26 +2253,33 @@ export default function LabScreen() {
 	}, [addResolvedSessionAssays, ingestMany, refreshCachedRemoteFiles, remoteIntent, trackEvent])
 
 	const restoreCachedRemoteFile = useCallback((remoteFile: RemoteLabFile) => {
-		const demoBundle = demoBundleForRemoteUrl(remoteFile.sourceUrl)
+		const demoBundle = demoBundleForCachedRemoteFile(remoteFile)
 		const demoProperties = demoBundle ? demoBundleAnalyticsProperties(demoBundle) : {}
-		ingestMany([remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
+		const files = demoBundle
+			? cachedFilesForSampleBundle(demoBundle, cachedRemoteFiles).map((cached) => cached.file)
+			: [remoteFile.file]
+		ingestMany(files.length ? files : [remoteFile.file], demoBundle ? 'bundled' : 'url', demoProperties)
 		trackEvent('lab_remote_file_cache_restored', {
 			...demoProperties,
 			fileKind: remoteFile.fileKind,
 			size: remoteFile.file.size,
 			sourceUrl: remoteFile.sourceUrl,
 		})
-	}, [ingestMany, trackEvent])
+	}, [cachedRemoteFiles, ingestMany, trackEvent])
 
 	const removeCachedRemoteFile = useCallback(async (remoteFile: RemoteLabFile) => {
-		await deleteCachedRemoteLabFile(remoteFile.sourceUrl)
-		removeAssayPackageSourceUrl(remoteFile.sourceUrl)
+		const demoBundle = demoBundleForCachedRemoteFile(remoteFile)
+		const filesToDelete = demoBundle ? cachedFilesForSampleBundle(demoBundle, cachedRemoteFiles) : [remoteFile]
+		await Promise.all(filesToDelete.map((file) => deleteCachedRemoteLabFile(file.sourceUrl)))
+		for (const file of filesToDelete) removeAssayPackageSourceUrl(file.sourceUrl)
 		await refreshCachedRemoteFiles()
 		trackEvent('lab_remote_file_cache_deleted', {
+			...(demoBundle ? demoBundleAnalyticsProperties(demoBundle) : {}),
 			fileKind: remoteFile.fileKind,
 			sourceUrl: remoteFile.sourceUrl,
+			totalFiles: filesToDelete.length,
 		})
-	}, [refreshCachedRemoteFiles, trackEvent])
+	}, [cachedRemoteFiles, refreshCachedRemoteFiles, trackEvent])
 
 	const removeSessionGenome = useCallback(async (genome: LabGenomeRef) => {
 		const relatedNames = new Set(genomeRelatedFileNames(genome))
@@ -2272,40 +2428,74 @@ export default function LabScreen() {
 			if (!isAssayCompatible(catalogAssay, genomeForRun)) return
 			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, genomeForRun)) return
 
+			const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+			const startedAt = Date.now()
+			const inputEventProperties = inputEventPropertiesRef.current.get(genomeForRun.id) ?? {}
+			const basicInputContext = buildLabInputAnalyticsContext(genomeForRun, { demoBundle: demoBundleForGenome(genomeForRun) })
+			const inputRunKey = String(basicInputContext.input_id ?? genomeForRun.id)
+			const runIndexForInput = (runIndexByInputRef.current.get(inputRunKey) ?? 0) + 1
+			runIndexByInputRef.current.set(inputRunKey, runIndexForInput)
+			let runAnalyticsContext: Record<string, unknown> = {
+				run_id: runId,
+				run_index_for_input: runIndexForInput,
+				started_at_ms: startedAt,
+				input_metadata_status: 'basic',
+				...assayAnalyticsProperties(catalogAssay),
+				...basicInputContext,
+				...inputEventProperties,
+			}
 			try {
 				setRunningAssayId(catalogAssay.id)
-				const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+				trackEvent('lab_run_started', runAnalyticsContext)
 				const sourceFiles = await buildAssaySourceFiles(catalogAssay)
 				setRuns((prev) => [
 					{
 						id: runId,
 						assay: catalogAssay,
 						genomeName: labGenomeDisplayName(genomeForRun),
+						inputAnalyticsContext: runAnalyticsContext,
 						sourceFiles,
-						startedAt: Date.now(),
+						startedAt,
 						result: { status: 'running' },
 					},
 					...prev,
 				])
-				trackEvent('lab_run_started', {
-					...assayAnalyticsProperties(catalogAssay),
-					assayLanguage: catalogAssay.language,
-					genomeKind: genomeForRun.kind,
-				})
+				let inspection: BioscriptInspection | null = null
 				try {
 					const primaryFile = fileAdapterRef.current.getFile(genomeForRun.primary)
 					const bytes = new Uint8Array(await primaryFile.arrayBuffer())
-					const inspection = await inspectBytes(primaryFile.name, bytes, { detectSex: true })
-					trackEvent('using_file_heuristics', fileHeuristicAnalyticsProperties(genomeForRun, inspection))
+					inspection = await inspectBytes(primaryFile.name, bytes, { detectSex: true })
 				} catch (inspectionError) {
-					trackEvent('using_file_heuristics', {
-						error: inspectionError instanceof Error ? inspectionError.message : String(inspectionError),
-						fileExtension: safeGenomicExtension(genomeForRun.primary.name),
-						genomeKind: genomeForRun.kind,
-						inputFormat: labGenomeInputFormat(genomeForRun),
-						relatedFileExtensions: genomeRelatedFileExtensions(genomeForRun),
-					})
+					runAnalyticsContext = {
+						...runAnalyticsContext,
+						input_inspection_error: inspectionError instanceof Error ? inspectionError.message : String(inspectionError),
+					}
 				}
+				try {
+					runAnalyticsContext = {
+						...runAnalyticsContext,
+						...inputEventProperties,
+						...(await buildHashedLabInputAnalyticsContext(genomeForRun, {
+							adapter: fileAdapterRef.current,
+							demoBundle: demoBundleForGenome(genomeForRun),
+							inspection,
+						})),
+						input_metadata_status: 'inspected',
+					}
+				} catch (hashError) {
+					runAnalyticsContext = {
+						...runAnalyticsContext,
+						input_hash_error: hashError instanceof Error ? hashError.message : String(hashError),
+						...inputEventProperties,
+						...(inspection ? buildLabInputAnalyticsContext(genomeForRun, {
+							demoBundle: demoBundleForGenome(genomeForRun),
+							inspection,
+						}) : {}),
+						input_metadata_status: inspection ? 'inspected' : 'basic',
+					}
+				}
+				setRuns((prev) => prev.map((r) => r.id === runId ? { ...r, inputAnalyticsContext: runAnalyticsContext } : r))
+				trackEvent('lab_run_metadata_ready', runAnalyticsContext)
 
 				const onProgress = (progress: LabRunProgress) => {
 					setRuns((prev) =>
@@ -2469,17 +2659,16 @@ export default function LabScreen() {
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
 				)
-				trackEvent('lab_report_generated', {
-					...assayAnalyticsProperties(catalogAssay),
-					artifactCount: success.result.artifacts?.length ?? 0,
-					artifactNames: (success.result.artifacts ?? []).map((artifact) => artifact.name),
-					genomeKind: genomeForRun.kind,
-					htmlReportName: htmlArtifactForResult(success.result)?.name ?? '',
-					resultKind: success.kind,
-				})
 				trackEvent('lab_run_completed', {
-					...assayAnalyticsProperties(catalogAssay),
-					genomeKind: genomeForRun.kind,
+					...runAnalyticsContext,
+					artifactCount: success.result.artifacts?.length ?? 0,
+					artifactIds: (success.result.artifacts ?? []).map((artifact, index) =>
+						labArtifactAnalyticsId(runId, artifact, index),
+					),
+					artifactNames: (success.result.artifacts ?? []).map((artifact) => artifact.name),
+					durationMs: success.result.durationMs,
+					htmlReportId: htmlReportAnalyticsId(runId, success.result),
+					htmlReportName: htmlArtifactForResult(success.result)?.name ?? '',
 					resultKind: success.kind,
 				})
 			} catch (err) {
@@ -2492,8 +2681,7 @@ export default function LabScreen() {
 					)
 				})
 				trackEvent('lab_run_failed', {
-					...assayAnalyticsProperties(catalogAssay),
-					genomeKind: genomeForRun.kind,
+					...runAnalyticsContext,
 					error: msg,
 				})
 			} finally {
@@ -2699,19 +2887,20 @@ export default function LabScreen() {
 	}, [activeGenomeRef, runningAssayId, runAssay, runtimeWarmupStatus])
 
 	useEffect(() => {
-		if (!pendingDemoRunAssayId) return
+		if (!pendingDemoRun) return
 		if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
+		if (activeGenomeRef.primary.name !== pendingDemoRun.primaryFileName) return
 		if (runningAssayId) return
-		const assay = getAssayById(pendingDemoRunAssayId)
+		const assay = getAssayById(pendingDemoRun.assayId)
 		if (!assay) {
-			setPendingDemoRunAssayId(null)
+			setPendingDemoRun(null)
 			return
 		}
 		if (!isAssayCompatible(assay, activeGenomeRef)) return
 		if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(assay, activeGenomeRef)) return
-		setPendingDemoRunAssayId(null)
+		setPendingDemoRun(null)
 		void runAssay(assay)
-	}, [activeGenomeRef, pendingDemoRunAssayId, runningAssayId, runAssay, runtimeWarmupStatus])
+	}, [activeGenomeRef, pendingDemoRun, runningAssayId, runAssay, runtimeWarmupStatus])
 
 	// Auto-scroll to latest run when it starts / completes
 	const scrollRef = useRef<ScrollView>(null)
@@ -2749,20 +2938,41 @@ export default function LabScreen() {
 	const previousRuns = runs.slice(1)
 	const visiblePreviousRuns = showAllResultRuns ? previousRuns : previousRuns.slice(0, RESULT_RECENT_RUN_LIMIT)
 	const hiddenPreviousRunCount = Math.max(0, previousRuns.length - visiblePreviousRuns.length)
-	const firstDemoBundle = LAB_TEST_FILES[0]
-	const firstDemoAssay = firstDemoBundle
-		? LAB_ASSAYS.find((assay) => assay.inputFormats.includes(firstDemoBundle.format)) ?? null
-		: null
-	const demoRunPending = Boolean(
-		pendingDemoRunAssayId ||
-		(firstDemoBundle && sampleLoadingId === firstDemoBundle.id),
+	const drugDemoBundle = getTestFileById('biovault-23andme-sample')
+	const drugDemoAssay = getAssayById('pgx-1')
+	const vcfDemoBundle = getTestFileById('na06985-vcf')
+	const vcfDemoAssay = getAssayById('prostate-cancer-prs')
+	const demoRuns = [
+		{
+			id: 'drug-interactions',
+			label: 'Run 23andMe + Drug Interactions Example',
+			assay: drugDemoAssay,
+			bundle: drugDemoBundle,
+		},
+		{
+			id: 'prostate-vcf',
+			label: 'Run 1000 Genomes VCF + Prostate Cancer Example',
+			assay: vcfDemoAssay,
+			bundle: vcfDemoBundle,
+		},
+	].filter((item): item is { id: string; label: string; assay: LabAssay; bundle: LabTestFileBundle } =>
+		Boolean(item.assay && item.bundle),
 	)
-	const startDemoRun = useCallback(() => {
-		if (!firstDemoBundle || !firstDemoAssay) return
+	const demoRunPendingById = Object.fromEntries(demoRuns.map((item) => [
+		item.id,
+		Boolean(
+			(pendingDemoRun?.assayId === item.assay.id && pendingDemoRun.primaryFileName === item.bundle.files[0]?.name) ||
+			sampleLoadingId === item.bundle.id,
+		),
+	]))
+	const demoRunPending = Object.values(demoRunPendingById).some(Boolean)
+	const startDemoRun = useCallback((bundle: LabTestFileBundle, assay: LabAssay) => {
+		const primaryFileName = bundle.files[0]?.name
+		if (!primaryFileName) return
 		setForceGettingStarted(false)
-		setPendingDemoRunAssayId(firstDemoAssay.id)
-		void pickSample(firstDemoBundle)
-	}, [firstDemoAssay, firstDemoBundle, pickSample])
+		setPendingDemoRun({ assayId: assay.id, primaryFileName })
+		void pickSample(bundle)
+	}, [pickSample])
 	const openGettingStarted = useCallback(() => {
 		setForceGettingStarted(true)
 		scrollRef.current?.scrollTo({ y: 0, animated: true })
@@ -2775,6 +2985,11 @@ export default function LabScreen() {
 		setMobileSidebarOpen((value) => !value)
 	}, [])
 	const closeSidebarDrawer = useCallback(() => setMobileSidebarOpen(false), [])
+	const browserSupport = useMemo(
+		() => Platform.OS === 'web' ? assessWebRuntimeSupport() : null,
+		[],
+	)
+	const runtimeBlocked = browserSupport?.status === 'blocked'
 
 	const showGettingStartedView = !activeGenomeRef || forceGettingStarted
 	const assayPaneHeader = showGettingStartedView ? null : (
@@ -2827,8 +3042,10 @@ export default function LabScreen() {
 				<LabGettingStartedPanel
 					showIntro={false}
 					demoRunPending={demoRunPending}
-					assayTitle={firstDemoAssay?.title}
-					sampleTitle={firstDemoBundle?.title}
+					demoRuns={demoRuns}
+					demoRunPendingById={demoRunPendingById}
+					sampleLoadProgress={sampleLoadProgress}
+					onTryDemoRun={startDemoRun}
 				/>
 			</View>
 		</>
@@ -2843,6 +3060,7 @@ export default function LabScreen() {
 			{latestRun ? (
 				<View style={styles.resultSection}>
 					<RunCard
+						key={latestRun.id}
 						record={latestRun}
 						onViewSource={() => {
 							setSourceViewer({ files: latestRun.sourceFiles, title: latestRun.assay.title })
@@ -2926,18 +3144,13 @@ export default function LabScreen() {
 			onRestoreSavedHandle={restoreSavedHandle}
 		/>
 	)
-	const gettingStartedRunButton =
-		showGettingStartedView && firstDemoBundle && firstDemoAssay ? (
-			<GettingStartedRunButton demoRunPending={demoRunPending} onTryDemoRun={startDemoRun} />
-		) : null
-
 	return (
 		<ThemeCtx.Provider value={themeValue}>
 			<SafeAreaView style={styles.safe} edges={['top']}>
 				{dragActive ? <DragOverlay /> : null}
 
 				<View style={styles.workspaceShell}>
-					{sidebarVisible ? (
+					{sidebarVisible && !runtimeBlocked ? (
 						useSidebarDrawer ? (
 							<View style={styles.labExplorerDrawerLayer}>
 								<Pressable
@@ -3070,24 +3283,26 @@ export default function LabScreen() {
 							</View>
 						</View>
 
-						{gettingStartedRunButton ? (
-							<View style={{ marginTop: omSpacing.m, marginBottom: omSpacing.l, alignItems: 'flex-start' }}>
-								{gettingStartedRunButton}
-							</View>
-						) : null}
+						<BrowserSupportBanner assessment={browserSupport} />
 
-						{useWideSplit ? (
-							<View style={styles.workbenchGrid}>
-								<View style={[styles.workbenchPane, styles.workbenchAssayPane]}>
-									{assayPaneHeader}
-									{assayBlocks}
-								</View>
-							</View>
+						{runtimeBlocked ? (
+							<BrowserSupportBlocker assessment={browserSupport} />
 						) : (
-							labWorkBlocks
+							<>
+								{useWideSplit ? (
+									<View style={styles.workbenchGrid}>
+										<View style={[styles.workbenchPane, styles.workbenchAssayPane]}>
+											{assayPaneHeader}
+											{assayBlocks}
+										</View>
+									</View>
+								) : (
+									labWorkBlocks
+								)}
+							</>
 						)}
 					</ScrollView>
-					{useWideSplit && !showGettingStartedView ? (
+					{!runtimeBlocked && useWideSplit && !showGettingStartedView ? (
 						<View style={[styles.workbenchPane, styles.workbenchResultsPane]}>
 							{resultsPaneHeader}
 							{resultBlocks}
@@ -3136,6 +3351,7 @@ export default function LabScreen() {
 					loadedSampleBundleIds={loadedSampleBundleIds}
 					sampleLoadError={sampleLoadError}
 					sampleLoadingId={sampleLoadingId}
+					sampleLoadProgress={sampleLoadProgress}
 					shareAssayUrl={shareAssayUrl}
 					onChooseGenomeFiles={() => {
 						setImportGenomeModalOpen(false)
@@ -3149,6 +3365,76 @@ export default function LabScreen() {
 				/>
 			</SafeAreaView>
 		</ThemeCtx.Provider>
+	)
+}
+
+function BrowserSupportBanner({ assessment }: { assessment: BrowserSupportAssessment | null }) {
+	const { styles } = useTheme()
+	if (!assessment || assessment.status !== 'blocked') return null
+	const missingRequired = assessment.requiredMissing.map((item) => item.label).join(', ')
+	const missingOptional = assessment.optionalMissing.map((item) => item.label).join(', ')
+	return (
+		<View
+			accessibilityRole="alert"
+			style={[
+				styles.browserSupportBanner,
+				assessment.status === 'blocked' ? styles.browserSupportBannerBlocked : styles.browserSupportBannerWarning,
+			]}
+		>
+			<View style={styles.browserSupportIcon}>
+				<OMIcon name={assessment.status === 'blocked' ? 'alert-circle-outline' : 'construct-outline'} size={18} tone={assessment.status === 'blocked' ? 'danger' : 'accent'} />
+			</View>
+			<View style={styles.browserSupportText}>
+				<OMText variant="subtitle" style={styles.browserSupportTitle}>
+					{assessment.status === 'blocked' ? 'Browser runtime unsupported' : 'Browser runtime warning'}
+				</OMText>
+				<OMText variant="body" style={styles.browserSupportBody}>
+					{assessment.summary}
+				</OMText>
+				{missingRequired ? (
+					<OMText variant="caption" style={styles.browserSupportMeta}>
+						Required: {missingRequired}
+					</OMText>
+				) : null}
+				{missingOptional ? (
+					<OMText variant="caption" style={styles.browserSupportMeta}>
+						Optional: {missingOptional}
+					</OMText>
+				) : null}
+			</View>
+		</View>
+	)
+}
+
+function BrowserSupportBlocker({ assessment }: { assessment: BrowserSupportAssessment | null }) {
+	const { styles } = useTheme()
+	const missingRequired = assessment?.requiredMissing ?? []
+	if (!missingRequired.length) return null
+	const desktop = isDesktopRuntimeShell()
+	return (
+		<View style={styles.browserSupportBlocker}>
+			<View style={styles.browserSupportBlockerIcon}>
+				<OMIcon name="alert-circle-outline" size={28} tone="danger" />
+			</View>
+			<OMText variant="headline" style={styles.browserSupportBlockerTitle}>
+				This browser cannot run BioVault assays
+			</OMText>
+			<OMText variant="body" style={styles.browserSupportBlockerBody}>
+				{desktop
+					? 'The Lab needs these desktop runtime features before it can load files or start analysis.'
+					: 'The Lab needs these browser runtime features before it can load files or start WebAssembly analysis.'}
+			</OMText>
+			<View style={styles.browserSupportMissingList}>
+				{missingRequired.map((item) => (
+					<View key={item.id} style={styles.browserSupportMissingItem}>
+						<OMIcon name="close-circle" size={16} tone="danger" />
+						<OMText variant="body" style={styles.browserSupportMissingText}>
+							{item.label}
+						</OMText>
+					</View>
+				))}
+			</View>
+		</View>
 	)
 }
 
@@ -3547,6 +3833,8 @@ function PersistentHandlePrompt({
 						</OMText>
 					</View>
 					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel="Close dialog"
 						onPress={onDismiss}
 						style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 							styles.intentClose,
@@ -3623,6 +3911,7 @@ function ImportGenomeModal({
 	sampleBundles,
 	sampleLoadError,
 	sampleLoadingId,
+	sampleLoadProgress,
 	shareAssayUrl,
 }: {
 	assayUrlCopied: boolean
@@ -3639,6 +3928,7 @@ function ImportGenomeModal({
 	sampleBundles: LabTestFileBundle[]
 	sampleLoadError: string | null
 	sampleLoadingId: string | null
+	sampleLoadProgress: SampleLoadProgress | null
 	shareAssayUrl: string
 }) {
 	const { styles, mutedIconTone, palette } = useTheme()
@@ -3697,6 +3987,22 @@ function ImportGenomeModal({
 					</OMText>
 				</Pressable>
 
+				<Pressable
+					onPress={() => openDataHowTo('import_genome')}
+					style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+						styles.importGenomeHelpLink,
+						hovered && styles.buttonHover,
+						pressed && styles.buttonPressed,
+					]}
+					accessibilityRole="link"
+					accessibilityLabel="Open How to Download your Data guide"
+				>
+					<OMIcon name="book-outline" tone="danger" size={15} />
+					<OMText variant="subtitle" style={styles.importGenomeHelpLinkText}>
+						How to Download your Data: 23andMe and provider guides
+					</OMText>
+				</Pressable>
+
 				<View style={styles.importGenomeActionGrid}>
 					<View style={styles.importGenomeSampleCard}>
 						<View style={styles.importGenomeSectionHead}>
@@ -3711,13 +4017,15 @@ function ImportGenomeModal({
 							{sampleBundles.map((bundle) => {
 								const loading = sampleLoadingId === bundle.id
 								const loaded = loadedSampleBundleIds.has(bundle.id)
+								const progress = loading && sampleLoadProgress?.bundleId === bundle.id ? sampleLoadProgress : null
+								const progressRatio =
+									progress?.totalBytes ? Math.max(0, Math.min(1, progress.loadedBytes / progress.totalBytes)) : 0
 								return (
 									<Pressable
 										key={bundle.id}
 										disabled={loading || loaded}
 										onPress={() => {
 											onPickSample(bundle)
-											onClose()
 										}}
 										style={[styles.labExplorerSampleRow, loading || loaded ? styles.labExplorerSampleRowMuted : null]}
 										accessibilityLabel={
@@ -3738,6 +4046,31 @@ function ImportGenomeModal({
 											<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={2}>
 												{ASSAY_INPUT_FORMAT_LABELS[bundle.format]} · {bundle.description}
 											</OMText>
+											{progress ? (
+												<View style={styles.sampleDownloadProgress}>
+													<View style={styles.sampleDownloadProgressHead}>
+														<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={1}>
+															{progress.label}
+														</OMText>
+														<OMText variant="caption" style={styles.labExplorerRowMeta}>
+															{progress.totalBytes
+																? `${humanLabSize(progress.loadedBytes)} / ${humanLabSize(progress.totalBytes)}`
+																: humanLabSize(progress.loadedBytes)}
+														</OMText>
+													</View>
+													<View style={styles.sampleDownloadProgressTrack}>
+														<View
+															style={[
+																styles.sampleDownloadProgressFill,
+																{
+																	backgroundColor: palette.accent,
+																	width: progress.totalBytes ? `${progressRatio * 100}%` : '35%',
+																},
+															]}
+														/>
+													</View>
+												</View>
+											) : null}
 										</View>
 										{loaded ? null : loading ? (
 											<ActivityIndicator size="small" color={palette.accent} />
@@ -3825,7 +4158,7 @@ function LabExplorerSidebar({
 	const cachedRemotePickers = useMemo(() => {
 		return cachedRemoteFiles.filter(
 			(r) =>
-				isGenomeLabFileKind(r.fileKind) &&
+				isPrimaryGenomeFileKind(r.fileKind) &&
 				!cachedRemotePackageArtifactUrls.has(r.sourceUrl) &&
 				!sessionPrimaryNames.has(r.file.name),
 		)
@@ -4041,6 +4374,7 @@ function LabExplorerSidebar({
 								<Pressable
 									disabled={savedHandlesLoading}
 									onPress={() => onRemoveCachedRemote(remoteFile)}
+									testID="saved-local-file-forget"
 									style={[
 										styles.labExplorerRowGhostHit,
 										savedHandlesLoading ? styles.labExplorerRowGhostMuted : null,
@@ -4063,6 +4397,14 @@ function LabExplorerSidebar({
 					label="Getting Started"
 					onPress={() => {
 						onOpenGettingStarted()
+						onRequestClose?.()
+					}}
+				/>
+				<SidebarUtilityButton
+					icon="cloud-download-outline"
+					label="Download your Data"
+					onPress={() => {
+						openDataHowTo('sidebar')
 						onRequestClose?.()
 					}}
 				/>
@@ -4447,7 +4789,7 @@ function AssayPicker({
 		const isRunning = runningAssayId === assay.id
 		const disabled = anyRunning || !compatible || waitingForRuntime || (isPanel && !panelVariants.length && !packageReady)
 		const formatMeta = assay.inputFormats.map((f) => ASSAY_INPUT_FORMAT_LABELS[f]).join(' / ')
-		const sourceMeta = isRemote ? 'Cached remote' : ''
+		const sourceMeta = isLocalSessionAssay(assay) ? 'Local file' : isRemote ? 'Cached remote' : ''
 		const detailMeta = [formatMeta, sourceMeta].filter(Boolean).join(' · ')
 		return (
 			<Pressable
@@ -4759,19 +5101,28 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 	const { assay, result } = record
 	const [resultOpen, setResultOpen] = useState(false)
 	const artifactCount = result.status === 'done' ? result.artifacts?.length ?? 0 : 0
+	const textOutput = result.status === 'done' ? result.textOutput?.trim() ?? '' : ''
+	const observations = result.status === 'done' ? result.observations ?? [] : []
 	const compact = width < 560
 	const openResult = useCallback(() => {
 		if (result.status === 'done') {
+			const htmlReport = htmlArtifactForResult(result)
 			trackEvent('lab_report_opened', {
+				...record.inputAnalyticsContext,
 				...assayAnalyticsProperties(assay),
 				artifactCount,
+				artifactIds: (result.artifacts ?? []).map((artifact, index) =>
+					labArtifactAnalyticsId(record.id, artifact, index),
+				),
 				artifactNames: (result.artifacts ?? []).map((artifact) => artifact.name),
-				htmlReportName: htmlArtifactForResult(result)?.name ?? '',
+				htmlReportId: htmlReportAnalyticsId(record.id, result),
+				htmlReportName: htmlReport?.name ?? '',
+				report_id: htmlReportAnalyticsId(record.id, result),
 				resultStatus: result.status,
 			})
 		}
 		setResultOpen(true)
-	}, [artifactCount, assay, result, trackEvent])
+	}, [artifactCount, assay, record.id, record.inputAnalyticsContext, result, trackEvent])
 	const resultButton = result.status === 'done' && artifactCount > 0 ? (
 		<Pressable
 			accessibilityRole="button"
@@ -4839,15 +5190,43 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 			) : null}
 
 			{result.status === 'done' ? (
-				artifactCount > 0 ? (
-					<OMText variant="caption" style={styles.runCardHint}>
-						{artifactCount} result artifact{artifactCount === 1 ? '' : 's'} saved locally.
-					</OMText>
-				) : (
-					<OMText variant="caption" style={styles.runCardHint}>
-						No rust HTML report. Load the assay/panel as a package zip — every run must go through `bioscript report`.
-					</OMText>
-				)
+				<>
+					{textOutput ? (
+						<View style={styles.preBlock}>
+							<OMText selectable variant="caption" style={styles.preText}>
+								{textOutput}
+							</OMText>
+						</View>
+					) : null}
+					{observations.length ? (
+						<View style={styles.preBlock}>
+							{observations.map((observation, index) => (
+								<OMText
+									key={`${observation.name}-${index}`}
+									selectable
+									variant="caption"
+									style={styles.preText}
+								>
+									{[
+										observation.name,
+										observation.genotype,
+										observation.decision,
+										observation.evidence.join('; '),
+									].filter(Boolean).join(' · ')}
+								</OMText>
+							))}
+						</View>
+					) : null}
+					{artifactCount > 0 ? (
+						<OMText variant="caption" style={styles.runCardHint}>
+							{artifactCount} result artifact{artifactCount === 1 ? '' : 's'} saved locally.
+						</OMText>
+					) : !textOutput && !observations.length ? (
+						<OMText variant="caption" style={styles.runCardHint}>
+							No native report output was produced. Load the assay/panel as a package zip for the full report view.
+						</OMText>
+					) : null}
+				</>
 			) : null}
 
 			{result.status === 'error' && result.error ? (
@@ -4870,7 +5249,10 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	const { result, assay } = record
 	const html = result.status === 'done' ? htmlArtifactForResult(result) : null
-	const artifacts = result.status === 'done' ? result.artifacts ?? [] : []
+	const artifacts = useMemo(
+		() => result.status === 'done' ? result.artifacts ?? [] : [],
+		[result],
+	)
 	// Use a blob URL instead of srcDoc so in-document hash navigation
 	// (the rust report's #observations / #analysis anchors) works correctly.
 	const [htmlBlobUrl, setHtmlBlobUrl] = useState<string | null>(null)
@@ -4886,12 +5268,16 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 	const openInNewTab = useCallback(() => {
 		if (!htmlBlobUrl) return
 		trackEvent('lab_report_opened_new_window', {
+			...record.inputAnalyticsContext,
 			...assayAnalyticsProperties(assay),
 			artifactCount: artifacts.length,
+			artifactIds: artifacts.map((artifact, index) => labArtifactAnalyticsId(record.id, artifact, index)),
+			htmlReportId: htmlReportAnalyticsId(record.id, result),
 			htmlReportName: html?.name ?? '',
+			report_id: htmlReportAnalyticsId(record.id, result),
 		})
 		window.open(htmlBlobUrl, '_blank', 'noopener,noreferrer')
-	}, [artifacts.length, assay, html?.name, htmlBlobUrl, trackEvent])
+	}, [artifacts, assay, html?.name, htmlBlobUrl, record.id, record.inputAnalyticsContext, result, trackEvent])
 	// Portal to document.body so the fixed-position overlay escapes the
 	// ScrollView's stacking context.
 	return createPortal(createElement('div', {
@@ -5249,7 +5635,7 @@ function RunProgress({ progress }: { progress: RunResult['progress'] }) {
 					<View style={[styles.runProgressFill, { backgroundColor: palette.accent, width: `${ratio * 100}%` }]} />
 				</View>
 			) : (
-				// `runPackageReportBytes` is a single opaque wasm call so we don't
+				// `runPackageReportBytes` is a single opaque native/runtime call so we don't
 				// know how many variants are left. Show an indeterminate animated
 				// bar instead of nothing so users know work is happening.
 				<IndeterminateProgressBar accent={palette.accent} />
@@ -5311,6 +5697,22 @@ function htmlArtifactForResult(result: RunResult): LabRunArtifact | null {
 	return named ?? htmls[0] ?? null
 }
 
+function labArtifactAnalyticsId(runId: string, artifact: LabRunArtifact, index: number): string {
+	const key = `${artifact.path || artifact.name || 'artifact'}`
+		.toLowerCase()
+		.replace(/[^a-z0-9._/-]+/g, '-')
+		.replace(/-+/g, '-')
+		.slice(0, 80)
+	return `${runId}:artifact:${index}:${key || 'artifact'}`
+}
+
+function htmlReportAnalyticsId(runId: string, result: RunResult): string {
+	const html = htmlArtifactForResult(result)
+	if (!html) return `${runId}:report:none`
+	const index = (result.artifacts ?? []).findIndex((artifact) => artifact === html)
+	return labArtifactAnalyticsId(runId, html, index >= 0 ? index : 0)
+}
+
 function ArtifactLinks({ artifacts, record }: { artifacts: LabRunArtifact[]; record: RunRecord }) {
 	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	return createElement('div', {
@@ -5339,11 +5741,16 @@ function ArtifactLinks({ artifacts, record }: { artifacts: LabRunArtifact[]; rec
 						download: artifact.name,
 						onClick: () => {
 							trackEvent('lab_report_artifact_downloaded', {
+								...record.inputAnalyticsContext,
 								...assayAnalyticsProperties(record.assay),
+								artifactId: labArtifactAnalyticsId(record.id, artifact, index),
 								artifactIndex: index,
 								artifactMimeType: artifact.mimeType ?? '',
 								artifactName: artifact.name,
 								artifactPath: artifact.path ?? '',
+								report_id: artifact.mimeType === 'text/html' || artifact.name.toLowerCase().endsWith('.html')
+									? labArtifactAnalyticsId(record.id, artifact, index)
+									: '',
 							})
 						},
 						style: {
@@ -5800,68 +6207,182 @@ function WebVideoPlayer({ src, title }: { src: string; title: string }) {
 	)
 }
 
+type DemoRunOption = {
+	id: string
+	label: string
+	assay: LabAssay
+	bundle: LabTestFileBundle
+}
+
+function GettingStartedRunButtons({
+	demoRunPendingById,
+	demoRuns,
+	onTryDemoRun,
+	sampleLoadProgress,
+}: {
+	demoRunPendingById: Record<string, boolean>
+	demoRuns: DemoRunOption[]
+	onTryDemoRun: (bundle: LabTestFileBundle, assay: LabAssay) => void
+	sampleLoadProgress?: SampleLoadProgress | null
+}) {
+	const { palette, styles } = useTheme()
+	return (
+		<View style={styles.gettingStartedRunButtonRow}>
+			{demoRuns.map((run) => {
+				const progress = sampleLoadProgress?.bundleId === run.bundle.id ? sampleLoadProgress : null
+				const progressRatio =
+					progress?.totalBytes ? Math.max(0, Math.min(1, progress.loadedBytes / progress.totalBytes)) : 0
+				return (
+					<View key={run.id} style={styles.gettingStartedRunButtonStack}>
+						<GettingStartedRunButton
+							demoRunPending={Boolean(demoRunPendingById[run.id])}
+							label={run.label}
+							onTryDemoRun={() => onTryDemoRun(run.bundle, run.assay)}
+						/>
+						{progress ? (
+							<View style={styles.gettingStartedDemoProgress}>
+								<View style={styles.sampleDownloadProgressHead}>
+									<OMText variant="caption" style={styles.labExplorerRowMeta} numberOfLines={1}>
+										{progress.label}
+									</OMText>
+									<OMText variant="caption" style={styles.labExplorerRowMeta}>
+										{progress.totalBytes
+											? `${humanLabSize(progress.loadedBytes)} / ${humanLabSize(progress.totalBytes)}`
+											: humanLabSize(progress.loadedBytes)}
+									</OMText>
+								</View>
+								<View style={styles.sampleDownloadProgressTrack}>
+									<View
+										style={[
+											styles.sampleDownloadProgressFill,
+											{
+												backgroundColor: palette.accent,
+												width: progress.totalBytes ? `${progressRatio * 100}%` : '35%',
+											},
+										]}
+									/>
+								</View>
+							</View>
+						) : null}
+					</View>
+				)
+			})}
+		</View>
+	)
+}
+
 function GettingStartedRunButton({
 	demoRunPending,
+	label,
 	onTryDemoRun,
 }: {
 	demoRunPending: boolean
+	label: string
 	onTryDemoRun: () => void
 }) {
 	const { palette, styles } = useTheme()
+	const [hovered, setHovered] = useState(false)
 	return (
 		<Pressable
 			onPress={onTryDemoRun}
 			disabled={demoRunPending}
+			onHoverIn={() => setHovered(true)}
+			onHoverOut={() => setHovered(false)}
 			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.intentPrimaryButton,
 				styles.tryNowButton,
-				hovered && !demoRunPending && styles.buttonHover,
+				hovered && !demoRunPending && styles.tryNowButtonHover,
 				pressed && styles.gettingStartedBtnPressed,
 				demoRunPending && styles.gettingStartedBtnDisabled,
 			]}
 			accessibilityRole="button"
-			accessibilityLabel="Load sample data and run a demo assay locally"
+			accessibilityLabel={label}
 		>
+			{hovered && !demoRunPending ? <RunButtonShimmer /> : null}
 			{demoRunPending ? (
 				<ActivityIndicator size="small" color="#fff" />
 			) : (
 				<OMIcon
 					name="play-outline"
-					size={24}
+					size={20}
 					color={palette.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : palette.invertText}
 					tone="inverse"
 				/>
 			)}
 			<OMText variant="subtitle" style={[styles.primaryButtonText, styles.tryNowButtonText]}>
-				{demoRunPending ? 'Loading sample...' : 'Run Example'}
+				{demoRunPending ? 'Loading sample...' : label}
 			</OMText>
 		</Pressable>
 	)
 }
 
+function RunButtonShimmer() {
+	if (Platform.OS !== 'web') return null
+	return createElement('span', {
+		'aria-hidden': true,
+		style: {
+			animation: 'biovault-run-button-shimmer 1.8s ease-in-out infinite',
+			background:
+				'linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0.45) 50%, rgba(255,255,255,0.18) 55%, transparent 100%)',
+			bottom: 0,
+			left: '-45%',
+			pointerEvents: 'none',
+			position: 'absolute',
+			top: 0,
+			transform: 'skewX(-16deg)',
+			width: '35%',
+		},
+		children: createElement('style', {
+			children: '@keyframes biovault-run-button-shimmer{from{left:-45%}to{left:125%}}',
+		}),
+	})
+}
+
 function GettingStartedFeatureStrip({ compact }: { compact: boolean }) {
 	const { styles } = useTheme()
 	const featureStyles = styles as typeof styles & Record<string, any>
+	const desktop = isDesktopRuntimeShell()
 	const items = compact
-		? [
-				{ title: 'Local processing', body: 'Files stay in this browser.' },
-				{ title: 'WASM runtime', body: 'Assays run locally with WebAssembly.' },
-				{ title: 'You control files', body: 'Clear local storage anytime.' },
-			]
-		: [
-				{
-					title: 'Local by default',
-					body: 'Genome files are processed in your browser and are not uploaded to run assays.',
-				},
-				{
-					title: 'WASM runtime',
-					body: 'BioScript and genomics readers run through WebAssembly with worker-backed execution.',
-				},
-				{
-					title: 'You control files',
-					body: 'Use local files, cached remote resources, or sample data, then clear storage from settings.',
-				},
-			]
+		? desktop
+			? [
+					{ title: 'Local processing', body: 'Files stay on this computer.' },
+					{ title: 'Native Rust runtime', body: 'Assays run locally through BioScript Rust.' },
+					{ title: 'You control files', body: 'Clear local storage anytime.' },
+				]
+			: [
+					{ title: 'Local processing', body: 'Files stay in this browser.' },
+					{ title: 'WASM runtime', body: 'Assays run locally with WebAssembly.' },
+					{ title: 'You control files', body: 'Clear local storage anytime.' },
+				]
+		: desktop
+			? [
+					{
+						title: 'Local by default',
+						body: 'Genome files are processed on this computer and are not uploaded to run assays.',
+					},
+					{
+						title: 'Native Rust runtime',
+						body: 'BioScript and genomics readers run through the native Rust code linked into the desktop app.',
+					},
+					{
+						title: 'You control files',
+						body: 'Use local files, cached remote resources, or sample data, then clear storage from settings.',
+					},
+				]
+			: [
+					{
+						title: 'Local by default',
+						body: 'Genome files are processed in your browser and are not uploaded to run assays.',
+					},
+					{
+						title: 'WASM runtime',
+						body: 'BioScript and genomics readers run through WebAssembly with worker-backed execution.',
+					},
+					{
+						title: 'You control files',
+						body: 'Use local files, cached remote resources, or sample data, then clear storage from settings.',
+					},
+				]
 	return (
 		<View style={[featureStyles.gettingStartedFeatureStrip, compact ? featureStyles.gettingStartedFeatureStripCompact : null]}>
 			{items.map((item) => (
@@ -5897,18 +6418,20 @@ function GettingStartedFeatureStrip({ compact }: { compact: boolean }) {
 }
 
 function LabGettingStartedPanel({
-	assayTitle,
 	demoRunPending = false,
+	demoRunPendingById = {},
+	demoRuns = [],
 	layout = 'page',
 	onTryDemoRun,
-	sampleTitle,
+	sampleLoadProgress,
 	showIntro: showIntroProp,
 }: {
-	assayTitle?: string
 	demoRunPending?: boolean
+	demoRunPendingById?: Record<string, boolean>
+	demoRuns?: DemoRunOption[]
 	layout?: 'modal' | 'page'
-	onTryDemoRun?: () => void
-	sampleTitle?: string
+	onTryDemoRun?: (bundle: LabTestFileBundle, assay: LabAssay) => void
+	sampleLoadProgress?: SampleLoadProgress | null
 	showIntro?: boolean
 }) {
 	const { styles } = useTheme()
@@ -5916,7 +6439,14 @@ function LabGettingStartedPanel({
 	const compact = width < 640
 	const wide = width >= 1040
 	const showIntro = showIntroProp ?? layout === 'page'
-	const demoButton = onTryDemoRun ? <GettingStartedRunButton demoRunPending={demoRunPending} onTryDemoRun={onTryDemoRun} /> : null
+	const demoButton = onTryDemoRun && demoRuns.length ? (
+		<GettingStartedRunButtons
+			demoRunPendingById={demoRunPendingById}
+			demoRuns={demoRuns}
+			onTryDemoRun={onTryDemoRun}
+			sampleLoadProgress={sampleLoadProgress}
+		/>
+	) : null
 	const featureStrip = <GettingStartedFeatureStrip compact={compact} />
 	const videoBlock = (
 		<View
@@ -5950,8 +6480,23 @@ function LabGettingStartedPanel({
 									<OMText variant="body" style={[styles.gettingStartedLead, compact ? styles.gettingStartedLeadCompact : null]}>
 										{demoRunPending
 											? 'Preparing the sample genome and assay run locally. Nothing is uploaded.'
-											: `Add a genome from the sidebar, or load ${sampleTitle ?? 'sample data'} and queue ${assayTitle ?? 'a demo assay'} locally.`}
+											: 'Add a genome from the sidebar, or run a demo workflow locally.'}
 									</OMText>
+									<Pressable
+										onPress={() => openDataHowTo('getting_started')}
+										style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+											styles.dataHowToInlineLink,
+											hovered && styles.buttonHover,
+											pressed && styles.buttonPressed,
+										]}
+										accessibilityRole="link"
+										accessibilityLabel="Open How to Download your Data guide"
+									>
+										<OMIcon name="book-outline" tone="accent" size={15} />
+										<OMText variant="subtitle" style={styles.dataHowToInlineLinkText}>
+											How to Download your Data
+										</OMText>
+									</Pressable>
 								</View>
 							) : null}
 							{demoButton}
@@ -5975,11 +6520,22 @@ function openContactEmail(source: 'header' | 'footer') {
 }
 
 const GITHUB_URL = 'https://github.com/openmined/biovault-app'
+const DATA_HOW_TO_PATH = '/data-how-to/'
 
 function openGithub() {
 	getAnalytics()?.trackEvent('lab_github_clicked', { url: GITHUB_URL })
 	if (typeof window === 'undefined') return
 	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
+}
+
+function openDataHowTo(source: 'getting_started' | 'import_genome' | 'sidebar') {
+	const url =
+		typeof window === 'undefined'
+			? DATA_HOW_TO_PATH
+			: new URL(DATA_HOW_TO_PATH, window.location.origin).toString()
+	getAnalytics()?.trackEvent('lab_data_how_to_clicked', { source, url })
+	if (typeof window === 'undefined') return
+	window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 function SidebarToggleButton({
@@ -6599,6 +7155,25 @@ function makeStyles(p: LabPalette) {
 			fontSize: 18,
 			lineHeight: 25,
 		},
+		dataHowToInlineLink: {
+			...buttonMotion,
+			alignSelf: 'flex-start',
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 7,
+			minHeight: 34,
+			marginTop: 4,
+			paddingHorizontal: omSpacing.s,
+			paddingVertical: 6,
+			borderRadius: omRadius.s,
+			cursor: 'pointer',
+		} as object,
+		dataHowToInlineLinkText: {
+			color: p.accentStrong,
+			fontSize: 13,
+			lineHeight: 18,
+			fontWeight: '700',
+		},
 		gettingStartedFeatureStrip: {
 			alignSelf: 'stretch',
 			flexDirection: 'row',
@@ -6663,19 +7238,46 @@ function makeStyles(p: LabPalette) {
 			lineHeight: 18,
 			fontStyle: 'italic',
 		},
+		gettingStartedRunButtonRow: {
+			flexDirection: 'row',
+			alignItems: 'stretch',
+			flexWrap: 'wrap',
+			gap: omSpacing.m,
+			flexShrink: 1,
+		},
+		gettingStartedRunButtonStack: {
+			alignItems: 'stretch',
+			gap: 8,
+			maxWidth: '100%',
+		},
+		gettingStartedDemoProgress: {
+			gap: 6,
+			width: '100%',
+			maxWidth: 520,
+		},
 		tryNowButton: {
+			position: 'relative',
 			alignSelf: 'flex-start',
 			marginTop: 0,
-			height: 64,
-			minHeight: 64,
-			paddingHorizontal: omSpacing.xl,
+			height: 48,
+			minHeight: 48,
+			paddingHorizontal: omSpacing.l,
 			flexShrink: 0,
+			overflow: 'hidden',
 			backgroundColor: p.pageBg === LAB_LANDING_PAGE_FILL ? '#2f7d5d' : p.accent,
 		},
+		tryNowButtonHover: Platform.OS === 'web'
+			? ({
+					opacity: 1,
+					boxShadow: `0 0 0 1px ${p.accentBorder}, 0 12px 32px rgba(83, 190, 169, 0.28)`,
+					transform: [{ translateY: -1 }],
+				} as object)
+			: {},
 		tryNowButtonText: {
 			color: p.pageBg === LAB_LANDING_PAGE_FILL ? '#ffffff' : p.invertText,
-			fontSize: 19,
-			lineHeight: 25,
+			fontSize: 14,
+			lineHeight: 18,
+			flexShrink: 1,
 		},
 		gettingStartedVideoBlock: {
 			alignSelf: 'stretch',
@@ -7185,6 +7787,29 @@ function makeStyles(p: LabPalette) {
 		labExplorerSampleError: {
 			marginTop: omSpacing.xs,
 		},
+		sampleDownloadProgress: {
+			marginTop: 8,
+			gap: 6,
+			width: '100%',
+		},
+		sampleDownloadProgressHead: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			justifyContent: 'space-between',
+			gap: 8,
+		},
+		sampleDownloadProgressTrack: {
+			height: 6,
+			borderRadius: 999,
+			overflow: 'hidden',
+			backgroundColor: p.surfaceSunken,
+			borderWidth: StyleSheet.hairlineWidth,
+			borderColor: p.border,
+		},
+		sampleDownloadProgressFill: {
+			height: '100%',
+			borderRadius: 999,
+		},
 		webThemeButton: {
 			...buttonMotion,
 			width: 'calc((100% - 8px) / 2)' as any,
@@ -7489,6 +8114,80 @@ function makeStyles(p: LabPalette) {
 			color: p.accentStrong,
 			fontSize: 12,
 			lineHeight: 17,
+		},
+		browserSupportBanner: {
+			flexDirection: 'row',
+			alignItems: 'flex-start',
+			gap: omSpacing.m,
+			marginBottom: omSpacing.l,
+			padding: omSpacing.m,
+			borderRadius: omRadius.m,
+			borderWidth: 1,
+		},
+		browserSupportBannerWarning: {
+			backgroundColor: p.warningBg,
+			borderColor: p.warningBorder,
+		},
+		browserSupportBannerBlocked: {
+			backgroundColor: p.dangerBg,
+			borderColor: p.dangerBorder,
+		},
+		browserSupportIcon: {
+			width: 30,
+			height: 30,
+			borderRadius: 8,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.surfaceRaised,
+		},
+		browserSupportText: {
+			flex: 1,
+			minWidth: 0,
+			gap: 3,
+		},
+		browserSupportTitle: { color: p.text },
+		browserSupportBody: { color: p.textMuted },
+		browserSupportMeta: { color: p.textFaint },
+		browserSupportBlocker: {
+			alignSelf: 'stretch',
+			maxWidth: 720,
+			gap: omSpacing.m,
+			paddingVertical: omSpacing.xxl,
+			paddingHorizontal: 0,
+		},
+		browserSupportBlockerIcon: {
+			width: 52,
+			height: 52,
+			borderRadius: 12,
+			alignItems: 'center',
+			justifyContent: 'center',
+			backgroundColor: p.dangerBg,
+			borderWidth: 1,
+			borderColor: p.dangerBorder,
+		},
+		browserSupportBlockerTitle: {
+			color: p.text,
+			fontSize: 26,
+			lineHeight: 32,
+			fontWeight: '700',
+		},
+		browserSupportBlockerBody: {
+			color: p.textMuted,
+			fontSize: 16,
+			lineHeight: 24,
+			maxWidth: 620,
+		},
+		browserSupportMissingList: {
+			gap: omSpacing.s,
+			marginTop: omSpacing.s,
+		},
+		browserSupportMissingItem: {
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: omSpacing.s,
+		},
+		browserSupportMissingText: {
+			color: p.text,
 		},
 		pickerList: { gap: 8 },
 		panelAssayGroup: {
@@ -8349,6 +9048,25 @@ function makeStyles(p: LabPalette) {
 			color: p.textMuted,
 			textAlign: 'center',
 			lineHeight: 17,
+		},
+		importGenomeHelpLink: {
+			...buttonMotion,
+			alignSelf: 'flex-start',
+			flexDirection: 'row',
+			alignItems: 'center',
+			gap: 7,
+			minHeight: 34,
+			marginTop: -omSpacing.s,
+			paddingHorizontal: omSpacing.s,
+			paddingVertical: 6,
+			borderRadius: omRadius.s,
+			cursor: 'pointer',
+		} as object,
+		importGenomeHelpLinkText: {
+			color: p.dangerText,
+			fontSize: 13,
+			lineHeight: 18,
+			fontWeight: '800',
 		},
 		importGenomeActionGrid: {
 			gap: omSpacing.m,

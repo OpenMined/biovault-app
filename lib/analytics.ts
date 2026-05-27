@@ -38,6 +38,7 @@ type AnalyticsProperties = Record<string, any>
 export interface AnalyticsOptions {
 	apiEndpoint?: string
 	appDomain?: string
+	appVariant?: string
 	siteId?: string
 }
 
@@ -213,6 +214,7 @@ export class Analytics {
 	}
 
 	private getCurrentHostname(): string {
+		if (Platform.OS === 'web' && hasTauriRuntime()) return this.appDomain
 		if (Platform.OS === 'web' && typeof window !== 'undefined') {
 			return window.location.hostname || this.appDomain
 		}
@@ -238,6 +240,7 @@ export class Analytics {
 	}
 
 	private getPayloadUserAgent(): string | undefined {
+		if (Platform.OS === 'web' && hasTauriRuntime()) return this.getUserAgent()
 		return Platform.OS === 'web' ? undefined : this.getUserAgent()
 	}
 
@@ -544,6 +547,7 @@ export function getBioVaultAnalyticsConfig(options: AnalyticsOptions = {}): BioV
 	const runtimeTarget = getWebRuntimeMetricsTarget()
 	const variant =
 		runtimeTarget?.variant ??
+		options.appVariant ??
 		process.env.EXPO_PUBLIC_APP_VARIANT ??
 		(typeof extra.variant === 'string' ? extra.variant : undefined) ??
 		'development'

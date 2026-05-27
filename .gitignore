@@ -82,6 +82,7 @@ bun.lockb
 bun.lock
 
 # Logs and diagnostics
+.clawpatch/
 *.log
 logs/
 npm-debug.log*
@@ -141,6 +142,14 @@ google-services.local.json
 google-services.*.local.json
 # Already ignoring: *.jks, *.p8, *.p12, *.key, *.mobileprovision
 
+# Browser compatibility provider credentials/endpoints
+browser-compat-endpoints*.json
+browserstack-caps*.json
+lambdatest-caps*.json
+sauce-caps*.json
+*-browser-compat-caps*.json
+*-browser-compat-endpoints*.json
+
 notebooks/.ipynb_checkpoints/
 notebooks/downloads/
 notebooks/work/
@@ -158,5 +167,16 @@ brand.openmined.org/
 .maestro/screenshots/
 screenshots/
 test-results/
+test-output/
 .bioscript-cache/
 /repos/
+
+# bioscript-wasm: build outputs, regenerated from the bioscript submodule by
+# modules/expo-bioscript/scripts/build-bioscript-wasm.sh (see
+# scripts/check-bioscript-wasm-artifacts.mjs). Not tracked — like monty-wasm.
+modules/expo-bioscript/src/bioscript-wasm/bioscript_wasm.js
+modules/expo-bioscript/src/bioscript-wasm/bioscript_wasm.d.ts
+modules/expo-bioscript/src/bioscript-wasm/bioscript_wasm_bg.wasm
+modules/expo-bioscript/web-runtime/bioscript-wasm/bioscript_wasm.mjs
+modules/expo-bioscript/web-runtime/bioscript-wasm/bioscript_wasm_bg.wasm
+modules/expo-bioscript/src/bioscript-wasm/.bioscript-wasm-source.sha256

@@ -1,5 +1,6 @@
 import type { FileKind } from '@/lib/lab/core/file-kind'
 import { createLabMemoryFile } from '@/lib/lab/platform-file'
+import { gunzipSync } from 'fflate'
 import exampleResources from './example-resources.json'
 
 export type AssayCategory = 'risk' | 'pharmacogenomics' | 'ancestry' | 'panel' | 'demo'
@@ -39,8 +40,24 @@ export type LabTestFileBundle = {
 	title: string
 	description: string
 	format: AssayInputFormat
-	files: { name: string; kind: Exclude<FileKind, 'unknown'>; url: string }[]
+	files: { name: string; kind: Exclude<FileKind, 'unknown'>; sizeBytes?: number; url: string }[]
+	archive?: {
+		format: 'split-tar-gz'
+		expectedSizeBytes?: number
+		outputName: string
+		parts: { name: string; sizeBytes?: number; url: string }[]
+	}
 	remoteUrl?: string
+}
+
+export type LabTestFileBundleLoadProgress = {
+	label: string
+	loadedBytes: number
+	totalBytes: number | null
+}
+
+export type LoadTestFileBundleOptions = {
+	onProgress?: (progress: LabTestFileBundleLoadProgress) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -120,11 +137,142 @@ async function fetchToFile(name: string, url: string): Promise<File> {
 	return createLabMemoryFile(name, new Uint8Array(bytes), guessMimeType(name))
 }
 
+async function fetchBytes(
+	name: string,
+	url: string,
+	onProgress?: (loadedBytes: number) => void,
+): Promise<Uint8Array> {
+	const response = await fetch(url)
+	if (!response.ok) throw new Error(`Failed to fetch ${name}: ${response.status}`)
+	if (!response.body) {
+		const bytes = new Uint8Array(await response.arrayBuffer())
+		onProgress?.(bytes.byteLength)
+		return bytes
+	}
+	const reader = response.body.getReader()
+	const chunks: Uint8Array[] = []
+	let loaded = 0
+	for (;;) {
+		const { done, value } = await reader.read()
+		if (done) break
+		if (!value) continue
+		chunks.push(value)
+		loaded += value.byteLength
+		onProgress?.(loaded)
+	}
+	return concatBytes(chunks)
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+	const size = parts.reduce((sum, part) => sum + part.byteLength, 0)
+	const out = new Uint8Array(size)
+	let offset = 0
+	for (const part of parts) {
+		out.set(part, offset)
+		offset += part.byteLength
+	}
+	return out
+}
+
+function trimNullPaddedAscii(bytes: Uint8Array): string {
+	const end = bytes.indexOf(0)
+	return new TextDecoder().decode(end >= 0 ? bytes.slice(0, end) : bytes).trim()
+}
+
+function parseTarSize(bytes: Uint8Array): number {
+	const text = trimNullPaddedAscii(bytes)
+	return text ? Number.parseInt(text, 8) : 0
+}
+
+function extractTarFile(tarBytes: Uint8Array, outputName: string): Uint8Array {
+	const blockSize = 512
+	for (let offset = 0; offset + blockSize <= tarBytes.byteLength;) {
+		const header = tarBytes.slice(offset, offset + blockSize)
+		if (header.every((byte) => byte === 0)) break
+
+		const name = trimNullPaddedAscii(header.slice(0, 100))
+		const prefix = trimNullPaddedAscii(header.slice(345, 500))
+		const path = prefix ? `${prefix}/${name}` : name
+		const size = parseTarSize(header.slice(124, 136))
+		const typeflag = header[156]
+		const bodyStart = offset + blockSize
+		const bodyEnd = bodyStart + size
+		const isRegularFile = typeflag === 0 || typeflag === 48
+		if (isRegularFile && (path === outputName || path.endsWith(`/${outputName}`))) {
+			return tarBytes.slice(bodyStart, bodyEnd)
+		}
+
+		offset = bodyStart + Math.ceil(size / blockSize) * blockSize
+	}
+	throw new Error(`Archive did not contain ${outputName}`)
+}
+
+async function loadSplitTarGzBundle(
+	bundle: LabTestFileBundle,
+	options: LoadTestFileBundleOptions,
+	progressOffset: { loadedBytes: number; totalBytes: number | null },
+): Promise<File[]> {
+	const archive = bundle.archive
+	if (!archive) return []
+	const parts: Uint8Array[] = []
+	for (const part of archive.parts) {
+		let previousPartLoaded = 0
+		const bytes = await fetchBytes(part.name, part.url, (partLoaded) => {
+			const delta = partLoaded - previousPartLoaded
+			previousPartLoaded = partLoaded
+			progressOffset.loadedBytes += delta
+			options.onProgress?.({
+				label: `Downloading ${part.name}`,
+				loadedBytes: progressOffset.loadedBytes,
+				totalBytes: progressOffset.totalBytes,
+			})
+		})
+		parts.push(bytes)
+	}
+	const tarBytes = gunzipSync(concatBytes(parts))
+	const extracted = extractTarFile(tarBytes, archive.outputName)
+	if (archive.expectedSizeBytes && extracted.byteLength !== archive.expectedSizeBytes) {
+		throw new Error(
+			`${archive.outputName} extracted to ${extracted.byteLength} bytes, expected ${archive.expectedSizeBytes} bytes.`,
+		)
+	}
+	return [createLabMemoryFile(archive.outputName, extracted, guessMimeType(archive.outputName))]
+}
+
 export async function loadAssayFile(assay: LabAssay): Promise<File> {
 	const name = assay.url.split('/').pop() ?? `${assay.id}.${assay.language === 'python' ? 'py' : 'yaml'}`
 	return fetchToFile(name, assay.url)
 }
 
-export async function loadTestFileBundle(bundle: LabTestFileBundle): Promise<File[]> {
-	return Promise.all(bundle.files.map((f) => fetchToFile(f.name, f.url)))
+export async function loadTestFileBundle(
+	bundle: LabTestFileBundle,
+	options: LoadTestFileBundleOptions = {},
+): Promise<File[]> {
+	const archiveOutputName = bundle.archive?.outputName
+	const directEntries = bundle.files.filter((f) => f.name !== archiveOutputName)
+	const totalBytes = [
+		...(bundle.archive?.parts ?? []).map((part) => part.sizeBytes),
+		...directEntries.map((file) => file.sizeBytes),
+	].every((size): size is number => typeof size === 'number')
+		? [...(bundle.archive?.parts ?? []), ...directEntries].reduce((sum, entry) => sum + (entry.sizeBytes ?? 0), 0)
+		: null
+	const progressOffset = { loadedBytes: 0, totalBytes }
+	options.onProgress?.({ label: `Preparing ${bundle.title}`, loadedBytes: 0, totalBytes })
+	const archiveFiles = await loadSplitTarGzBundle(bundle, options, progressOffset)
+	const directFiles: File[] = []
+	for (const entry of directEntries) {
+		let previousFileLoaded = 0
+		const bytes = await fetchBytes(entry.name, entry.url, (fileLoaded) => {
+			const delta = fileLoaded - previousFileLoaded
+			previousFileLoaded = fileLoaded
+			progressOffset.loadedBytes += delta
+			options.onProgress?.({
+				label: `Downloading ${entry.name}`,
+				loadedBytes: progressOffset.loadedBytes,
+				totalBytes,
+			})
+		})
+		directFiles.push(createLabMemoryFile(entry.name, bytes, guessMimeType(entry.name)))
+	}
+	return [...archiveFiles, ...directFiles]
 }

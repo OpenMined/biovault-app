@@ -53,6 +53,7 @@ export type BioscriptInspection = {
 	detectedKind:
 		| 'genotype_text'
 		| 'vcf'
+		| 'bcf'
 		| 'alignment_cram'
 		| 'alignment_bam'
 		| 'reference_fasta'

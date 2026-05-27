@@ -50,7 +50,8 @@ test.describe('lab layout, onboarding, and copy — web', () => {
 		await guideButton.evaluate((element) => {
 			;(element as HTMLElement).click()
 		})
-		await expect(page.getByRole('button', { name: 'Load sample data and run a demo assay locally' })).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Run 23andMe + Drug Interactions Example' })).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Run 1000 Genomes VCF + Prostate Cancer Example' })).toBeVisible()
 		await expect(page.getByTestId('session-genome-row')).toHaveCount(1)
 
 		await page.getByLabel(/Select genome genome_hu50B3F5_v5_Full\.zip/).evaluate((element) => {

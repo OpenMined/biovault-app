@@ -1,0 +1,50 @@
+{
+	"android-chrome-latest": {
+		"wsEndpoint": "wss://provider.example/playwright?target=android-chrome-latest",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"android-chrome-previous": {
+		"wsEndpoint": "wss://provider.example/playwright?target=android-chrome-previous",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"android-firefox-latest": {
+		"wsEndpoint": "wss://provider.example/playwright?target=android-firefox-latest",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"android-samsung-internet-latest": {
+		"wsEndpoint": "wss://provider.example/playwright?target=android-samsung-internet-latest",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"ios-safari-latest": {
+		"wsEndpoint": "wss://provider.example/playwright?target=ios-safari-latest",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"ios-safari-oldest-supported": {
+		"wsEndpoint": "wss://provider.example/playwright?target=ios-safari-oldest-supported",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"ios-chrome-latest": {
+		"wsEndpoint": "wss://provider.example/playwright?target=ios-chrome-latest",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	},
+	"ios-firefox-latest": {
+		"wsEndpoint": "wss://provider.example/playwright?target=ios-firefox-latest",
+		"headers": {
+			"Authorization": "Bearer ${BROWSER_PROVIDER_TOKEN}"
+		}
+	}
+}

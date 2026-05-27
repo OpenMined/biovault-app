@@ -254,7 +254,7 @@ export async function runLabAssayRef(
 				: undefined,
 		outputFile: runtimeRoot?.outputFile ?? outputFileName,
 		participantId,
-		inputFormat: 'text',
+		inputFormat: descriptor.kind === 'zip' ? 'zip' : 'text',
 		genomes: { [genomeKey]: descriptor, [runtimeInputFile]: descriptor },
 		maxDurationMs: 180_000,
 		maxMemoryBytes: 128 * 1024 * 1024,

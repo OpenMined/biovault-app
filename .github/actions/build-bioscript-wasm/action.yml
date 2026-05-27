@@ -1,0 +1,32 @@
+name: Build bioscript-wasm
+description: >
+  Set up Rust + wasm-pack and (re)build the untracked bioscript-wasm bundle
+  from the bioscript submodule if missing/stale. Requires the bioscript
+  submodule to be initialized and Node.js to be set up beforehand.
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Cache Rust (bioscript/rust)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: bioscript/rust
+        key: bioscript-wasm
+
+    - name: Install wasm-pack
+      shell: bash
+      run: |
+        export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+        rustup target add wasm32-unknown-unknown
+        command -v wasm-pack >/dev/null 2>&1 || curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Ensure bioscript-wasm artifacts
+      shell: bash
+      run: |
+        export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+        node ./scripts/check-bioscript-wasm-artifacts.mjs

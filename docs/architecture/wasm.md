@@ -245,6 +245,36 @@ Effort estimate: ~2–3 hours.
 
 - `metro.config.js` sets `Cross-Origin-Embedder-Policy: credentialless` +
   `Cross-Origin-Opener-Policy: same-origin` so SharedArrayBuffer works.
+
+  > **Multithreaded WASM requires cross-origin isolation.**
+  > `SharedArrayBuffer` (and therefore Monty's async thread pool — the
+  > Phase 1b single-worker shape, which loads Monty with
+  > `SharedArrayBuffer, WASI`) is only available when the page is
+  > `crossOriginIsolated`, which requires **both** `COOP: same-origin`
+  > **and** `COEP: require-corp`/`credentialless` response headers. The
+  > Metro dev server sets these (above); single-threaded WASM
+  > (`WebAssembly.instantiate` + a normal Worker) does **not** need them.
+  >
+  > **Gap (verified 2026-05-19):** the production deploy at
+  > `app.biovault.net/web` (Cloudflare, `scripts/prepare-cloudflare-web-assets.mjs`
+  > + `wrangler`) serves `Cross-Origin-Opener-Policy: unsafe-none` and
+  > `Cross-Origin-Embedder-Policy: unsafe-none`, so `crossOriginIsolated`
+  > is `false` and `SharedArrayBuffer` is unavailable there on **every**
+  > browser — not just mobile. Empirically confirmed on real engines:
+  > basic WASM smoke (`WebAssembly.instantiate` + call) **passes** on real
+  > Mobile Safari (iOS 18.3 Simulator) and real Chrome 148 (Android
+  > emulator), but both report `sharedArrayBuffer: false` /
+  > `crossOriginIsolated: false`.
+  >
+  > Today this is fine: Phase 1a Monty runs single-threaded, so the
+  > shipped app and CI report runs pass without isolation. It **blocks
+  > Phase 1b** — before the single-worker SAB thread pool ships, the
+  > Cloudflare deploy must add `COOP: same-origin` + `COEP:
+  > credentialless` (and all cross-origin subresources must be CORP/CORS
+  > compliant). `lib/browser-support.ts::assessWebRuntimeSupport()` does
+  > **not** currently probe `crossOriginIsolated`; add that probe before
+  > Phase 1b so the runtime warns instead of silently failing to spin up
+  > threads.
 - `metro.config.js` serves `/modules/expo-bioscript/web-runtime/**` as raw
   static files with `application/javascript` / `application/wasm` MIME
   types (worker lives there).

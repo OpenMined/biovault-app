@@ -1,7 +1,36 @@
-import { closeSync, cpSync, existsSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getBuildId } from './build-id.mjs';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+function verifiedBrowsersLine() {
+  try {
+    const text = readFileSync(join(repoRoot, 'lib/browser-support.generated.ts'), 'utf8');
+    const match = text.match(/export const GENERATED_BROWSER_SUPPORT_POLICY = ([\s\S]*?) as const/);
+    if (!match?.[1]) return null;
+    const policy = JSON.parse(
+      match[1]
+        .replace(/([,{]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":')
+        .replace(/'/g, '"'),
+    );
+    const parts = [
+      ['Chrome', 'chromium'],
+      ['Firefox', 'firefox'],
+      ['Safari', 'safari'],
+    ]
+      .map(([label, key]) => {
+        const min = policy?.[key]?.minimumKnownGood;
+        return typeof min === 'number' ? `${label} ${min}+` : null;
+      })
+      .filter(Boolean);
+    if (!parts.length) return null;
+    return `Runs locally via WebAssembly. Verified on ${parts.join(', ')}, including mobile Safari on iOS.`;
+  } catch {
+    return null;
+  }
+}
 
 const sourceDir = 'dist';
 const deployDir = 'dist-cloudflare';
@@ -22,6 +51,11 @@ export function prepareCloudflareWebAssets() {
     cpSync(shareAssetsDir, join(deployDir, 'images'), { recursive: true });
   }
 
+  const guideAssetsDir = 'assets/guides';
+  if (existsSync(guideAssetsDir)) {
+    cpSync(guideAssetsDir, join(deployDir, 'guides'), { recursive: true });
+  }
+
   const buildId = getBuildId();
   writeFileSync(
     join(deployDir, 'version.json'),
@@ -29,6 +63,8 @@ export function prepareCloudflareWebAssets() {
   );
 
   writeFileSync(join(deployDir, 'index.html'), landingPageHtml());
+  mkdirSync(join(deployDir, 'data-how-to'), { recursive: true });
+  writeFileSync(join(deployDir, 'data-how-to', 'index.html'), dataHowToPageHtml());
 
   let splitCount = 0;
 
@@ -102,6 +138,7 @@ export function landingPageHtml(options = {}) {
   const pageMetricsSiteId = options.metricsSiteId ?? metricsSiteId;
   const origin = String(options.origin ?? siteOrigin).replace(/\/+$/, '');
   const buildId = String(options.buildId ?? getBuildId());
+  const browserSupport = verifiedBrowsersLine();
   const metricsScriptUrl = options.metricsScriptCacheBust
     ? `https://metrics.syftbox.net/api/script.js?v=${encodeURIComponent(String(options.metricsScriptCacheBust))}`
     : 'https://metrics.syftbox.net/api/script.js';
@@ -204,7 +241,6 @@ export function landingPageHtml(options = {}) {
     .primary-action {
       display: inline-grid;
       min-height: 72px;
-      margin-top: 34px;
       align-content: center;
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 8px;
@@ -213,17 +249,81 @@ export function landingPageHtml(options = {}) {
       text-decoration: none;
       background: #53bea9;
       box-shadow: 0 18px 48px rgba(83, 190, 169, 0.24);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 14px;
+      margin-top: 34px;
+    }
+    .secondary-action {
+      display: inline-grid;
+      min-height: 72px;
+      align-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 18px 24px;
+      color: #f7f4ef;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .primary-action::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-120%);
+      background: linear-gradient(
+        110deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.55) 50%,
+        transparent 70%
+      );
+      pointer-events: none;
+    }
+    .primary-action:hover::after,
+    .primary-action:focus-visible::after {
+      animation: primary-action-shimmer 1.25s ease-in-out infinite;
+    }
+    @keyframes primary-action-shimmer {
+      to { transform: translateX(120%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .primary-action:hover::after,
+      .primary-action:focus-visible::after {
+        animation: none;
+      }
     }
     .primary-action strong {
       display: block;
+      position: relative;
+      z-index: 1;
       color: #17161d;
       font-size: 20px;
       line-height: 1.1;
     }
     .primary-action span {
       display: block;
+      position: relative;
+      z-index: 1;
       margin-top: 6px;
       color: rgba(23, 22, 29, 0.78);
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .secondary-action strong {
+      display: block;
+      color: #f7f4ef;
+      font-size: 18px;
+      line-height: 1.1;
+    }
+    .secondary-action span {
+      display: block;
+      margin-top: 6px;
+      color: rgba(247, 244, 239, 0.68);
       font-size: 14px;
       font-weight: 600;
       line-height: 1.3;
@@ -234,6 +334,14 @@ export function landingPageHtml(options = {}) {
       font-size: 12px;
       font-variant-numeric: tabular-nums;
       color: rgba(247, 244, 239, 0.4);
+    }
+    .browser-support {
+      max-width: 680px;
+      margin: 6px 0 0;
+      margin-left: 6px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: rgba(247, 244, 239, 0.38);
     }
     .platforms {
       display: flex;
@@ -319,10 +427,19 @@ export function landingPageHtml(options = {}) {
       <a class="contact-link" href="mailto:contact@biovault.net">Contact</a>
     </header>
     <section class="hero">
-      <h1>Private genomic analysis on your device.</h1>
-      <p>Run genomic analysis locally in your browser. Desktop and mobile apps are coming next.</p>
-      <a class="primary-action" href="/web/"><strong>Run in Browser</strong><span>WASM / Rust</span></a>
+      <h1>Discover more from your genetic data, privately.</h1>
+      <p>Drag and drop a 23andMe, Ancestry, or VCF file to explore genetic reports. All analysis runs locally in your browser. Desktop and mobile apps are coming next.</p>
+      <div class="hero-actions">
+        <a class="primary-action" href="/web/"><strong>Run in Browser</strong><span>WASM / Rust</span></a>
+        <a
+          class="secondary-action"
+          href="/data-how-to/"
+          data-track-event="landing_data_how_to_clicked"
+          data-track-properties='{"target":"/data-how-to/","label":"Download your Data","source":"landing_hero"}'
+        ><strong>Download your Data</strong><span>Guides on 23andMe and others</span></a>
+      </div>
       <div class="build-tag">Build ${escapeHtml(buildId)}</div>
+      ${browserSupport ? `<p class="browser-support">${escapeHtml(browserSupport)}</p>` : ''}
     </section>
     <footer>
       <nav class="platforms" aria-label="Coming soon platforms" aria-disabled="true">
@@ -336,6 +453,655 @@ export function landingPageHtml(options = {}) {
         <a href="mailto:contact@biovault.net?subject=BioVault%20Feedback%20or%20Feature%20Request">Feedback or Request a Feature</a>
       </div>
     </footer>
+  </main>
+  <script>
+    (() => {
+      const endpoint = 'https://metrics.syftbox.net/api/track';
+      const siteId = ${JSON.stringify(String(pageMetricsSiteId))};
+      const track = (eventName, properties) => {
+        try {
+          if (window.rybbit && typeof window.rybbit.event === 'function') {
+            window.rybbit.event(eventName, properties);
+            return;
+          }
+          const payload = {
+            type: 'custom_event',
+            site_id: siteId,
+            hostname: window.location.hostname,
+            pathname: window.location.pathname || '/',
+            querystring: window.location.search.replace(/^\\?/, ''),
+            screenWidth: window.innerWidth || 0,
+            screenHeight: window.innerHeight || 0,
+            language: navigator.language || 'en-US',
+            page_title: document.title || '',
+            referrer: document.referrer || '',
+            event_name: eventName,
+            properties: JSON.stringify(properties || {}),
+          };
+          const body = JSON.stringify(payload);
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(endpoint, new Blob([body], { type: 'application/json' }));
+          } else {
+            fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain, */*' },
+              body,
+              keepalive: true,
+            }).catch(() => {});
+          }
+        } catch {
+          // Analytics must never block navigation.
+        }
+      };
+      document.querySelectorAll('[data-track-event]').forEach((element) => {
+        element.addEventListener('click', () => {
+          let properties = {};
+          try {
+            properties = JSON.parse(element.getAttribute('data-track-properties') || '{}');
+          } catch {}
+          track(element.getAttribute('data-track-event'), properties);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
+`;
+}
+
+export function dataHowToPageHtml(options = {}) {
+  const pageMetricsSiteId = options.metricsSiteId ?? metricsSiteId;
+  const origin = String(options.origin ?? siteOrigin).replace(/\/+$/, '');
+  const guideImage = (name) => `${origin}/guides/23andme/${name}`;
+  const metricsScriptUrl = options.metricsScriptCacheBust
+    ? `https://metrics.syftbox.net/api/script.js?v=${encodeURIComponent(String(options.metricsScriptCacheBust))}`
+    : 'https://metrics.syftbox.net/api/script.js';
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <style>html{background:#272532;color:#f7f4ef}</style>
+  <title>BioVault Data How To - 23andMe Guide</title>
+  <meta name="description" content="Platform-specific guides for downloading genomic data and importing it into BioVault, starting with 23andMe.">
+  <link rel="canonical" href="${origin}/data-how-to/">
+  <link rel="icon" type="image/png" sizes="32x32" href="${origin}/images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="${origin}/images/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="${origin}/images/apple-touch-icon.png">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="${origin}/data-how-to/">
+  <meta property="og:title" content="BioVault Data How To - 23andMe Guide">
+  <meta property="og:description" content="Platform-specific guides for downloading genomic data and importing it into BioVault, starting with 23andMe.">
+  <meta property="og:image" content="${origin}/images/og-share.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="BioVault Data How To - 23andMe Guide">
+  <meta name="twitter:description" content="Platform-specific guides for downloading genomic data and importing it into BioVault, starting with 23andMe.">
+  <meta name="twitter:image" content="${origin}/images/og-share.jpg">
+  <script src="${escapeHtml(metricsScriptUrl)}" data-site-id="${escapeHtml(pageMetricsSiteId)}" defer></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      background: #272532;
+      color: #f7f4ef;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 14% 10%, rgba(83, 190, 169, 0.16), transparent 30rem), #272532;
+      background-attachment: fixed;
+      background-position: top left;
+    }
+    main {
+      width: min(1080px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 44px 0 64px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 54px;
+    }
+    .brand {
+      color: #53bea9;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .nav a, .action {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      padding: 0 14px;
+      color: #f7f4ef;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    h1 {
+      max-width: 820px;
+      margin: 0;
+      font-size: clamp(42px, 8vw, 72px);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+    .lead {
+      max-width: 720px;
+      margin: 18px 0 0;
+      color: #d8d3df;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+    .quick-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 26px;
+    }
+    .quick-nav a {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid rgba(83, 190, 169, 0.35);
+      border-radius: 999px;
+      padding: 0 14px;
+      color: #53bea9;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      background: rgba(83, 190, 169, 0.08);
+    }
+    section {
+      margin-top: 42px;
+      padding-top: 28px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    p, li {
+      color: #d8d3df;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    ul, ol {
+      margin: 0;
+      padding-left: 22px;
+    }
+    li + li { margin-top: 10px; }
+    .provider-grid, .format-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .provider-card, .format {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .provider-picker input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .provider-card-active {
+      cursor: pointer;
+      display: block;
+    }
+    .provider-card-active:hover {
+      border-color: rgba(83, 190, 169, 0.55);
+      background: rgba(83, 190, 169, 0.08);
+    }
+    #guide-23andme:checked ~ .provider-picker-grid label[for="guide-23andme"],
+    #guide-sequencing:checked ~ .provider-picker-grid label[for="guide-sequencing"] {
+      border-color: #53bea9;
+      background: rgba(83, 190, 169, 0.13);
+    }
+    .provider-card.disabled {
+      opacity: 0.46;
+      filter: grayscale(1);
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .provider-card strong, .format strong {
+      display: block;
+      color: #f7f4ef;
+      margin-bottom: 6px;
+    }
+    .provider-card span, .format span {
+      display: block;
+      color: #d8d3df;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .provider-status {
+      display: inline-flex !important;
+      align-items: center;
+      width: fit-content;
+      min-height: 24px;
+      margin-top: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      padding: 0 9px;
+      color: rgba(247, 244, 239, 0.62);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .guide-disclosure {
+      margin-top: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .guide-disclosure summary {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px;
+      color: #f7f4ef;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    .guide-disclosure summary::-webkit-details-marker {
+      display: none;
+    }
+    .guide-disclosure summary::after {
+      content: "+";
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(83, 190, 169, 0.38);
+      border-radius: 999px;
+      color: #53bea9;
+      font-size: 18px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+    .guide-disclosure[open] summary {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(83, 190, 169, 0.08);
+    }
+    .guide-disclosure[open] summary::after {
+      content: "-";
+    }
+    .guide-disclosure summary strong,
+    .guide-disclosure summary small {
+      display: block;
+    }
+    .guide-disclosure summary strong {
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    .guide-disclosure summary small {
+      margin-top: 4px;
+      color: rgba(247, 244, 239, 0.62);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .guide-body {
+      padding: 18px;
+    }
+    .guide-panels {
+      margin-top: 18px;
+    }
+    .guide-panel {
+      display: none;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 8px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    #guide-23andme:checked ~ .guide-panels .guide-panel-23andme,
+    #guide-sequencing:checked ~ .guide-panels .guide-panel-sequencing {
+      display: block;
+    }
+    .note {
+      border-left: 3px solid #53bea9;
+      padding: 14px 0 14px 16px;
+      color: #d8d3df;
+      background: rgba(83, 190, 169, 0.08);
+    }
+    .subhead {
+      margin: 28px 0 12px;
+      color: #f7f4ef;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+    .step-list {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .step.copy-only {
+      grid-template-columns: 1fr;
+    }
+    .step h3 {
+      margin: 0;
+      color: #f7f4ef;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+    .step p {
+      margin: 8px 0 0;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    .step-number {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      color: #17161d;
+      background: #53bea9;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    figure {
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    figcaption {
+      padding: 9px 11px;
+      color: rgba(247, 244, 239, 0.62);
+      font-size: 12px;
+      line-height: 1.4;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .wide-shot {
+      grid-column: 1 / -1;
+    }
+    .wide-shot img {
+      max-height: 520px;
+      object-fit: contain;
+      background: #fff;
+    }
+    .phone-shot {
+      max-width: 380px;
+      justify-self: center;
+    }
+    .file-shot img {
+      background: #202529;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 26px;
+    }
+    .action.primary {
+      border-color: #53bea9;
+      color: #17161d;
+      background: #53bea9;
+    }
+    @media (max-width: 760px) {
+      main { width: min(100% - 28px, 1080px); padding-top: 28px; }
+      .topbar { align-items: flex-start; }
+      .step { grid-template-columns: 1fr; }
+      .wide-shot img { max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <a class="brand" href="/">BioVault</a>
+      <nav class="nav" aria-label="Page links">
+        <a href="/web/">Run in Browser</a>
+        <a href="mailto:contact@biovault.net">Contact</a>
+      </nav>
+    </header>
+
+    <article>
+      <h1>Download your Data</h1>
+      <p class="lead">Below are guides on where to download your genomic data files from common sequencing providers. If you have any issues please feel free to contact us.</p>
+      <nav class="quick-nav" aria-label="Data guide sections">
+        <a href="#import">Import into BioVault</a>
+      </nav>
+
+      <section id="guides">
+        <div class="provider-picker">
+          <input type="radio" id="guide-23andme" name="provider-guide" checked>
+          <input type="radio" id="guide-sequencing" name="provider-guide">
+
+          <div class="provider-grid provider-picker-grid">
+            <label class="provider-card provider-card-active" for="guide-23andme"><strong>23andMe</strong><span>SNP array and imputed BCF.</span><span class="provider-status">View guide</span></label>
+            <label class="provider-card provider-card-active" for="guide-sequencing"><strong>Sequencing.com</strong><span>VCF / FASTQ files.</span><span class="provider-status">View guide</span></label>
+            <div class="provider-card disabled"><strong>AncestryDNA</strong><span>SNP array raw data export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>FamilyTreeDNA</strong><span>SNP array raw data export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>Genes for Good</strong><span>SNP array raw data export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>Dynamic DNA</strong><span>SNP array raw data export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>MyHeritage</strong><span>SNP array raw data export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>Dante Labs</strong><span>VCF / raw sequencing export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>Nebula Genomics</strong><span>VCF / raw sequencing export.</span><span class="provider-status">Coming soon</span></div>
+            <div class="provider-card disabled"><strong>CariGenetics</strong><span>VCF / raw sequencing export.</span><span class="provider-status">Coming soon</span></div>
+          </div>
+          <p class="note">More guides coming soon.</p>
+
+          <div class="guide-panels">
+            <div class="guide-panel guide-panel-23andme">
+              <h2>23andMe</h2>
+              <p>23andMe can provide two useful downloads: your original raw genotype ZIP and the larger imputed genotype data ZIP. Request both so BioVault has the best available data for current and future assays. Use the larger <strong>imputed_genotype_data_r6</strong> file where possible.</p>
+
+        <h3 class="subhead">Requesting Your Data</h3>
+        <div class="step-list">
+          <div class="step">
+            <div>
+              <span class="step-number">1</span>
+              <h3>Open account settings</h3>
+              <p>Sign in to 23andMe, open the profile menu, and choose <strong>Settings</strong>.</p>
+            </div>
+            <figure class="phone-shot">
+              <img src="${guideImage('1-settings.jpg')}" alt="23andMe profile menu showing Settings">
+              <figcaption>Open Settings from your 23andMe profile menu.</figcaption>
+            </figure>
+          </div>
+
+          <div class="step">
+            <div>
+              <span class="step-number">2</span>
+              <h3>Find your data access page</h3>
+              <p>Scroll to the data section and choose the option to view or download your 23andMe data.</p>
+            </div>
+            <figure class="wide-shot">
+              <img src="${guideImage('2-view-data.jpg')}" alt="23andMe settings page with View Your Data option">
+              <figcaption>Look for the data access area in settings.</figcaption>
+            </figure>
+          </div>
+
+          <div class="step">
+            <div>
+              <span class="step-number">3</span>
+              <h3>Verify your identity</h3>
+              <p>23andMe may ask for your date of birth or another account check before showing download controls.</p>
+            </div>
+            <figure class="wide-shot">
+              <img src="${guideImage('3-dob.jpg')}" alt="23andMe verification form asking for date of birth">
+              <figcaption>Complete the account verification step.</figcaption>
+            </figure>
+          </div>
+
+          <div class="step">
+            <div>
+              <span class="step-number">4</span>
+              <h3>Request both files</h3>
+              <p>Request <strong>Raw Data</strong> and <strong>Imputed Genotype Data R6</strong>. The raw data is smaller and directly assayed; the imputed data is much larger and may support more research workflows.</p>
+            </div>
+            <figure class="wide-shot">
+              <img src="${guideImage('4-download-request.jpg')}" alt="23andMe page with Raw Data and Imputed Genotype Data R6 request buttons">
+              <figcaption>Use both download request buttons. For Imputed Genotype Data R6, check the acknowledgement box first.</figcaption>
+            </figure>
+          </div>
+
+          <div class="step">
+            <div>
+              <span class="step-number">5</span>
+              <h3>Wait for the email</h3>
+              <p>23andMe prepares the downloads asynchronously. Wait for the email telling you the files are ready, then return to the download page.</p>
+            </div>
+            <figure class="wide-shot">
+              <img src="${guideImage('5-email.jpg')}" alt="Email notification that 23andMe raw data is ready to download">
+              <figcaption>The email confirms when the data export is available.</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <h3 class="subhead">Downloading Your Data</h3>
+        <div class="step-list">
+          <div class="step">
+            <div>
+              <span class="step-number">6</span>
+              <h3>Download both ZIP files</h3>
+              <p>Save both the original genome ZIP and the imputed genotype ZIP. Keep them zipped; BioVault can inspect ZIP files directly. Use the larger <strong>imputed_genotype_data_r6</strong> ZIP where possible.</p>
+            </div>
+            <figure class="file-shot">
+              <img src="${guideImage('6-two-files.jpg')}" alt="Two downloaded 23andMe ZIP files">
+              <figcaption>Download both files when they are ready.</figcaption>
+            </figure>
+          </div>
+
+          <div class="step">
+            <div>
+              <span class="step-number">7</span>
+              <h3>Move files to the device running BioVault</h3>
+              <p>If the files are on another device, transfer them first. AirDrop, iCloud Drive, a USB cable, or another file transfer mechanism is fine.</p>
+            </div>
+            <figure>
+              <img src="${guideImage('7-share-to-phone.jpg')}" alt="File sharing options for moving the 23andMe ZIP to another device">
+              <figcaption>Move the ZIP files to the device where you will run BioVault.</figcaption>
+            </figure>
+          </div>
+
+          <div class="step">
+            <div>
+              <span class="step-number">8</span>
+              <h3>Optional: locate the ZIP on mobile</h3>
+              <p>If you are using BioVault on iPhone or iPad, you will need to locate the downloaded ZIP in the iOS Files app when BioVault asks for genome data.</p>
+            </div>
+            <figure class="phone-shot">
+              <img src="${guideImage('8-ios-picker.jpg')}" alt="iOS file picker showing a downloaded 23andMe ZIP file">
+              <figcaption>Use the Files picker to select the downloaded ZIP.</figcaption>
+            </figure>
+          </div>
+        </div>
+            </div>
+
+            <div class="guide-panel guide-panel-sequencing">
+              <h2>Sequencing.com</h2>
+            <p>Sequencing.com whole genome data is useful for BioVault when you download standard raw genome files. Start with VCF or VCF.GZ files for variant-based assays. BAM files are larger and useful for advanced workflows when paired with their index files.</p>
+
+            <div class="step-list">
+              <div class="step copy-only">
+                <div>
+                  <span class="step-number">1</span>
+                  <h3>Sign in and open your genome files</h3>
+                  <p>Sign in to Sequencing.com and open the area for your completed genome data, raw data, or downloadable genome files.</p>
+                </div>
+              </div>
+
+              <div class="step copy-only">
+                <div>
+                  <span class="step-number">2</span>
+                  <h3>Download VCF first</h3>
+                  <p>Download a genome VCF or VCF.GZ file if it is available. If Sequencing.com also provides a .tbi index next to the VCF.GZ, download that companion file too.</p>
+                </div>
+              </div>
+
+              <div class="step copy-only">
+                <div>
+                  <span class="step-number">3</span>
+                  <h3>Download BAM only when needed</h3>
+                  <p>For assays that need read-level alignment data, download BAM and its BAI index if available. FASTQ files are usually very large and are not the first choice for BioVault assay imports.</p>
+                </div>
+              </div>
+
+              <div class="step copy-only">
+                <div>
+                  <span class="step-number">4</span>
+                  <h3>Import the files into BioVault</h3>
+                  <p>Open BioVault, choose <strong>Import genome</strong>, and select the downloaded VCF/VCF.GZ first. Add companion index files when you have them.</p>
+                </div>
+              </div>
+            </div>
+
+            <p class="note">Screenshots for Sequencing.com are coming next. Until then, use the provider's download area and prefer standard genomics files such as VCF, VCF.GZ, BAM, and their indexes.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="import">
+        <h2>Import Into BioVault</h2>
+        <ol>
+          <li>Open BioVault and choose <strong>Import genome</strong>.</li>
+          <li>Drop your downloaded ZIP, VCF, VCF.GZ, BAM, CRAM, or companion files into the import dialog, or click to choose them from your device.</li>
+          <li>Keep the files private and local unless you intentionally paste a remote URL.</li>
+          <li>Confirm the detected files, then run a compatible assay.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Supported File Types</h2>
+        <div class="format-grid">
+          <div class="format"><strong>23andMe text or ZIP</strong><span>Raw genotype exports and imputed genotype ZIP files.</span></div>
+          <div class="format"><strong>VCF or VCF.GZ</strong><span>Variant call files from sequencing pipelines. A .tbi index can be paired when available.</span></div>
+          <div class="format"><strong>BAM or CRAM</strong><span>Alignment files for advanced assays. Add the reference FASTA for CRAM and indexes when you have them.</span></div>
+          <div class="format"><strong>Reference files</strong><span>FASTA, FAI, BAI, CRAI, and TBI companion files help BioVault read large datasets efficiently.</span></div>
+        </div>
+        <ul>
+          <li>Local file imports are processed in your browser to run assays.</li>
+          <li>Remote URLs are fetched only when you paste or select them.</li>
+          <li>You can clear BioVault browser storage from the app settings.</li>
+        </ul>
+        <div class="actions">
+          <a class="action primary" href="/web/">Run in Browser</a>
+          <a class="action" href="mailto:contact@biovault.net?subject=BioVault%20data%20import%20question">Ask a data question</a>
+        </div>
+      </section>
+    </article>
   </main>
 </body>
 </html>

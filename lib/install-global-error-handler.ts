@@ -26,9 +26,20 @@ function toError(value: unknown): Error {
 }
 
 function report(error: Error, context: Record<string, unknown>) {
+	if (isIgnorableWebHydrationError(error)) return
 	const key = `${error.message}|${(error.stack ?? '').slice(0, 200)}`
 	if (!shouldEmit(key)) return
 	getAnalytics()?.trackError(error, context)
+}
+
+function isIgnorableWebHydrationError(error: Error): boolean {
+	if (Platform.OS !== 'web') return false
+	const message = error.message || ''
+	return (
+		message.includes('Minified React error #418') ||
+		message.includes('Hydration failed because the server rendered HTML') ||
+		message.includes("Hydration failed because the initial UI does not match")
+	)
 }
 
 export function installGlobalErrorHandler() {

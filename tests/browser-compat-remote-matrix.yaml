@@ -1,0 +1,92 @@
+# Remote provider targets for real mobile browser compatibility runs.
+# Run each row by supplying a provider-specific PW_CONNECT_WS_ENDPOINT and WEB_URL:
+#   WEB_URL=https://preview.example.test/web \
+#   PW_CONNECT_WS_ENDPOINT=wss://provider.example/playwright?... \
+#   PW_BROWSER_PROJECTS=chromium \
+#   npm run test:web-compat:remote
+#
+# For matrix runs, copy tests/browser-compat-remote-endpoints.example.json into
+# browser-compat-endpoints.json or the WEB_COMPAT_REMOTE_ENDPOINTS_JSON secret
+# shape and replace each wsEndpoint with the provider-specific Playwright
+# WebSocket endpoint for that target.
+# Validate target selection and endpoint parsing without opening browsers:
+#   WEB_COMPAT_REMOTE_DRY_RUN=1 \
+#   WEB_COMPAT_REMOTE_ENDPOINTS_FILE=tests/browser-compat-remote-endpoints.example.json \
+#   npm run test:web-compat:remote-matrix
+#
+# Desktop and emulated-mobile Playwright projects are covered by test-web-compat.sh.
+# These rows are for real device/browser coverage through BrowserStack, Sauce Labs,
+# LambdaTest, or an internal Playwright-compatible grid.
+
+targets:
+  - id: android-chrome-latest
+    platform: android
+    browser: chrome
+    version: latest
+    device_name: Google Pixel 9
+    os_version: "15.0"
+    project: chromium
+    required: true
+
+  - id: android-chrome-previous
+    platform: android
+    browser: chrome
+    version: previous-major
+    device_name: Google Pixel 8
+    os_version: "14.0"
+    project: chromium
+    required: true
+
+  - id: android-firefox-latest
+    platform: android
+    browser: firefox
+    version: latest
+    device_name: Google Pixel 9
+    os_version: "15.0"
+    project: firefox
+    required: true
+
+  - id: android-samsung-internet-latest
+    platform: android
+    browser: samsung-internet
+    version: latest
+    device_name: Samsung Galaxy S24
+    os_version: "14.0"
+    project: chromium
+    required: true
+
+  - id: ios-safari-latest
+    platform: ios
+    browser: safari
+    version: latest
+    device_name: iPhone 16
+    os_version: "18"
+    project: webkit
+    required: deferred
+
+  - id: ios-safari-oldest-supported
+    platform: ios
+    browser: safari
+    version: oldest-supported
+    device_name: iPhone 14
+    os_version: "16"
+    project: webkit
+    required: deferred
+
+  - id: ios-chrome-latest
+    platform: ios
+    browser: chrome
+    version: latest
+    device_name: iPhone 16
+    os_version: "18"
+    project: webkit
+    required: deferred
+
+  - id: ios-firefox-latest
+    platform: ios
+    browser: firefox
+    version: latest
+    device_name: iPhone 16
+    os_version: "18"
+    project: webkit
+    required: deferred
