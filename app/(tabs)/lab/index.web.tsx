@@ -68,6 +68,11 @@ import {
 	pairLabGenomeCompanionRef,
 	type LabGenomeRef,
 } from '@/lib/lab/core/refs'
+import {
+	buildHashedLabInputAnalyticsContext,
+	buildLabInputAnalyticsContext,
+	type LabInputAnalyticsContext,
+} from '@/lib/lab/analytics-context'
 import { clearAllAppStorage } from '@/lib/clear-app-storage'
 import {
 	addAssayPackageSourceUrl,
@@ -263,6 +268,7 @@ type RunRecord = {
 	id: string
 	assay: LabAssay
 	genomeName: string
+	inputAnalyticsContext: LabInputAnalyticsContext
 	sourceFiles: AssaySourceFile[]
 	startedAt: number
 	result: RunResult
@@ -487,14 +493,28 @@ function remoteResourceAnalyticsId(resource: ResolvedRemoteResource, catalogAssa
 
 function assayAnalyticsProperties(assay: LabAssay): Record<string, string> {
 	const properties: Record<string, string> = {
+		assay_id: assayAnalyticsId(assay),
+		assay_name: assay.title,
+		assay_title: assay.title,
+		assay_kind: assayDisplayKind(assay),
+		assay_language: assay.language,
 		assayId: assayAnalyticsId(assay),
+		assayName: assay.title,
+		assayLanguage: assay.language,
 	}
 	if (isSessionLabAssay(assay)) {
 		properties.internalAssayId = assay.id
 		properties.remoteKind = assay.remoteKind
 		properties.sourceUrl = assay.url
-		if (assay.packageSourceUrl) properties.packageSourceUrl = assay.packageSourceUrl
-		if (assay.packageEntrypoint) properties.packageEntrypoint = assay.packageEntrypoint
+		properties.source_url = assay.url
+		if (assay.packageSourceUrl) {
+			properties.packageSourceUrl = assay.packageSourceUrl
+			properties.package_source_url = assay.packageSourceUrl
+		}
+		if (assay.packageEntrypoint) {
+			properties.packageEntrypoint = assay.packageEntrypoint
+			properties.package_entrypoint = assay.packageEntrypoint
+		}
 	}
 	return properties
 }
@@ -545,6 +565,7 @@ function safeGenomicExtension(name: string): string {
 		'.fasta.fai',
 		'.fa.fai',
 		'.vcf.gz',
+		'.bcf',
 		'.fasta',
 		'.bam',
 		'.bai',
@@ -562,10 +583,6 @@ function safeGenomicExtension(name: string): string {
 	return match ?? (lower.match(/\.[a-z0-9]+$/)?.[0] ?? '')
 }
 
-function genomeRelatedFileExtensions(genome: LabGenomeRef): string[] {
-	return genomeRelatedFileNames(genome).map(safeGenomicExtension).filter(Boolean)
-}
-
 function demoBundleForRemoteUrl(url: string): LabTestFileBundle | null {
 	return LAB_TEST_FILES.find((bundle) => bundle.remoteUrl === url) ?? null
 }
@@ -580,6 +597,12 @@ function demoBundleForCachedRemoteFile(remoteFile: RemoteLabFile): LabTestFileBu
 	return demoBundleForRemoteUrl(remoteFile.sourceUrl)
 }
 
+function demoBundleForGenome(genome: LabGenomeRef): LabTestFileBundle | null {
+	if (genome.primary.source !== 'bundled') return null
+	const relatedNames = new Set(genomeRelatedFileNames(genome))
+	return LAB_TEST_FILES.find((bundle) => bundle.files.some((file) => relatedNames.has(file.name))) ?? null
+}
+
 function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string, unknown> {
 	return {
 		data_source: 'demo',
@@ -590,33 +613,6 @@ function demoBundleAnalyticsProperties(bundle: LabTestFileBundle): Record<string
 		demo_title: bundle.title,
 		is_demo_file: true,
 		is_user_supplied_data: false,
-	}
-}
-
-function fileHeuristicAnalyticsProperties(
-	genome: LabGenomeRef,
-	inspection: BioscriptInspection,
-): Record<string, unknown> {
-	return {
-		assembly: inspection.assembly ?? '',
-		confidence: inspection.confidence,
-		container: inspection.container,
-		detectedKind: inspection.detectedKind,
-		durationMs: inspection.durationMs,
-		evidenceCount: inspection.evidence.length,
-		fileExtension: safeGenomicExtension(inspection.fileName),
-		genomeKind: genome.kind,
-		hasIndex: inspection.hasIndex ?? false,
-		inputFormat: labGenomeInputFormat(genome),
-		phased: inspection.phased ?? false,
-		platformVersion: inspection.source?.platformVersion ?? '',
-		referenceMatches: inspection.referenceMatches ?? false,
-		relatedFileExtensions: genomeRelatedFileExtensions(genome),
-		selectedEntryExtension: inspection.selectedEntry ? safeGenomicExtension(inspection.selectedEntry) : '',
-		sourceConfidence: inspection.source?.confidence ?? '',
-		sourceEvidenceCount: inspection.source?.evidence.length ?? 0,
-		sourceVendor: inspection.source?.vendor ?? '',
-		warnings: inspection.warnings,
 	}
 }
 
@@ -1121,6 +1117,8 @@ export default function LabScreen() {
 	const { trackEvent } = useAnalytics({ includeRouteParams: false })
 	const fileAdapterRef = useRef(createWebLabFileAdapter())
 	const filePickerRef = useRef(createLabFilePickerAdapter())
+	const inputEventPropertiesRef = useRef<Map<string, Record<string, unknown>>>(new Map())
+	const runIndexByInputRef = useRef<Map<string, number>>(new Map())
 
 	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
@@ -1287,7 +1285,7 @@ export default function LabScreen() {
 		})
 	}, [])
 
-	const ingestRef = useCallback((ref: LabFileRef) => {
+	const ingestRef = useCallback((ref: LabFileRef, eventProperties?: Record<string, unknown>) => {
 		const file = fileAdapterRef.current.getFile(ref)
 		const kind = ref.kind
 		if (kind === 'unknown') {
@@ -1303,10 +1301,15 @@ export default function LabScreen() {
 			if (!genomeRef) return
 			setGenomes((prev) => [...prev, genomeRef])
 			setSelectedGenomeId(genomeRef.id)
+			inputEventPropertiesRef.current.set(genomeRef.id, eventProperties ?? {})
+			trackEvent('lab_input_ready', {
+				...buildLabInputAnalyticsContext(genomeRef, { demoBundle: demoBundleForGenome(genomeRef) }),
+				...eventProperties,
+			})
 			return
 		}
 		setGenomes((prev) => pairLabGenomeCompanionRef(prev, ref))
-	}, [ingestLocalAssayRef])
+	}, [ingestLocalAssayRef, trackEvent])
 
 	const ingestManyRefs = useCallback(
 		(refs: LabFileRef[], eventProperties?: Record<string, unknown>) => {
@@ -1337,12 +1340,6 @@ export default function LabScreen() {
 				const otherRefs = ordered.filter(
 					(ref) => !localPackageRefs.has(ref.id) && !assayRefs.includes(ref) && !genomeRefs.includes(ref),
 				)
-				trackEvent('lab_files_added', {
-					fileKinds: ordered.map((ref) => localPackageRefs.has(ref.id) ? 'assay_zip' : ref.kind),
-					fileSources: ordered.map((ref) => ref.source),
-					totalFiles: ordered.length,
-					...eventProperties,
-				})
 				for (const ref of assayRefs) ingestLocalAssayRef(ref)
 				const primaryCount = genomeRefs.filter((ref) => isPrimaryGenomeFileKind(ref.kind)).length
 				if (primaryCount === 1) {
@@ -1353,15 +1350,20 @@ export default function LabScreen() {
 							bundle.genomeRef,
 						])
 						setSelectedGenomeId(bundle.genomeRef.id)
+						inputEventPropertiesRef.current.set(bundle.genomeRef.id, eventProperties ?? {})
+						trackEvent('lab_input_ready', {
+							...buildLabInputAnalyticsContext(bundle.genomeRef, { demoBundle: demoBundleForGenome(bundle.genomeRef) }),
+							...eventProperties,
+						})
 						if (bundle.unknowns.length) {
 							setUnknowns((prev) => [...prev, ...bundle.unknowns.map(createUnknownEntry)])
 						}
-						for (const ref of otherRefs) ingestRef(ref)
+						for (const ref of otherRefs) ingestRef(ref, eventProperties)
 						return
 					}
 				}
-				for (const ref of genomeRefs) ingestRef(ref)
-				for (const ref of otherRefs) ingestRef(ref)
+				for (const ref of genomeRefs) ingestRef(ref, eventProperties)
+				for (const ref of otherRefs) ingestRef(ref, eventProperties)
 			})().catch((error) => {
 				console.error('[lab] failed to ingest files', error)
 			})
@@ -2112,7 +2114,7 @@ export default function LabScreen() {
 	const loadAssayUrl = useCallback((url: string) => {
 		const trimmed = url.trim()
 		if (!trimmed || Platform.OS !== 'web') return
-		window.location.hash = `url=${encodeURIComponent(trimmed)}`
+		setRemoteIntent({ intent: { kind: 'remote-resource', source: 'in-app', url: trimmed }, status: 'pending' })
 	}, [])
 
 	const shareAssayUrl = useMemo(() => {
@@ -2404,40 +2406,74 @@ export default function LabScreen() {
 			if (!isAssayCompatible(catalogAssay, genomeForRun)) return
 			if (runtimeWarmupStatus === 'loading' && assayNeedsWebRuntime(catalogAssay, genomeForRun)) return
 
+			const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+			const startedAt = Date.now()
+			const inputEventProperties = inputEventPropertiesRef.current.get(genomeForRun.id) ?? {}
+			const basicInputContext = buildLabInputAnalyticsContext(genomeForRun, { demoBundle: demoBundleForGenome(genomeForRun) })
+			const inputRunKey = String(basicInputContext.input_id ?? genomeForRun.id)
+			const runIndexForInput = (runIndexByInputRef.current.get(inputRunKey) ?? 0) + 1
+			runIndexByInputRef.current.set(inputRunKey, runIndexForInput)
+			let runAnalyticsContext: Record<string, unknown> = {
+				run_id: runId,
+				run_index_for_input: runIndexForInput,
+				started_at_ms: startedAt,
+				input_metadata_status: 'basic',
+				...assayAnalyticsProperties(catalogAssay),
+				...basicInputContext,
+				...inputEventProperties,
+			}
 			try {
 				setRunningAssayId(catalogAssay.id)
-				const runId = `run-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+				trackEvent('lab_run_started', runAnalyticsContext)
 				const sourceFiles = await buildAssaySourceFiles(catalogAssay)
 				setRuns((prev) => [
 					{
 						id: runId,
 						assay: catalogAssay,
 						genomeName: labGenomeDisplayName(genomeForRun),
+						inputAnalyticsContext: runAnalyticsContext,
 						sourceFiles,
-						startedAt: Date.now(),
+						startedAt,
 						result: { status: 'running' },
 					},
 					...prev,
 				])
-				trackEvent('lab_run_started', {
-					...assayAnalyticsProperties(catalogAssay),
-					assayLanguage: catalogAssay.language,
-					genomeKind: genomeForRun.kind,
-				})
+				let inspection: BioscriptInspection | null = null
 				try {
 					const primaryFile = fileAdapterRef.current.getFile(genomeForRun.primary)
 					const bytes = new Uint8Array(await primaryFile.arrayBuffer())
-					const inspection = await inspectBytes(primaryFile.name, bytes, { detectSex: true })
-					trackEvent('using_file_heuristics', fileHeuristicAnalyticsProperties(genomeForRun, inspection))
+					inspection = await inspectBytes(primaryFile.name, bytes, { detectSex: true })
 				} catch (inspectionError) {
-					trackEvent('using_file_heuristics', {
-						error: inspectionError instanceof Error ? inspectionError.message : String(inspectionError),
-						fileExtension: safeGenomicExtension(genomeForRun.primary.name),
-						genomeKind: genomeForRun.kind,
-						inputFormat: labGenomeInputFormat(genomeForRun),
-						relatedFileExtensions: genomeRelatedFileExtensions(genomeForRun),
-					})
+					runAnalyticsContext = {
+						...runAnalyticsContext,
+						input_inspection_error: inspectionError instanceof Error ? inspectionError.message : String(inspectionError),
+					}
 				}
+				try {
+					runAnalyticsContext = {
+						...runAnalyticsContext,
+						...inputEventProperties,
+						...(await buildHashedLabInputAnalyticsContext(genomeForRun, {
+							adapter: fileAdapterRef.current,
+							demoBundle: demoBundleForGenome(genomeForRun),
+							inspection,
+						})),
+						input_metadata_status: 'inspected',
+					}
+				} catch (hashError) {
+					runAnalyticsContext = {
+						...runAnalyticsContext,
+						input_hash_error: hashError instanceof Error ? hashError.message : String(hashError),
+						...inputEventProperties,
+						...(inspection ? buildLabInputAnalyticsContext(genomeForRun, {
+							demoBundle: demoBundleForGenome(genomeForRun),
+							inspection,
+						}) : {}),
+						input_metadata_status: inspection ? 'inspected' : 'basic',
+					}
+				}
+				setRuns((prev) => prev.map((r) => r.id === runId ? { ...r, inputAnalyticsContext: runAnalyticsContext } : r))
+				trackEvent('lab_run_metadata_ready', runAnalyticsContext)
 
 				const onProgress = (progress: LabRunProgress) => {
 					setRuns((prev) =>
@@ -2601,17 +2637,16 @@ export default function LabScreen() {
 				setRuns((prev) =>
 					prev.map((r) => (r.id === runId ? { ...r, result: success.result } : r)),
 				)
-				trackEvent('lab_report_generated', {
-					...assayAnalyticsProperties(catalogAssay),
-					artifactCount: success.result.artifacts?.length ?? 0,
-					artifactNames: (success.result.artifacts ?? []).map((artifact) => artifact.name),
-					genomeKind: genomeForRun.kind,
-					htmlReportName: htmlArtifactForResult(success.result)?.name ?? '',
-					resultKind: success.kind,
-				})
 				trackEvent('lab_run_completed', {
-					...assayAnalyticsProperties(catalogAssay),
-					genomeKind: genomeForRun.kind,
+					...runAnalyticsContext,
+					artifactCount: success.result.artifacts?.length ?? 0,
+					artifactIds: (success.result.artifacts ?? []).map((artifact, index) =>
+						labArtifactAnalyticsId(runId, artifact, index),
+					),
+					artifactNames: (success.result.artifacts ?? []).map((artifact) => artifact.name),
+					durationMs: success.result.durationMs,
+					htmlReportId: htmlReportAnalyticsId(runId, success.result),
+					htmlReportName: htmlArtifactForResult(success.result)?.name ?? '',
 					resultKind: success.kind,
 				})
 			} catch (err) {
@@ -2624,8 +2659,7 @@ export default function LabScreen() {
 					)
 				})
 				trackEvent('lab_run_failed', {
-					...assayAnalyticsProperties(catalogAssay),
-					genomeKind: genomeForRun.kind,
+					...runAnalyticsContext,
 					error: msg,
 				})
 			} finally {
@@ -5044,16 +5078,23 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 	const compact = width < 560
 	const openResult = useCallback(() => {
 		if (result.status === 'done') {
+			const htmlReport = htmlArtifactForResult(result)
 			trackEvent('lab_report_opened', {
+				...record.inputAnalyticsContext,
 				...assayAnalyticsProperties(assay),
 				artifactCount,
+				artifactIds: (result.artifacts ?? []).map((artifact, index) =>
+					labArtifactAnalyticsId(record.id, artifact, index),
+				),
 				artifactNames: (result.artifacts ?? []).map((artifact) => artifact.name),
-				htmlReportName: htmlArtifactForResult(result)?.name ?? '',
+				htmlReportId: htmlReportAnalyticsId(record.id, result),
+				htmlReportName: htmlReport?.name ?? '',
+				report_id: htmlReportAnalyticsId(record.id, result),
 				resultStatus: result.status,
 			})
 		}
 		setResultOpen(true)
-	}, [artifactCount, assay, result, trackEvent])
+	}, [artifactCount, assay, record.id, record.inputAnalyticsContext, result, trackEvent])
 	const resultButton = result.status === 'done' && artifactCount > 0 ? (
 		<Pressable
 			accessibilityRole="button"
@@ -5168,12 +5209,16 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 	const openInNewTab = useCallback(() => {
 		if (!htmlBlobUrl) return
 		trackEvent('lab_report_opened_new_window', {
+			...record.inputAnalyticsContext,
 			...assayAnalyticsProperties(assay),
 			artifactCount: artifacts.length,
+			artifactIds: artifacts.map((artifact, index) => labArtifactAnalyticsId(record.id, artifact, index)),
+			htmlReportId: htmlReportAnalyticsId(record.id, result),
 			htmlReportName: html?.name ?? '',
+			report_id: htmlReportAnalyticsId(record.id, result),
 		})
 		window.open(htmlBlobUrl, '_blank', 'noopener,noreferrer')
-	}, [artifacts.length, assay, html?.name, htmlBlobUrl, trackEvent])
+	}, [artifacts, assay, html?.name, htmlBlobUrl, record.id, record.inputAnalyticsContext, result, trackEvent])
 	// Portal to document.body so the fixed-position overlay escapes the
 	// ScrollView's stacking context.
 	return createPortal(createElement('div', {
@@ -5593,6 +5638,22 @@ function htmlArtifactForResult(result: RunResult): LabRunArtifact | null {
 	return named ?? htmls[0] ?? null
 }
 
+function labArtifactAnalyticsId(runId: string, artifact: LabRunArtifact, index: number): string {
+	const key = `${artifact.path || artifact.name || 'artifact'}`
+		.toLowerCase()
+		.replace(/[^a-z0-9._/-]+/g, '-')
+		.replace(/-+/g, '-')
+		.slice(0, 80)
+	return `${runId}:artifact:${index}:${key || 'artifact'}`
+}
+
+function htmlReportAnalyticsId(runId: string, result: RunResult): string {
+	const html = htmlArtifactForResult(result)
+	if (!html) return `${runId}:report:none`
+	const index = (result.artifacts ?? []).findIndex((artifact) => artifact === html)
+	return labArtifactAnalyticsId(runId, html, index >= 0 ? index : 0)
+}
+
 function ArtifactLinks({ artifacts, record }: { artifacts: LabRunArtifact[]; record: RunRecord }) {
 	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
 	return createElement('div', {
@@ -5621,11 +5682,16 @@ function ArtifactLinks({ artifacts, record }: { artifacts: LabRunArtifact[]; rec
 						download: artifact.name,
 						onClick: () => {
 							trackEvent('lab_report_artifact_downloaded', {
+								...record.inputAnalyticsContext,
 								...assayAnalyticsProperties(record.assay),
+								artifactId: labArtifactAnalyticsId(record.id, artifact, index),
 								artifactIndex: index,
 								artifactMimeType: artifact.mimeType ?? '',
 								artifactName: artifact.name,
 								artifactPath: artifact.path ?? '',
+								report_id: artifact.mimeType === 'text/html' || artifact.name.toLowerCase().endsWith('.html')
+									? labArtifactAnalyticsId(record.id, artifact, index)
+									: '',
 							})
 						},
 						style: {

@@ -13,6 +13,7 @@ const DEFAULT_EVENT_LIMIT = 2500
 const DEFAULT_MINUTES = 60 * 24 * 30
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000
 const REPORT_EVENTS = [
+	'lab_input_ready',
 	'lab_files_added',
 	'using_file_heuristics',
 	'lab_run_started',
@@ -92,6 +93,7 @@ async function buildReport(options) {
 function serializeSiteReport(siteReport) {
 	return {
 		...siteReport,
+		labSummary: serializeLabSummary(siteReport.labSummary),
 		propertyTotals: Object.fromEntries(
 			Object.entries(siteReport.propertyTotals).map(([key, value]) => [key, [...value.entries()]]),
 		),
@@ -101,6 +103,7 @@ function serializeSiteReport(siteReport) {
 			confidences: [...user.confidences],
 			fileKinds: [...user.fileKinds],
 			formats: [...user.formats],
+			sessions: [...user.sessions],
 			vendors: [...user.vendors],
 		})),
 	}
@@ -113,6 +116,7 @@ function hydrateSiteReport(siteReport) {
 	return {
 		...siteReport,
 		dailyOverview: siteReport.dailyOverview ?? [],
+		labSummary: hydrateLabSummary(siteReport.labSummary),
 		propertyTotals: { ...emptyPropertyTotals(), ...hydratedPropertyTotals },
 		userRows: siteReport.userRows.map((user) => ({
 			...user,
@@ -120,6 +124,7 @@ function hydrateSiteReport(siteReport) {
 			confidences: new Set(user.confidences),
 			fileKinds: new Set(user.fileKinds),
 			formats: new Set(user.formats),
+			sessions: new Set(user.sessions ?? []),
 			vendors: new Set(user.vendors),
 		})),
 	}
@@ -153,6 +158,7 @@ async function buildSiteReport(config, { minutes, eventLimit, metrics }) {
 		events,
 		aggregatePropertyTotals,
 		dailyOverview,
+		minutes,
 		operatingSystem: metricRowsByParameter.operating_system ?? [],
 		overview: overview?.data ?? {},
 		referrer: metricRowsByParameter.referrer ?? [],
@@ -163,9 +169,11 @@ async function buildSiteReport(config, { minutes, eventLimit, metrics }) {
 async function fetchAggregatePropertyTotals(config, timeParams) {
 	const eventPropertiesByName = {}
 	for (const eventName of [
+		'lab_input_ready',
 		'using_file_heuristics',
 		'lab_files_added',
 		'lab_run_started',
+		'lab_run_completed',
 		'lab_report_generated',
 		'lab_report_opened',
 		'lab_report_opened_new_window',
@@ -192,9 +200,14 @@ async function fetchAggregatePropertyTotals(config, timeParams) {
 function buildAggregatePropertyTotals(eventPropertiesByName) {
 	const totals = emptyPropertyTotals()
 	const heuristics = eventPropertiesByName.using_file_heuristics ?? []
-	const filesAdded = eventPropertiesByName.lab_files_added ?? []
+	const inputReady = eventPropertiesByName.lab_input_ready ?? []
+	const filesAdded = [
+		...(eventPropertiesByName.lab_files_added ?? []),
+		...inputReady,
+	]
 	const runs = eventPropertiesByName.lab_run_started ?? []
 	const reports = [
+		...(eventPropertiesByName.lab_run_completed ?? []),
 		...(eventPropertiesByName.lab_report_generated ?? []),
 		...(eventPropertiesByName.lab_report_opened ?? []),
 		...(eventPropertiesByName.lab_report_opened_new_window ?? []),
@@ -202,28 +215,28 @@ function buildAggregatePropertyTotals(eventPropertiesByName) {
 	const shareCopied = eventPropertiesByName.lab_share_link_copied ?? []
 	const shareOpened = eventPropertiesByName.lab_shared_link_opened ?? []
 
-	addPropertyCounts(totals.fileFormats, heuristics, ['inputFormat'])
-	addPropertyCounts(totals.heuristicKinds, heuristics, ['detectedKind'])
-	addPropertyCounts(totals.heuristicConfidence, heuristics, ['confidence', 'sourceConfidence'])
-	addPropertyCounts(totals.sourceVendors, heuristics, ['sourceVendor'], { emptyLabel: 'unknown' })
-	addPropertyCounts(totals.fileExtensions, heuristics, ['fileExtension', 'selectedEntryExtension'])
+	addPropertyCounts(totals.fileFormats, [...heuristics, ...runs], ['inputFormat', 'input_format', 'file_format'])
+	addPropertyCounts(totals.heuristicKinds, [...heuristics, ...runs], ['detectedKind', 'input_detected_kind'])
+	addPropertyCounts(totals.heuristicConfidence, [...heuristics, ...runs], ['confidence', 'input_confidence', 'sourceConfidence', 'input_source_confidence'])
+	addPropertyCounts(totals.sourceVendors, [...heuristics, ...runs], ['input_source_product', 'sourceVendor', 'input_vendor'], { emptyLabel: 'unknown' })
+	addPropertyCounts(totals.fileExtensions, [...heuristics, ...runs], ['fileExtension', 'input_primary_file_extension', 'selectedEntryExtension', 'input_selected_entry_extension', 'input_file_extensions'], { expandArrays: true })
 
-	addPropertyCounts(totals.dataSources, filesAdded, ['data_source'])
+	addPropertyCounts(totals.dataSources, filesAdded, ['input_source', 'data_source'])
 	addPropertyCounts(totals.demoFiles, filesAdded, ['demo_title', 'demo_filename', 'demo_bundle_id'])
-	addPropertyCounts(totals.fileKinds, filesAdded, ['fileKinds', 'demo_file_kinds'], { expandArrays: true })
+	addPropertyCounts(totals.fileKinds, filesAdded, ['fileKinds', 'demo_file_kinds', 'input_file_kinds', 'input_related_file_kinds'], { expandArrays: true })
 	addPropertyCounts(totals.fileSources, filesAdded, ['fileSources'], { expandArrays: true })
 
-	addPropertyCounts(totals.assays, runs, ['assayId'])
+	addPropertyCounts(totals.assays, runs, ['assay_name', 'assay_id', 'assayId'])
 	addPropertyCounts(totals.internalAssays, runs, ['internalAssayId'])
-	addPropertyCounts(totals.assayLanguages, runs, ['assayLanguage'])
-	addPropertyCounts(totals.assayKinds, runs, ['remoteKind', 'assaySource'])
+	addPropertyCounts(totals.assayLanguages, runs, ['assay_language', 'assayLanguage'])
+	addPropertyCounts(totals.assayKinds, runs, ['assay_kind', 'remoteKind', 'assaySource'])
 	addPropertyCounts(totals.genomeKinds, runs, ['genomeKind'])
-	addPropertyCounts(totals.runSourceUrls, runs, ['sourceUrl'])
-	addPropertyCounts(totals.packageSourceUrls, runs, ['packageSourceUrl'])
+	addPropertyCounts(totals.runSourceUrls, runs, ['source_url', 'sourceUrl'])
+	addPropertyCounts(totals.packageSourceUrls, runs, ['package_source_url', 'packageSourceUrl'])
 
 	addPropertyCounts(totals.reportArtifacts, reports, ['artifactNames'], { expandArrays: true })
-	addPropertyCounts(totals.reportAssays, reports, ['assayId'])
-	addPropertyCounts(totals.reportSourceUrls, reports, ['sourceUrl', 'packageSourceUrl'])
+	addPropertyCounts(totals.reportAssays, reports, ['assay_name', 'assay_id', 'assayId'])
+	addPropertyCounts(totals.reportSourceUrls, reports, ['source_url', 'package_source_url', 'sourceUrl', 'packageSourceUrl'])
 
 	addPropertyCounts(totals.shareUrls, shareCopied, ['shareUrl'])
 	addPropertyCounts(totals.shareTargetUrls, shareCopied, ['targetUrl'])
@@ -287,45 +300,57 @@ async function fetchEvents(config, timeParams, eventLimit) {
 function analyzeSite(input) {
 	const users = new Map()
 	const eventTotals = new Map()
+	const labSummary = createLabSummary()
 	const propertyTotals = input.aggregatePropertyTotals ?? emptyPropertyTotals()
 	const hasAggregatePropertyTotals = Boolean(input.aggregatePropertyTotals)
+	const cutoffMs = input.minutes ? Date.now() - Number(input.minutes) * 60_000 : 0
+	const rawEvents = cutoffMs
+		? input.events.filter((event) => {
+				const timeMs = parseRybbitTimeMs(event.timestamp ?? event.created_at ?? event.createdAt ?? event.time ?? event.datetime)
+				return timeMs >= cutoffMs
+			})
+		: input.events
 
-	for (const event of input.events) {
+	for (const event of rawEvents) {
 		const name = event.event_name || (event.type === 'pageview' ? 'pageview' : '')
 		const props = parseProperties(event.properties)
 		if (name) increment(eventTotals, name)
 		const userId = stableUserId(event)
 		const user = getUser(users, userId)
 		user.events += 1
+		if (event.session_id) user.sessions.add(String(event.session_id))
 		if (event.type === 'pageview') user.pageviews += 1
-		if (name === 'lab_files_added') {
-			user.filesAdded += numberProp(props.totalFiles, 1)
-			const sources = arrayProp(props.fileSources)
+		applyLabSummary(labSummary, name, props, userId)
+		if (name === 'lab_files_added' || name === 'lab_input_ready') {
+			user.filesAdded += numberProp(props.input_related_file_count, numberProp(props.totalFiles, 1))
+			const sources = arrayProp(props.fileSources).concat(arrayProp(props.input_source))
 			for (const source of sources) {
 				if (!hasAggregatePropertyTotals) increment(propertyTotals.fileSources, source)
-				if (source === 'bundled') user.demoFileAdds += 1
+				if (source === 'bundled' || source === 'demo') user.demoFileAdds += 1
 				if (source === 'local' || source === 'url') user.userSuppliedFileAdds += 1
 			}
-			for (const kind of arrayProp(props.fileKinds)) addUnique(user.fileKinds, kind)
-			const dataSource = props.data_source || (props.is_demo_file === true ? 'demo' : 'user_or_unknown')
+			if (props.is_demo_file === true) user.demoFileAdds += 1
+			if (props.is_user_supplied_data === true) user.userSuppliedFileAdds += 1
+			for (const kind of arrayProp(props.fileKinds).concat(arrayProp(props.input_file_kinds)).concat(arrayProp(props.input_related_file_kinds))) addUnique(user.fileKinds, kind)
+			const dataSource = props.input_source || props.data_source || (props.is_demo_file === true ? 'demo' : 'user_or_unknown')
 			if (!hasAggregatePropertyTotals) increment(propertyTotals.dataSources, String(dataSource))
 		}
-		if (name === 'using_file_heuristics') {
+		if (name === 'using_file_heuristics' || name === 'lab_run_started') {
 			user.heuristics += 1
-			addUnique(user.formats, props.inputFormat || props.detectedKind || props.fileExtension)
-			addUnique(user.vendors, props.sourceVendor)
-			addUnique(user.confidences, props.confidence)
+			addUnique(user.formats, props.inputFormat || props.input_format || props.file_format || props.detectedKind || props.input_detected_kind || props.fileExtension)
+			addUnique(user.vendors, props.input_source_product || props.sourceVendor || props.input_vendor)
+			addUnique(user.confidences, props.confidence || props.input_confidence)
 			if (!hasAggregatePropertyTotals) {
-				increment(propertyTotals.fileFormats, props.inputFormat || props.detectedKind || props.fileExtension)
-				increment(propertyTotals.heuristicKinds, props.detectedKind)
-				increment(propertyTotals.heuristicConfidence, props.confidence)
-				increment(propertyTotals.sourceVendors, props.sourceVendor || 'unknown')
+				increment(propertyTotals.fileFormats, props.inputFormat || props.input_format || props.file_format || props.detectedKind || props.input_detected_kind || props.fileExtension)
+				increment(propertyTotals.heuristicKinds, props.detectedKind || props.input_detected_kind)
+				increment(propertyTotals.heuristicConfidence, props.confidence || props.input_confidence)
+				increment(propertyTotals.sourceVendors, props.input_source_product || props.sourceVendor || props.input_vendor || 'unknown')
 			}
 		}
 		if (name === 'lab_run_started') {
 			user.runsStarted += 1
-			addUnique(user.assays, props.assayId)
-			if (!hasAggregatePropertyTotals) increment(propertyTotals.assays, props.assayId || 'unknown')
+			addUnique(user.assays, props.assay_id || props.assayId)
+			if (!hasAggregatePropertyTotals) increment(propertyTotals.assays, props.assay_id || props.assayId || 'unknown')
 		}
 		if (name === 'lab_run_completed') user.runsCompleted += 1
 		if (name === 'lab_run_failed') user.runsFailed += 1
@@ -354,8 +379,9 @@ function analyzeSite(input) {
 	return {
 		...input,
 		eventTotals: eventTotalsRows,
-		eventsFetched: input.events.length,
+		eventsFetched: rawEvents.length,
 		insights: deriveInsights(input.overview, eventTotalsRows, propertyTotals, userRows),
+		labSummary: finalizeLabSummary(labSummary, userRows),
 		propertyTotals,
 		userRows,
 	}
@@ -387,6 +413,118 @@ function emptyPropertyTotals() {
 		shareUrls: new Map(),
 		sourceVendors: new Map(),
 	}
+}
+
+function createLabSummary() {
+	return {
+		assayInputPairs: new Map(),
+		completedAssayInputPairs: new Map(),
+		demoInputUsers: new Set(),
+		demoRunUsers: new Set(),
+		enrichedRunEvents: 0,
+		inputsReady: 0,
+		missingEnrichedRunEvents: 0,
+		realInputMetadata: new Map(),
+		realInputUsers: new Set(),
+		realRunMetadata: new Map(),
+		realRunUsers: new Set(),
+		runEvents: 0,
+	}
+}
+
+function applyLabSummary(summary, name, props, userId) {
+	if (name === 'lab_input_ready' || name === 'lab_files_added') {
+		summary.inputsReady += 1
+		if (isDemoProps(props)) summary.demoInputUsers.add(userId)
+		if (isRealProps(props)) {
+			summary.realInputUsers.add(userId)
+			increment(summary.realInputMetadata, inputMetadataLabel(props))
+		}
+	}
+	if (name !== 'lab_run_started' && name !== 'lab_run_completed' && name !== 'lab_run_failed') return
+	summary.runEvents += 1
+	if (isDemoProps(props)) summary.demoRunUsers.add(userId)
+	if (isRealProps(props)) {
+		summary.realRunUsers.add(userId)
+		increment(summary.realRunMetadata, inputMetadataLabel(props))
+	}
+	if (hasEnrichedInputMetadata(props)) summary.enrichedRunEvents += 1
+	else summary.missingEnrichedRunEvents += 1
+	increment(summary.assayInputPairs, assayInputPairLabel(props))
+	if (name === 'lab_run_completed') increment(summary.completedAssayInputPairs, assayInputPairLabel(props))
+}
+
+function finalizeLabSummary(summary, userRows) {
+	const returningUsers = userRows.filter((user) => user.sessions.size > 1).length
+	return {
+		...summary,
+		returningUsers,
+	}
+}
+
+function serializeLabSummary(summary) {
+	if (!summary) return null
+	return {
+		...summary,
+		assayInputPairs: [...summary.assayInputPairs.entries()],
+		completedAssayInputPairs: [...summary.completedAssayInputPairs.entries()],
+		demoInputUsers: [...summary.demoInputUsers],
+		demoRunUsers: [...summary.demoRunUsers],
+		realInputMetadata: [...summary.realInputMetadata.entries()],
+		realInputUsers: [...summary.realInputUsers],
+		realRunMetadata: [...summary.realRunMetadata.entries()],
+		realRunUsers: [...summary.realRunUsers],
+	}
+}
+
+function hydrateLabSummary(summary) {
+	if (!summary) return createLabSummary()
+	return {
+		...summary,
+		assayInputPairs: new Map(summary.assayInputPairs ?? []),
+		completedAssayInputPairs: new Map(summary.completedAssayInputPairs ?? []),
+		demoInputUsers: new Set(summary.demoInputUsers ?? []),
+		demoRunUsers: new Set(summary.demoRunUsers ?? []),
+		realInputMetadata: new Map(summary.realInputMetadata ?? []),
+		realInputUsers: new Set(summary.realInputUsers ?? []),
+		realRunMetadata: new Map(summary.realRunMetadata ?? []),
+		realRunUsers: new Set(summary.realRunUsers ?? []),
+	}
+}
+
+function isDemoProps(props) {
+	return props.is_demo_file === true || props.is_demo_file === 'true' || props.input_source === 'demo' || props.data_source === 'demo'
+}
+
+function isRealProps(props) {
+	return props.is_user_supplied_data === true ||
+		props.is_user_supplied_data === 'true' ||
+		props.input_source === 'local' ||
+		props.input_source === 'url' ||
+		arrayProp(props.fileSources).some((source) => source === 'local' || source === 'url')
+}
+
+function hasEnrichedInputMetadata(props) {
+	return props.input_metadata_status === 'inspected' ||
+		Boolean(props.input_hash_sha256 || props.input_detected_kind || props.input_vendor || props.input_source_product)
+}
+
+function assayInputPairLabel(props) {
+	const assay = firstValue(props.assay_name, props.assayName, props.assay_id, props.assayId, 'unknown assay')
+	return `${assay} | ${inputMetadataLabel(props)}`
+}
+
+function inputMetadataLabel(props) {
+	const source = isDemoProps(props) ? 'demo' : isRealProps(props) ? 'real' : firstValue(props.input_source, props.data_source, 'unknown')
+	const type = firstValue(props.input_type, props.input_detected_kind, props.detectedKind, props.input_format, props.file_format, 'unknown')
+	const product = firstValue(props.input_source_product, props.input_vendor, props.sourceVendor)
+	const imputed = firstValue(props.input_imputation_version)
+	const vendorVersion = firstValue(props.input_vendor_version, props.platformVersion)
+	const combo = firstValue(props.input_file_combo, props.input_primary_file_extension, props.fileExtension)
+	const bits = [`${source} ${type}`]
+	if (product) bits.push(imputed ? `${product} ${imputed}` : vendorVersion ? `${product} ${vendorVersion}` : product)
+	if (combo) bits.push(combo)
+	return bits.join(' | ')
 }
 
 function deriveInsights(overview, eventTotals, propertyTotals, userRows) {
@@ -546,6 +684,8 @@ function renderSite(site) {
 ${site.insights.map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}
 </div>
 <p class="muted">Fetched ${formatNumber(site.eventsFetched)} recent raw events for per-user/product analysis.</p>
+<h3>Product Questions</h3>
+${productQuestionsTable(site)}
 <div class="cols">
 ${dailyChart('Daily Views', dailyOverview, 'pageviews')}
 ${dailyChart('Daily Users', dailyOverview, 'users')}
@@ -565,6 +705,9 @@ ${smallTable('Detected Kinds', mapRows(site.propertyTotals.heuristicKinds).slice
 </div>
 <div class="cols">
 ${smallTable('Source Vendors', mapRows(site.propertyTotals.sourceVendors).slice(0, 12), ['value', 'count'])}
+${smallTable('Real File Metadata - Inputs', mapRows(site.labSummary.realInputMetadata).slice(0, 12), ['value', 'count'])}
+${smallTable('Real File Metadata - Runs', mapRows(site.labSummary.realRunMetadata).slice(0, 12), ['value', 'count'])}
+${smallTable('Completed Assay/Input Pairs', mapRows(site.labSummary.completedAssayInputPairs).slice(0, 20), ['value', 'count'])}
 ${smallTable('File Extensions', mapRows(site.propertyTotals.fileExtensions).slice(0, 12), ['value', 'count'])}
 ${smallTable('Demo Files', mapRows(site.propertyTotals.demoFiles).slice(0, 12), ['value', 'count'])}
 ${smallTable('File Sources', mapRows(site.propertyTotals.fileSources).slice(0, 12), ['value', 'count'])}
@@ -587,7 +730,7 @@ function comparisonTable(sites) {
 		label: `${site.config.label} (${site.config.domain})`,
 		views: site.overview.pageviews ?? 0,
 		users: site.overview.users ?? 0,
-		files: countEvent(site.eventTotals, 'lab_files_added'),
+		files: countEvent(site.eventTotals, 'lab_input_ready') + countEvent(site.eventTotals, 'lab_files_added'),
 		runs: countEvent(site.eventTotals, 'lab_run_started'),
 		completed: countEvent(site.eventTotals, 'lab_run_completed'),
 		reports: countEvent(site.eventTotals, 'lab_report_opened') + countEvent(site.eventTotals, 'lab_report_opened_new_window'),
@@ -596,6 +739,24 @@ function comparisonTable(sites) {
 	}))
 	return `<table><thead><tr><th>Site</th><th>Views</th><th>Users</th><th>Files added</th><th>Runs</th><th>Completed</th><th>Report opens</th><th>Shares copied</th><th>Shared links opened</th></tr></thead><tbody>${rows
 		.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${formatNumber(row.views)}</td><td>${formatNumber(row.users)}</td><td>${formatNumber(row.files)}</td><td>${formatNumber(row.runs)}</td><td>${formatNumber(row.completed)}</td><td>${formatNumber(row.reports)}</td><td>${formatNumber(row.shares)}</td><td>${formatNumber(row.opens)}</td></tr>`)
+		.join('')}</tbody></table>`
+}
+
+function productQuestionsTable(site) {
+	const summary = site.labSummary ?? createLabSummary()
+	const rows = [
+		['How many unique visitors?', formatNumber(site.overview.users ?? 0), 'Rybbit overview users for this site/window.'],
+		['How many come back?', formatNumber(summary.returningUsers ?? 0), 'Users in fetched raw events with more than one Rybbit session. Increase raw-event cap for older windows.'],
+		['How many do demo examples?', formatNumber(summary.demoInputUsers.size), 'Distinct users with demo input-ready events.'],
+		['How many run demo examples?', formatNumber(summary.demoRunUsers.size), 'Distinct users with demo run events.'],
+		['How many add their own files?', formatNumber(summary.realInputUsers.size), 'Distinct users with local/url input-ready events.'],
+		['How many run their own files?', formatNumber(summary.realRunUsers.size), 'Distinct users with local/url run events.'],
+		['Which test did they pair with which input?', firstMapLabel(summary.completedAssayInputPairs), 'Completed lab_run_completed assay/input pairs. See table below for the full list.'],
+		['What real file metadata is used?', summary.realRunMetadata.size ? firstMapLabel(summary.realRunMetadata) : firstMapLabel(summary.realInputMetadata), 'Real run metadata preferred; falls back to input-ready metadata if no runs reached Rybbit.'],
+		['Run events enriched?', `${formatNumber(summary.enrichedRunEvents)} enriched / ${formatNumber(summary.missingEnrichedRunEvents)} basic`, 'Run events are enriched when inspection/hash/source metadata is present.'],
+	]
+	return `<table><thead><tr><th>Question</th><th>Answer</th><th>Signal</th></tr></thead><tbody>${rows
+		.map((row) => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td></tr>`)
 		.join('')}</tbody></table>`
 }
 
@@ -646,9 +807,9 @@ function userTable(users) {
 
 function trackingRows() {
 	return [
-		['Are people dragging in real files?', 'lab_files_added has fileSources plus demo flags; raw report classifies local/url as user-supplied.', 'Add explicit input_method: drag_drop/file_picker/url and is_user_supplied_data on every add path.'],
-		['Which formats/heuristics per user?', 'using_file_heuristics has inputFormat, detectedKind, confidence, sourceVendor, assembly, extensions.', 'Avoid fileName in future analytics; keep extension/vendor/confidence only.'],
-		['What assays are running?', 'lab_run_started/completed/failed have assayId and assayLanguage.', 'Add assay package version or content hash for comparing changing remote assays.'],
+		['Are people using real files?', 'New events use lab_input_ready plus is_user_supplied_data/input_source. Historical lab_files_added is still coerced for older data.', 'Add input_method if drag/drop vs picker vs URL matters.'],
+		['Which formats/heuristics per user?', 'lab_run_started carries input_format, input_detected_kind, input_confidence, input_vendor, assembly, extensions, sizes, and hashes.', 'Avoid real filenames; keep extension/vendor/confidence/hash only.'],
+		['What assays are running?', 'lab_run_started/completed/failed have assay_id, assay_name, assay_kind, and assay_language.', 'Add assay package version or content hash for comparing changing remote assays.'],
 		['Are users clicking reports?', 'lab_report_opened and lab_report_opened_new_window show click intent.', 'Track report_view_closed or report_view_heartbeat with durationMs for dwell time.'],
 		['Sharing links sent/received?', 'lab_share_link_copied and lab_shared_link_opened capture both sides.', 'Add share_source and target_resource_kind; avoid storing full target URLs in analytics.'],
 		['Traffic source?', 'Rybbit referrer metric is available, but current data may be direct/empty.', 'Add UTM preservation/reporting if campaigns matter.'],
@@ -675,6 +836,7 @@ function getUser(users, id) {
 			runsCompleted: 0,
 			runsFailed: 0,
 			runsStarted: 0,
+			sessions: new Set(),
 			shareLinksCopied: 0,
 			shareLinksOpened: 0,
 			userSuppliedFileAdds: 0,
@@ -717,6 +879,13 @@ function arrayProp(value) {
 function numberProp(value, fallback) {
 	const number = Number(value)
 	return Number.isFinite(number) ? number : fallback
+}
+
+function firstValue(...values) {
+	for (const value of values) {
+		if (value !== undefined && value !== null && value !== '') return String(value)
+	}
+	return ''
 }
 
 function metricRows(response) {
@@ -886,6 +1055,17 @@ function dateTime(date) {
 		timeStyle: 'short',
 		timeZone: 'Australia/Brisbane',
 	}).format(date)
+}
+
+function parseRybbitTimeMs(value) {
+	if (!value) return 0
+	if (typeof value === 'number') return value < 10_000_000_000 ? value * 1000 : value
+	const string = String(value)
+	const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(string)
+		? `${string.replace(' ', 'T')}Z`
+		: string
+	const time = Date.parse(normalized)
+	return Number.isFinite(time) ? time : 0
 }
 
 function maskId(value) {
