@@ -1,6 +1,7 @@
 export type LaunchIntentSource =
 	| 'desktop-protocol'
 	| 'demo-catalog'
+	| 'in-app'
 	| 'native-link'
 	| 'web-fragment'
 	| 'web-query'

@@ -419,6 +419,8 @@ function renderKind(kind: Inspection['detectedKind']): string {
 			return 'Genotype (text)'
 		case 'vcf':
 			return 'VCF'
+		case 'bcf':
+			return 'BCF'
 		case 'alignment_cram':
 			return 'CRAM alignment'
 		case 'alignment_bam':
