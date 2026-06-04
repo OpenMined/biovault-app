@@ -18,7 +18,8 @@
 		"node_modules",
 		"**/*.test.ts",
 		"bioscript/**",
-		"exvitae/bioscript/**",
+		"exvitae/**",
+		"repos/**",
 		"desktop/**",
 		"packages/**",
 		"notebooks/**"
