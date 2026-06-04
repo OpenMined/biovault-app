@@ -28,5 +28,8 @@ ensure_rv
 echo "==> Initializing Repoverse workspace"
 rv init --https
 
+echo "==> Linking Repoverse workspace"
+rv link
+
 echo "==> Repoverse status"
 rv status
