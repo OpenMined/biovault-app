@@ -1,7 +1,6 @@
 import { ActiveDocumentProvider } from '../../components/explore/ActiveDocumentContext'
 import Files from '../../app/(tabs)/files'
 import Lab from '../../app/(tabs)/lab/index.web'
-import Explore from '../../app/(tabs)/explore'
 import Results from '../../app/(tabs)/results'
 import Feed from '../../app/(tabs)/feed'
 import Settings from '../../app/(tabs)/settings'
@@ -12,7 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { OMText } from '../../components/ui/OMText'
 import { omColors, omRadius, omSpacing, omTheme } from '../../styles/brand'
 
-type DesktopTabId = 'files' | 'lab' | 'explore' | 'results' | 'feed' | 'settings'
+type DesktopTabId = 'files' | 'lab' | 'results' | 'feed' | 'settings'
 
 type DesktopTab = {
   id: DesktopTabId
@@ -24,7 +23,6 @@ type DesktopTab = {
 const tabs: DesktopTab[] = [
   { id: 'files', label: 'Files', icon: 'F', component: Files },
   { id: 'lab', label: 'Lab', icon: 'L', component: Lab },
-  { id: 'explore', label: 'Explore', icon: 'E', component: Explore },
   { id: 'results', label: 'Results', icon: 'R', component: Results },
   { id: 'feed', label: 'Feed', icon: 'N', component: Feed },
   { id: 'settings', label: 'Settings', icon: 'S', component: Settings },

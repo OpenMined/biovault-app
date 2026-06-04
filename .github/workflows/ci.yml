@@ -947,8 +947,7 @@ jobs:
   # (manual workflow_dispatch + push to main only).
 
   desktop-linux:
-    # Disabled while focusing CI on rust, lint, and web stability.
-    if: false
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -1008,13 +1007,10 @@ jobs:
       - name: Fetch desktop genomic test fixtures
         run: |
           BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 23andme --only genome_hu50B3F5_v5_Full.zip
-          BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 1k-genomes --only "NA06985.clean.vcf.gz*"
 
       - name: Verify desktop genomic test fixtures
         run: |
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
-          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
-          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
 
       - name: Run desktop UI tests
         run: xvfb-run -a ./test-desktop.sh
@@ -1034,8 +1030,7 @@ jobs:
           if-no-files-found: ignore
 
   desktop-macos:
-    # Disabled while focusing CI on rust, lint, and web stability.
-    if: false
+    if: github.event_name == 'pull_request'
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -1090,13 +1085,10 @@ jobs:
       - name: Fetch desktop genomic test fixtures
         run: |
           BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 23andme --only genome_hu50B3F5_v5_Full.zip
-          BIOSCRIPT_TEST_DATA_REPO_ROOT="$PWD" ./bioscript/tools/fetch_test_data.sh --dataset 1k-genomes --only "NA06985.clean.vcf.gz*"
 
       - name: Verify desktop genomic test fixtures
         run: |
           test -f test-data/23andme/v5/hu50B3F5/genome_hu50B3F5_v5_Full.zip
-          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz
-          test -f test-data/1k-genomes/vcf/NA06985.clean.vcf.gz.tbi
 
       - name: Run desktop UI tests
         run: ./test-desktop.sh

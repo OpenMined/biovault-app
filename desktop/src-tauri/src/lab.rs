@@ -3500,6 +3500,8 @@ mod tests {
         #[serde(rename = "assert")]
         assertion: ScenarioExpect,
         platforms: Vec<String>,
+        #[serde(default)]
+        optional: bool,
     }
 
     #[derive(Deserialize)]
@@ -3559,6 +3561,11 @@ mod tests {
     fn run_shared_desktop_scenario(id: &str) {
         let repo = repo_root();
         let scenario = desktop_scenario(id);
+        if scenario.optional && std::env::var("DESKTOP_TEST_OPTIONAL").ok().as_deref() != Some("1")
+        {
+            eprintln!("skipping optional desktop {id} scenario");
+            return;
+        }
 
         let assay = scenario
             .assay

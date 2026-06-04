@@ -10,6 +10,7 @@ mkdir -p "$LOG_DIR" ".maestro-desktop/screenshots"
 
 INTERACTIVE=0
 KEEP_OPEN="${KEEP_OPEN:-0}"
+EXTRA_PW_ARGS=()
 for arg in "$@"; do
   case "$arg" in
     -i|--interactive) INTERACTIVE=1 ;;
@@ -23,6 +24,7 @@ Usage: $0 [--interactive|-i] [--keep-open]
   Combine: --interactive --keep-open  for live output + stay open after test
 EOF
       exit 0 ;;
+    *) EXTRA_PW_ARGS+=("$arg") ;;
   esac
 done
 
@@ -43,7 +45,7 @@ kill_everything() {
   # Belt-and-braces: anything still bound to our ports.
   lsof -ti:"$PORT","$WS_PORT" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
   # Anything matching our app name (covers stragglers from earlier sessions).
-  pkill -9 -f "biovault-desktop" 2>/dev/null || true
+  pkill -9 -f "biovault-app-desktop|BioVaultApp" 2>/dev/null || true
 }
 
 on_signal() {
@@ -60,7 +62,7 @@ trap 'on_signal' INT TERM HUP
 if lsof -ti:"$PORT","$WS_PORT" >/dev/null 2>&1; then
   echo "==> Clearing leftover processes on ports $PORT and $WS_PORT"
   lsof -ti:"$PORT","$WS_PORT" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-  pkill -9 -f "biovault-desktop" 2>/dev/null || true
+  pkill -9 -f "biovault-app-desktop|BioVaultApp" 2>/dev/null || true
   sleep 1
 fi
 
@@ -121,7 +123,8 @@ PW_ARGS=()
 echo "==> Running Playwright specs in .maestro-desktop/"
 if WEB_URL="$WEB_URL" npx playwright test \
     --config=.maestro-desktop/playwright.config.ts \
-    ${PW_ARGS[@]+"${PW_ARGS[@]}"}; then
+    ${PW_ARGS[@]+"${PW_ARGS[@]}"} \
+    ${EXTRA_PW_ARGS[@]+"${EXTRA_PW_ARGS[@]}"}; then
   echo ""
   echo "✅ Desktop test PASSED"
   RESULT=0
