@@ -9,7 +9,7 @@ remotes:
 projects:
 - name: openmined/bioscript
   path: repos/bioscript
-  revision: madhava/libs
+  revision: main
 - name: madhavajay/bcftools
   path: repos/bcftools
   revision: develop
@@ -82,10 +82,10 @@ provides:
 links:
 - repo: openmined/bioscript
   at: bioscript
-  branch: madhava/libs
+  branch: main
 - repo: openmined/bioscript
   at: exvitae/bioscript
-  branch: madhava/libs
+  branch: main
 - repo: madhavajay/vntyper
   at: bioscript/ports/vntyper/vntyper
   branch: main

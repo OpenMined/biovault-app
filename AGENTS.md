@@ -8,7 +8,19 @@ under `repos/`. Naive git commands will fight these and can corrupt the tree.
 ## What `rv` is
 
 Source / docs: <https://github.com/madhavajay/repoverse>
-(install: `cargo install --git https://github.com/madhavajay/repoverse --bin rv`)
+Crates.io: <https://crates.io/crates/repoverse>
+
+Install:
+
+```sh
+cargo install repoverse
+```
+
+For unreleased fixes, install from source:
+
+```sh
+cargo install --git https://github.com/madhavajay/repoverse --bin rv
+```
 
 `rv` (repoverse) deduplicates repos that are vendored in multiple places.
 Instead of N copies of a dependency, there is **one** real checkout in
@@ -16,6 +28,13 @@ Instead of N copies of a dependency, there is **one** real checkout in
 once and every consumer sees the change. `.gitmodules` and gitlinks are kept
 intact, so a plain `git clone --recursive` of any sub-repo still works
 standalone; `rv` is a *layer on top*, not a replacement.
+
+`rv` is primarily for local development workspaces where repeated vendored
+repos are overlaid with shared symlinks. GitHub CI usually does **not** need
+Repoverse: use normal `actions/checkout` with recursive submodules unless a
+workflow explicitly wants to test the Repoverse overlay itself. CI should remain
+valid for classic `git clone --recursive` checkouts, because `.gitmodules` and
+gitlinks are still the canonical standalone representation.
 
 Get help:
 
@@ -149,6 +168,35 @@ rv status
 
 Repeat until `rv status` is clean, or until the only remaining changes are the
 consumer gitlink / lock updates you intend to commit next.
+
+## PR and rollup rules
+
+`rv rollup --direct` may create, push, and check out generated `rv/...`
+branches. Do not assume the current branch after rollup is the intended human
+PR branch.
+
+Before opening PRs after a rollup, verify:
+
+```sh
+git branch --show-current
+git branch -vv
+rv status
+```
+
+Use `.repoverse.yaml` as the branch source of truth:
+
+- `projects[].revision` is the intended stable/base branch for a Repoverse
+  project.
+- `links[].branch` is the expected branch for an overlaid symlink location.
+- GitHub's default branch is not necessarily the right PR base.
+
+PRs should target the repo's active `origin` remote only, unless the user
+explicitly asks for an upstream/fork PR. Do not open PRs against unrelated
+upstream remotes just because they exist.
+
+If the desired base branch and head branch are the same branch, do not open a
+PR. The change has already landed on that branch; report the commit/branch
+state instead.
 
 ## Config
 
