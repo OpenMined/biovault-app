@@ -197,7 +197,7 @@ jobs:
       - name: Test browser compatibility result merger
         run: npm run test:browser-compat-merge
 
-  bioscript-lint:
+  bioscript-check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -220,11 +220,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: bioscript/rust
-          key: bioscript-lint
+          key: bioscript-check
 
-      - name: Run bioscript lint
-        run: ./lint.sh --check
-        working-directory: bioscript
+      - name: Run Bioscript Repoverse check
+        run: rv check openmined/bioscript
 
   web-core:
     if: github.event_name == 'pull_request'

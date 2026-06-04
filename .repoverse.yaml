@@ -10,6 +10,8 @@ projects:
 - name: openmined/bioscript
   path: repos/bioscript
   revision: main
+  lint: ./lint.sh --check
+  test: ./test.sh
 - name: madhavajay/bcftools
   path: repos/bcftools
   revision: develop
