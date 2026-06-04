@@ -4,7 +4,7 @@ set -uo pipefail
 # Opinionated linter. Auto-fixes by default.
 # Usage:
 #   ./lint.sh               # lint everything (Rust + TS), auto-fix
-#   ./lint.sh --rust        # only Rust
+#   ./lint.sh --rust        # only app-owned Rust
 #   ./lint.sh --ts          # only TypeScript
 #   ./lint.sh --check       # do not modify files, report only
 #   flags compose: ./lint.sh --rust --ts --check
@@ -26,7 +26,7 @@ for arg in "$@"; do
     -h|--help)
       cat <<EOF
 Usage: $0 [--rust] [--ts] [--check]
-  --rust     Lint Rust (cargo fmt + clippy). Default: auto-fix.
+  --rust     Lint app-owned Rust (cargo fmt + clippy). Default: auto-fix.
   --ts       Lint TypeScript (tsc typecheck + eslint --fix across root, desktop, packages).
   --check    Report only, do not modify files.
   (no flag)  Run all.
@@ -59,14 +59,10 @@ step() {
 
 # ──────────────────────────── Rust ────────────────────────────
 
-# First-party Rust only. Vendored/submoduled crates are skipped:
-#   - bioscript/monty      (upstream: pydantic/monty)
-#   - bioscript/noodles    (upstream: zaeleus/noodles; referenced via [patch.crates-io])
-#   - bioscript/rust/vendor (lexical-util and friends)
-# clippy uses --no-deps so patched deps aren't linted, and cargo workspaces
-# only cover explicit `members`, so vendor/ directories aren't touched.
+# App-owned Rust only. Submodule repos such as bioscript run their own lint
+# jobs with their own lint.sh, so app lint does not fail on submodule clippy
+# drift or recurse through Repoverse checkouts.
 RUST_WORKSPACES=(
-  "bioscript/rust"
   "desktop/src-tauri"
 )
 CLIPPY_FLAGS=(-D warnings -A clippy::doc_overindented_list_items)
@@ -85,6 +81,16 @@ filter_vendor_warnings() {
     -e '/`noodles-[a-z]+` \(lib\) generated [0-9]+ warnings?/d'
 }
 
+run_rust_filtered() {
+  local output
+  output="$(mktemp)"
+  local rc=0
+  "$@" >"$output" 2>&1 || rc=$?
+  filter_vendor_warnings <"$output"
+  rm -f "$output"
+  return "$rc"
+}
+
 rust_one() {
   local dir="$1"
   [ -d "$dir" ] || { echo "skip: $dir (missing)"; return 0; }
@@ -97,11 +103,11 @@ rust_one() {
   pushd "$dir" >/dev/null
   local rc=0
   if [ "$CHECK" = "1" ]; then
-    { cargo fmt --all -- --check 2>&1 || rc=1; } | filter_vendor_warnings
-    { cargo clippy --workspace --all-targets --all-features --no-deps -- "${CLIPPY_FLAGS[@]}" 2>&1 || rc=1; } | filter_vendor_warnings
+    run_rust_filtered cargo fmt --all -- --check || rc=1
+    run_rust_filtered cargo clippy --workspace --all-targets --all-features --no-deps -- "${CLIPPY_FLAGS[@]}" || rc=1
   else
-    cargo fmt --all 2>&1 | filter_vendor_warnings
-    { cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged --no-deps -- "${CLIPPY_FLAGS[@]}" 2>&1 || rc=1; } | filter_vendor_warnings
+    run_rust_filtered cargo fmt --all || rc=1
+    run_rust_filtered cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged --no-deps -- "${CLIPPY_FLAGS[@]}" || rc=1
   fi
   popd >/dev/null
   return $rc

@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-checkout_commit() {
-	local path="$1"
-	local repo="$2"
-	local sha="$3"
+# CI uses Repoverse instead of hand-initializing a small subset of submodules.
+# This follows .repoverse.yaml, clones every mapped checkout under repos/, and
+# recreates the shared symlink overlay used by local development.
 
-	rm -rf "$path"
-	git init "$path"
-	git -C "$path" remote add origin "$repo"
-	git -C "$path" fetch --depth 1 origin "$sha"
-	git -C "$path" checkout --detach FETCH_HEAD
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+ensure_rv() {
+  if command -v rv >/dev/null 2>&1; then
+    rv --version
+    return
+  fi
+
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "rv is not installed and cargo is unavailable; install Rust or preinstall repoverse" >&2
+    exit 1
+  fi
+
+  echo "==> Installing Repoverse from crates.io"
+  cargo install repoverse
 }
 
-bioscript_sha="$(git rev-parse HEAD:bioscript)"
-exvitae_sha="$(git rev-parse HEAD:exvitae)"
+ensure_rv
 
-checkout_commit bioscript https://github.com/OpenMined/bioscript.git "$bioscript_sha"
+echo "==> Initializing Repoverse workspace"
+rv init --https
 
-monty_sha="$(git -C bioscript rev-parse HEAD:monty)"
-noodles_sha="$(git -C bioscript rev-parse HEAD:noodles)"
+echo "==> Linking Repoverse workspace"
+rv link
 
-checkout_commit bioscript/monty https://github.com/madhavajay/monty.git "$monty_sha"
-checkout_commit bioscript/noodles https://github.com/madhavajay/noodles.git "$noodles_sha"
-checkout_commit exvitae https://github.com/madhavajay/exvitae.git "$exvitae_sha"
+echo "==> Repoverse status"
+rv status

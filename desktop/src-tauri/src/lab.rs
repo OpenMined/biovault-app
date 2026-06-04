@@ -17,7 +17,7 @@ use bioscript_ffi::{
     RunVariantYamlRequest, RunVariantYamlResult,
 };
 use bioscript_formats::{
-    inspect_bytes as inspect_bytes_rs, DetectionConfidence, DetectedKind, FileContainer,
+    inspect_bytes as inspect_bytes_rs, DetectedKind, DetectionConfidence, FileContainer,
     FileInspection, GenotypeLoadOptions, GenotypeStore, InspectOptions, SexInference,
     SourceMetadata,
 };
@@ -629,7 +629,10 @@ pub async fn lab_fs_read_text(app: AppHandle, uri: String) -> Result<String, Str
     match fs::read_to_string(&path) {
         Ok(text) => Ok(text),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => Err(format!("read desktop file {} failed: {error}", path.display())),
+        Err(error) => Err(format!(
+            "read desktop file {} failed: {error}",
+            path.display()
+        )),
     }
 }
 
@@ -654,7 +657,10 @@ pub async fn lab_fs_delete(app: AppHandle, uri: String) -> Result<(), String> {
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("delete desktop file {} failed: {error}", path.display())),
+        Err(error) => Err(format!(
+            "delete desktop file {} failed: {error}",
+            path.display()
+        )),
     }
 }
 
@@ -714,11 +720,7 @@ pub async fn lab_prepare_runtime_root(
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("biovault-app-desktop"))
         .join("lab-runtime")
-        .join(format!(
-            "run-{}-{}",
-            now_millis(),
-            std::process::id()
-        ));
+        .join(format!("run-{}-{}", now_millis(), std::process::id()));
     fs::create_dir_all(base.join("inputs"))
         .map_err(|error| format!("create runtime inputs dir failed: {error}"))?;
     fs::create_dir_all(base.join(".bioscript-cache"))
@@ -761,7 +763,7 @@ pub async fn lab_lookup_genotype_bytes_variants(
         lookup_genotype_bytes_variants_blocking(&name, &bytes, variants)
     })
     .await
-        .map_err(|error| format!("lookup failed: {error}"))?
+    .map_err(|error| format!("lookup failed: {error}"))?
 }
 
 #[tauri::command]
@@ -770,9 +772,11 @@ pub async fn lab_lookup_genotype_bytes_rsids(
     bytes: Vec<u8>,
     rsids: Vec<String>,
 ) -> Result<Vec<Option<String>>, String> {
-    tauri::async_runtime::spawn_blocking(move || lookup_genotype_bytes_rsids_blocking(&name, &bytes, rsids))
-        .await
-        .map_err(|error| format!("lookup rsids failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        lookup_genotype_bytes_rsids_blocking(&name, &bytes, rsids)
+    })
+    .await
+    .map_err(|error| format!("lookup rsids failed: {error}"))?
 }
 
 #[tauri::command]
@@ -876,6 +880,7 @@ pub async fn lab_run_package_report_bytes(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn lab_run_package_report_from_cram(
     manifest_path: String,
     package_files: Vec<PackageFileInput>,
@@ -1041,8 +1046,9 @@ pub async fn handle_ws_lab_request(
             struct Payload {
                 source_url: String,
             }
-            let payload: Payload = serde_json::from_value(payload)
-                .map_err(|error| format!("invalid delete_cached_remote_lab_file payload: {error}"))?;
+            let payload: Payload = serde_json::from_value(payload).map_err(|error| {
+                format!("invalid delete_cached_remote_lab_file payload: {error}")
+            })?;
             let cache_dir = std::env::temp_dir()
                 .join("biovault-app-desktop")
                 .join("remote-lab-files");
@@ -1173,15 +1179,20 @@ pub async fn handle_ws_lab_request(
                 .map_err(|error| format!("encode compile response: {error}"))
         }
         "lookup_genotype_bytes_variants" => {
-            let payload: LookupGenotypePayload = serde_json::from_value(payload)
-                .map_err(|error| format!("invalid lookup_genotype_bytes_variants payload: {error}"))?;
+            let payload: LookupGenotypePayload =
+                serde_json::from_value(payload).map_err(|error| {
+                    format!("invalid lookup_genotype_bytes_variants payload: {error}")
+                })?;
             let result = tauri::async_runtime::spawn_blocking(move || {
-                lookup_genotype_bytes_variants_blocking(&payload.name, &payload.bytes, payload.variants)
+                lookup_genotype_bytes_variants_blocking(
+                    &payload.name,
+                    &payload.bytes,
+                    payload.variants,
+                )
             })
             .await
             .map_err(|error| format!("lookup failed: {error}"))??;
-            serde_json::to_value(result)
-                .map_err(|error| format!("encode lookup response: {error}"))
+            serde_json::to_value(result).map_err(|error| format!("encode lookup response: {error}"))
         }
         "lookup_genotype_bytes_rsids" => {
             let payload: LookupGenotypeRsidsPayload = serde_json::from_value(payload)
@@ -1240,30 +1251,49 @@ pub async fn handle_ws_lab_request(
                 .map_err(|error| format!("encode VCF lookup response: {error}"))
         }
         "resolve_remote_resource_text" => {
-            let payload: ResolveRemoteResourcePayload = serde_json::from_value(payload)
-                .map_err(|error| format!("invalid resolve_remote_resource_text payload: {error}"))?;
-            let result = resolve_remote_resource_text_rs(&payload.source_url, &payload.name, &payload.text)?;
+            let payload: ResolveRemoteResourcePayload =
+                serde_json::from_value(payload).map_err(|error| {
+                    format!("invalid resolve_remote_resource_text payload: {error}")
+                })?;
+            let result =
+                resolve_remote_resource_text_rs(&payload.source_url, &payload.name, &payload.text)?;
             serde_json::to_value(result)
                 .map_err(|error| format!("encode remote resource response: {error}"))
         }
         "resolve_package_release_text" => {
-            let payload: ResolveRemoteResourcePayload = serde_json::from_value(payload)
-                .map_err(|error| format!("invalid resolve_package_release_text payload: {error}"))?;
-            let result = resolve_package_release_text_blocking(&payload.source_url, &payload.name, &payload.text)?;
+            let payload: ResolveRemoteResourcePayload =
+                serde_json::from_value(payload).map_err(|error| {
+                    format!("invalid resolve_package_release_text payload: {error}")
+                })?;
+            let result = resolve_package_release_text_blocking(
+                &payload.source_url,
+                &payload.name,
+                &payload.text,
+            )?;
             serde_json::to_value(result)
                 .map_err(|error| format!("encode package release response: {error}"))
         }
         "resolve_package_zip_bytes" => {
             let payload: ResolvePackageZipPayload = serde_json::from_value(payload)
                 .map_err(|error| format!("invalid resolve_package_zip_bytes payload: {error}"))?;
-            let result = resolve_package_zip_bytes_blocking(&payload.source_url, &payload.name, &payload.bytes)?;
+            let result = resolve_package_zip_bytes_blocking(
+                &payload.source_url,
+                &payload.name,
+                &payload.bytes,
+            )?;
             serde_json::to_value(result)
                 .map_err(|error| format!("encode package zip response: {error}"))
         }
         "verify_package_artifact_sha256" => {
-            let payload: VerifyPackageArtifactPayload = serde_json::from_value(payload)
-                .map_err(|error| format!("invalid verify_package_artifact_sha256 payload: {error}"))?;
-            verify_package_artifact_sha256_blocking(&payload.name, &payload.bytes, &payload.expected)?;
+            let payload: VerifyPackageArtifactPayload =
+                serde_json::from_value(payload).map_err(|error| {
+                    format!("invalid verify_package_artifact_sha256 payload: {error}")
+                })?;
+            verify_package_artifact_sha256_blocking(
+                &payload.name,
+                &payload.bytes,
+                &payload.expected,
+            )?;
             Ok(serde_json::Value::Null)
         }
         "run_package_report_bytes" => {
@@ -1284,8 +1314,10 @@ pub async fn handle_ws_lab_request(
                 .map_err(|error| format!("encode package report response: {error}"))
         }
         "run_package_report_from_cram" => {
-            let payload: RunPackageReportCramPayload = serde_json::from_value(payload)
-                .map_err(|error| format!("invalid run_package_report_from_cram payload: {error}"))?;
+            let payload: RunPackageReportCramPayload =
+                serde_json::from_value(payload).map_err(|error| {
+                    format!("invalid run_package_report_from_cram payload: {error}")
+                })?;
             let result = tauri::async_runtime::spawn_blocking(move || {
                 run_package_report_from_cram_blocking(
                     &payload.manifest_path,
@@ -1343,26 +1375,30 @@ pub async fn handle_ws_lab_request(
     }
 }
 
-fn run_file_request_blocking(request: DesktopRunFileRequest) -> Result<NativeRunFileResult, String> {
+fn run_file_request_blocking(
+    request: DesktopRunFileRequest,
+) -> Result<NativeRunFileResult, String> {
     let output_file = request.output_file.clone();
     let root = request.root.clone();
-    if let (Some(root), Some(input_file), Some(bytes)) =
-        (request.root.as_deref(), request.input_file.as_deref(), request.input_bytes.as_deref())
-    {
+    if let (Some(root), Some(input_file), Some(bytes)) = (
+        request.root.as_deref(),
+        request.input_file.as_deref(),
+        request.input_bytes.as_deref(),
+    ) {
         write_runtime_bytes(root, input_file, bytes)?;
     }
-    if let (Some(root), Some(input_index), Some(bytes)) =
-        (request.root.as_deref(), request.input_index.as_deref(), request.input_index_bytes.as_deref())
-    {
+    if let (Some(root), Some(input_index), Some(bytes)) = (
+        request.root.as_deref(),
+        request.input_index.as_deref(),
+        request.input_index_bytes.as_deref(),
+    ) {
         write_runtime_bytes(root, input_index, bytes)?;
     }
-    if let (Some(root), Some(reference_index), Some(bytes)) =
-        (
-            request.root.as_deref(),
-            request.reference_index.as_deref(),
-            request.reference_index_bytes.as_deref(),
-        )
-    {
+    if let (Some(root), Some(reference_index), Some(bytes)) = (
+        request.root.as_deref(),
+        request.reference_index.as_deref(),
+        request.reference_index_bytes.as_deref(),
+    ) {
         write_runtime_bytes(root, reference_index, bytes)?;
     }
     let ffi_request = request.into_ffi();
@@ -1539,9 +1575,13 @@ fn lookup_genotype_bytes_rsids_blocking(
         .collect()
 }
 
-fn lookup_cram_variants_blocking(request: LookupFileVariantsPayload) -> Result<VariantLookupResultJs, String> {
+fn lookup_cram_variants_blocking(
+    request: LookupFileVariantsPayload,
+) -> Result<VariantLookupResultJs, String> {
     let started = SystemTime::now();
-    let cram_path = request.path.ok_or_else(|| "CRAM lookup requires a file path".to_owned())?;
+    let cram_path = request
+        .path
+        .ok_or_else(|| "CRAM lookup requires a file path".to_owned())?;
     let fasta_path = request
         .reference_path
         .ok_or_else(|| "CRAM lookup requires a reference FASTA path".to_owned())?;
@@ -1552,9 +1592,12 @@ fn lookup_cram_variants_blocking(request: LookupFileVariantsPayload) -> Result<V
         .ok_or_else(|| "CRAM lookup requires FAI bytes".to_owned())?;
     let fai_index = bioscript_formats::alignment::parse_fai_bytes(&fai_bytes)
         .map_err(|error| format!("parse fai: {error:?}"))?;
-    let fasta = File::open(&fasta_path).map_err(|error| format!("open FASTA {fasta_path}: {error}"))?;
-    let repository =
-        bioscript_formats::alignment::build_reference_repository_from_readers(BufReader::new(fasta), fai_index);
+    let fasta =
+        File::open(&fasta_path).map_err(|error| format!("open FASTA {fasta_path}: {error}"))?;
+    let repository = bioscript_formats::alignment::build_reference_repository_from_readers(
+        BufReader::new(fasta),
+        fai_index,
+    );
     let cram = File::open(&cram_path).map_err(|error| format!("open CRAM {cram_path}: {error}"))?;
     let mut indexed = bioscript_formats::alignment::build_cram_indexed_reader_from_reader(
         cram, crai_index, repository,
@@ -1564,11 +1607,16 @@ fn lookup_cram_variants_blocking(request: LookupFileVariantsPayload) -> Result<V
     let mut observations = Vec::with_capacity(variants.len());
     for variant in &variants {
         let spec = variant_input_to_spec(variant)?;
-        observations.push(observe_cram_variant(&mut indexed, &cram_path, &spec)
-            .map_err(|error| format!("CRAM lookup {}: {error:?}", variant.name))?);
+        observations.push(
+            observe_cram_variant(&mut indexed, &cram_path, &spec)
+                .map_err(|error| format!("CRAM lookup {}: {error:?}", variant.name))?,
+        );
     }
     Ok(VariantLookupResultJs {
-        duration_ms: started.elapsed().map(|duration| duration.as_millis()).unwrap_or(0),
+        duration_ms: started
+            .elapsed()
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
         observations: variants
             .into_iter()
             .zip(observations)
@@ -1577,23 +1625,33 @@ fn lookup_cram_variants_blocking(request: LookupFileVariantsPayload) -> Result<V
     })
 }
 
-fn lookup_bam_variants_blocking(request: LookupFileVariantsPayload) -> Result<VariantLookupResultJs, String> {
+fn lookup_bam_variants_blocking(
+    request: LookupFileVariantsPayload,
+) -> Result<VariantLookupResultJs, String> {
     let started = SystemTime::now();
-    let bam_path = request.path.ok_or_else(|| "BAM lookup requires a file path".to_owned())?;
+    let bam_path = request
+        .path
+        .ok_or_else(|| "BAM lookup requires a file path".to_owned())?;
     let bai_index = bioscript_formats::alignment::parse_bai_bytes(&request.index_bytes)
         .map_err(|error| format!("parse bai: {error:?}"))?;
     let bam = File::open(&bam_path).map_err(|error| format!("open BAM {bam_path}: {error}"))?;
-    let mut indexed = bioscript_formats::alignment::build_bam_indexed_reader_from_reader(bam, bai_index)
-        .map_err(|error| format!("build bam reader: {error:?}"))?;
+    let mut indexed =
+        bioscript_formats::alignment::build_bam_indexed_reader_from_reader(bam, bai_index)
+            .map_err(|error| format!("build bam reader: {error:?}"))?;
     let variants = request.variants;
     let mut observations = Vec::with_capacity(variants.len());
     for variant in &variants {
         let spec = variant_input_to_spec(variant)?;
-        observations.push(bioscript_formats::observe_bam_variant(&mut indexed, &bam_path, &spec)
-            .map_err(|error| format!("BAM lookup {}: {error:?}", variant.name))?);
+        observations.push(
+            bioscript_formats::observe_bam_variant(&mut indexed, &bam_path, &spec)
+                .map_err(|error| format!("BAM lookup {}: {error:?}", variant.name))?,
+        );
     }
     Ok(VariantLookupResultJs {
-        duration_ms: started.elapsed().map(|duration| duration.as_millis()).unwrap_or(0),
+        duration_ms: started
+            .elapsed()
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
         observations: variants
             .into_iter()
             .zip(observations)
@@ -1602,9 +1660,13 @@ fn lookup_bam_variants_blocking(request: LookupFileVariantsPayload) -> Result<Va
     })
 }
 
-fn lookup_vcf_variants_blocking(request: LookupFileVariantsPayload) -> Result<VariantLookupResultJs, String> {
+fn lookup_vcf_variants_blocking(
+    request: LookupFileVariantsPayload,
+) -> Result<VariantLookupResultJs, String> {
     let started = SystemTime::now();
-    let vcf_path = request.path.ok_or_else(|| "VCF lookup requires a file path".to_owned())?;
+    let vcf_path = request
+        .path
+        .ok_or_else(|| "VCF lookup requires a file path".to_owned())?;
     let tabix_index = bioscript_formats::alignment::parse_tbi_bytes(&request.index_bytes)
         .map_err(|error| format!("parse tbi: {error:?}"))?;
     let detected_assembly = detect_vcf_assembly_from_path(Path::new(&vcf_path));
@@ -1614,11 +1676,16 @@ fn lookup_vcf_variants_blocking(request: LookupFileVariantsPayload) -> Result<Va
     let mut observations = Vec::with_capacity(variants.len());
     for variant in &variants {
         let spec = variant_input_to_spec(variant)?;
-        observations.push(observe_vcf_variant(&mut indexed, &vcf_path, &spec, detected_assembly)
-            .map_err(|error| format!("VCF lookup {}: {error:?}", variant.name))?);
+        observations.push(
+            observe_vcf_variant(&mut indexed, &vcf_path, &spec, detected_assembly)
+                .map_err(|error| format!("VCF lookup {}: {error:?}", variant.name))?,
+        );
     }
     Ok(VariantLookupResultJs {
-        duration_ms: started.elapsed().map(|duration| duration.as_millis()).unwrap_or(0),
+        duration_ms: started
+            .elapsed()
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
         observations: variants
             .into_iter()
             .zip(observations)
@@ -1717,7 +1784,9 @@ fn resolve_package_release_text_blocking(
         .map_err(|err| format!("failed to parse package release {name}: {err}"))?;
     let schema = yaml_string(&value, "schema");
     if schema.as_deref() != Some("bioscript:package-release:1.0") {
-        return Err(format!("{name} is not a bioscript:package-release:1.0 manifest"));
+        return Err(format!(
+            "{name} is not a bioscript:package-release:1.0 manifest"
+        ));
     }
     let artifact = value
         .as_mapping()
@@ -1775,7 +1844,10 @@ fn extract_package_zip(name: &str, bytes: &[u8]) -> Result<Vec<ExtractedPackageF
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|err| format!("failed to read package zip {name}: {err}"))?;
     if archive.len() > MAX_PACKAGE_FILES {
-        return Err(format!("package has too many entries: {} > {MAX_PACKAGE_FILES}", archive.len()));
+        return Err(format!(
+            "package has too many entries: {} > {MAX_PACKAGE_FILES}",
+            archive.len()
+        ));
     }
     let mut seen = BTreeSet::new();
     let mut total_size = 0_u64;
@@ -1785,17 +1857,26 @@ fn extract_package_zip(name: &str, bytes: &[u8]) -> Result<Vec<ExtractedPackageF
             .by_index(idx)
             .map_err(|err| format!("failed to read package zip entry {idx}: {err}"))?;
         let Some(enclosed) = entry.enclosed_name() else {
-            return Err(format!("package zip entry has unsafe path: {}", entry.name()));
+            return Err(format!(
+                "package zip entry has unsafe path: {}",
+                entry.name()
+            ));
         };
         let relative = checked_relative_package_path(&enclosed.to_string_lossy())?;
         if entry.is_dir() {
             continue;
         }
-        if entry.unix_mode().is_some_and(|mode| mode & 0o170_000 == 0o120_000) {
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170_000 == 0o120_000)
+        {
             return Err(format!("package zip entry is a symlink: {}", entry.name()));
         }
         if !is_allowed_package_file(&relative) {
-            return Err(format!("package zip entry has unsupported extension: {}", relative.display()));
+            return Err(format!(
+                "package zip entry has unsupported extension: {}",
+                relative.display()
+            ));
         }
         if entry.size() > MAX_PACKAGE_FILE_BYTES {
             return Err(format!("package file too large: {}", relative.display()));
@@ -1804,10 +1885,15 @@ fn extract_package_zip(name: &str, bytes: &[u8]) -> Result<Vec<ExtractedPackageF
             .checked_add(entry.size())
             .ok_or_else(|| "package total size overflow".to_owned())?;
         if total_size > MAX_PACKAGE_TOTAL_BYTES {
-            return Err(format!("package total size exceeds {MAX_PACKAGE_TOTAL_BYTES} bytes"));
+            return Err(format!(
+                "package total size exceeds {MAX_PACKAGE_TOTAL_BYTES} bytes"
+            ));
         }
         if !seen.insert(relative.clone()) {
-            return Err(format!("package has duplicate path: {}", relative.display()));
+            return Err(format!(
+                "package has duplicate path: {}",
+                relative.display()
+            ));
         }
         let mut contents = String::new();
         entry
@@ -1828,7 +1914,11 @@ fn load_package_descriptor(files: &[ExtractedPackageFile]) -> Result<PackageDesc
     let descriptor_file = files
         .iter()
         .find(|file| file.path == Path::new(PACKAGE_DESCRIPTOR))
-        .or_else(|| files.iter().find(|file| file.path == Path::new(LEGACY_PACKAGE_DESCRIPTOR)));
+        .or_else(|| {
+            files
+                .iter()
+                .find(|file| file.path == Path::new(LEGACY_PACKAGE_DESCRIPTOR))
+        });
     let Some(descriptor_file) = descriptor_file else {
         let entrypoint = files
             .iter()
@@ -1875,17 +1965,31 @@ fn checked_relative_package_path(path: &str) -> Result<PathBuf, String> {
 fn is_allowed_package_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "yaml" | "yml" | "py" | "json" | "txt" | "md" | "tsv" | "csv"))
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "yaml" | "yml" | "py" | "json" | "txt" | "md" | "tsv" | "csv"
+            )
+        })
 }
 
 fn is_resource_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "yaml" | "yml" | "py" | "json"))
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "yaml" | "yml" | "py" | "json"
+            )
+        })
 }
 
 fn package_member_url(source_url: &str, path: &Path) -> String {
-    format!("{}/{}", source_url.trim_end_matches('/'), path.to_string_lossy())
+    format!(
+        "{}/{}",
+        source_url.trim_end_matches('/'),
+        path.to_string_lossy()
+    )
 }
 
 fn join_url(base: &str, relative: &str) -> String {
@@ -2000,16 +2104,15 @@ fn run_package_report_from_cram_blocking(
         .map_err(|err| format!("parse crai: {err:?}"))?;
     let fai_index = bioscript_formats::alignment::parse_fai_bytes(fai_bytes)
         .map_err(|err| format!("parse fai: {err:?}"))?;
-    let fasta_file = File::open(fasta_path).map_err(|err| format!("open FASTA {fasta_path}: {err}"))?;
+    let fasta_file =
+        File::open(fasta_path).map_err(|err| format!("open FASTA {fasta_path}: {err}"))?;
     let repository = bioscript_formats::alignment::build_reference_repository_from_readers(
         BufReader::new(fasta_file),
         fai_index,
     );
     let cram_file = File::open(cram_path).map_err(|err| format!("open CRAM {cram_path}: {err}"))?;
     let indexed = bioscript_formats::alignment::build_cram_indexed_reader_from_reader(
-        cram_file,
-        crai_index,
-        repository,
+        cram_file, crai_index, repository,
     )
     .map_err(|err| format!("build cram reader: {err:?}"))?;
     let lookup = CramReportLookup {
@@ -2079,8 +2182,9 @@ fn run_package_report_from_bam_blocking(
     let bai_index = bioscript_formats::alignment::parse_bai_bytes(bai_bytes)
         .map_err(|err| format!("parse bai: {err:?}"))?;
     let bam_file = File::open(bam_path).map_err(|err| format!("open BAM {bam_path}: {err}"))?;
-    let indexed = bioscript_formats::alignment::build_bam_indexed_reader_from_reader(bam_file, bai_index)
-        .map_err(|err| format!("build bam reader: {err:?}"))?;
+    let indexed =
+        bioscript_formats::alignment::build_bam_indexed_reader_from_reader(bam_file, bai_index)
+            .map_err(|err| format!("build bam reader: {err:?}"))?;
     let lookup = BamReportLookup {
         reader: RefCell::new(indexed),
         label: input_file_path.to_owned(),
@@ -2241,15 +2345,15 @@ impl<R: std::io::Read + std::io::Seek> bioscript_reporting::ReportVariantLookup
         let mut reader = self.reader.borrow_mut();
         specs
             .iter()
-            .map(|spec| observe_cram_variant(&mut reader, &self.label, spec).map_err(|err| err.to_string()))
+            .map(|spec| {
+                observe_cram_variant(&mut reader, &self.label, spec).map_err(|err| err.to_string())
+            })
             .collect()
     }
 }
 
 struct BamReportLookup<R: std::io::Read + std::io::Seek> {
-    reader: RefCell<
-        noodles::bam::io::indexed_reader::IndexedReader<noodles::bgzf::io::Reader<R>>,
-    >,
+    reader: RefCell<noodles::bam::io::indexed_reader::IndexedReader<noodles::bgzf::io::Reader<R>>>,
     label: String,
 }
 
@@ -2260,7 +2364,10 @@ impl<R: std::io::Read + std::io::Seek> bioscript_reporting::ReportVariantLookup
         let mut reader = self.reader.borrow_mut();
         specs
             .iter()
-            .map(|spec| bioscript_formats::observe_bam_variant(&mut reader, &self.label, spec).map_err(|err| err.to_string()))
+            .map(|spec| {
+                bioscript_formats::observe_bam_variant(&mut reader, &self.label, spec)
+                    .map_err(|err| err.to_string())
+            })
             .collect()
     }
 }
@@ -2280,7 +2387,10 @@ impl<R: std::io::Read + std::io::Seek> bioscript_reporting::ReportVariantLookup
         let mut reader = self.reader.borrow_mut();
         specs
             .iter()
-            .map(|spec| observe_vcf_variant(&mut reader, &self.label, spec, self.detected_assembly).map_err(|err| err.to_string()))
+            .map(|spec| {
+                observe_vcf_variant(&mut reader, &self.label, spec, self.detected_assembly)
+                    .map_err(|err| err.to_string())
+            })
             .collect()
     }
 }
@@ -2326,12 +2436,20 @@ fn observe_cram_variant<R: std::io::Read + std::io::Seek>(
         .as_ref()
         .map(|_| Assembly::Grch38)
         .or_else(|| variant.grch37.as_ref().map(|_| Assembly::Grch37));
-    let locus = variant.grch38.as_ref().or(variant.grch37.as_ref()).ok_or_else(|| {
-        RuntimeError::Io(format!(
-            "variant {} has no GRCh37/GRCh38 locus",
-            variant.rsids.first().map(String::as_str).unwrap_or("variant")
-        ))
-    })?;
+    let locus = variant
+        .grch38
+        .as_ref()
+        .or(variant.grch37.as_ref())
+        .ok_or_else(|| {
+            RuntimeError::Io(format!(
+                "variant {} has no GRCh37/GRCh38 locus",
+                variant
+                    .rsids
+                    .first()
+                    .map(String::as_str)
+                    .unwrap_or("variant")
+            ))
+        })?;
     let locus = GenomicLocus {
         chrom: locus.chrom.clone(),
         start: locus.start,
@@ -2360,9 +2478,9 @@ fn observe_cram_variant<R: std::io::Read + std::io::Seek>(
             )
         }
         VariantKind::Deletion => {
-            let deletion_length = variant.deletion_length.ok_or_else(|| {
-                RuntimeError::Io("variant missing deletion_length".to_owned())
-            })?;
+            let deletion_length = variant
+                .deletion_length
+                .ok_or_else(|| RuntimeError::Io("variant missing deletion_length".to_owned()))?;
             bioscript_formats::observe_cram_deletion_with_reader(
                 reader,
                 label,
@@ -2407,7 +2525,11 @@ fn observe_cram_variant<R: std::io::Read + std::io::Seek>(
         }
         other => Err(RuntimeError::Io(format!(
             "variant {} kind {:?} is not supported on CRAM",
-            variant.rsids.first().map(String::as_str).unwrap_or("variant"),
+            variant
+                .rsids
+                .first()
+                .map(String::as_str)
+                .unwrap_or("variant"),
             other
         ))),
     }
@@ -2427,13 +2549,25 @@ fn observe_vcf_variant<R: std::io::Read + std::io::Seek>(
             .ok_or_else(|| {
                 RuntimeError::Io(format!(
                     "variant {} has no GRCh37/GRCh38 locus",
-                    variant.rsids.first().map(String::as_str).unwrap_or("variant")
+                    variant
+                        .rsids
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or("variant")
                 ))
             })?;
     let assembly = detected_assembly.or_else(|| {
-        if variant.grch37.as_ref().is_some_and(|locus| locus == &raw_locus) {
+        if variant
+            .grch37
+            .as_ref()
+            .is_some_and(|locus| locus == &raw_locus)
+        {
             Some(Assembly::Grch37)
-        } else if variant.grch38.as_ref().is_some_and(|locus| locus == &raw_locus) {
+        } else if variant
+            .grch38
+            .as_ref()
+            .is_some_and(|locus| locus == &raw_locus)
+        {
             Some(Assembly::Grch38)
         } else {
             None
@@ -2637,8 +2771,14 @@ impl PackageWorkspace {
             let script_virtual_path = virtual_pipeline_path(&script_path, "analysis.py");
             let manifest_virtual_path = virtual_pipeline_path(manifest_path, "manifest.yaml");
             let mut virtual_text_files = BTreeMap::new();
-            virtual_text_files.insert(script_virtual_path.clone(), self.text(&script_path)?.to_owned());
-            virtual_text_files.insert(manifest_virtual_path.clone(), self.text(manifest_path)?.to_owned());
+            virtual_text_files.insert(
+                script_virtual_path.clone(),
+                self.text(&script_path)?.to_owned(),
+            );
+            virtual_text_files.insert(
+                manifest_virtual_path.clone(),
+                self.text(manifest_path)?.to_owned(),
+            );
             virtual_text_files.insert(
                 virtual_observations_file.clone(),
                 bioscript_reporting::render_analysis_observations_tsv(preloaded_observations),
@@ -2647,7 +2787,10 @@ impl PackageWorkspace {
             for asset in &interpretation.assets {
                 let asset_path = self.resolve(manifest_path, &asset.path)?;
                 let virtual_asset_path = virtual_pipeline_path(&asset_path, &asset.path);
-                virtual_text_files.insert(virtual_asset_path.clone(), self.text(&asset_path)?.to_owned());
+                virtual_text_files.insert(
+                    virtual_asset_path.clone(),
+                    self.text(&asset_path)?.to_owned(),
+                );
                 asset_paths.insert(asset.id.clone(), virtual_asset_path);
             }
             let runtime_observations = if input_bytes.is_empty() {
@@ -2688,20 +2831,32 @@ impl PackageWorkspace {
                     &script_virtual_path,
                     None,
                     vec![
-                        ("input_file", MontyObject::String(virtual_input_file.clone())),
-                        ("output_file", MontyObject::String(virtual_output_file.clone())),
+                        (
+                            "input_file",
+                            MontyObject::String(virtual_input_file.clone()),
+                        ),
+                        (
+                            "output_file",
+                            MontyObject::String(virtual_output_file.clone()),
+                        ),
                         (
                             "observations_file",
                             MontyObject::String(virtual_observations_file.clone()),
                         ),
                         ("asset_paths", monty_string_dict(&asset_paths)),
-                        ("participant_id", MontyObject::String(participant_id.to_owned())),
+                        (
+                            "participant_id",
+                            MontyObject::String(participant_id.to_owned()),
+                        ),
                     ],
                 )
                 .map_err(|err| format!("analysis {} failed: {err:?}", interpretation.id))?;
             let written = runtime.virtual_written_text_files();
             let text = written.get(&virtual_output_file).ok_or_else(|| {
-                format!("analysis {} did not write {virtual_output_file}", interpretation.id)
+                format!(
+                    "analysis {} did not write {virtual_output_file}",
+                    interpretation.id
+                )
             })?;
             let (rows, row_headers) =
                 bioscript_reporting::parse_analysis_output_text(text, analysis_format.format)?;
@@ -3165,7 +3320,9 @@ fn observation_to_js(
         reference: Some(variant.ref_base),
         alternate: Some(variant.alt_base),
         matched_rsid: observation.matched_rsid,
-        assembly: observation.assembly.map(|value| render_assembly(value).to_owned()),
+        assembly: observation
+            .assembly
+            .map(|value| render_assembly(value).to_owned()),
         genotype: observation.genotype,
         ref_count: observation.ref_count,
         alt_count: observation.alt_count,
@@ -3233,7 +3390,9 @@ fn cache_index_path(cache_dir: &std::path::Path) -> PathBuf {
     cache_dir.join("index.json")
 }
 
-fn read_remote_cache_index(cache_dir: &std::path::Path) -> BTreeMap<String, CachedRemoteLabFileRecord> {
+fn read_remote_cache_index(
+    cache_dir: &std::path::Path,
+) -> BTreeMap<String, CachedRemoteLabFileRecord> {
     let path = cache_index_path(cache_dir);
     let Ok(text) = fs::read_to_string(path) else {
         return BTreeMap::new();
@@ -3396,7 +3555,10 @@ fn lab_fs_read_text_for_bridge(uri: String) -> Result<String, String> {
     match fs::read_to_string(&path) {
         Ok(text) => Ok(text),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => Err(format!("read desktop file {} failed: {error}", path.display())),
+        Err(error) => Err(format!(
+            "read desktop file {} failed: {error}",
+            path.display()
+        )),
     }
 }
 
@@ -3415,7 +3577,10 @@ fn lab_fs_delete_for_bridge(uri: String) -> Result<(), String> {
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("delete desktop file {} failed: {error}", path.display())),
+        Err(error) => Err(format!(
+            "delete desktop file {} failed: {error}",
+            path.display()
+        )),
     }
 }
 

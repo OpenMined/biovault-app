@@ -169,6 +169,7 @@ screenshots/
 test-results/
 test-output/
 .bioscript-cache/
+/repos/
 
 # bioscript-wasm: build outputs, regenerated from the bioscript submodule by
 # modules/expo-bioscript/scripts/build-bioscript-wasm.sh (see

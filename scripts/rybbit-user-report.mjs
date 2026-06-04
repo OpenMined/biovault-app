@@ -124,11 +124,11 @@ function analyzeSite(config, rawEvents, eventLimit, minutes) {
 		applyEvent(user, event, daily)
 	}
 	const userRows = [...users.values()]
-		.filter((user) => productActivityScore(user) > 0)
 		.sort((a, b) => {
 			const activityDelta = productActivityScore(b) - productActivityScore(a)
 			return activityDelta || b.lastSeenMs - a.lastSeenMs
 		})
+	const activeProductUsers = userRows.filter((user) => productActivityScore(user) > 0)
 	return {
 		config,
 		countryFilters: countryFilters(userRows),
@@ -136,8 +136,9 @@ function analyzeSite(config, rawEvents, eventLimit, minutes) {
 		eventsUsed: events.length,
 		eventLimit,
 		dailyRows: dailyRows(daily, users),
+		summary: siteSummary(userRows),
 		totalUsers: users.size,
-		activeProductUsers: userRows.length,
+		activeProductUsers: activeProductUsers.length,
 		userRows,
 	}
 }
@@ -419,6 +420,7 @@ function makeRun(props, event, input) {
 		assay: normalizeAssayName(reportLabel(props, firstValue(props.assayId, props.internalAssayId, 'unknown'))),
 		genomeKind: firstValue(props.genomeKind, input?.genomeKind),
 		input: inputSummary(input),
+		inputKind: typeof input === 'string' ? inputKindFromSummary(input) : (input?.kind ?? ''),
 		remoteKind: firstValue(props.remoteKind),
 		sourceUrl: firstValue(props.sourceUrl, props.packageSourceUrl),
 		status: 'started',
@@ -447,6 +449,11 @@ function inputSummary(input) {
 	if (input.demo) parts.push(input.demo)
 	if (normalized.extra) parts.push(`extra: ${normalized.extra}`)
 	return parts.filter(Boolean).join(' | ')
+}
+
+function inputKindFromSummary(value) {
+	const kind = String(value).split('|', 1)[0]?.trim()
+	return kind || ''
 }
 
 function metadataValue(input, key) {
@@ -808,6 +815,56 @@ function dailyRows(daily, users) {
 		}))
 }
 
+function siteSummary(users) {
+	const nonDemoFileCounts = new Map()
+	let completedPanels = 0
+	let completedRealPanels = 0
+	let realUploadCompletedRealPanels = 0
+	let realUploadUsers = 0
+	let usersRanAnyDemo = 0
+	let usersRanAnyPanel = 0
+	let usersRanNonDemo = 0
+	let uniqueVisitors = 0
+	for (const user of users) {
+		const completedRuns = user.runs.filter((run) => run.status === 'completed')
+		const completedDemoRuns = completedRuns.filter((run) => run.inputKind === 'demo')
+		const completedNonDemoRuns = completedRuns.filter((run) => run.inputKind !== 'demo')
+		if (user.pageviews > 0) uniqueVisitors += 1
+		if (completedDemoRuns.length) usersRanAnyDemo += 1
+		if (completedNonDemoRuns.length) usersRanNonDemo += 1
+		if (completedRuns.length) {
+			usersRanAnyPanel += 1
+			completedPanels += completedRuns.length
+			completedRealPanels += completedNonDemoRuns.length
+		}
+		if (user.realFileAdds > 0) {
+			realUploadUsers += 1
+			realUploadCompletedRealPanels += completedNonDemoRuns.length
+		}
+		if (user.realInputLabels.size) {
+			for (const [label, count] of user.realInputLabels) increment(nonDemoFileCounts, label, count)
+		} else if (user.realFileAdds > 0) {
+			increment(nonDemoFileCounts, 'unknown non-demo file', user.realFileAdds)
+		}
+	}
+	return {
+		averagePanelsPerRealUploadUser: average(realUploadCompletedRealPanels, realUploadUsers),
+		averagePanelsPerUserWhoRanAny: average(completedPanels, usersRanAnyPanel),
+		completedPanels,
+		completedRealPanels,
+		nonDemoFileCounts,
+		realUploadUsers,
+		uniqueVisitors,
+		usersRanAnyDemo,
+		usersRanAnyPanel,
+		usersRanNonDemo,
+	}
+}
+
+function average(numerator, denominator) {
+	return denominator > 0 ? numerator / denominator : 0
+}
+
 function renderHtml(report) {
 	const title = `BioVault per-user Rybbit report - ${dateTime(report.generatedAt)}`
 	return `<!doctype html>
@@ -901,17 +958,44 @@ th button[aria-sort="descending"]::after { content: "desc"; }
 @media (max-width: 900px) { header, main { padding-left: 14px; padding-right: 14px; } table { display: block; overflow-x: auto; white-space: nowrap; } td { min-width: 130px; } .brandbar { align-items: flex-start; flex-direction: column; } }
 </style>
 <script>
-function filterCountry(siteId, country) {
+function toggleCountry(siteId, country) {
 	const section = document.querySelector('[data-site="' + siteId + '"]')
 	if (!section) return
-	const buttons = section.querySelectorAll('[data-country-filter]')
-	for (const button of buttons) {
-		button.setAttribute('aria-pressed', button.dataset.countryFilter === country ? 'true' : 'false')
+	const buttons = Array.from(section.querySelectorAll('[data-country-filter]'))
+	if (country === 'all') {
+		for (const button of buttons) button.setAttribute('aria-pressed', button.dataset.countryFilter === 'all' ? 'true' : 'false')
+	} else {
+		const allButton = buttons.find((button) => button.dataset.countryFilter === 'all')
+		const button = buttons.find((candidate) => candidate.dataset.countryFilter === country)
+		if (!button) return
+		button.setAttribute('aria-pressed', button.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')
+		if (allButton) allButton.setAttribute('aria-pressed', 'false')
+		const selected = buttons.filter((candidate) => candidate.dataset.countryFilter !== 'all' && candidate.getAttribute('aria-pressed') === 'true')
+		if (!selected.length && allButton) allButton.setAttribute('aria-pressed', 'true')
 	}
+	applyUserFilters(section)
+}
+function toggleActivity(siteId, activity) {
+	const section = document.querySelector('[data-site="' + siteId + '"]')
+	if (!section) return
+	const button = section.querySelector('[data-activity-filter="' + activity + '"]')
+	if (!button) return
+	button.setAttribute('aria-pressed', button.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')
+	applyUserFilters(section)
+}
+function applyUserFilters(section) {
+	const countries = Array.from(section.querySelectorAll('[data-country-filter][aria-pressed="true"]'))
+		.map((button) => button.dataset.countryFilter)
+		.filter((country) => country && country !== 'all')
+	const activeCountries = new Set(countries)
+	const allCountries = activeCountries.size === 0
+	const activities = new Set(Array.from(section.querySelectorAll('[data-activity-filter][aria-pressed="true"]')).map((button) => button.dataset.activityFilter))
 	const rows = section.querySelectorAll('tbody tr[data-country]')
 	for (const row of rows) {
-		const countries = (row.dataset.country || '').split(',')
-		row.hidden = country !== 'all' && !countries.includes(country)
+		const rowCountries = (row.dataset.country || '').split(',')
+		const countryMatch = allCountries || rowCountries.some((country) => activeCountries.has(country))
+		const activityMatch = activities.size === 0 || activities.has(row.dataset.activity)
+		row.hidden = !countryMatch || !activityMatch
 	}
 }
 function sortUserTable(button, key, type) {
@@ -963,12 +1047,28 @@ function renderSite(site) {
 <div class="grid">
 <div class="metric"><span>Raw events fetched</span><strong>${formatNumber(site.eventsFetched)}</strong></div>
 <div class="metric"><span>Product events used</span><strong>${formatNumber(site.eventsUsed)}</strong></div>
-<div class="metric"><span>Users in fetched events</span><strong>${formatNumber(site.totalUsers)}</strong></div>
+<div class="metric"><span>Unique users visited</span><strong>${formatNumber(site.summary.uniqueVisitors)}</strong></div>
 <div class="metric"><span>Active product users</span><strong>${formatNumber(site.activeProductUsers)}</strong></div>
+<div class="metric"><span>Users ran demo files</span><strong>${formatNumber(site.summary.usersRanAnyDemo)}</strong></div>
+<div class="metric"><span>Users ran non-demo files</span><strong>${formatNumber(site.summary.usersRanNonDemo)}</strong></div>
+<div class="metric"><span>Avg panels per panel user</span><strong>${formatDecimal(site.summary.averagePanelsPerUserWhoRanAny)}</strong></div>
+<div class="metric"><span>Avg real-file panels per real uploader</span><strong>${formatDecimal(site.summary.averagePanelsPerRealUploadUser)}</strong></div>
 </div>
+<div class="sub">Users in fetched events: ${formatNumber(site.totalUsers)}. Completed panels: ${formatNumber(site.summary.completedPanels)} total, ${formatNumber(site.summary.completedRealPanels)} on non-demo inputs.</div>
 ${site.eventsFetched >= site.eventLimit ? `<p class="muted">This site reached the raw-event cap of ${formatNumber(site.eventLimit)}. Increase <code>--event-limit</code> for a complete older-history user rollup.</p>` : ''}
+<<<<<<< HEAD
+<h3>Non-Demo File Types Used</h3>
+${nonDemoFileCounts(site.summary.nonDemoFileCounts)}
+<h3>User Rows</h3>
+${countryFilterControls(site)}
+${activityFilterControls(site)}
+${userTable(site.userRows)}
+<h3>Daily Product Rollup</h3>
+${dailyTable(site.dailyRows)}
+=======
 ${dailyChart(site.dailyRows)}
 ${siteTabs(site)}
+>>>>>>> origin/main
 </section>`
 }
 
@@ -1026,8 +1126,25 @@ function breakdownTables(site) {
 function countryFilterControls(site) {
 	const filters = ['all', ...site.countryFilters]
 	return `<div class="filters" aria-label="${escapeHtml(site.config.label)} country filters">${filters
-		.map((country, index) => `<button class="filter-button" type="button" data-country-filter="${escapeHtml(country)}" aria-pressed="${index === 0 ? 'true' : 'false'}" onclick="filterCountry('${escapeHtml(site.config.siteId)}', '${escapeHtml(country)}')">${escapeHtml(country === 'all' ? 'All' : country)}</button>`)
+		.map((country, index) => `<button class="filter-button" type="button" data-country-filter="${escapeHtml(country)}" aria-pressed="${index === 0 ? 'true' : 'false'}" onclick="toggleCountry('${escapeHtml(site.config.siteId)}', '${escapeHtml(country)}')">${escapeHtml(country === 'all' ? 'All countries' : country)}</button>`)
 		.join('')}</div>`
+}
+
+function activityFilterControls(site) {
+	const filters = [
+		['never-ran', 'Never ran anything'],
+		['only-demo', 'Only ran demo'],
+		['ran-real', 'Ran on real files'],
+	]
+	return `<div class="filters" aria-label="${escapeHtml(site.config.label)} activity filters">${filters
+		.map(([activity, label]) => `<button class="filter-button" type="button" data-activity-filter="${escapeHtml(activity)}" aria-pressed="true" onclick="toggleActivity('${escapeHtml(site.config.siteId)}', '${escapeHtml(activity)}')">${escapeHtml(label)}</button>`)
+		.join('')}</div>`
+}
+
+function nonDemoFileCounts(counts) {
+	const labels = mapLabels(counts)
+	if (!labels.length) return '<p class="muted">No non-demo file types were observed in fetched events.</p>'
+	return `<div>${pills(labels)}</div><p class="muted">Historical events do not include private filenames for user uploads, so these counts are normalized file/input types inferred from heuristics and file-add events.</p>`
 }
 
 function userTable(users) {
@@ -1201,11 +1318,12 @@ function summarizeSiteUsers(users) {
 
 function userRow(user) {
 	const countries = [...user.countries].filter(Boolean).sort()
+	const rowCountries = countries.length ? countries : ['unknown']
 	const demoReports = totalCount(user.demoReports)
 	const realReports = totalCount(user.realReports)
-	return `<tr data-country="${escapeHtml(countries.join(','))}" data-country-text="${escapeHtml(countries.join(' '))}" data-demo-files="${user.demoFileAdds + user.demoLoads}" data-demo-reports="${demoReports}" data-last-seen="${user.lastSeenMs}" data-real-files="${user.realFileAdds}" data-real-reports="${realReports}" data-report-opens="${user.reportOpens}" data-runs="${user.runsStarted}" data-sessions="${user.sessions.size}" data-user="${escapeHtml(userLabel(user))}">
+	return `<tr data-activity="${escapeHtml(userActivity(user))}" data-country="${escapeHtml(rowCountries.join(','))}" data-country-text="${escapeHtml(rowCountries.join(' '))}" data-demo-files="${user.demoFileAdds + user.demoLoads}" data-demo-reports="${demoReports}" data-last-seen="${user.lastSeenMs}" data-real-files="${user.realFileAdds}" data-real-reports="${realReports}" data-report-opens="${user.reportOpens}" data-runs="${user.runsStarted}" data-sessions="${user.sessions.size}" data-user="${escapeHtml(userLabel(user))}">
 <td class="nowrap">${escapeHtml(userLabel(user))}<div class="sub">${formatNumber(user.events)} events, ${formatNumber(user.pageviews)} views${userAliases(user)}</div></td>
-<td>${pills(countries.length ? countries : ['unknown'])}</td>
+<td>${pills(rowCountries)}</td>
 <td>${pills(mapLabels(user.environments).slice(0, 4))}</td>
 <td>${escapeHtml(dateRange(user))}<div class="sub">${formatNumber(user.activeDays.size)} active day${user.activeDays.size === 1 ? '' : 's'}</div></td>
 <td class="nowrap">${escapeHtml(shortDateTime(user.lastSeenMs))}</td>
@@ -1218,6 +1336,11 @@ function userRow(user) {
 <td>${formatNumber(user.reportOpens)}</td>
 <td>${journeyList(user.reports)}</td>
 </tr>`
+}
+
+function userActivity(user) {
+	if (user.runsStarted === 0) return 'never-ran'
+	return user.runs.some((run) => run.inputKind !== 'demo') ? 'ran-real' : 'only-demo'
 }
 
 function journeyList(reports) {
@@ -1632,6 +1755,13 @@ function shortDateLabel(value) {
 
 function formatNumber(value) {
 	return new Intl.NumberFormat('en-US').format(Number(value) || 0)
+}
+
+function formatDecimal(value) {
+	return new Intl.NumberFormat('en-US', {
+		maximumFractionDigits: 1,
+		minimumFractionDigits: 1,
+	}).format(Number(value) || 0)
 }
 
 function maskId(value) {
