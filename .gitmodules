@@ -4,6 +4,7 @@
 [submodule "bioscript"]
 	path = bioscript
 	url = git@github.com:OpenMined/bioscript.git
+	branch = main
 [submodule "exvitae"]
 	path = exvitae
 	url = git@github.com:madhavajay/exvitae.git

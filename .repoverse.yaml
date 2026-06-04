@@ -1,0 +1,143 @@
+version: 1
+defaults:
+  remote: github
+  revision: main
+  scheme: ssh
+remotes:
+  github:
+    host: github.com
+projects:
+- name: openmined/bioscript
+  path: repos/bioscript
+  revision: main
+  lint: ./lint.sh --check
+  test: ./test.sh
+- name: madhavajay/bcftools
+  path: repos/bcftools
+  revision: develop
+- name: madhavajay/monty
+  path: repos/monty
+  revision: madhava/bioscript
+- name: madhavajay/samtools
+  path: repos/samtools
+  revision: develop
+- name: madhavajay/vntyper
+  path: repos/vntyper
+  revision: main
+- name: mdshw5/pyfaidx
+  path: repos/pyfaidx
+  revision: master
+- name: paudano/kescases
+  path: repos/kescases
+  revision: master
+- name: pysam-developers/pysam
+  path: repos/pysam
+  revision: master
+- name: madhavajay/htslib
+  path: repos/htslib
+  revision: htslib-rs-compat
+- name: madhavajay/kestrel
+  path: repos/kestrel
+  revision: madhava/bioscript
+- name: madhavajay/kestrel-rs
+  path: repos/kestrel-rs
+  revision: main
+- name: madhavajay/htslib-rs
+  path: repos/htslib-rs
+  revision: main
+  consumes: [madhavajay/noodles]
+- name: madhavajay/noodles
+  path: repos/noodles
+  revision: madhava/bioscript
+- name: madhavajay/samtools-rs
+  path: repos/samtools-rs
+  revision: main
+  consumes: [madhavajay/htslib-rs]
+- name: madhavajay/bcftools-rs
+  path: repos/bcftools-rs
+  revision: main
+  consumes: [madhavajay/htslib-rs]
+- name: madhavajay/exvitae
+  path: repos/exvitae
+  revision: main
+provides:
+- openmined/bioscript
+- madhavajay/bcftools
+- madhavajay/monty
+- madhavajay/samtools
+- madhavajay/vntyper
+- mdshw5/pyfaidx
+- paudano/kescases
+- pysam-developers/pysam
+- madhavajay/htslib
+- madhavajay/kestrel
+- madhavajay/kestrel-rs
+- madhavajay/htslib-rs
+- madhavajay/noodles
+- madhavajay/samtools-rs
+- madhavajay/bcftools-rs
+- madhavajay/exvitae
+links:
+- repo: openmined/bioscript
+  at: bioscript
+  branch: main
+- repo: openmined/bioscript
+  at: exvitae/bioscript
+  branch: main
+- repo: madhavajay/vntyper
+  at: bioscript/ports/vntyper/vntyper
+  branch: main
+- repo: madhavajay/bcftools
+  at: bioscript/vendor/rust/bcftools-rs/repos/bcftools
+  branch: develop
+- repo: madhavajay/monty
+  at: bioscript/monty
+  branch: madhava/bioscript
+- repo: madhavajay/samtools
+  at: bioscript/vendor/rust/samtools-rs/repos/samtools
+  branch: develop
+- repo: madhavajay/vntyper
+  at: bioscript/vendor/rust/kestrel-rs/kestrel/integration/VNtyper
+  branch: main
+- repo: mdshw5/pyfaidx
+  at: bioscript/vendor/python/pyfaidx
+  branch: master
+- repo: paudano/kescases
+  at: bioscript/ports/vntyper/kescases
+  branch: master
+- repo: madhavajay/kestrel
+  at: bioscript/ports/vntyper/kestrel
+  branch: madhava/bioscript
+- repo: pysam-developers/pysam
+  at: bioscript/vendor/python/pysam
+  branch: master
+- repo: madhavajay/htslib
+  at: bioscript/vendor/rust/htslib-rs/repos/htslib
+  branch: htslib-rs-compat
+- repo: madhavajay/kestrel
+  at: bioscript/vendor/rust/kestrel-rs/kestrel
+  branch: madhava/bioscript
+- repo: madhavajay/kestrel-rs
+  at: bioscript/vendor/rust/kestrel-rs
+  branch: main
+- repo: madhavajay/samtools-rs
+  at: bioscript/vendor/rust/samtools-rs
+  branch: main
+- repo: madhavajay/bcftools-rs
+  at: bioscript/vendor/rust/bcftools-rs
+  branch: main
+- repo: madhavajay/htslib-rs
+  at: bioscript/vendor/rust/htslib-rs
+  branch: main
+- repo: madhavajay/htslib-rs
+  at: bioscript/vendor/rust/bcftools-rs/repos/htslib-rs
+  branch: main
+- repo: madhavajay/htslib-rs
+  at: bioscript/vendor/rust/samtools-rs/repos/htslib-rs
+  branch: main
+- repo: madhavajay/noodles
+  at: repos/htslib-rs/repos/noodles
+  branch: madhava/bioscript
+- repo: madhavajay/exvitae
+  at: exvitae
+  branch: main
