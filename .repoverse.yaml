@@ -28,9 +28,6 @@ projects:
 - name: paudano/kescases
   path: repos/kescases
   revision: master
-- name: paudano/kestrel
-  path: repos/kestrel
-  revision: master
 - name: pysam-developers/pysam
   path: repos/pysam
   revision: master
@@ -38,7 +35,7 @@ projects:
   path: repos/htslib
   revision: htslib-rs-compat
 - name: madhavajay/kestrel
-  path: repos/madhavajay-kestrel/kestrel
+  path: repos/kestrel
   revision: madhava/bioscript
 - name: madhavajay/kestrel-rs
   path: repos/kestrel-rs
@@ -69,7 +66,6 @@ provides:
 - madhavajay/vntyper
 - mdshw5/pyfaidx
 - paudano/kescases
-- paudano/kestrel
 - pysam-developers/pysam
 - madhavajay/htslib
 - madhavajay/kestrel
@@ -107,9 +103,9 @@ links:
 - repo: paudano/kescases
   at: bioscript/ports/vntyper/kescases
   branch: master
-- repo: paudano/kestrel
+- repo: madhavajay/kestrel
   at: bioscript/ports/vntyper/kestrel
-  branch: master
+  branch: madhava/bioscript
 - repo: pysam-developers/pysam
   at: bioscript/vendor/python/pysam
   branch: master
