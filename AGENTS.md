@@ -51,7 +51,7 @@ rv adopt --plan      # dependency/dedup map for the current workspace
 ## Current layout of THIS workspace
 
 - `bioscript` and `exvitae/bioscript` are **symlinks** → `repos/bioscript`
-  (one shared copy, branch `madhava/libs`).
+  (one shared copy, branch `main`).
 - Inside `repos/bioscript`, these are **symlinks** → its own `repos/`:
   `vendor/rust/htslib-rs`, `vendor/rust/bcftools-rs/htslib-rs`,
   `vendor/rust/samtools-rs/htslib-rs` → `repos/htslib-rs` (branch `main`);
