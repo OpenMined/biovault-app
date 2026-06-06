@@ -1,8 +1,8 @@
 name: Desktop Builds
 
 on:
-  # Temporarily manual-only so web releases can merge/deploy without waiting
-  # on desktop package runners.
+  pull_request:
+    branches: [ main, develop ]
   workflow_dispatch:
 
 concurrency:
@@ -109,7 +109,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git grep -n -E "bioscript-wasm|wasm-bindgen|wasm-pack|\\.wasm" -- desktop/src desktop/src-tauri desktop/index.html desktop/vite.config.ts desktop/tsconfig.json; then
+          if git grep -n -E "bioscript-wasm|wasm-bindgen|wasm-pack|\\.wasm" -- \
+            desktop/src \
+            desktop/src-tauri/src \
+            desktop/src-tauri/Cargo.toml \
+            desktop/index.html \
+            desktop/vite.config.ts \
+            desktop/tsconfig.json; then
             exit 1
           fi
           cd desktop/src-tauri

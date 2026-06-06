@@ -7,6 +7,7 @@ import { sharedLabTestScenarios, type SharedLabTestScenario } from '../tests/lab
 
 const BASE_URL = process.env.WEB_URL ?? 'http://localhost:1420'
 const REPO_ROOT = path.resolve(__dirname, '..')
+const RUN_OPTIONAL_DESKTOP_SCENARIOS = process.env.DESKTOP_TEST_OPTIONAL === '1'
 
 declare global {
 	interface Window {
@@ -91,11 +92,12 @@ test.describe('desktop Lab UI via WebSocket bridge', () => {
 	for (const scenario of sharedLabTestScenarios.filter((item) => item.platforms.includes('desktop'))) {
 		test(scenario.title, async ({ page }, testInfo) => {
 			test.setTimeout(240_000)
-			await openLab(page)
 
 			const paths = scenarioPaths(scenario, testInfo.outputDir)
 			const missing = paths.find((file) => !fs.existsSync(file))
+			test.skip(Boolean(scenario.optional && !RUN_OPTIONAL_DESKTOP_SCENARIOS), scenario.missingMessage ?? 'optional desktop scenario')
 			test.skip(Boolean(missing), scenario.optional ? scenario.missingMessage : `missing fixture: ${missing}`)
+			await openLab(page)
 
 			if (scenario.action === 'app_smoke') {
 				await expect(page.getByText('Getting Started', { exact: true }).first()).toBeVisible()
