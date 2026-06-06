@@ -2,10 +2,12 @@ import { OMText } from '@/components/ui/OMText'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { setAppPreferenceSync } from '@/lib/app-preferences'
 import { setExploreDemoModeEnabledSync } from '@/lib/demo-mode'
+import { getNewsletterApiUrl, subscribeToNewsletter } from '@/lib/newsletter'
 import { omColors, omRadius, omSpacing, omTheme } from '@/styles/brand'
 import Constants from 'expo-constants'
-import { router } from 'expo-router'
-import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { router, useLocalSearchParams } from 'expo-router'
+import { useState } from 'react'
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 function openResetConfirmation(onConfirm: () => void) {
@@ -84,7 +86,130 @@ function SettingsActionCard({
 	)
 }
 
+type NewsletterEntryPoint = 'settings' | 'lab-sidebar'
+
+function normalizeNewsletterEntryPoint(value: string | string[] | undefined): NewsletterEntryPoint {
+	const rawValue = Array.isArray(value) ? value[0] : value
+	return rawValue === 'lab-sidebar' ? 'lab-sidebar' : 'settings'
+}
+
+function getNewsletterSource(entryPoint: NewsletterEntryPoint) {
+	return Platform.OS === 'web' ? `biovault-app-web-${entryPoint}` : `biovault-app-${Platform.OS}-settings`
+}
+
+function NewsletterSignupCard({ entryPoint }: { entryPoint: NewsletterEntryPoint }) {
+	const { trackEvent } = useAnalytics({ trackScreenView: false, trackAppState: false, includeRouteParams: false })
+	const [email, setEmail] = useState('')
+	const [isSubmitting, setIsSubmitting] = useState(false)
+	const [message, setMessage] = useState('')
+	const [messageTone, setMessageTone] = useState<'default' | 'error'>('default')
+
+	const handleSubmit = async () => {
+		const normalizedEmail = email.trim()
+		if (!normalizedEmail) {
+			setMessage('Enter an email address.')
+			setMessageTone('error')
+			return
+		}
+
+		setIsSubmitting(true)
+		setMessage('')
+		setMessageTone('default')
+
+		try {
+			await subscribeToNewsletter({
+				email: normalizedEmail,
+				source: getNewsletterSource(entryPoint),
+				metadata: {
+					platform: Platform.OS,
+					appVersion: Constants.expoConfig?.version ?? null,
+					buildProfile: Constants.expoConfig?.extra?.eas?.projectId ? 'production' : 'development',
+					screen: 'settings',
+					entryPoint,
+				},
+			})
+			trackEvent('newsletter_signup_submitted', {
+				entryPoint,
+				screen: 'settings',
+				source: getNewsletterSource(entryPoint),
+			})
+			setEmail('')
+			setMessage('Subscribed.')
+			setMessageTone('default')
+		} catch (error) {
+			setMessage(error instanceof Error ? error.message : 'Newsletter signup failed.')
+			setMessageTone('error')
+		} finally {
+			setIsSubmitting(false)
+		}
+	}
+
+	const isDisabled = isSubmitting || email.trim().length === 0
+
+	return (
+		<View style={styles.newsletterCard}>
+			<View style={styles.newsletterHeader}>
+				<View style={styles.newsletterContent}>
+					<OMText variant="caption" style={styles.actionLabel}>
+						NEWSLETTER
+					</OMText>
+					<OMText variant="headline" style={styles.actionTitle}>
+						Get BioVault updates
+					</OMText>
+					<OMText variant="body" style={styles.actionDescription}>
+						Receive product updates, assay releases, and research notes from the BioVault team.
+					</OMText>
+				</View>
+			</View>
+			<View style={styles.newsletterForm}>
+				<TextInput
+					value={email}
+					onChangeText={setEmail}
+					placeholder="you@example.com"
+					placeholderTextColor={omColors.grayscale500}
+					keyboardType="email-address"
+					autoCapitalize="none"
+					autoCorrect={false}
+					textContentType="emailAddress"
+					inputMode="email"
+					returnKeyType="send"
+					onSubmitEditing={() => {
+						if (!isDisabled) void handleSubmit()
+					}}
+					style={styles.newsletterInput}
+				/>
+				<Pressable
+					disabled={isDisabled}
+					onPress={() => void handleSubmit()}
+					style={({ pressed }) => [
+						styles.newsletterButton,
+						isDisabled ? styles.newsletterButtonDisabled : null,
+						pressed && !isDisabled ? styles.newsletterButtonPressed : null,
+					]}
+				>
+					<OMText variant="subtitle" style={styles.newsletterButtonText}>
+						{isSubmitting ? 'Joining...' : 'Join'}
+					</OMText>
+				</Pressable>
+			</View>
+			{message ? (
+				<OMText variant="caption" style={messageTone === 'error' ? styles.newsletterMessageError : styles.newsletterMessage}>
+					{message}
+				</OMText>
+			) : null}
+			{process.env.EXPO_PUBLIC_NEWSLETTER_API_URL ? (
+				<OMText variant="caption" style={styles.newsletterEndpoint}>
+					Endpoint: {getNewsletterApiUrl()}
+				</OMText>
+			) : null}
+		</View>
+	)
+}
+
 export default function SettingsScreen() {
+	const params = useLocalSearchParams<{ newsletterSource?: string | string[] }>()
+	const newsletterEntryPoint = normalizeNewsletterEntryPoint(params.newsletterSource)
+
 	useAnalytics({
 		trackScreenView: true,
 		screenProperties: { screen: 'Settings' },
@@ -176,6 +301,7 @@ export default function SettingsScreen() {
 					<OMText variant="subtitle" style={styles.sectionTitle}>
 						SUPPORT
 					</OMText>
+					<NewsletterSignupCard entryPoint={newsletterEntryPoint} />
 					<SettingsActionCard
 						label="SUPPORT"
 						title="Contact support"
@@ -356,6 +482,69 @@ const styles = StyleSheet.create({
 	},
 	actionCardPressed: {
 		opacity: 0.9,
+	},
+	newsletterCard: {
+		padding: omSpacing.xl,
+		borderRadius: omRadius.l,
+		backgroundColor: omColors.grayscale750,
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.1)',
+		gap: omSpacing.m,
+	},
+	newsletterHeader: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		justifyContent: 'space-between',
+		gap: omSpacing.l,
+	},
+	newsletterContent: {
+		flex: 1,
+		gap: omSpacing.xs,
+	},
+	newsletterForm: {
+		flexDirection: 'row',
+		alignItems: 'stretch',
+		gap: omSpacing.s,
+	},
+	newsletterInput: {
+		flex: 1,
+		minHeight: 48,
+		paddingHorizontal: omSpacing.m,
+		paddingVertical: omSpacing.s,
+		borderRadius: omRadius.m,
+		backgroundColor: 'rgba(255,255,255,0.06)',
+		borderWidth: 1,
+		borderColor: 'rgba(255,255,255,0.12)',
+		color: omTheme.primaryText,
+		fontSize: 16,
+		lineHeight: 22,
+	},
+	newsletterButton: {
+		minHeight: 48,
+		minWidth: 76,
+		alignItems: 'center',
+		justifyContent: 'center',
+		paddingHorizontal: omSpacing.l,
+		borderRadius: omRadius.m,
+		backgroundColor: omTheme.accent,
+	},
+	newsletterButtonDisabled: {
+		opacity: 0.48,
+	},
+	newsletterButtonPressed: {
+		opacity: 0.86,
+	},
+	newsletterButtonText: {
+		color: omTheme.actionText,
+	},
+	newsletterMessage: {
+		color: omTheme.accent,
+	},
+	newsletterMessageError: {
+		color: omColors.red300,
+	},
+	newsletterEndpoint: {
+		color: omColors.grayscale500,
 	},
 	actionContent: {
 		flex: 1,

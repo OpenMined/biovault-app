@@ -18,6 +18,18 @@ function event(offsetMinutes, userId, sessionId, name, properties = {}, extra = 
 	}
 }
 
+function eventAt(timestamp, userId, sessionId, name = 'pageview', properties = {}, extra = {}) {
+	return {
+		event_name: name,
+		properties,
+		session_id: sessionId,
+		timestamp,
+		type: name === 'pageview' ? 'pageview' : undefined,
+		user_id: userId,
+		...extra,
+	}
+}
+
 test('normalizes mixed legacy and modern lab journeys into one user report', () => {
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rybbit-user-report-'))
 	const eventsPath = path.join(tmpDir, 'events.json')
@@ -123,4 +135,39 @@ test('normalizes mixed legacy and modern lab journeys into one user report', () 
 	assert.match(html, /<span class="badge badge-assay">GLP1<\/span>/)
 	assert.match(html, /type: snp source: 23andMe<\/summary>/)
 	assert.match(html, /type: snp source: 23andMe imputed genotype r6/)
+})
+
+test('reports calendar-month average and peak DAU WAU MAU metrics', () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rybbit-user-report-monthly-'))
+	const eventsPath = path.join(tmpDir, 'events.json')
+	const outPath = path.join(tmpDir, 'report.html')
+	const events = [
+		eventAt('2026-04-01T01:00:00Z', 'a', 'a-1'),
+		eventAt('2026-04-01T02:00:00Z', 'b', 'b-1'),
+		eventAt('2026-04-02T01:00:00Z', 'b', 'b-2'),
+		eventAt('2026-04-08T01:00:00Z', 'c', 'c-1'),
+	]
+	fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2), 'utf8')
+
+	const result = spawnSync(process.execPath, [
+		'scripts/rybbit-user-report.mjs',
+		'--sites',
+		'dev',
+		'--minutes',
+		'525600',
+		'--event-limit',
+		'1000',
+		'--input-events',
+		eventsPath,
+		'--out',
+		outPath,
+	], {
+		cwd: repoRoot,
+		encoding: 'utf8',
+	})
+
+	assert.equal(result.status, 0, result.stderr || result.stdout)
+	const html = fs.readFileSync(outPath, 'utf8')
+	assert.match(html, /Monthly Active Users/)
+	assert.match(html, /<td>April 2026<\/td><td>0\.1<\/td><td>0\.5<\/td><td>2<\/td><td>0\.7<\/td><td>2<\/td><td>2<\/td><td>3<\/td><td>4\.4%<\/td><td>16\.7%<\/td><td>24\.4%<\/td><td>66\.7%<\/td><td>2026-04-01 to 2026-04-08 \(8 days\)<\/td><td>3 \/ 30<\/td>/)
 })
