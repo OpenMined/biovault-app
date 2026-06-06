@@ -1,6 +1,7 @@
 version: 1
 defaults:
   remote: github
+  main_branch: main
   revision: main
   scheme: ssh
 remotes:
@@ -9,38 +10,48 @@ remotes:
 projects:
 - name: openmined/bioscript
   path: repos/bioscript
+  main_branch: main
   revision: main
   lint: ./lint.sh --check
   test: ./test.sh
 - name: madhavajay/bcftools
   path: repos/bcftools
+  main_branch: develop
   revision: develop
 - name: madhavajay/monty
   path: repos/monty
+  main_branch: madhava/bioscript
   revision: madhava/bioscript
 - name: madhavajay/samtools
   path: repos/samtools
+  main_branch: develop
   revision: develop
 - name: madhavajay/vntyper
   path: repos/vntyper
   revision: main
 - name: mdshw5/pyfaidx
   path: repos/pyfaidx
+  main_branch: master
   revision: master
 - name: paudano/kescases
   path: repos/kescases
+  main_branch: master
   revision: master
 - name: pysam-developers/pysam
   path: repos/pysam
+  main_branch: master
   revision: master
 - name: madhavajay/htslib
   path: repos/htslib
+  main_branch: develop
   revision: htslib-rs-compat
 - name: madhavajay/kestrel
   path: repos/kestrel
+  main_branch: madhava/bioscript
   revision: madhava/bioscript
 - name: madhavajay/kestrel-rs
   path: repos/kestrel-rs
+  main_branch: main
   revision: main
 - name: madhavajay/htslib-rs
   path: repos/htslib-rs
@@ -48,6 +59,7 @@ projects:
   consumes: [madhavajay/noodles]
 - name: madhavajay/noodles
   path: repos/noodles
+  main_branch: madhava/bioscript
   revision: madhava/bioscript
 - name: madhavajay/samtools-rs
   path: repos/samtools-rs
@@ -59,6 +71,7 @@ projects:
   consumes: [madhavajay/htslib-rs]
 - name: madhavajay/exvitae
   path: repos/exvitae
+  main_branch: main
   revision: main
 provides:
 - openmined/bioscript

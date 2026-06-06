@@ -61,8 +61,14 @@ and negative samples.
   `repos/bioscript/bioscripts/examples/vntyper/vntyper_muc1.zip`.
 - [ ] Make the BioScript output folder exactly match
   `results/vntyper-original-6449-positive`.
-  - The folder shape is now close, but exact parity is not complete.
-  - Current missing upstream files:
+  - File-list parity is now passing for the positive BAM CLI fixture:
+    `VNTYPER_WEB_E2E_OUT=/tmp/vntyper-cli-parity ./test-vntyper.sh --cli --bam --case positive`
+  - The harness compares generated paths against
+    `results/vntyper-original-6449-positive`; the generated
+    `missing-original-files.txt` was empty.
+  - Exact output parity is still not complete because several paths are
+    placeholders or copies until the native pipeline implements the matching
+    upstream operation:
     - `fastq_bam_processing/output_other.fastq.gz`
     - `fastq_bam_processing/output_single.fastq.gz`
     - `fastq_bam_processing/output_unmapped.bam`
@@ -387,6 +393,15 @@ and negative samples.
     BAM fixture still reports `normal` / `negative`.
   - Do not treat the artifact plumbing as biological parity; the Kestrel/input
     preparation and post-processing still need to match upstream.
+  - Verified after aligning the BioScript package Kestrel caps with upstream
+    `vntyper/scripts/kestrel_config.json` (`max_align_states=40`,
+    `max_hap_states=40` equivalent in the BioScript call):
+    `VNTYPER_WEB_E2E_OUT=/tmp/vntyper-cli-parity-40 ./test-vntyper.sh --cli --bam --case positive`
+  - The call still reports `normal`.
+  - The target upstream insertion is absent from the BioScript native Kestrel
+    VCF, so this is not only a TSV post-processing bug:
+    `rg "GAGCCCGGGGCCGGCCTGGTGTCCGG" /tmp/vntyper-cli-parity-40/cli-bam-positive/kestrel/output.vcf`
+    returned no matches.
 - [ ] Port upstream BAM preprocessing more exactly.
   - Upstream VNtyper:
     - slices the predefined MUC1 BED region with `samtools view -P -b -L`;
@@ -396,12 +411,23 @@ and negative samples.
     - name-sorts before FASTQ extraction;
     - writes paired, other, and singleton FASTQ outputs.
   - Current BioScript path slices the region and directly extracts R1/R2 FASTQ.
+  - Verified FASTQ divergence against the Java VNtyper positive output:
+    - Upstream `output_R1.fastq.gz`: `330092` decompressed lines.
+    - BioScript `output_R1.fastq.gz`: `324828` decompressed lines.
+    - Upstream `output_R2.fastq.gz`: `330092` decompressed lines.
+    - BioScript `output_R2.fastq.gz`: `320228` decompressed lines.
+    - SHA-256 hashes also differ.
+  - This makes exact FASTQ preparation parity the next likely blocker before
+    expecting the same Kestrel VCF.
   - Needed native/library support:
     - unmapped-read extraction for the fixture input;
     - BAM merge;
     - name-sort path that feeds FASTQ extraction;
     - `samtools.fastq` support for `-0`/`-s` equivalents so
       `output_other.fastq.gz` and `output_single.fastq.gz` are real outputs.
+  - The browser path needs wasm-safe support for this exact pipeline; a
+    CLI-only `samtools.sort_native` + `samtools.fastq` branch would not be
+    sufficient for the BioVault web interface goal.
 - [ ] Make Kestrel native output artifacts match upstream.
   - Upstream writes Kestrel SAM, converts it to:
     - `kestrel/output.bam`
@@ -465,8 +491,13 @@ and negative samples.
     - add parity tests against upstream cohort-summary outputs using the same
       input `pipeline_summary.json` files.
 - [ ] Update tests so artifact parity is asserted, not just run completion.
-  - CLI should compare the generated file list against
-    `results/vntyper-original-6449-positive`.
+  - CLI file-list parity is now asserted for the positive case when
+    `results/vntyper-original-6449-positive` is present.
+    - `test-vntyper.sh` writes `expected-original-files.txt`,
+      `actual-vntyper-files.txt`, and `missing-original-files.txt`.
+    - It exits with code `6` if any upstream path is absent.
+    - Verified with:
+      `VNTYPER_WEB_E2E_OUT=/tmp/vntyper-cli-parity ./test-vntyper.sh --cli --bam --case positive`
   - CLI should compare key fields in `kestrel/kestrel_result.tsv`.
   - wasm/browser tests should assert:
     - `summary_report.html` is marked primary;

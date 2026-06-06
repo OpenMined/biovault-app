@@ -89,6 +89,43 @@ require_file() {
   fi
 }
 
+assert_original_artifact_paths_present() {
+  local cli_out="$1"
+  local original_dir="$ROOT/results/vntyper-original-6449-positive"
+  if [[ "$CASE_FILTER" != "positive" || ! -d "$original_dir" ]]; then
+    return
+  fi
+  local expected="$cli_out/expected-original-files.txt"
+  local actual="$cli_out/actual-vntyper-files.txt"
+  local missing="$cli_out/missing-original-files.txt"
+  (
+    cd "$original_dir"
+    find . -maxdepth 3 -type f | sed 's#^\./##' | sort
+  ) > "$expected"
+  (
+    cd "$cli_out"
+    find . -maxdepth 3 -type f \
+      ! -name expected-original-files.txt \
+      ! -name actual-vntyper-files.txt \
+      ! -name missing-original-files.txt \
+      ! -name report.log \
+      ! -name observations.tsv \
+      ! -name observations.json \
+      ! -name observations.jsonl \
+      ! -name analysis.jsonl \
+      ! -name reports.json \
+      ! -name reports.jsonl \
+      ! -name index.html \
+      | sed 's#^\./##' | sort
+  ) > "$actual"
+  comm -23 "$expected" "$actual" > "$missing"
+  if [[ -s "$missing" ]]; then
+    echo "CLI report is missing upstream VNtyper artifact paths:" >&2
+    sed 's/^/  - /' "$missing" >&2
+    exit 6
+  fi
+}
+
 build_package_zip() {
   require_file "VNtyper manifest" "$PACKAGE_DIR/manifest.yaml"
   require_file "VNtyper assay" "$PACKAGE_DIR/assay.yaml"
@@ -188,6 +225,7 @@ if [[ "$MODE" == "cli" ]]; then
     echo "CLI report completed but expected VNtyper fields were not found under $CLI_OUT" >&2
     exit 5
   fi
+  assert_original_artifact_paths_present "$CLI_OUT"
   echo "CLI VNtyper report output: $CLI_OUT"
   exit 0
 fi
