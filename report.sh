@@ -2,28 +2,35 @@
 set -euo pipefail
 
 SITES="dev prod"
-MINUTES="43200"
+MINUTES="5256000"
+ROLLING_DAYS="30"
+SINCE_DATE="2026-05-01"
 USER_EVENT_LIMIT="50000"
 USE_CACHE=0
 COMBINED=0
 
 usage() {
   cat <<'EOF'
-Usage: ./report.sh [--dev | --prod] [--minutes N] [--event-limit N] [--user-event-limit N] [--use-cache] [--combined]
+Usage: ./report.sh [--dev | --prod] [--minutes N] [--since-date YYYY-MM-DD] [--rolling-days N] [--event-limit N] [--user-event-limit N] [--use-cache] [--combined]
 
 Defaults:
   sites:            dev and prod
-  minutes:          43200 (30 days)
+  minutes:          5256000 (10 years / effectively all-time for current BioVault metrics)
+  since date:       2026-05-01
+  rolling days:     30
   events:           50000 raw events per site
 
 Outputs:
-  separate dev and prod HTML reports with overview, product questions, users, daily rollup, and breakdown tabs
+  separate dev and prod HTML reports with overview, users, calendar-month tabs, rolling month stats, daily rollup, and breakdown tabs
 
 Examples:
   ./report.sh
   ./report.sh --dev
   ./report.sh --prod
   ./report.sh --combined
+  ./report.sh --minutes 43200
+  ./report.sh --since-date 2026-05-01
+  ./report.sh --rolling-days 31
   ./report.sh --event-limit 1000
   ./report.sh --user-event-limit 25000
 EOF
@@ -41,6 +48,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --minutes)
       MINUTES="${2:?--minutes requires a value}"
+      shift 2
+      ;;
+    --since-date)
+      SINCE_DATE="${2:?--since-date requires a value}"
+      shift 2
+      ;;
+    --rolling-days)
+      ROLLING_DAYS="${2:?--rolling-days requires a value}"
       shift 2
       ;;
     --event-limit)
@@ -82,6 +97,8 @@ run_user_report() {
     node ./scripts/rybbit-user-report.mjs
     --sites "$user_sites"
     --minutes "$MINUTES"
+    --since-date "$SINCE_DATE"
+    --rolling-days "$ROLLING_DAYS"
     --event-limit "$USER_EVENT_LIMIT"
     --out "$out"
   )

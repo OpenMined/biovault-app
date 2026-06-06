@@ -10,6 +10,13 @@
 		"not_found_handling": "single-page-application",
 		"run_worker_first": true
 	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "d1-biovault-website",
+			"database_id": "35b334f1-0b99-43ad-bd1a-c5d497549618"
+		}
+	],
 	"observability": {
 		"enabled": true
 	}

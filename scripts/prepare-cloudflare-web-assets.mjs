@@ -259,7 +259,8 @@ export function landingPageHtml(options = {}) {
       gap: 14px;
       margin-top: 34px;
     }
-    .secondary-action {
+    .secondary-action,
+    .email-action {
       display: inline-grid;
       min-height: 72px;
       align-content: center;
@@ -270,7 +271,31 @@ export function landingPageHtml(options = {}) {
       text-decoration: none;
       background: rgba(255, 255, 255, 0.06);
     }
-    .primary-action::after {
+    .email-action {
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      color: #17161d;
+      background: #ffd87a;
+      border-color: rgba(255, 216, 122, 0.56);
+      box-shadow: 0 18px 48px rgba(255, 216, 122, 0.2);
+      position: relative;
+      overflow: hidden;
+    }
+    .secondary-action:hover,
+    .secondary-action:focus-visible {
+      border-color: rgba(83, 190, 169, 0.44);
+      background: rgba(83, 190, 169, 0.09);
+      outline: none;
+    }
+    .email-action:hover,
+    .email-action:focus-visible {
+      border-color: rgba(255, 216, 122, 0.82);
+      background: #ffe39b;
+      outline: none;
+    }
+    .primary-action::after,
+    .email-action::after {
       content: "";
       position: absolute;
       inset: 0;
@@ -284,7 +309,9 @@ export function landingPageHtml(options = {}) {
       pointer-events: none;
     }
     .primary-action:hover::after,
-    .primary-action:focus-visible::after {
+    .primary-action:focus-visible::after,
+    .email-action:hover::after,
+    .email-action:focus-visible::after {
       animation: primary-action-shimmer 1.25s ease-in-out infinite;
     }
     @keyframes primary-action-shimmer {
@@ -292,7 +319,9 @@ export function landingPageHtml(options = {}) {
     }
     @media (prefers-reduced-motion: reduce) {
       .primary-action:hover::after,
-      .primary-action:focus-visible::after {
+      .primary-action:focus-visible::after,
+      .email-action:hover::after,
+      .email-action:focus-visible::after {
         animation: none;
       }
     }
@@ -328,6 +357,156 @@ export function landingPageHtml(options = {}) {
       font-weight: 600;
       line-height: 1.3;
     }
+    .email-action strong {
+      display: block;
+      position: relative;
+      z-index: 1;
+      color: #17161d;
+      font-size: 18px;
+      line-height: 1.1;
+    }
+    .email-action span {
+      display: block;
+      position: relative;
+      z-index: 1;
+      margin-top: 6px;
+      color: rgba(23, 22, 29, 0.74);
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .email-modal[hidden] {
+      display: none;
+    }
+    .email-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+    }
+	    .email-backdrop {
+	      position: absolute;
+	      inset: 0;
+	      border: 0;
+	      background: rgba(0, 0, 0, 0.64);
+	      cursor: pointer;
+	    }
+	    .email-panel {
+	      position: relative;
+	      width: min(520px, 100%);
+	      border: 1px solid rgba(255, 200, 80, 0.3);
+	      border-radius: 8px;
+	      padding: 24px;
+	      background: #151817;
+	      box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
+	    }
+	    .email-heading {
+	      display: flex;
+	      align-items: flex-start;
+	      gap: 12px;
+	      padding-right: 46px;
+	    }
+	    .email-icon {
+	      width: 42px;
+	      height: 42px;
+	      display: inline-grid;
+	      place-items: center;
+	      flex: 0 0 auto;
+	      border: 1px solid rgba(255, 200, 80, 0.3);
+	      border-radius: 999px;
+	      color: #ffd87a;
+	      background: rgba(255, 200, 80, 0.1);
+	    }
+	    .email-icon svg {
+	      width: 21px;
+	      height: 21px;
+	    }
+	    .email-kicker {
+	      margin: 0 0 4px;
+	      color: #ffd87a;
+	      font-size: 11px;
+	      font-weight: 800;
+	      letter-spacing: 0.8px;
+	      text-transform: uppercase;
+	    }
+	    .email-panel h2 {
+	      margin: 0;
+	      color: #f7f4ef;
+	      font-size: 28px;
+	      line-height: 1.15;
+	      letter-spacing: 0;
+	    }
+	    .email-panel p {
+	      margin: 8px 0 0;
+	      font-size: 15px;
+	      line-height: 1.5;
+	      color: rgba(247, 244, 239, 0.68);
+	    }
+	    .email-close {
+	      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      color: #f7f4ef;
+      background: rgba(255, 255, 255, 0.05);
+      cursor: pointer;
+      font-size: 22px;
+      line-height: 1;
+    }
+	    .email-form {
+	      display: grid;
+	      gap: 12px;
+	      margin-top: 22px;
+	    }
+	    .email-input {
+	      width: 100%;
+	      min-height: 52px;
+	      border: 1px solid rgba(219, 226, 221, 0.22);
+	      border-radius: 8px;
+	      padding: 0 16px;
+	      color: #f7f4ef;
+	      background: #202423;
+	      font: inherit;
+	      font-size: 16px;
+	    }
+	    .email-input:focus {
+	      border-color: rgba(255, 200, 80, 0.42);
+	      outline: none;
+	      box-shadow: 0 0 0 3px rgba(255, 200, 80, 0.16);
+	    }
+	    .email-submit {
+	      min-height: 52px;
+	      border: 1px solid rgba(255, 200, 80, 0.3);
+	      border-radius: 8px;
+	      color: #07100b;
+	      background: #ffd87a;
+	      cursor: pointer;
+	      font: inherit;
+	      font-size: 15px;
+      font-weight: 800;
+    }
+    .email-submit:disabled {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+    .email-message {
+      min-height: 22px;
+      margin-top: 4px;
+      color: rgba(247, 244, 239, 0.72);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .email-message.error {
+      color: #ffb7c2;
+    }
+	    .email-message.success {
+	      color: #8ee7b8;
+	    }
     .build-tag {
       margin-top: 12px;
       margin-left: 6px;
@@ -437,6 +616,13 @@ export function landingPageHtml(options = {}) {
           data-track-event="landing_data_how_to_clicked"
           data-track-properties='{"target":"/data-how-to/","label":"Download your Data","source":"landing_hero"}'
         ><strong>Download your Data</strong><span>Guides on 23andMe and others</span></a>
+        <button
+          class="email-action"
+          type="button"
+	          data-open-email-modal
+	          data-track-event="landing_email_updates_clicked"
+	          data-track-properties='{"label":"Subscribe","source":"landing_hero"}'
+	        ><strong>Subscribe</strong><span>Get BioVault updates</span></button>
       </div>
       <div class="build-tag">Build ${escapeHtml(buildId)}</div>
       ${browserSupport ? `<p class="browser-support">${escapeHtml(browserSupport)}</p>` : ''}
@@ -454,6 +640,30 @@ export function landingPageHtml(options = {}) {
       </div>
     </footer>
   </main>
+  <div class="email-modal" data-email-modal hidden>
+    <button class="email-backdrop" type="button" data-close-email-modal aria-label="Close email updates dialog"></button>
+	    <section class="email-panel" role="dialog" aria-modal="true" aria-labelledby="email-updates-title">
+	      <button class="email-close" type="button" data-close-email-modal aria-label="Close">×</button>
+	      <div class="email-heading">
+	        <span class="email-icon" aria-hidden="true">
+	          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	            <path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path>
+	            <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+	          </svg>
+	        </span>
+	        <div>
+	          <div class="email-kicker">Newsletter</div>
+	          <h2 id="email-updates-title">Get BioVault updates</h2>
+	          <p>Product updates, assay releases, and research notes from the BioVault team.</p>
+	        </div>
+	      </div>
+	      <form class="email-form" data-email-form>
+	        <input class="email-input" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required>
+	        <button class="email-submit" type="submit">Join newsletter</button>
+	        <div class="email-message" data-email-message role="status" aria-live="polite"></div>
+	      </form>
+    </section>
+  </div>
   <script>
     (() => {
       const endpoint = 'https://metrics.syftbox.net/api/track';
@@ -501,6 +711,91 @@ export function landingPageHtml(options = {}) {
           } catch {}
           track(element.getAttribute('data-track-event'), properties);
         });
+      });
+
+      const modal = document.querySelector('[data-email-modal]');
+      const form = document.querySelector('[data-email-form]');
+      const input = form?.querySelector('input[name="email"]');
+      const submit = form?.querySelector('button[type="submit"]');
+      const message = document.querySelector('[data-email-message]');
+      let successCloseTimer;
+      const clearSuccessCloseTimer = () => {
+        if (successCloseTimer) {
+          clearTimeout(successCloseTimer);
+          successCloseTimer = undefined;
+        }
+      };
+      const setMessage = (text, tone) => {
+        if (!message) return;
+        message.textContent = text;
+        message.className = 'email-message' + (tone ? ' ' + tone : '');
+      };
+      const openModal = () => {
+        if (!modal) return;
+        clearSuccessCloseTimer();
+        modal.hidden = false;
+        setMessage('', '');
+        setTimeout(() => input?.focus(), 0);
+      };
+      const closeModal = () => {
+        if (!modal) return;
+        clearSuccessCloseTimer();
+        modal.hidden = true;
+      };
+      document.querySelectorAll('[data-open-email-modal]').forEach((element) => {
+        element.addEventListener('click', openModal);
+      });
+      document.querySelectorAll('[data-close-email-modal]').forEach((element) => {
+        element.addEventListener('click', closeModal);
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeModal();
+      });
+      form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const email = String(input?.value || '').trim();
+        if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+          setMessage('Please enter a valid email address.', 'error');
+          return;
+        }
+        submit.disabled = true;
+        setMessage('Submitting...', '');
+        try {
+          const response = await fetch('https://biovault.net/api/newsletter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              source: 'biovault-app-web-landing-hero',
+              metadata: {
+                buildId: ${JSON.stringify(String(buildId))},
+                path: window.location.pathname || '/',
+                origin: window.location.origin,
+              },
+            }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || result.ok === false || result.success === false) {
+            throw new Error(result.errors?.email || result.errors?.form || result.error || 'Unable to submit right now.');
+          }
+          input.value = '';
+          setMessage('Thanks. You are on the update list.', 'success');
+          track('landing_email_updates_submitted', { source: 'landing_hero' });
+          track('newsletter_signup_submitted', {
+            entryPoint: 'landing-hero',
+            screen: 'landing',
+            source: 'biovault-app-web-landing-hero',
+          });
+          clearSuccessCloseTimer();
+          successCloseTimer = setTimeout(() => {
+            successCloseTimer = undefined;
+            closeModal();
+          }, 1500);
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : 'Unable to submit right now.', 'error');
+        } finally {
+          submit.disabled = false;
+        }
       });
     })();
   </script>

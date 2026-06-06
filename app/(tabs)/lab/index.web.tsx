@@ -5,6 +5,7 @@ import { PlatformSvgUri } from '@/components/ui/PlatformSvgUri'
 import { useAnalytics } from '@/hooks/useAnalytics'
 import { APP_BUILD_ID } from '@/lib/app-build-id'
 import { getAnalytics } from '@/lib/analytics'
+import { getAppPreferenceSync, setAppPreferenceSync } from '@/lib/app-preferences'
 import { assessWebRuntimeSupport, type BrowserSupportAssessment } from '@/lib/browser-support'
 import { toggleColorSchemePreferenceSync, useColorScheme } from '@/lib/color-theme'
 import { clearDeferredLaunchUrlSync, getDeferredLaunchUrlSync } from '@/lib/deferred-launch-url'
@@ -90,6 +91,8 @@ import {
 	type ResolvedRemoteResource,
 } from '@/lib/remote-resource-resolver'
 import { getCachedRemoteResource } from '@/lib/remote-resource-cache'
+import { subscribeToNewsletter } from '@/lib/newsletter'
+import { submitSuggestion } from '@/lib/suggestions'
 import {
 	listAssays as registryListAssays,
 	listPanels as registryListPanels,
@@ -182,6 +185,9 @@ const LAB_GETTING_STARTED_SECTION_GAP = omSpacing.xxxl
 const LAB_GETTING_STARTED_CONTENT_WIDTH = 1280
 const LAB_GETTING_STARTED_VIDEO_WIDTH = 1120
 const LAB_GETTING_STARTED_VIDEO_EMBED_URL = 'https://www.youtube.com/embed/54oRjs2AcJY'
+const NEWSLETTER_SUCCESS_CLOSE_DELAY_MS = 1500
+const REPORT_SUGGESTION_PROMPT_PENDING_PREFERENCE_KEY = 'hasPendingReportSuggestionPrompt'
+const REPORT_SUGGESTION_PROMPT_SEEN_PREFERENCE_KEY = 'hasSeenReportSuggestionPrompt'
 const FEATURED_CATALOG: LabAssay[] = [
 	{
 		id: 'featured-pgx-1',
@@ -296,6 +302,7 @@ type PendingDemoRun = {
 	assayId: string
 	primaryFileName: string
 }
+type SuggestionModalSource = 'biovault-app-web-lab-report' | 'biovault-app-web-lab-sidebar'
 
 type PendingVcfIndexRun = {
 	assay: LabAssay
@@ -1141,6 +1148,8 @@ export default function LabScreen() {
 	const filePickerRef = useRef(createLabFilePickerAdapter())
 	const inputEventPropertiesRef = useRef<Map<string, Record<string, unknown>>>(new Map())
 	const runIndexByInputRef = useRef<Map<string, number>>(new Map())
+	const reportSuggestionPromptPendingInSessionRef = useRef(false)
+	const reportSuggestionPromptShownRef = useRef(false)
 
 	const [genomes, setGenomes] = useState<LabGenomeRef[]>([])
 	const [unknowns, setUnknowns] = useState<UnknownEntry[]>([])
@@ -1149,9 +1158,12 @@ export default function LabScreen() {
 	const [runs, setRuns] = useState<RunRecord[]>([])
 	const [showAllResultRuns, setShowAllResultRuns] = useState(false)
 	const [runningAssayId, setRunningAssayId] = useState<string | null>(null)
-	const [dragActive, setDragActive] = useState(false)
-	const [importGenomeModalOpen, setImportGenomeModalOpen] = useState(false)
-	const [query, setQuery] = useState('')
+		const [dragActive, setDragActive] = useState(false)
+		const [importGenomeModalOpen, setImportGenomeModalOpen] = useState(false)
+		const [newsletterModalOpen, setNewsletterModalOpen] = useState(false)
+		const [suggestionModalOpen, setSuggestionModalOpen] = useState(false)
+		const [suggestionModalSource, setSuggestionModalSource] = useState<SuggestionModalSource>('biovault-app-web-lab-sidebar')
+		const [query, setQuery] = useState('')
 	const [pickerKindFilter, setPickerKindFilter] = useState<'all' | 'panel' | 'assay'>('panel')
 	const [assayUrlInput, setAssayUrlInput] = useState('')
 	const [assayUrlCopied, setAssayUrlCopied] = useState(false)
@@ -2421,6 +2433,56 @@ export default function LabScreen() {
 		}
 	}, [loadAssayUrl])
 
+	const openSuggestionModal = useCallback((source: SuggestionModalSource) => {
+		setSuggestionModalSource(source)
+		setSuggestionModalOpen(true)
+		trackEvent('lab_suggestion_opened', { source })
+	}, [trackEvent])
+
+	const markReportOpenedForSuggestionPrompt = useCallback(() => {
+		reportSuggestionPromptPendingInSessionRef.current = true
+		try {
+			if (getAppPreferenceSync(REPORT_SUGGESTION_PROMPT_SEEN_PREFERENCE_KEY) === '1') {
+				reportSuggestionPromptShownRef.current = true
+				reportSuggestionPromptPendingInSessionRef.current = false
+				return
+			}
+			setAppPreferenceSync(REPORT_SUGGESTION_PROMPT_PENDING_PREFERENCE_KEY, '1')
+		} catch (error) {
+			console.warn('[lab] report suggestion pending preference failed', error)
+		}
+	}, [])
+
+	const openPendingReportSuggestionModal = useCallback(() => {
+		if (reportSuggestionPromptShownRef.current) return
+		let shouldOpen = reportSuggestionPromptPendingInSessionRef.current
+		try {
+			if (getAppPreferenceSync(REPORT_SUGGESTION_PROMPT_SEEN_PREFERENCE_KEY) === '1') {
+				reportSuggestionPromptShownRef.current = true
+				reportSuggestionPromptPendingInSessionRef.current = false
+				setAppPreferenceSync(REPORT_SUGGESTION_PROMPT_PENDING_PREFERENCE_KEY, null)
+				return
+			}
+			shouldOpen = shouldOpen || getAppPreferenceSync(REPORT_SUGGESTION_PROMPT_PENDING_PREFERENCE_KEY) === '1'
+		} catch (error) {
+			console.warn('[lab] report suggestion prompt preference failed', error)
+		}
+		if (!shouldOpen) return
+		try {
+			setAppPreferenceSync(REPORT_SUGGESTION_PROMPT_SEEN_PREFERENCE_KEY, '1')
+			setAppPreferenceSync(REPORT_SUGGESTION_PROMPT_PENDING_PREFERENCE_KEY, null)
+		} catch (error) {
+			console.warn('[lab] report suggestion seen preference failed', error)
+		}
+		reportSuggestionPromptPendingInSessionRef.current = false
+		reportSuggestionPromptShownRef.current = true
+		openSuggestionModal('biovault-app-web-lab-report')
+	}, [openSuggestionModal])
+
+	useEffect(() => {
+		openPendingReportSuggestionModal()
+	}, [openPendingReportSuggestionModal])
+
 	const runAssayNow = useCallback(
 		async (catalogAssay: LabAssay, genomeForRun: LabGenomeRef) => {
 			if (!isLabGenomeComplete(genomeForRun)) return
@@ -3062,6 +3124,8 @@ export default function LabScreen() {
 					<RunCard
 						key={latestRun.id}
 						record={latestRun}
+						onReportClosedForSuggestion={openPendingReportSuggestionModal}
+						onReportOpenedForSuggestion={markReportOpenedForSuggestionPrompt}
 						onViewSource={() => {
 							setSourceViewer({ files: latestRun.sourceFiles, title: latestRun.assay.title })
 						}}
@@ -3084,6 +3148,8 @@ export default function LabScreen() {
 							<RunCard
 								key={r.id}
 								record={r}
+								onReportClosedForSuggestion={openPendingReportSuggestionModal}
+								onReportOpenedForSuggestion={markReportOpenedForSuggestionPrompt}
 								onViewSource={() => {
 									setSourceViewer({ files: r.sourceFiles, title: r.assay.title })
 								}}
@@ -3129,10 +3195,12 @@ export default function LabScreen() {
 			onRemoveSessionGenome={removeSessionGenome}
 			cachedRemoteFiles={cachedRemoteFiles}
 			cachedRemotePackageArtifactUrls={cachedRemotePackageArtifactUrls}
-			dragActive={dragActive}
-			onChooseGenomeFiles={() => setImportGenomeModalOpen(true)}
-			onOpenGettingStarted={openGettingStarted}
-			onRequestClose={useSidebarDrawer ? closeSidebarDrawer : undefined}
+				dragActive={dragActive}
+				onChooseGenomeFiles={() => setImportGenomeModalOpen(true)}
+				onOpenGettingStarted={openGettingStarted}
+				onOpenNewsletter={() => setNewsletterModalOpen(true)}
+				onOpenSuggestion={() => openSuggestionModal('biovault-app-web-lab-sidebar')}
+				onRequestClose={useSidebarDrawer ? closeSidebarDrawer : undefined}
 			savedHandlesError={savedHandlesError}
 			savedHandlesLoading={savedHandlesLoading}
 			savedHandleGroups={savedHandles}
@@ -3342,7 +3410,7 @@ export default function LabScreen() {
 						onConfirm={confirmPendingAlignmentIndexRun}
 					/>
 				) : null}
-				<ImportGenomeModal
+					<ImportGenomeModal
 					assayUrlCopied={assayUrlCopied}
 					assayUrlInput={assayUrlInput}
 					dragActive={dragActive}
@@ -3361,12 +3429,21 @@ export default function LabScreen() {
 					onCopyShareAssayUrl={copyShareAssayUrl}
 					onLoadAssayUrl={loadAssayUrl}
 					onPickSample={pickSample}
-					onUrlInputChange={setAssayUrlInput}
-				/>
-			</SafeAreaView>
-		</ThemeCtx.Provider>
-	)
-}
+						onUrlInputChange={setAssayUrlInput}
+					/>
+					<NewsletterSignupModal
+						open={newsletterModalOpen}
+						onClose={() => setNewsletterModalOpen(false)}
+					/>
+					<SuggestionModal
+						open={suggestionModalOpen}
+						source={suggestionModalSource}
+						onClose={() => setSuggestionModalOpen(false)}
+					/>
+				</SafeAreaView>
+			</ThemeCtx.Provider>
+		)
+	}
 
 function BrowserSupportBanner({ assessment }: { assessment: BrowserSupportAssessment | null }) {
 	const { styles } = useTheme()
@@ -3896,7 +3973,7 @@ function PersistentHandlePrompt({
 	)
 }
 
-function ImportGenomeModal({
+	function ImportGenomeModal({
 	assayUrlCopied,
 	assayUrlInput,
 	dragActive,
@@ -4109,17 +4186,385 @@ function ImportGenomeModal({
 			</View>
 		</LabModalChrome>
 	)
-}
+	}
 
-function LabExplorerSidebar({
+	function NewsletterSignupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+		const { styles, mutedIconTone, palette } = useTheme()
+		const [email, setEmail] = useState('')
+		const [message, setMessage] = useState('')
+		const [messageTone, setMessageTone] = useState<'default' | 'error' | 'success'>('default')
+		const [submitting, setSubmitting] = useState(false)
+		const successCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+		const clearSuccessCloseTimer = useCallback(() => {
+			if (successCloseTimerRef.current) {
+				clearTimeout(successCloseTimerRef.current)
+				successCloseTimerRef.current = null
+			}
+		}, [])
+
+		const close = useCallback(() => {
+			clearSuccessCloseTimer()
+			onClose()
+		}, [clearSuccessCloseTimer, onClose])
+
+		useEffect(() => {
+			if (!open) clearSuccessCloseTimer()
+			return clearSuccessCloseTimer
+		}, [clearSuccessCloseTimer, open])
+
+		const submit = async () => {
+			const normalizedEmail = email.trim()
+			if (!normalizedEmail) {
+				setMessage('Enter an email address.')
+				setMessageTone('error')
+				return
+			}
+
+			setSubmitting(true)
+			setMessage('Submitting...')
+			setMessageTone('default')
+			try {
+				await subscribeToNewsletter({
+					email: normalizedEmail,
+					source: 'biovault-app-web-lab-sidebar',
+					metadata: {
+						buildId: APP_BUILD_ID,
+						entryPoint: 'lab-sidebar',
+						path: typeof window === 'undefined' ? '/lab' : window.location.pathname,
+						platform: 'web',
+					},
+				})
+				getAnalytics()?.trackEvent('newsletter_signup_submitted', {
+					entryPoint: 'lab-sidebar',
+					screen: 'lab',
+					source: 'biovault-app-web-lab-sidebar',
+				})
+				setEmail('')
+				setMessage('Subscribed.')
+				setMessageTone('success')
+				clearSuccessCloseTimer()
+				successCloseTimerRef.current = setTimeout(() => {
+					successCloseTimerRef.current = null
+					onClose()
+				}, NEWSLETTER_SUCCESS_CLOSE_DELAY_MS)
+			} catch (error) {
+				setMessage(error instanceof Error ? error.message : 'Unable to subscribe right now.')
+				setMessageTone('error')
+			} finally {
+				setSubmitting(false)
+			}
+		}
+
+		if (!open) return null
+
+		return (
+			<LabModalChrome
+				accessibilityLabel="Newsletter signup dialog"
+				onBackdropDismiss={close}
+				panelStyle={styles.newsletterModalPanel}
+			>
+				<View style={styles.newsletterModalChrome}>
+					<View style={styles.intentHeader}>
+						<View style={styles.newsletterModalIcon}>
+							<OMIcon name="mail-outline" color="#ffd87a" size={20} />
+						</View>
+						<View style={styles.intentText}>
+							<OMText variant="caption" style={styles.newsletterModalKicker}>
+								NEWSLETTER
+							</OMText>
+							<OMText variant="headline" style={styles.intentTitle}>
+								Get BioVault updates
+							</OMText>
+							<OMText variant="caption" style={styles.intentUrl}>
+								Product updates, assay releases, and research notes from the BioVault team.
+							</OMText>
+						</View>
+						<Pressable
+							onPress={close}
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+								styles.intentClose,
+								hovered && styles.buttonHover,
+								pressed && styles.buttonPressed,
+							]}
+						>
+							<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+						</Pressable>
+					</View>
+					<View style={styles.newsletterModalForm}>
+						<TextInput
+							value={email}
+							onChangeText={setEmail}
+							placeholder="you@example.com"
+							placeholderTextColor={palette.textFaint}
+							keyboardType="email-address"
+							autoCapitalize="none"
+							autoCorrect={false}
+							textContentType="emailAddress"
+							inputMode="email"
+							returnKeyType="send"
+							onSubmitEditing={() => {
+								if (!submitting) void submit()
+							}}
+							style={styles.newsletterModalInput}
+						/>
+						<Pressable
+							disabled={submitting}
+							onPress={() => void submit()}
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+								styles.newsletterModalButton,
+								submitting ? styles.newsletterModalButtonDisabled : null,
+								hovered && !submitting ? styles.buttonHover : null,
+								pressed && !submitting ? styles.buttonPressed : null,
+							]}
+						>
+							{submitting ? <ActivityIndicator size="small" color="#07100b" /> : null}
+							<OMText variant="subtitle" style={styles.newsletterModalButtonText}>
+								{submitting ? 'Joining...' : 'Join newsletter'}
+							</OMText>
+						</Pressable>
+					</View>
+					{message ? (
+						<OMText
+							variant="caption"
+							style={[
+								styles.newsletterModalMessage,
+								messageTone === 'error' ? styles.newsletterModalMessageError : null,
+								messageTone === 'success' ? styles.newsletterModalMessageSuccess : null,
+							]}
+						>
+							{message}
+						</OMText>
+					) : null}
+				</View>
+			</LabModalChrome>
+		)
+	}
+
+	function SuggestionModal({
+		open,
+		onClose,
+		source,
+	}: {
+		open: boolean
+		onClose: () => void
+		source: SuggestionModalSource
+	}) {
+		const { styles, mutedIconTone, palette } = useTheme()
+		const [suggestion, setSuggestion] = useState('')
+		const [email, setEmail] = useState('')
+		const [newsletter, setNewsletter] = useState(false)
+		const [message, setMessage] = useState('')
+		const [messageTone, setMessageTone] = useState<'default' | 'error' | 'success'>('default')
+		const [submitting, setSubmitting] = useState(false)
+		const successCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+		const clearSuccessCloseTimer = useCallback(() => {
+			if (successCloseTimerRef.current) {
+				clearTimeout(successCloseTimerRef.current)
+				successCloseTimerRef.current = null
+			}
+		}, [])
+
+		const close = useCallback(() => {
+			clearSuccessCloseTimer()
+			onClose()
+		}, [clearSuccessCloseTimer, onClose])
+
+		useEffect(() => {
+			if (!open) clearSuccessCloseTimer()
+			return clearSuccessCloseTimer
+		}, [clearSuccessCloseTimer, open])
+
+		const submit = async () => {
+			const normalizedSuggestion = suggestion.trim()
+			const normalizedEmail = email.trim()
+			if (!normalizedSuggestion) {
+				setMessage('Tell us what you want BioVault to do.')
+				setMessageTone('error')
+				return
+			}
+			if (newsletter && !normalizedEmail) {
+				setMessage('Enter an email address to join the newsletter.')
+				setMessageTone('error')
+				return
+			}
+
+			setSubmitting(true)
+			setMessage('Sending...')
+			setMessageTone('default')
+			try {
+				await submitSuggestion({
+					suggestion: normalizedSuggestion,
+					email: normalizedEmail || undefined,
+					newsletter,
+					source,
+					metadata: {
+						app: 'biovault-app',
+						buildId: APP_BUILD_ID,
+						entryPoint: source === 'biovault-app-web-lab-report' ? 'report-close-or-next-load' : 'lab-sidebar',
+						path: typeof window === 'undefined' ? '/lab' : window.location.pathname,
+						platform: 'web',
+						screen: 'lab',
+					},
+				})
+				getAnalytics()?.trackEvent('suggestion_submitted', {
+					hasEmail: Boolean(normalizedEmail),
+					newsletter,
+					screen: 'lab',
+					source,
+					suggestionLength: normalizedSuggestion.length,
+				})
+				getAnalytics()?.trackEvent('lab_suggestion_submitted', {
+					hasEmail: Boolean(normalizedEmail),
+					newsletter,
+					source,
+					suggestionLength: normalizedSuggestion.length,
+				})
+				if (newsletter) {
+					getAnalytics()?.trackEvent('newsletter_signup_submitted', {
+						entryPoint: source === 'biovault-app-web-lab-report' ? 'report-suggestion-modal' : 'sidebar-suggestion-modal',
+						screen: 'lab',
+						source,
+					})
+				}
+				setSuggestion('')
+				setEmail('')
+				setNewsletter(false)
+				setMessage('Sent. Thank you.')
+				setMessageTone('success')
+				clearSuccessCloseTimer()
+				successCloseTimerRef.current = setTimeout(() => {
+					successCloseTimerRef.current = null
+					onClose()
+				}, NEWSLETTER_SUCCESS_CLOSE_DELAY_MS)
+			} catch (error) {
+				setMessage(error instanceof Error ? error.message : 'Unable to send this right now.')
+				setMessageTone('error')
+			} finally {
+				setSubmitting(false)
+			}
+		}
+
+		if (!open) return null
+
+		return (
+			<LabModalChrome
+				accessibilityLabel="Feature suggestion dialog"
+				onBackdropDismiss={close}
+				panelStyle={styles.newsletterModalPanel}
+			>
+				<View style={styles.newsletterModalChrome}>
+					<View style={styles.intentHeader}>
+						<View style={styles.suggestionModalIcon}>
+							<OMIcon name="pencil" color="#53bea9" size={20} />
+						</View>
+						<View style={styles.intentText}>
+							<OMText variant="caption" style={styles.suggestionModalKicker}>
+								SUGGESTION
+							</OMText>
+							<OMText variant="headline" style={styles.intentTitle}>
+								Suggest a Feature
+							</OMText>
+							<OMText variant="caption" style={styles.intentUrl}>
+								Tell me what you wish this did and ill build it, nothing is too crazy.
+							</OMText>
+						</View>
+						<Pressable
+							onPress={close}
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+								styles.intentClose,
+								hovered && styles.buttonHover,
+								pressed && styles.buttonPressed,
+							]}
+						>
+							<OMIcon name="close-outline" tone={mutedIconTone} size={16} />
+						</Pressable>
+					</View>
+					<View style={styles.newsletterModalForm}>
+						<TextInput
+							value={suggestion}
+							onChangeText={setSuggestion}
+							placeholder="What should BioVault do next?"
+							placeholderTextColor={palette.textFaint}
+							multiline
+							numberOfLines={5}
+							textAlignVertical="top"
+							style={[styles.newsletterModalInput, styles.suggestionModalTextarea]}
+						/>
+						<TextInput
+							value={email}
+							onChangeText={setEmail}
+							placeholder="Email optional"
+							placeholderTextColor={palette.textFaint}
+							keyboardType="email-address"
+							autoCapitalize="none"
+							autoCorrect={false}
+							textContentType="emailAddress"
+							inputMode="email"
+							style={styles.newsletterModalInput}
+						/>
+						<Pressable
+							accessibilityRole="checkbox"
+							accessibilityState={{ checked: newsletter }}
+							onPress={() => setNewsletter((value) => !value)}
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+								styles.suggestionNewsletterRow,
+								hovered && styles.buttonHover,
+								pressed && styles.buttonPressed,
+							]}
+						>
+							<View style={[styles.suggestionCheckbox, newsletter ? styles.suggestionCheckboxChecked : null]}>
+								{newsletter ? <OMIcon name="checkmark" color="#07100b" size={13} /> : null}
+							</View>
+							<OMText variant="caption" style={styles.suggestionNewsletterText}>
+								Also subscribe me to the newsletter
+							</OMText>
+						</Pressable>
+						<Pressable
+							disabled={submitting}
+							onPress={() => void submit()}
+							style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+								styles.newsletterModalButton,
+								submitting ? styles.newsletterModalButtonDisabled : null,
+								hovered && !submitting ? styles.buttonHover : null,
+								pressed && !submitting ? styles.buttonPressed : null,
+							]}
+						>
+							{submitting ? <ActivityIndicator size="small" color="#07100b" /> : null}
+							<OMText variant="subtitle" style={styles.newsletterModalButtonText}>
+								{submitting ? 'Sending...' : 'Send suggestion'}
+							</OMText>
+						</Pressable>
+					</View>
+					{message ? (
+						<OMText
+							variant="caption"
+							style={[
+								styles.newsletterModalMessage,
+								messageTone === 'error' ? styles.newsletterModalMessageError : null,
+								messageTone === 'success' ? styles.newsletterModalMessageSuccess : null,
+							]}
+						>
+							{message}
+						</OMText>
+					) : null}
+				</View>
+			</LabModalChrome>
+		)
+	}
+
+	function LabExplorerSidebar({
 	activeGenome,
 	cachedRemoteFiles,
 	cachedRemotePackageArtifactUrls,
 	dragActive,
 	gettingStartedActive,
-	onChooseGenomeFiles,
-	onOpenGettingStarted,
-	onRemoveCachedRemote,
+		onChooseGenomeFiles,
+		onOpenGettingStarted,
+		onOpenNewsletter,
+		onOpenSuggestion,
+		onRemoveCachedRemote,
 	onRemoveSavedHandle,
 	onRemoveSessionGenome,
 	onRequestClose,
@@ -4139,9 +4584,11 @@ function LabExplorerSidebar({
 	cachedRemotePackageArtifactUrls: Set<string>
 	dragActive: boolean
 	gettingStartedActive: boolean
-	onChooseGenomeFiles: () => void
-	onOpenGettingStarted: () => void
-	savedHandlesError: string | null
+		onChooseGenomeFiles: () => void
+		onOpenGettingStarted: () => void
+		onOpenNewsletter: () => void
+		onOpenSuggestion: () => void
+		savedHandlesError: string | null
 	savedHandlesLoading: boolean
 	savedHandleGroups: SavedHandleGroup[]
 	onRemoveCachedRemote: (remoteFile: RemoteLabFile) => void
@@ -4407,18 +4854,37 @@ function LabExplorerSidebar({
 						openDataHowTo('sidebar')
 						onRequestClose?.()
 					}}
-				/>
-				<SidebarUtilityButton
-					icon="logo-github"
-					label="GitHub"
-					onPress={() => {
-						openGithub()
-						onRequestClose?.()
-					}}
-				/>
-				<SidebarUtilityButton
-					icon="mail-outline"
-					label="Contact"
+					/>
+					<SidebarUtilityButton
+						icon="logo-github"
+						label="GitHub"
+						onPress={() => {
+							openGithub()
+							onRequestClose?.()
+						}}
+					/>
+					<SidebarUtilityButton
+						featured
+						icon="mail-outline"
+						label="Subscribe"
+						onPress={() => {
+							getAnalytics()?.trackEvent('lab_newsletter_subscribe_clicked', { source: 'sidebar' })
+							onOpenNewsletter()
+							onRequestClose?.()
+						}}
+					/>
+					<SidebarUtilityButton
+						icon="pencil"
+						label="Suggest a Feature"
+						onPress={() => {
+							getAnalytics()?.trackEvent('lab_suggestion_clicked', { source: 'sidebar' })
+							onOpenSuggestion()
+							onRequestClose?.()
+						}}
+					/>
+					<SidebarUtilityButton
+						icon="mail-outline"
+						label="Contact"
 					onPress={() => {
 						openContactEmail('header')
 						onRequestClose?.()
@@ -4469,16 +4935,18 @@ function ImportGenomeButton({ dragActive, onPress }: { dragActive: boolean; onPr
 
 function SidebarUtilityButton({
 	active = false,
+	featured = false,
 	icon,
 	label,
 	onPress,
 }: {
 	active?: boolean
+	featured?: boolean
 	icon: ComponentProps<typeof OMIcon>['name']
 	label: string
 	onPress: () => void
 }) {
-	const { styles, mutedIconTone } = useTheme()
+	const { styles, mutedIconTone, palette } = useTheme()
 	return (
 		<Pressable
 			accessibilityRole="button"
@@ -4487,14 +4955,24 @@ function SidebarUtilityButton({
 			style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
 				styles.sidebarUtilityButton,
 				active ? styles.sidebarUtilityButtonActive : null,
+				featured ? styles.sidebarUtilityButtonFeatured : null,
 				hovered && styles.buttonHover,
 				pressed && styles.buttonPressed,
 			]}
 		>
-			<OMIcon name={icon} tone={active ? 'accent' : mutedIconTone} size={18} />
+			<OMIcon
+				name={icon}
+				tone={active ? 'accent' : mutedIconTone}
+				color={featured ? palette.warningText : undefined}
+				size={18}
+			/>
 			<OMText
 				variant="subtitle"
-				style={[styles.sidebarUtilityButtonText, active ? styles.sidebarUtilityButtonTextActive : null]}
+				style={[
+					styles.sidebarUtilityButtonText,
+					active ? styles.sidebarUtilityButtonTextActive : null,
+					featured ? styles.sidebarUtilityButtonTextFeatured : null,
+				]}
 			>
 				{label}
 			</OMText>
@@ -5094,7 +5572,17 @@ function AssayPicker({
 
 // === Run card ==============================================================
 
-function RunCard({ onViewSource, record }: { onViewSource: () => void; record: RunRecord }) {
+function RunCard({
+	onReportClosedForSuggestion,
+	onReportOpenedForSuggestion,
+	onViewSource,
+	record,
+}: {
+	onReportClosedForSuggestion: () => void
+	onReportOpenedForSuggestion: () => void
+	onViewSource: () => void
+	record: RunRecord
+}) {
 	const { palette, styles } = useTheme()
 	const { width } = useWindowDimensions()
 	const { trackEvent } = useAnalytics({ includeRouteParams: false, trackAppState: false, trackScreenView: false })
@@ -5120,9 +5608,14 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 				report_id: htmlReportAnalyticsId(record.id, result),
 				resultStatus: result.status,
 			})
+			onReportOpenedForSuggestion()
 		}
 		setResultOpen(true)
-	}, [artifactCount, assay, record.id, record.inputAnalyticsContext, result, trackEvent])
+	}, [artifactCount, assay, onReportOpenedForSuggestion, record.id, record.inputAnalyticsContext, result, trackEvent])
+	const closeResult = useCallback(() => {
+		setResultOpen(false)
+		onReportClosedForSuggestion()
+	}, [onReportClosedForSuggestion])
 	const resultButton = result.status === 'done' && artifactCount > 0 ? (
 		<Pressable
 			accessibilityRole="button"
@@ -5239,7 +5732,7 @@ function RunCard({ onViewSource, record }: { onViewSource: () => void; record: R
 			) : null}
 
 			{resultOpen ? (
-				<ResultViewer record={record} onClose={() => setResultOpen(false)} />
+				<ResultViewer record={record} onClose={closeResult} />
 			) : null}
 		</View>
 	)
@@ -6521,12 +7014,11 @@ function openContactEmail(source: 'header' | 'footer') {
 
 const GITHUB_URL = 'https://github.com/openmined/biovault-app'
 const DATA_HOW_TO_PATH = '/data-how-to/'
-
-function openGithub() {
-	getAnalytics()?.trackEvent('lab_github_clicked', { url: GITHUB_URL })
-	if (typeof window === 'undefined') return
-	window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
-}
+	function openGithub() {
+		getAnalytics()?.trackEvent('lab_github_clicked', { url: GITHUB_URL })
+		if (typeof window === 'undefined') return
+		window.open(GITHUB_URL, '_blank', 'noopener,noreferrer')
+	}
 
 function openDataHowTo(source: 'getting_started' | 'import_genome' | 'sidebar') {
 	const url =
@@ -7427,9 +7919,9 @@ function makeStyles(p: LabPalette) {
 			lineHeight: 22,
 			fontSize: 15,
 		},
-		modalCloseButton: {
-			...buttonMotion,
-			width: 40,
+			modalCloseButton: {
+				...buttonMotion,
+				width: 40,
 			height: 40,
 			borderRadius: omRadius.full,
 			alignItems: 'center',
@@ -7438,11 +7930,131 @@ function makeStyles(p: LabPalette) {
 			borderWidth: StyleSheet.hairlineWidth,
 			borderColor: p.border,
 			cursor: 'pointer',
-			flexShrink: 0,
-		} as object,
+				flexShrink: 0,
+			} as object,
+			newsletterModalPanel: {
+				width: 'min(520px, calc(100vw - 32px))' as any,
+				borderColor: p.warningBorder,
+				backgroundColor: p.surfaceSolid,
+			},
+			newsletterModalChrome: {
+				padding: omSpacing.xl,
+				gap: omSpacing.l,
+			},
+			newsletterModalIcon: {
+				width: 42,
+				height: 42,
+				borderRadius: omRadius.full,
+				alignItems: 'center',
+				justifyContent: 'center',
+				backgroundColor: p.warningBg,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.warningBorder,
+				flexShrink: 0,
+			},
+			newsletterModalKicker: {
+				color: p.warningText,
+				fontSize: 11,
+				fontWeight: '700',
+				letterSpacing: 0.8,
+			},
+			newsletterModalForm: {
+				gap: omSpacing.m,
+			},
+			newsletterModalInput: {
+				minHeight: 52,
+				paddingHorizontal: omSpacing.l,
+				paddingVertical: omSpacing.m,
+				borderRadius: omRadius.m,
+				backgroundColor: p.surfaceRaised,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.borderStrong,
+				color: p.text,
+				fontSize: 16,
+				lineHeight: 22,
+				outlineStyle: 'none',
+			} as object,
+			newsletterModalButton: {
+				...buttonMotion,
+				minHeight: 52,
+				flexDirection: 'row',
+				alignItems: 'center',
+				justifyContent: 'center',
+				gap: omSpacing.s,
+				paddingHorizontal: omSpacing.xl,
+				borderRadius: omRadius.m,
+				backgroundColor: p.warningText,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.warningBorder,
+				cursor: 'pointer',
+			} as object,
+			newsletterModalButtonDisabled: {
+				opacity: 0.62,
+				cursor: 'not-allowed',
+			} as object,
+			newsletterModalButtonText: {
+				color: '#07100b',
+				fontWeight: '800',
+			},
+			newsletterModalMessage: {
+				color: p.textMuted,
+			},
+			newsletterModalMessageError: {
+				color: p.dangerText,
+			},
+			newsletterModalMessageSuccess: {
+				color: p.accentStrong,
+			},
+			suggestionModalIcon: {
+				width: 42,
+				height: 42,
+				borderRadius: omRadius.full,
+				alignItems: 'center',
+				justifyContent: 'center',
+				backgroundColor: p.accentSoft,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.accentBorder,
+				flexShrink: 0,
+			},
+			suggestionModalKicker: {
+				color: p.accentStrong,
+				fontSize: 11,
+				fontWeight: '700',
+				letterSpacing: 0.8,
+			},
+			suggestionModalTextarea: {
+				minHeight: 132,
+			},
+			suggestionNewsletterRow: {
+				...buttonMotion,
+				flexDirection: 'row',
+				alignItems: 'center',
+				gap: omSpacing.s,
+				paddingVertical: omSpacing.xs,
+				cursor: 'pointer',
+			} as object,
+			suggestionCheckbox: {
+				width: 20,
+				height: 20,
+				borderRadius: omRadius.s,
+				alignItems: 'center',
+				justifyContent: 'center',
+				backgroundColor: p.surfaceRaised,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.borderStrong,
+			},
+			suggestionCheckboxChecked: {
+				backgroundColor: p.accentStrong,
+				borderColor: p.accentBorder,
+			},
+			suggestionNewsletterText: {
+				color: p.textMuted,
+				fontSize: 14,
+				lineHeight: 20,
+			},
 
-		columnKicker: {
-			color: p.text,
+			columnKicker: {
+				color: p.text,
 			fontSize: 12,
 			fontWeight: '600',
 			letterSpacing: 0.2,
@@ -7629,22 +8241,31 @@ function makeStyles(p: LabPalette) {
 			cursor: 'pointer',
 			userSelect: 'none',
 			WebkitTapHighlightColor: 'transparent',
-		} as object,
-		sidebarUtilityButtonActive: {
-			backgroundColor: p.accentTint,
-			borderWidth: StyleSheet.hairlineWidth,
-			borderColor: p.accentBorder,
-		},
-		sidebarUtilityButtonText: {
-			color: p.text,
-			fontSize: 15,
-			lineHeight: 20,
-			fontWeight: '600',
-		},
-		sidebarUtilityButtonTextActive: {
-			color: p.accentStrong,
-			fontWeight: '700',
-		},
+			} as object,
+			sidebarUtilityButtonActive: {
+				backgroundColor: p.accentTint,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.accentBorder,
+			},
+			sidebarUtilityButtonFeatured: {
+				backgroundColor: p.warningBg,
+				borderWidth: StyleSheet.hairlineWidth,
+				borderColor: p.warningBorder,
+			},
+			sidebarUtilityButtonText: {
+				color: p.text,
+				fontSize: 15,
+				lineHeight: 20,
+				fontWeight: '600',
+			},
+			sidebarUtilityButtonTextActive: {
+				color: p.accentStrong,
+				fontWeight: '700',
+			},
+			sidebarUtilityButtonTextFeatured: {
+				color: p.warningText,
+				fontWeight: '800',
+			},
 		labExplorerFooter: {
 			flexDirection: 'row',
 			alignItems: 'center',

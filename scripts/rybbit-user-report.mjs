@@ -11,6 +11,7 @@ const DEFAULT_DEV_DOMAIN = 'dev-app.biovault.net'
 const DEFAULT_PROD_DOMAIN = 'app.biovault.net'
 const DEFAULT_EVENT_LIMIT = 50000
 const DEFAULT_MINUTES = 60 * 24 * 30
+const DEFAULT_ROLLING_DAYS = 30
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000
 const BIOSCRIPT_NAME_CACHE = new Map()
 
@@ -29,6 +30,8 @@ const PRODUCT_EVENTS = new Set([
 	'lab_sample_genome_requested',
 	'lab_sample_genome_remote_requested',
 	'lab_remote_file_loaded',
+	'newsletter_signup_submitted',
+	'suggestion_submitted',
 ])
 
 loadDotEnv(path.resolve(process.cwd(), '.env'))
@@ -53,6 +56,8 @@ try {
 async function buildReport(options) {
 	const minutes = Number(options.minutes ?? DEFAULT_MINUTES)
 	const eventLimit = Number(options.eventLimit ?? DEFAULT_EVENT_LIMIT)
+	const rollingDays = Number(options.rollingDays ?? DEFAULT_ROLLING_DAYS)
+	const sinceDate = normalizeDateOption(options.sinceDate)
 	const cacheDir = path.resolve(process.cwd(), options.cacheDir ?? 'reports/rybbit-user-cache')
 	const generatedAt = new Date()
 	const sites = String(options.sites ?? 'dev,prod')
@@ -77,9 +82,9 @@ async function buildReport(options) {
 			fs.mkdirSync(cacheDir, { recursive: true })
 			fs.writeFileSync(cachePath, JSON.stringify(events, null, 2), 'utf8')
 		}
-		siteReports.push(analyzeSite(config, events, eventLimit, minutes))
+		siteReports.push(analyzeSite(config, events, eventLimit, minutes, rollingDays, sinceDate))
 	}
-	return { eventLimit, generatedAt, minutes, sites: siteReports }
+	return { eventLimit, generatedAt, minutes, rollingDays, sinceDate, sites: siteReports }
 }
 
 function loadInputEvents(inputPath) {
@@ -110,11 +115,12 @@ async function fetchEvents(config, timeParams, eventLimit) {
 	return events
 }
 
-function analyzeSite(config, rawEvents, eventLimit, minutes) {
+function analyzeSite(config, rawEvents, eventLimit, minutes, rollingDays, sinceDate) {
 	const cutoffMs = minutes ? Date.now() - Number(minutes) * 60_000 : 0
 	const events = rawEvents
 		.map(normalizeEvent)
 		.filter((event) => !cutoffMs || event.timeMs >= cutoffMs)
+		.filter((event) => !sinceDate || brisbaneDate(event.timeMs) >= sinceDate)
 		.filter((event) => event.name === 'pageview' || PRODUCT_EVENTS.has(event.name))
 		.sort((a, b) => a.timeMs - b.timeMs)
 	const users = new Map()
@@ -123,22 +129,27 @@ function analyzeSite(config, rawEvents, eventLimit, minutes) {
 		const user = getUser(users, stableUserId(event))
 		applyEvent(user, event, daily)
 	}
-	const userRows = [...users.values()]
+	const allUserRows = [...users.values()]
 		.sort((a, b) => {
 			const activityDelta = productActivityScore(b) - productActivityScore(a)
 			return activityDelta || b.lastSeenMs - a.lastSeenMs
 		})
-	const activeProductUsers = userRows.filter((user) => productActivityScore(user) > 0)
+	const userRows = allUserRows.filter((user) => productActivityScore(user) > 0)
+	const dailyRollupRows = dailyRows(daily, users)
 	return {
 		config,
+		calendarMonthRows: calendarMonthRows(dailyRollupRows),
 		countryFilters: countryFilters(userRows),
 		eventsFetched: rawEvents.length,
 		eventsUsed: events.length,
 		eventLimit,
-		dailyRows: dailyRows(daily, users),
-		summary: siteSummary(userRows),
+		monthlyRows: monthlyRows(daily),
+		dailyRows: dailyRollupRows,
+		rollingDays,
+		rollingWindow: rollingWindow(daily, rollingDays),
+		summary: buildSiteSummary(allUserRows),
 		totalUsers: users.size,
-		activeProductUsers: activeProductUsers.length,
+		activeProductUsers: userRows.length,
 		userRows,
 	}
 }
@@ -334,6 +345,16 @@ function applyEvent(user, event, daily) {
 	if (event.name === 'lab_report_opened' || event.name === 'lab_report_opened_new_window') {
 		user.reportOpens += 1
 		day.reportOpens += 1
+		return
+	}
+	if (event.name === 'newsletter_signup_submitted') {
+		user.newsletterSignups += 1
+		day.newsletterSignups += 1
+		return
+	}
+	if (event.name === 'suggestion_submitted') {
+		user.suggestions += 1
+		day.suggestions += 1
 		return
 	}
 }
@@ -745,6 +766,7 @@ function getUser(users, id) {
 			id,
 			identifiedUsers: new Set(),
 			lastSeenMs: 0,
+			newsletterSignups: 0,
 			pageviews: 0,
 			realFileAdds: 0,
 			realFileIdentities: new Map(),
@@ -763,6 +785,7 @@ function getUser(users, id) {
 			runsFailed: 0,
 			runsStarted: 0,
 			sessions: new Set(),
+			suggestions: 0,
 			usernames: new Set(),
 		})
 	}
@@ -778,6 +801,7 @@ function getDaily(daily, event) {
 			demoFiles: 0,
 			demoReports: 0,
 			demoRequests: 0,
+			newsletterSignups: 0,
 			pageviews: 0,
 			realUsers: new Set(),
 			realFiles: 0,
@@ -789,6 +813,7 @@ function getDaily(daily, event) {
 			runsFailed: 0,
 			runsStarted: 0,
 			sessions: new Set(),
+			suggestions: 0,
 			users: new Set(),
 		})
 	}
@@ -815,7 +840,7 @@ function dailyRows(daily, users) {
 		}))
 }
 
-function siteSummary(users) {
+function buildSiteSummary(users) {
 	const nonDemoFileCounts = new Map()
 	let completedPanels = 0
 	let completedRealPanels = 0
@@ -825,6 +850,8 @@ function siteSummary(users) {
 	let usersRanAnyPanel = 0
 	let usersRanNonDemo = 0
 	let uniqueVisitors = 0
+	let newsletterSignups = 0
+	let suggestions = 0
 	for (const user of users) {
 		const completedRuns = user.runs.filter((run) => run.status === 'completed')
 		const completedDemoRuns = completedRuns.filter((run) => run.inputKind === 'demo')
@@ -846,14 +873,18 @@ function siteSummary(users) {
 		} else if (user.realFileAdds > 0) {
 			increment(nonDemoFileCounts, 'unknown non-demo file', user.realFileAdds)
 		}
+		newsletterSignups += user.newsletterSignups
+		suggestions += user.suggestions
 	}
 	return {
 		averagePanelsPerRealUploadUser: average(realUploadCompletedRealPanels, realUploadUsers),
 		averagePanelsPerUserWhoRanAny: average(completedPanels, usersRanAnyPanel),
 		completedPanels,
 		completedRealPanels,
+		newsletterSignups,
 		nonDemoFileCounts,
 		realUploadUsers,
+		suggestions,
 		uniqueVisitors,
 		usersRanAnyDemo,
 		usersRanAnyPanel,
@@ -863,6 +894,178 @@ function siteSummary(users) {
 
 function average(numerator, denominator) {
 	return denominator > 0 ? numerator / denominator : 0
+}
+
+function calendarMonthRows(rows) {
+	const months = new Map()
+	for (const row of rows) {
+		if (!row.date || row.date === 'unknown') continue
+		const month = monthKey(row.date)
+		if (!months.has(month)) months.set(month, [])
+		months.get(month).push(row)
+	}
+	return [...months.entries()]
+		.sort((a, b) => a[0].localeCompare(b[0]))
+		.map(([month, monthRows]) => ({
+			month,
+			monthLabel: monthLabel(month),
+			rows: monthRows.sort((a, b) => a.date.localeCompare(b.date)),
+		}))
+}
+
+function rollingWindow(daily, rollingDays) {
+	const days = Number.isFinite(Number(rollingDays)) && Number(rollingDays) > 0 ? Math.floor(Number(rollingDays)) : DEFAULT_ROLLING_DAYS
+	const dateRows = [...daily.values()]
+		.filter((row) => row.date !== 'unknown')
+		.sort((a, b) => a.date.localeCompare(b.date))
+	if (!dateRows.length) return { endDate: '', rows: [], startDate: '', summary: zeroDailyCount('') }
+	const endDate = dateRows.at(-1).date
+	const dates = trailingDates(endDate, days)
+	const dailyByDate = new Map(dateRows.map((row) => [row.date, row]))
+	const summarySets = {
+		demoUsers: new Set(),
+		realUsers: new Set(),
+		sessions: new Set(),
+		users: new Set(),
+	}
+	const summary = zeroDailyCount(endDate)
+	const rows = dates.map((date) => {
+		const row = dailyByDate.get(date)
+		if (!row) return zeroDailyCount(date)
+		for (const user of row.users) summarySets.users.add(user)
+		for (const session of row.sessions) summarySets.sessions.add(session)
+		for (const user of row.demoUsers) summarySets.demoUsers.add(user)
+		for (const user of row.realUsers) summarySets.realUsers.add(user)
+		summary.pageviews += row.pageviews
+		summary.demoFiles += row.demoFiles
+		summary.realFiles += row.realFiles
+		summary.runsStarted += row.runsStarted
+		summary.runsCompleted += row.runsCompleted
+		summary.runsFailed += row.runsFailed
+		summary.demoReports += row.demoReports
+		summary.realReports += row.realReports
+		summary.reportOpens += row.reportOpens
+		summary.newsletterSignups += row.newsletterSignups
+		summary.suggestions += row.suggestions
+		return dailyCount(row)
+	})
+	summary.users = summarySets.users.size
+	summary.sessions = summarySets.sessions.size
+	summary.demoUsers = summarySets.demoUsers.size
+	summary.realUsers = summarySets.realUsers.size
+	return { endDate, rows, startDate: dates[0], summary }
+}
+
+function dailyCount(row) {
+	return {
+		date: row.date,
+		demoFiles: row.demoFiles,
+		demoReports: row.demoReports,
+		demoUsers: row.demoUsers.size,
+		pageviews: row.pageviews,
+		realFiles: row.realFiles,
+		realReports: row.realReports,
+		newsletterSignups: row.newsletterSignups,
+		realUsers: row.realUsers.size,
+		reportOpens: row.reportOpens,
+		runsCompleted: row.runsCompleted,
+		runsFailed: row.runsFailed,
+		runsStarted: row.runsStarted,
+		sessions: row.sessions.size,
+		suggestions: row.suggestions,
+		users: row.users.size,
+	}
+}
+
+function zeroDailyCount(date) {
+	return {
+		date,
+		demoFiles: 0,
+		demoReports: 0,
+		demoUsers: 0,
+		pageviews: 0,
+		realFiles: 0,
+		realReports: 0,
+		newsletterSignups: 0,
+		realUsers: 0,
+		reportOpens: 0,
+		runsCompleted: 0,
+		runsFailed: 0,
+		runsStarted: 0,
+		sessions: 0,
+		suggestions: 0,
+		users: 0,
+	}
+}
+
+function monthlyRows(daily) {
+	const dateRows = [...daily.values()]
+		.filter((row) => row.date !== 'unknown')
+		.sort((a, b) => a.date.localeCompare(b.date))
+	if (!dateRows.length) return []
+
+	const usersByDate = new Map(dateRows.map((row) => [row.date, row.users]))
+	const firstDate = dateRows[0].date
+	const lastDate = dateRows.at(-1).date
+	const rows = []
+	for (const month of calendarMonthsBetween(firstDate, lastDate)) {
+		const dates = datesInMonth(month)
+		const reportingDates = dates.filter((date) => date >= firstDate && date <= lastDate)
+		const monthUsers = new Set()
+		let totalDau = 0
+		let peakDau = 0
+		let totalWau = 0
+		let reportingTotalDau = 0
+		let reportingTotalWau = 0
+		let peakWau = 0
+		let activeDays = 0
+		for (const date of dates) {
+			const dayUsers = usersByDate.get(date) ?? new Set()
+			const dau = dayUsers.size
+			if (dau > 0) activeDays += 1
+			totalDau += dau
+			peakDau = Math.max(peakDau, dau)
+			for (const user of dayUsers) monthUsers.add(user)
+
+			const rollingUsers = new Set()
+			for (const rollingDate of trailingDates(date, 7)) {
+				for (const user of usersByDate.get(rollingDate) ?? []) rollingUsers.add(user)
+			}
+			const wau = rollingUsers.size
+			totalWau += wau
+			peakWau = Math.max(peakWau, wau)
+			if (reportingDates.includes(date)) {
+				reportingTotalDau += dau
+				reportingTotalWau += wau
+			}
+		}
+		const mau = monthUsers.size
+		const averageDau = totalDau / dates.length
+		const averageWau = totalWau / dates.length
+		const reportingAverageDau = reportingDates.length ? reportingTotalDau / reportingDates.length : 0
+		const reportingAverageWau = reportingDates.length ? reportingTotalWau / reportingDates.length : 0
+		rows.push({
+			activeDays,
+			averageDau,
+			averageWau,
+			calendarDays: dates.length,
+			dauMau: mau ? averageDau / mau : 0,
+			reportingAverageDau,
+			reportingAverageWau,
+			reportingDauMau: mau ? reportingAverageDau / mau : 0,
+			reportingDays: reportingDates.length,
+			reportingEndDate: reportingDates.at(-1) ?? '',
+			reportingStartDate: reportingDates[0] ?? '',
+			reportingWauMau: mau ? reportingAverageWau / mau : 0,
+			mau,
+			month,
+			monthLabel: monthLabel(month),
+			peakDau,
+			peakWau,
+			wauMau: mau ? averageWau / mau : 0,
+		})
+	}
+	return rows
 }
 
 function renderHtml(report) {
@@ -1031,7 +1234,7 @@ function switchSiteTab(siteId, tab) {
 <header>
 <div class="brandbar">
 <div class="brand"><span class="logo">BV</span><div><h1>BioVault Analytics</h1><div class="muted">Per-user Rybbit report</div></div></div>
-<div class="muted">Generated ${escapeHtml(dateTime(report.generatedAt))}. Window: previous ${formatNumber(report.minutes)} minutes. Raw event cap per site: ${formatNumber(report.eventLimit)}.</div>
+<div class="muted">Generated ${escapeHtml(dateTime(report.generatedAt))}. Window: previous ${formatNumber(report.minutes)} minutes${report.sinceDate ? `, shown from ${escapeHtml(report.sinceDate)}` : ''}. Rolling window: ${formatNumber(report.rollingDays)} days. Raw event cap per site: ${formatNumber(report.eventLimit)}.</div>
 </div>
 </header>
 <main>
@@ -1044,7 +1247,12 @@ ${report.sites.map(renderSite).join('\n')}
 function renderSite(site) {
 	return `<section class="site" data-site="${escapeHtml(site.config.siteId)}">
 <h2>${escapeHtml(site.config.label)} - ${escapeHtml(site.config.domain)} <span class="muted">(site ${escapeHtml(site.config.siteId)})</span></h2>
-<div class="grid">
+${siteTabs(site)}
+</section>`
+}
+
+function siteSummary(site) {
+	return `<div class="grid">
 <div class="metric"><span>Raw events fetched</span><strong>${formatNumber(site.eventsFetched)}</strong></div>
 <div class="metric"><span>Product events used</span><strong>${formatNumber(site.eventsUsed)}</strong></div>
 <div class="metric"><span>Unique users visited</span><strong>${formatNumber(site.summary.uniqueVisitors)}</strong></div>
@@ -1053,39 +1261,63 @@ function renderSite(site) {
 <div class="metric"><span>Users ran non-demo files</span><strong>${formatNumber(site.summary.usersRanNonDemo)}</strong></div>
 <div class="metric"><span>Avg panels per panel user</span><strong>${formatDecimal(site.summary.averagePanelsPerUserWhoRanAny)}</strong></div>
 <div class="metric"><span>Avg real-file panels per real uploader</span><strong>${formatDecimal(site.summary.averagePanelsPerRealUploadUser)}</strong></div>
+<div class="metric"><span>Newsletter signups</span><strong>${formatNumber(site.summary.newsletterSignups)}</strong></div>
+<div class="metric"><span>Suggestions submitted</span><strong>${formatNumber(site.summary.suggestions)}</strong></div>
 </div>
 <div class="sub">Users in fetched events: ${formatNumber(site.totalUsers)}. Completed panels: ${formatNumber(site.summary.completedPanels)} total, ${formatNumber(site.summary.completedRealPanels)} on non-demo inputs.</div>
 ${site.eventsFetched >= site.eventLimit ? `<p class="muted">This site reached the raw-event cap of ${formatNumber(site.eventLimit)}. Increase <code>--event-limit</code> for a complete older-history user rollup.</p>` : ''}
-<<<<<<< HEAD
 <h3>Non-Demo File Types Used</h3>
 ${nonDemoFileCounts(site.summary.nonDemoFileCounts)}
-<h3>User Rows</h3>
-${countryFilterControls(site)}
-${activityFilterControls(site)}
-${userTable(site.userRows)}
-<h3>Daily Product Rollup</h3>
-${dailyTable(site.dailyRows)}
-=======
-${dailyChart(site.dailyRows)}
-${siteTabs(site)}
->>>>>>> origin/main
-</section>`
+${monthlyEngagementCards(site.monthlyRows)}
+${monthlyEngagementChart(site.monthlyRows)}
+${dailyChart(site.dailyRows)}`
 }
 
 function siteTabs(site) {
 	const tabs = [
 		['overview', 'Overview'],
 		['users', 'Users'],
+		...site.calendarMonthRows.map((row) => [`month-${row.month}`, row.monthLabel]),
+		['rolling', `Rolling ${site.rollingDays}d`],
+		['monthly', 'Monthly Summary'],
 		['daily', 'Daily'],
 		['breakdowns', 'Breakdowns'],
 	]
 	return `<div class="tabbar" role="tablist" aria-label="${escapeHtml(site.config.label)} report tabs">${tabs
 		.map(([id, label], index) => `<button class="tab-button" type="button" role="tab" data-tab-button="${id}" aria-selected="${index === 0 ? 'true' : 'false'}" onclick="switchSiteTab('${escapeHtml(site.config.siteId)}', '${id}')">${escapeHtml(label)}</button>`)
 		.join('')}</div>
-<div class="tab-panel" data-tab-panel="overview">${productQuestions(site)}</div>
-<div class="tab-panel" data-tab-panel="users" hidden><h3>User Rows</h3>${countryFilterControls(site)}${userTable(site.userRows)}</div>
+<div class="tab-panel" data-tab-panel="overview">${siteSummary(site)}${productQuestions(site)}</div>
+<div class="tab-panel" data-tab-panel="users" hidden><h3>User Rows</h3>${countryFilterControls(site)}${activityFilterControls(site)}${userTable(site.userRows)}</div>
+${site.calendarMonthRows.map((month) => `<div class="tab-panel" data-tab-panel="month-${escapeHtml(month.month)}" hidden>${calendarMonthPanel(site, month)}</div>`).join('\n')}
+<div class="tab-panel" data-tab-panel="rolling" hidden>${rollingPanel(site)}</div>
+<div class="tab-panel" data-tab-panel="monthly" hidden><h3>Monthly Active Users</h3>${monthlyEngagementTable(site.monthlyRows)}</div>
 <div class="tab-panel" data-tab-panel="daily" hidden><h3>Daily Product Rollup</h3>${dailyTable(site.dailyRows)}</div>
 <div class="tab-panel" data-tab-panel="breakdowns" hidden>${breakdownTables(site)}</div>`
+}
+
+function calendarMonthPanel(site, month) {
+	const summary = site.monthlyRows.find((row) => row.month === month.month)
+	return `<h3>${escapeHtml(month.monthLabel)} Calendar Stats</h3>
+${summary ? calendarMonthCards(summary) : ''}
+${dailyChart(month.rows)}
+${dailyTable(month.rows)}
+${summary ? `<p class="muted">Calendar averages divide by every day in ${escapeHtml(month.monthLabel)}. Data-window averages divide only by fetched dates in that month, which matters for partial months such as the current month.</p>` : ''}`
+}
+
+function calendarMonthCards(row) {
+	return `<div class="grid" style="margin-top:12px">
+<div class="metric"><span>Calendar avg DAU</span><strong>${formatAverage(row.averageDau)}</strong><div class="sub">Data-window avg ${formatAverage(row.reportingAverageDau)}; peak ${formatNumber(row.peakDau)}</div></div>
+<div class="metric"><span>Calendar avg rolling WAU</span><strong>${formatAverage(row.averageWau)}</strong><div class="sub">Data-window avg ${formatAverage(row.reportingAverageWau)}; peak ${formatNumber(row.peakWau)}</div></div>
+<div class="metric"><span>MAU</span><strong>${formatNumber(row.mau)}</strong><div class="sub">${escapeHtml(dataWindowLabel(row))}</div></div>
+<div class="metric"><span>Calendar DAU/MAU</span><strong>${formatPercent(row.dauMau)}</strong><div class="sub">WAU/MAU ${formatPercent(row.wauMau)}</div></div>
+</div>`
+}
+
+function rollingPanel(site) {
+	return `<h3>Latest ${formatNumber(site.rollingDays)} Day Window</h3>
+${rollingEngagementCards(site.rollingWindow, site.rollingDays)}
+${rollingChart(site.rollingWindow.rows, site.rollingDays)}
+${rollingTable(site.rollingWindow.rows, site.rollingDays)}`
 }
 
 function productQuestions(site) {
@@ -1150,6 +1382,94 @@ function nonDemoFileCounts(counts) {
 function userTable(users) {
 	if (!users.length) return '<p class="muted">No product activity events in fetched raw events.</p>'
 	return `<table><thead><tr><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'user', 'text')">User</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'countryText', 'text')">Country</button></th><th>Environment</th><th>Seen</th><th><button type="button" aria-sort="descending" onclick="sortUserTable(this, 'lastSeen', 'time')">Last seen</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'sessions', 'number')">Sessions</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'demoFiles', 'number')">Demo files</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'demoReports', 'number')">Demo reports</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'realFiles', 'number')">Real files</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'realReports', 'number')">Real reports</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'runs', 'number')">Runs</button></th><th><button type="button" aria-sort="none" onclick="sortUserTable(this, 'reportOpens', 'number')">Reports opened</button></th><th>Recent report journeys</th></tr></thead><tbody>${users.map(userRow).join('')}</tbody></table>`
+}
+
+function monthlyEngagementCards(rows) {
+	const latest = rows.at(-1)
+	if (!latest) return ''
+	return `<div class="grid" style="margin-top:12px">
+<div class="metric"><span>${escapeHtml(latest.monthLabel)} average DAU</span><strong>${formatAverage(latest.averageDau)}</strong><div class="sub">Data-window DAU ${formatAverage(latest.reportingAverageDau)}; peak ${formatNumber(latest.peakDau)}</div></div>
+<div class="metric"><span>${escapeHtml(latest.monthLabel)} average WAU</span><strong>${formatAverage(latest.averageWau)}</strong><div class="sub">Data-window WAU ${formatAverage(latest.reportingAverageWau)}; peak ${formatNumber(latest.peakWau)}</div></div>
+<div class="metric"><span>${escapeHtml(latest.monthLabel)} MAU</span><strong>${formatNumber(latest.mau)}</strong><div class="sub">Calendar-month unique active users</div></div>
+<div class="metric"><span>Engagement ratios</span><strong>${formatPercent(latest.dauMau)}</strong><div class="sub">Calendar WAU/MAU ${formatPercent(latest.wauMau)}; data-window DAU/MAU ${formatPercent(latest.reportingDauMau)}, WAU/MAU ${formatPercent(latest.reportingWauMau)}</div></div>
+</div>`
+}
+
+function monthlyEngagementTable(rows) {
+	if (!rows.length) return '<p class="muted">No monthly product activity.</p>'
+	return `<table><thead><tr><th>Calendar month</th><th>Calendar avg DAU</th><th>Data-window avg DAU</th><th>Peak DAU</th><th>Calendar avg rolling WAU</th><th>Data-window avg rolling WAU</th><th>Peak rolling WAU</th><th>MAU</th><th>Calendar DAU/MAU</th><th>Data-window DAU/MAU</th><th>Calendar WAU/MAU</th><th>Data-window WAU/MAU</th><th>Data window</th><th>Active days</th></tr></thead><tbody>${rows
+		.map((row) => `<tr><td>${escapeHtml(row.monthLabel)}</td><td>${formatAverage(row.averageDau)}</td><td>${formatAverage(row.reportingAverageDau)}</td><td>${formatNumber(row.peakDau)}</td><td>${formatAverage(row.averageWau)}</td><td>${formatAverage(row.reportingAverageWau)}</td><td>${formatNumber(row.peakWau)}</td><td>${formatNumber(row.mau)}</td><td>${formatPercent(row.dauMau)}</td><td>${formatPercent(row.reportingDauMau)}</td><td>${formatPercent(row.wauMau)}</td><td>${formatPercent(row.reportingWauMau)}</td><td>${escapeHtml(dataWindowLabel(row))}</td><td>${formatNumber(row.activeDays)} / ${formatNumber(row.calendarDays)}</td></tr>`)
+		.join('')}</tbody></table><p class="muted">Calendar averages divide by every day in the calendar month. Data-window averages divide only by the dates from the first available data day through the last available data day in that month. Average WAU uses each included day's trailing 7-day unique active users. MAU is unique active users in the calendar month. Peak values are explicitly labeled.</p>`
+}
+
+function rollingEngagementCards(window, rollingDays) {
+	const summary = window.summary
+	if (!window.rows.length) return '<p class="muted">No rolling product activity.</p>'
+	return `<div class="grid" style="margin-top:12px">
+<div class="metric"><span>Window users</span><strong>${formatNumber(summary.users)}</strong><div class="sub">${escapeHtml(window.startDate)} to ${escapeHtml(window.endDate)} (${formatNumber(rollingDays)} days)</div></div>
+<div class="metric"><span>Window sessions</span><strong>${formatNumber(summary.sessions)}</strong><div class="sub">${formatNumber(summary.pageviews)} pageviews</div></div>
+<div class="metric"><span>Window runs</span><strong>${formatNumber(summary.runsStarted)}</strong><div class="sub">${formatNumber(summary.runsCompleted)} completed, ${formatNumber(summary.runsFailed)} failed</div></div>
+<div class="metric"><span>Window reports</span><strong>${formatNumber(summary.demoReports + summary.realReports)}</strong><div class="sub">${formatNumber(summary.demoReports)} demo, ${formatNumber(summary.realReports)} real, ${formatNumber(summary.reportOpens)} opens</div></div>
+</div>`
+}
+
+function rollingTable(rows, rollingDays) {
+	if (!rows.length) return '<p class="muted">No rolling product activity.</p>'
+	return `<table><thead><tr><th>Date</th><th>Users</th><th>Demo users</th><th>Real users</th><th>Sessions</th><th>Pageviews</th><th>Demo files</th><th>Real files</th><th>Runs</th><th>Completed</th><th>Failed</th><th>Demo reports</th><th>Real reports</th><th>Report opens</th></tr></thead><tbody>${rows
+		.map((row) => `<tr><td>${escapeHtml(row.date)}</td><td>${formatNumber(row.users)}</td><td>${formatNumber(row.demoUsers)}</td><td>${formatNumber(row.realUsers)}</td><td>${formatNumber(row.sessions)}</td><td>${formatNumber(row.pageviews)}</td><td>${formatNumber(row.demoFiles)}</td><td>${formatNumber(row.realFiles)}</td><td>${formatNumber(row.runsStarted)}</td><td>${formatNumber(row.runsCompleted)}</td><td>${formatNumber(row.runsFailed)}</td><td>${formatNumber(row.demoReports)}</td><td>${formatNumber(row.realReports)}</td><td>${formatNumber(row.reportOpens)}</td></tr>`)
+		.join('')}</tbody></table><p class="muted">This table shows daily activity inside the latest ${formatNumber(rollingDays)} day window. The cards above aggregate the full window; they are not cumulative across earlier report history.</p>`
+}
+
+function rollingChart(rows, rollingDays) {
+	if (!rows.length) return ''
+	const series = [
+		['users', 'Daily users', '#2f7d57'],
+		['sessions', 'Daily sessions', '#5b6bb2'],
+		['runsStarted', 'Daily runs', '#b06b2c'],
+		['realReports', 'Daily real reports', '#b23f55'],
+		['demoReports', 'Daily demo reports', '#0f766e'],
+	]
+	const width = 900
+	const height = 240
+	const pad = { bottom: 38, left: 46, right: 16, top: 18 }
+	const maxValue = Math.max(1, ...rows.flatMap((row) => series.map(([key]) => Number(row[key]) || 0)))
+	const x = (index) => rows.length === 1 ? pad.left : pad.left + (index * (width - pad.left - pad.right)) / (rows.length - 1)
+	const y = (value) => height - pad.bottom - ((Number(value) || 0) * (height - pad.top - pad.bottom)) / maxValue
+	const gridLines = [0, Math.ceil(maxValue / 2), maxValue]
+	return `<section class="chart"><h3>Daily Trend Inside Latest ${formatNumber(rollingDays)} Days</h3><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily users, sessions, runs, and reports inside latest ${formatNumber(rollingDays)} days">
+${gridLines.map((value) => `<line x1="${pad.left}" y1="${y(value).toFixed(1)}" x2="${width - pad.right}" y2="${y(value).toFixed(1)}" stroke="#d9ded7"/><text x="4" y="${(y(value) + 4).toFixed(1)}" fill="#66706a" font-size="11">${formatNumber(value)}</text>`).join('')}
+${rows.map((row, index) => index % Math.ceil(rows.length / 8 || 1) === 0 ? `<text x="${x(index).toFixed(1)}" y="${height - 12}" fill="#66706a" font-size="10" text-anchor="middle">${escapeHtml(shortDateLabel(row.date))}</text>` : '').join('')}
+${series.map(([key, label, color]) => `<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${rows.map((row, index) => `${x(index).toFixed(1)},${y(row[key]).toFixed(1)}`).join(' ')}"><title>${escapeHtml(label)}</title></polyline>`).join('')}
+</svg><div class="legend">${series.map(([, label, color]) => `<span class="legend-item"><span class="swatch" style="background:${color}"></span>${escapeHtml(label)}</span>`).join('')}</div></section>`
+}
+
+function dataWindowLabel(row) {
+	if (!row.reportingStartDate || !row.reportingEndDate) return 'No data'
+	const range = row.reportingStartDate === row.reportingEndDate ? row.reportingStartDate : `${row.reportingStartDate} to ${row.reportingEndDate}`
+	return `${range} (${formatNumber(row.reportingDays)} days)`
+}
+
+function monthlyEngagementChart(rows) {
+	if (!rows.length) return ''
+	const series = [
+		['averageDau', 'Average DAU', '#2f7d57'],
+		['averageWau', 'Average rolling WAU', '#5b6bb2'],
+		['mau', 'MAU', '#b06b2c'],
+		['peakDau', 'Peak DAU', '#b23f55'],
+		['peakWau', 'Peak rolling WAU', '#0f766e'],
+	]
+	const width = 900
+	const height = 240
+	const pad = { bottom: 42, left: 46, right: 16, top: 18 }
+	const maxValue = Math.max(1, ...rows.flatMap((row) => series.map(([key]) => Number(row[key]) || 0)))
+	const x = (index) => rows.length === 1 ? pad.left : pad.left + (index * (width - pad.left - pad.right)) / (rows.length - 1)
+	const y = (value) => height - pad.bottom - ((Number(value) || 0) * (height - pad.top - pad.bottom)) / maxValue
+	const gridLines = [0, Math.ceil(maxValue / 2), maxValue]
+	return `<section class="chart"><h3>Monthly Engagement</h3><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Monthly average DAU, average rolling WAU, MAU, peak DAU, and peak rolling WAU">
+${gridLines.map((value) => `<line x1="${pad.left}" y1="${y(value).toFixed(1)}" x2="${width - pad.right}" y2="${y(value).toFixed(1)}" stroke="#d9ded7"/><text x="4" y="${(y(value) + 4).toFixed(1)}" fill="#66706a" font-size="11">${formatNumber(value)}</text>`).join('')}
+${rows.map((row, index) => `<text x="${x(index).toFixed(1)}" y="${height - 12}" fill="#66706a" font-size="10" text-anchor="middle">${escapeHtml(shortMonthLabel(row.month))}</text>`).join('')}
+${series.map(([key, label, color]) => `<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${rows.map((row, index) => `${x(index).toFixed(1)},${y(row[key]).toFixed(1)}`).join(' ')}"><title>${escapeHtml(label)}</title></polyline>`).join('')}
+</svg><div class="legend">${series.map(([, label, color]) => `<span class="legend-item"><span class="swatch" style="background:${color}"></span>${escapeHtml(label)}</span>`).join('')}</div></section>`
 }
 
 function dailyTable(rows) {
@@ -1357,7 +1677,7 @@ function journeyList(reports) {
 }
 
 function productActivityScore(user) {
-	return user.filesAdded + user.demoLoads + user.heuristics + user.runsStarted + user.reportsGenerated + user.reportOpens
+	return user.filesAdded + user.demoLoads + user.heuristics + user.runsStarted + user.reportsGenerated + user.reportOpens + user.newsletterSignups + user.suggestions
 }
 
 function countryFilters(users) {
@@ -1728,6 +2048,64 @@ function brisbaneDate(timeMs) {
 	}).format(new Date(timeMs))
 }
 
+function calendarMonthsBetween(firstDate, lastDate) {
+	const months = []
+	let current = monthKey(firstDate)
+	const last = monthKey(lastDate)
+	while (current <= last) {
+		months.push(current)
+		current = addMonths(current, 1)
+	}
+	return months
+}
+
+function datesInMonth(month) {
+	const [year, monthNumber] = month.split('-').map(Number)
+	const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
+	return Array.from({ length: days }, (_, index) => dateString(year, monthNumber, index + 1))
+}
+
+function trailingDates(date, count) {
+	const dates = []
+	const base = parseDateParts(date)
+	const time = Date.UTC(base.year, base.month - 1, base.day)
+	for (let offset = count - 1; offset >= 0; offset -= 1) {
+		dates.push(dateFromUtcMs(time - offset * 86_400_000))
+	}
+	return dates
+}
+
+function monthKey(date) {
+	return String(date).slice(0, 7)
+}
+
+function addMonths(month, amount) {
+	const [year, monthNumber] = month.split('-').map(Number)
+	const date = new Date(Date.UTC(year, monthNumber - 1 + amount, 1))
+	return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function parseDateParts(date) {
+	const [year, month, day] = String(date).split('-').map(Number)
+	return { day, month, year }
+}
+
+function dateString(year, month, day) {
+	return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function dateFromUtcMs(timeMs) {
+	const date = new Date(timeMs)
+	return dateString(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
+}
+
+function normalizeDateOption(value) {
+	if (value === undefined || value === null || value === '' || value === false) return ''
+	const date = String(value).trim()
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`--since-date must be YYYY-MM-DD, got: ${date}`)
+	return date
+}
+
 function shortDateTime(timeMs) {
 	if (!timeMs) return ''
 	return new Intl.DateTimeFormat('en-AU', {
@@ -1753,6 +2131,24 @@ function shortDateLabel(value) {
 	return `${parts[2]}/${parts[1]}`
 }
 
+function monthLabel(value) {
+	const [year, month] = String(value).split('-').map(Number)
+	return new Intl.DateTimeFormat('en-AU', {
+		month: 'long',
+		timeZone: 'UTC',
+		year: 'numeric',
+	}).format(new Date(Date.UTC(year, month - 1, 1)))
+}
+
+function shortMonthLabel(value) {
+	const [year, month] = String(value).split('-').map(Number)
+	return new Intl.DateTimeFormat('en-AU', {
+		month: 'short',
+		timeZone: 'UTC',
+		year: '2-digit',
+	}).format(new Date(Date.UTC(year, month - 1, 1)))
+}
+
 function formatNumber(value) {
 	return new Intl.NumberFormat('en-US').format(Number(value) || 0)
 }
@@ -1761,6 +2157,22 @@ function formatDecimal(value) {
 	return new Intl.NumberFormat('en-US', {
 		maximumFractionDigits: 1,
 		minimumFractionDigits: 1,
+	}).format(Number(value) || 0)
+}
+
+function formatAverage(value) {
+	const number = Number(value) || 0
+	return new Intl.NumberFormat('en-US', {
+		maximumFractionDigits: Number.isInteger(number) ? 0 : 1,
+		minimumFractionDigits: 0,
+	}).format(number)
+}
+
+function formatPercent(value) {
+	return new Intl.NumberFormat('en-US', {
+		maximumFractionDigits: 1,
+		minimumFractionDigits: 1,
+		style: 'percent',
 	}).format(Number(value) || 0)
 }
 
@@ -1869,6 +2281,8 @@ Generates a per-user BioVault product-activity report from Rybbit raw events.
 Options:
   --sites dev,prod              Sites to include; defaults to dev,prod
   --minutes 43200               Lookback window; defaults to 30 days
+  --since-date YYYY-MM-DD       Hide events before this Brisbane calendar date
+  --rolling-days 30             Rolling stats window in days
   --event-limit 50000           Raw event cap per site
   --out reports/users.html      Output HTML path
   --input-events events.json    Read raw events from a local JSON file instead of Rybbit
