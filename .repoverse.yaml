@@ -11,7 +11,7 @@ projects:
 - name: openmined/bioscript
   path: repos/bioscript
   main_branch: main
-  revision: main
+  revision: madhava/vntyper
   lint: ./lint.sh --check
   test: ./test.sh
 - name: madhavajay/bcftools
@@ -52,7 +52,7 @@ projects:
 - name: madhavajay/kestrel-rs
   path: repos/kestrel-rs
   main_branch: main
-  revision: main
+  revision: madhava/vntyper
 - name: madhavajay/htslib-rs
   path: repos/htslib-rs
   revision: main
@@ -72,7 +72,7 @@ projects:
 - name: madhavajay/exvitae
   path: repos/exvitae
   main_branch: main
-  revision: main
+  revision: madhava/vntyper
 provides:
 - openmined/bioscript
 - madhavajay/bcftools
@@ -93,10 +93,10 @@ provides:
 links:
 - repo: openmined/bioscript
   at: bioscript
-  branch: main
+  branch: madhava/vntyper
 - repo: openmined/bioscript
   at: exvitae/bioscript
-  branch: main
+  branch: madhava/vntyper
 - repo: madhavajay/vntyper
   at: bioscript/ports/vntyper/vntyper
   branch: main
@@ -132,7 +132,7 @@ links:
   branch: madhava/bioscript
 - repo: madhavajay/kestrel-rs
   at: bioscript/vendor/rust/kestrel-rs
-  branch: main
+  branch: madhava/vntyper
 - repo: madhavajay/samtools-rs
   at: bioscript/vendor/rust/samtools-rs
   branch: main
@@ -153,4 +153,4 @@ links:
   branch: madhava/bioscript
 - repo: madhavajay/exvitae
   at: exvitae
-  branch: main
+  branch: madhava/vntyper
