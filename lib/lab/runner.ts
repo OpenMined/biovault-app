@@ -471,16 +471,14 @@ export async function runLabPackageReportRef(
 	})
 	await yieldToBrowser()
 	const reportOptions = {
-		analysisMaxDurationMs: 30_000,
+		analysisMaxDurationMs: 300_000,
 		detectSex: true,
 	}
 	if (selectedGenome.kind === 'cram') {
-		if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
-			const label = selectedGenome.primary.kind === 'bam' ? 'BAM' : 'CRAM'
-			const indexLabel = selectedGenome.primary.kind === 'bam' ? '.bai' : '.crai'
-			throw new Error(`${label} genome incomplete: needs ${selectedGenome.primary.name} + ${indexLabel} + .fasta + .fai`)
-		}
 		if (selectedGenome.primary.kind === 'bam') {
+			if (!selectedGenome.crai) {
+				throw new Error(`BAM genome incomplete: needs ${selectedGenome.primary.name} + .bai`)
+			}
 			const bamFile = requirePlatformFile(fileAdapter, selectedGenome.primary, 'BAM genome')
 			const baiBytes = await fileAdapter.readBytes(selectedGenome.crai)
 			onProgress?.({
@@ -513,6 +511,9 @@ export async function runLabPackageReportRef(
 					textOutput: report.textOutput,
 				},
 			}
+		}
+		if (!selectedGenome.crai || !selectedGenome.fasta || !selectedGenome.fai) {
+			throw new Error(`CRAM genome incomplete: needs ${selectedGenome.primary.name} + .crai + .fasta + .fai`)
 		}
 		const cramFile = requirePlatformFile(fileAdapter, selectedGenome.primary, 'CRAM genome')
 		const fastaFile = requirePlatformFile(fileAdapter, selectedGenome.fasta, 'CRAM reference FASTA')

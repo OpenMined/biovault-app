@@ -53,9 +53,19 @@ export async function dismissDisclaimer(page: Page) {
 	const continueButton = page.getByText(/^Continue$/)
 	for (let attempt = 0; attempt < 20; attempt += 1) {
 		if (!(await understand.isVisible({ timeout: 500 }).catch(() => false))) return
-		await understand.click({ timeout: 2_000 }).catch(() => undefined)
+		const checkboxControl = understand.locator('xpath=ancestor::*[@role="button"][1]')
+		if (await checkboxControl.isVisible({ timeout: 250 }).catch(() => false)) {
+			await checkboxControl.click({ force: true, timeout: 2_000 }).catch(() => undefined)
+		} else {
+			await understand.click({ force: true, timeout: 2_000 }).catch(() => undefined)
+		}
 		if (await continueButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
-			await continueButton.click({ timeout: 2_000 }).catch(() => undefined)
+			const continueControl = continueButton.locator('xpath=ancestor::*[@role="button"][1]')
+			if (await continueControl.isVisible({ timeout: 250 }).catch(() => false)) {
+				await continueControl.click({ force: true, timeout: 2_000 }).catch(() => undefined)
+			} else {
+				await continueButton.click({ force: true, timeout: 2_000 }).catch(() => undefined)
+			}
 		}
 		if (!(await understand.isVisible({ timeout: 1_000 }).catch(() => false))) return
 		await page.waitForTimeout(150)
@@ -92,6 +102,26 @@ export async function dismissSharedResourcePrompt(page: Page) {
 }
 
 export async function gotoLab(page: Page) {
+	await page.addInitScript(() => {
+		const key = 'biovault-webdb:app_preferences'
+		const rows = [
+			{ key: 'hasAcceptedResearchDisclaimer', value: 'true' },
+			{ key: 'hasCompletedOnboarding', value: 'true' },
+		]
+		try {
+			const existing = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+			const byKey = new Map<string, { key: string; value: string }>()
+			if (Array.isArray(existing)) {
+				for (const row of existing) {
+					if (row && typeof row.key === 'string') byKey.set(row.key, row)
+				}
+			}
+			for (const row of rows) byKey.set(row.key, row)
+			window.localStorage.setItem(key, JSON.stringify(Array.from(byKey.values())))
+		} catch {
+			window.localStorage.setItem(key, JSON.stringify(rows))
+		}
+	})
 	await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' })
 	await dismissDisclaimer(page)
 	await page.goto(`${BASE_URL}/lab`, { waitUntil: 'domcontentloaded' })
@@ -195,6 +225,19 @@ export async function waitForAssayRegistryPanel(page: Page, title = 'PGx-1 Panel
 
 export async function chooseGenomeFiles(page: Page, files: string | string[]) {
 	await dragFilesIntoLab(page, Array.isArray(files) ? files : [files])
+}
+
+export async function chooseGenomeFilesViaPicker(page: Page, files: string | string[]) {
+	const selectedFiles = Array.isArray(files) ? files : [files]
+	const [chooser] = await Promise.all([
+		page.waitForEvent('filechooser'),
+		(async () => {
+			await page.getByText('Import genome', { exact: true }).click()
+			await page.getByLabel('Choose genome files').click()
+		})(),
+	])
+	await chooser.setFiles(selectedFiles)
+	await dismissRememberFilesPrompt(page)
 }
 
 export async function dragFilesIntoLab(page: Page, files: string[]) {

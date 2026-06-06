@@ -317,6 +317,7 @@ type SessionLabAssay = LabAssay & {
 	fileRef?: LabFileRef
 	packageEntrypoint?: string
 	packageFiles?: BioscriptPackageFile[]
+	packageResultEntrypoint?: string | null
 	packageSourceUrl?: string
 	remoteKind: ResolvedRemoteResource['kind']
 	remoteSchema?: string | null
@@ -915,6 +916,7 @@ async function resolveLocalAssayPackageZipRef(
 ): Promise<{
 	entrypoint: string
 	files: BioscriptPackageFile[]
+	resultEntrypoint?: string | null
 	resources: ResolvedRemoteResource[]
 	sourceUrl: string
 } | null> {
@@ -928,6 +930,7 @@ async function resolveLocalAssayPackageZipRef(
 		return {
 			entrypoint: pkg.entrypoint,
 			files: pkg.files,
+			resultEntrypoint: pkg.resultEntrypoint ?? null,
 			resources: pkg.resources.map((resource) => resolvedFromLocalPackageResource(resource, sourceUrl)),
 			sourceUrl,
 		}
@@ -1232,7 +1235,7 @@ export default function LabScreen() {
 
 	const addResolvedSessionAssays = useCallback((
 		resources: ResolvedRemoteResource[],
-		packageInfo?: { entrypoint: string; files: BioscriptPackageFile[]; sourceUrl: string },
+		packageInfo?: { entrypoint: string; files: BioscriptPackageFile[]; resultEntrypoint?: string | null; sourceUrl: string },
 	) => {
 		const assays = resources
 			.filter((resource) => resource.kind === 'panel' || resource.kind === 'assay' || resource.kind === 'variant' || resource.kind === 'python')
@@ -1260,6 +1263,7 @@ export default function LabScreen() {
 					dependencyUrls: resource.dependencies.map((dependency) => dependency.url),
 					packageEntrypoint: resource.kind === 'assay' && pathInPackage ? pathInPackage : packageInfo?.entrypoint,
 					packageFiles: packageInfo?.files,
+					packageResultEntrypoint: packageInfo?.resultEntrypoint ?? null,
 					packageSourceUrl: packageInfo?.sourceUrl,
 					remoteKind: resource.kind,
 					remoteSchema: resource.schema,
@@ -1276,6 +1280,7 @@ export default function LabScreen() {
 					...assay,
 					packageEntrypoint: existing.packageEntrypoint,
 					packageFiles: existing.packageFiles,
+					packageResultEntrypoint: existing.packageResultEntrypoint,
 					packageSourceUrl: existing.packageSourceUrl,
 				} : assay)
 			}
@@ -1345,6 +1350,7 @@ export default function LabScreen() {
 					addResolvedSessionAssays(pkg.resources, {
 						entrypoint: pkg.entrypoint,
 						files: pkg.files,
+						resultEntrypoint: pkg.resultEntrypoint ?? null,
 						sourceUrl: pkg.sourceUrl,
 					})
 					void registerPackageWithRegistry(pkg, 'local-drop').catch((err) =>
@@ -1999,7 +2005,12 @@ export default function LabScreen() {
 			.then(async ([resources, packages]) => {
 				if (cancelled) return
 				for (const pkg of packages) {
-					addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+					addResolvedSessionAssays(pkg.resources, {
+						entrypoint: pkg.entrypoint,
+						files: pkg.files,
+						resultEntrypoint: pkg.resultEntrypoint ?? null,
+						sourceUrl: pkg.sourceUrl,
+					})
 					void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 						console.warn('[lab] registry upsert (rehydrate) failed', err),
 					)
@@ -2211,7 +2222,12 @@ export default function LabScreen() {
 			if (resource.schema === 'bioscript:package-release:1.0') {
 				const pkg = await resolveRemotePackage(intent.url)
 				if (!isCurrentRemoteIntent()) return
-				addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+				addResolvedSessionAssays(pkg.resources, {
+					entrypoint: pkg.entrypoint,
+					files: pkg.files,
+					resultEntrypoint: pkg.resultEntrypoint ?? null,
+					sourceUrl: pkg.sourceUrl,
+				})
 				await registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null })
 				const entrypointResource =
 					pkg.resources.find((candidate) => candidate.sourceUrl.endsWith(`/${pkg.entrypoint}`)) ??
@@ -2542,7 +2558,12 @@ export default function LabScreen() {
 				if (session && packageEntrypoint && sessionPackageLooksSynthetic(session, packageFiles) && releaseFetchUrl) {
 					try {
 						const pkg = await resolveRemotePackage(releaseFetchUrl)
-						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+						addResolvedSessionAssays(pkg.resources, {
+							entrypoint: pkg.entrypoint,
+							files: pkg.files,
+							resultEntrypoint: pkg.resultEntrypoint ?? null,
+							sourceUrl: pkg.sourceUrl,
+						})
 						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 							console.warn('[lab] registry upsert (replace synthetic package) failed', err),
 						)
@@ -2555,7 +2576,12 @@ export default function LabScreen() {
 				if ((!packageFiles?.length || !packageEntrypoint) && releaseFetchUrl) {
 					try {
 						const pkg = await resolveRemotePackage(releaseFetchUrl)
-						addResolvedSessionAssays(pkg.resources, { entrypoint: pkg.entrypoint, files: pkg.files, sourceUrl: pkg.sourceUrl })
+						addResolvedSessionAssays(pkg.resources, {
+							entrypoint: pkg.entrypoint,
+							files: pkg.files,
+							resultEntrypoint: pkg.resultEntrypoint ?? null,
+							sourceUrl: pkg.sourceUrl,
+						})
 						void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
 							console.warn('[lab] registry upsert (auto-resolve) failed', err),
 						)
@@ -2611,6 +2637,7 @@ export default function LabScreen() {
 									addResolvedSessionAssays(pkg.resources, {
 										entrypoint: pkg.entrypoint,
 										files: pkg.files,
+										resultEntrypoint: pkg.resultEntrypoint ?? null,
 										sourceUrl: pkg.sourceUrl,
 									})
 									void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
@@ -2631,6 +2658,7 @@ export default function LabScreen() {
 									addResolvedSessionAssays(pkg.resources, {
 										entrypoint: pkg.entrypoint,
 										files: pkg.files,
+										resultEntrypoint: pkg.resultEntrypoint ?? null,
 										sourceUrl: pkg.sourceUrl,
 									})
 									void registerPackageWithRegistry(pkg, 'url', { artifactUrl: pkg.artifactUrl ?? null }).catch((err) =>
@@ -2694,7 +2722,10 @@ export default function LabScreen() {
 	const runAssay = useCallback(
 		(catalogAssay: LabAssay) => {
 			if (!activeGenomeRef || !isLabGenomeComplete(activeGenomeRef)) return
-			if (activeGenomeRef.kind === 'cram' && (!activeGenomeRef.crai || !activeGenomeRef.fai)) {
+			if (
+				activeGenomeRef.kind === 'cram' &&
+				(!activeGenomeRef.crai || (activeGenomeRef.primary.kind === 'cram' && !activeGenomeRef.fai))
+			) {
 				void (async () => {
 					let indexedGenome: Extract<LabGenomeRef, { kind: 'cram' }> = activeGenomeRef
 					const cachedFiles: File[] = []
@@ -2703,7 +2734,7 @@ export default function LabScreen() {
 						const cached = await getCachedGeneratedIndexFile(indexedGenome.primary, alignmentIndexSuffix)
 						if (cached) cachedFiles.push(cached)
 					}
-					if (indexedGenome.fasta && !indexedGenome.fai) {
+					if (indexedGenome.primary.kind === 'cram' && indexedGenome.fasta && !indexedGenome.fai) {
 						const cached = await getCachedGeneratedIndexFile(indexedGenome.fasta, 'fai')
 						if (cached) cachedFiles.push(cached)
 					}
@@ -2717,14 +2748,14 @@ export default function LabScreen() {
 							prev.map((genome) => (genome.id === indexedGenome.id ? indexedGenome : genome)),
 						)
 						setSelectedGenomeId(indexedGenome.id)
-						if (indexedGenome.crai && indexedGenome.fai) {
+						if (indexedGenome.crai && (indexedGenome.primary.kind === 'bam' || indexedGenome.fai)) {
 							await runAssayNow(catalogAssay, indexedGenome)
 							return
 						}
 					}
 					const missing: PendingAlignmentIndexRun['missing'] = []
 					if (!indexedGenome.crai) missing.push('alignment')
-					if (indexedGenome.fasta && !indexedGenome.fai) missing.push('reference')
+					if (indexedGenome.primary.kind === 'cram' && indexedGenome.fasta && !indexedGenome.fai) missing.push('reference')
 					setPendingAlignmentIndexRun({ assay: catalogAssay, genome: indexedGenome, missing, status: 'confirm' })
 				})()
 				return
@@ -5261,7 +5292,7 @@ function ResultViewer({ record, onClose }: { record: RunRecord; onClose: () => v
 			setHtmlBlobUrl(null)
 			return
 		}
-		const url = URL.createObjectURL(new Blob([html.text], { type: 'text/html' }))
+		const url = URL.createObjectURL(new Blob([html.text ?? ''], { type: 'text/html' }))
 		setHtmlBlobUrl(url)
 		return () => URL.revokeObjectURL(url)
 	}, [html])
@@ -5690,6 +5721,8 @@ function IndeterminateProgressBar({ accent }: { accent: string }) {
 function htmlArtifactForResult(result: RunResult): LabRunArtifact | null {
 	const list = result.artifacts ?? []
 	const htmls = list.filter((a) => a.mimeType === 'text/html' || a.name.toLowerCase().endsWith('.html'))
+	const primary = htmls.find((a) => a.primary)
+	if (primary) return primary
 	const named = htmls.find((a) => {
 		const path = (a.path ?? '').toLowerCase()
 		return a.name.toLowerCase() === 'index.html' || path === 'index.html' || path.endsWith('/index.html')
@@ -5733,7 +5766,8 @@ function ArtifactLinks({ artifacts, record }: { artifacts: LabRunArtifact[]; rec
 				key: 'row',
 				style: { display: 'flex', flexWrap: 'wrap', gap: 8 },
 				children: artifacts.map((artifact, index) => {
-					const blob = new Blob([artifact.text], { type: artifact.mimeType || 'application/octet-stream' })
+					const body = artifact.bytes ? [new Uint8Array(artifact.bytes)] : [artifact.text ?? '']
+					const blob = new Blob(body, { type: artifact.mimeType || 'application/octet-stream' })
 					const href = URL.createObjectURL(blob)
 					return createElement('a', {
 						key: `${artifact.path ?? artifact.name}-${index}`,

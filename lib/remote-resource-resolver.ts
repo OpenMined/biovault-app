@@ -60,6 +60,7 @@ export type ResolvedRemotePackage = {
 	entrypoint: string
 	files: BioscriptPackageFile[]
 	name: string
+	resultEntrypoint?: string | null
 	resources: ResolvedRemoteResource[]
 	sourceUrl: string
 }
@@ -75,6 +76,7 @@ type CachedRemotePackage = {
 	entrypoint: string
 	files?: BioscriptPackageFile[]
 	name: string
+	resultEntrypoint?: string | null
 	resourceUrls: string[]
 	sourceUrl: string
 }
@@ -441,6 +443,7 @@ export async function resolveRemotePackage(
 		entrypoint: pkg.entrypoint,
 		files: pkg.files,
 		name: pkg.name ?? packageName,
+		resultEntrypoint: pkg.resultEntrypoint ?? null,
 		resourceUrls: resources.map((resource) => resource.sourceUrl),
 		sourceUrl,
 	})
@@ -451,6 +454,7 @@ export async function resolveRemotePackage(
 		entrypoint: pkg.entrypoint,
 		files: pkg.files,
 		name: pkg.name ?? packageName,
+		resultEntrypoint: pkg.resultEntrypoint ?? null,
 		resources,
 		sourceUrl,
 	}
@@ -492,6 +496,7 @@ export async function listResolvedCachedRemotePackages(): Promise<ResolvedRemote
 				entrypoint: pkg.entrypoint,
 				files: pkg.files,
 				name: pkg.name,
+				resultEntrypoint: pkg.resultEntrypoint ?? null,
 				resources: await Promise.all(resources.map((resource) => resolveCachedRemoteResource(resource as CachedRemoteResource))),
 				sourceUrl: pkg.sourceUrl,
 			}

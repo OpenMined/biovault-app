@@ -137,6 +137,7 @@ export type BioscriptPackageResolution = {
 	entrypoint: string
 	files: BioscriptPackageFile[]
 	name?: string | null
+	resultEntrypoint?: string | null
 	resources: BioscriptPackageResource[]
 }
 
@@ -151,10 +152,12 @@ export type BioscriptPackageRelease = {
 }
 
 export type BioscriptReportArtifact = {
+	bytes?: number[]
 	mimeType: string
 	name: string
 	path: string
-	text: string
+	primary?: boolean
+	text?: string
 }
 
 export type BioscriptPackageReportOptions = {
@@ -216,7 +219,7 @@ export async function runPackageReportBytes(
 	const { wasmUrl } = resolveWorkerUrls()
 	const requestId = nextLookupRequestId++
 	const optionsJson = JSON.stringify({
-		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 300_000,
 		detectSex: options.detectSex ?? false,
 		filters: options.filters ?? [],
 	})
@@ -699,7 +702,7 @@ export async function runPackageReportFromCramFile(
 	const { wasmUrl } = resolveWorkerUrls()
 	const requestId = nextLookupRequestId++
 	const optionsJson = JSON.stringify({
-		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 300_000,
 		detectSex: options.detectSex ?? false,
 		filters: options.filters ?? [],
 	})
@@ -746,7 +749,7 @@ export async function runPackageReportFromBamFile(
 	const { wasmUrl } = resolveWorkerUrls()
 	const requestId = nextLookupRequestId++
 	const optionsJson = JSON.stringify({
-		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 300_000,
 		detectSex: options.detectSex ?? false,
 		filters: options.filters ?? [],
 	})
@@ -792,7 +795,7 @@ export async function runPackageReportFromVcfFile(
 	const { wasmUrl } = resolveWorkerUrls()
 	const requestId = nextLookupRequestId++
 	const optionsJson = JSON.stringify({
-		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 30_000,
+		analysisMaxDurationMs: options.analysisMaxDurationMs ?? 300_000,
 		detectSex: options.detectSex ?? false,
 		filters: options.filters ?? [],
 	})

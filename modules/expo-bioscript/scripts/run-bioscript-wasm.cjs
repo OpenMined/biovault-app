@@ -24,6 +24,14 @@
 //       → tabix-indexed SNP lookup over a bgzipped VCF. Same readAt shape
 //         as cram, but with just one reader + tbi index inline.
 //
+//   report-bam --package-dir <dir> --bam <x.bam> --bai <x.bam.bai>
+//       → runs a package report through runPackageReportFromBam, matching the
+//         browser worker's package-report wasm entrypoint.
+//
+//   report-cram --package-dir <dir> --cram <x.cram> --crai <x.cram.crai> \
+//        --fasta <ref.fa> --fai <ref.fa.fai>
+//       → runs the same package-report path for CRAM + CRAI + FASTA + FAI.
+//
 // wasm-pack is invoked with --target nodejs into pkg-node/ on every run;
 // cargo handles the incremental caching so this is near-free when nothing
 // changed. Pass RUN_BIOSCRIPT_WASM_NO_BUILD=1 to skip the rebuild.
@@ -35,7 +43,7 @@
 'use strict';
 
 const { openSync, readFileSync, readSync, existsSync, fstatSync, closeSync } = require('node:fs');
-const { basename, resolve, join } = require('node:path');
+const { basename, relative, resolve, join } = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const CRATE_DIR = resolve(__dirname, '..', '..', '..', 'bioscript', 'rust', 'bioscript-wasm');
@@ -228,6 +236,124 @@ function runVcf(mod, args) {
   }
 }
 
+function packageFilesFromDir(packageDir) {
+  const absDir = resolve(packageDir);
+  const paths = [
+    'manifest.yaml',
+    'assay.yaml',
+    'muc1-vntr.yaml',
+    'vntyper.py',
+    'assets/muc1_motifs.fa',
+  ];
+  return paths.map((path) => ({
+    path,
+    contents: readFileSync(join(absDir, path), 'utf8'),
+    sourceUrl: `file://${join(absDir, path)}`,
+  }));
+}
+
+function runReportBam(mod, args) {
+  const flags = parseFlags(args);
+  const packageDir = resolve(requireFlag(flags, 'package-dir'));
+  const bamPath = resolve(requireFlag(flags, 'bam'));
+  const baiPath = resolve(requireFlag(flags, 'bai'));
+  const manifestPath = flags.manifest || 'manifest.yaml';
+  const optionsJson = flags.options || JSON.stringify({
+    analysisMaxDurationMs: 300000,
+    detectSex: true,
+    filters: [],
+  });
+  const packageFiles = packageFilesFromDir(packageDir);
+  const baiBytes = readFileSync(baiPath);
+  const bamBytes = readFileSync(bamPath);
+  const bamFd = openSync(bamPath, 'r');
+  try {
+    const bamLen = fstatSync(bamFd).size;
+    const bamReadAt = makeReadAt(bamFd, bamPath);
+    console.error(
+      `[run-bioscript-wasm] report-bam package=${relative(process.cwd(), packageDir)} ` +
+        `bam=${basename(bamPath)} (${bamLen} bytes), bai=${baiBytes.length} bytes`,
+    );
+    const startedAt = Date.now();
+    const resultJson = mod.runPackageReportFromBam(
+      manifestPath,
+      JSON.stringify(packageFiles),
+      basename(bamPath),
+      bamReadAt,
+      bamLen,
+      bamBytes,
+      baiBytes,
+      optionsJson,
+    );
+    console.error(`[run-bioscript-wasm] runPackageReportFromBam took ${Date.now() - startedAt}ms`);
+    console.log(JSON.stringify(JSON.parse(resultJson), null, 2));
+  } catch (err) {
+    console.error('[run-bioscript-wasm] runPackageReportFromBam threw:');
+    console.error(err);
+    process.exitCode = 3;
+  } finally {
+    closeSync(bamFd);
+  }
+}
+
+function runReportCram(mod, args) {
+  const flags = parseFlags(args);
+  const packageDir = resolve(requireFlag(flags, 'package-dir'));
+  const cramPath = resolve(requireFlag(flags, 'cram'));
+  const craiPath = resolve(requireFlag(flags, 'crai'));
+  const fastaPath = resolve(requireFlag(flags, 'fasta'));
+  const faiPath = resolve(requireFlag(flags, 'fai'));
+  const manifestPath = flags.manifest || 'manifest.yaml';
+  const optionsJson = flags.options || JSON.stringify({
+    analysisMaxDurationMs: 300000,
+    detectSex: true,
+    filters: [],
+    allowReferenceMd5Mismatch: true,
+  });
+  const packageFiles = packageFilesFromDir(packageDir);
+  const cramBytes = readFileSync(cramPath);
+  const craiBytes = readFileSync(craiPath);
+  const fastaBytes = readFileSync(fastaPath);
+  const faiBytes = readFileSync(faiPath);
+  const cramFd = openSync(cramPath, 'r');
+  const fastaFd = openSync(fastaPath, 'r');
+  try {
+    const cramLen = fstatSync(cramFd).size;
+    const fastaLen = fstatSync(fastaFd).size;
+    const cramReadAt = makeReadAt(cramFd, cramPath);
+    const fastaReadAt = makeReadAt(fastaFd, fastaPath);
+    console.error(
+      `[run-bioscript-wasm] report-cram package=${relative(process.cwd(), packageDir)} ` +
+        `cram=${basename(cramPath)} (${cramLen} bytes), crai=${craiBytes.length} bytes, ` +
+        `fasta=${basename(fastaPath)} (${fastaLen} bytes), fai=${faiBytes.length} bytes`,
+    );
+    const startedAt = Date.now();
+    const resultJson = mod.runPackageReportFromCram(
+      manifestPath,
+      JSON.stringify(packageFiles),
+      basename(cramPath),
+      cramReadAt,
+      cramLen,
+      cramBytes,
+      craiBytes,
+      fastaReadAt,
+      fastaLen,
+      fastaBytes,
+      faiBytes,
+      optionsJson,
+    );
+    console.error(`[run-bioscript-wasm] runPackageReportFromCram took ${Date.now() - startedAt}ms`);
+    console.log(JSON.stringify(JSON.parse(resultJson), null, 2));
+  } catch (err) {
+    console.error('[run-bioscript-wasm] runPackageReportFromCram threw:');
+    console.error(err);
+    process.exitCode = 3;
+  } finally {
+    closeSync(cramFd);
+    closeSync(fastaFd);
+  }
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
@@ -242,6 +368,8 @@ function main() {
     console.error(
       "  run-bioscript-wasm.cjs vcf --vcf <x.vcf.gz> --tbi <x.vcf.gz.tbi> --variants '<json>'",
     );
+    console.error("  run-bioscript-wasm.cjs report-bam --package-dir <dir> --bam <x.bam> --bai <x.bam.bai>");
+    console.error("  run-bioscript-wasm.cjs report-cram --package-dir <dir> --cram <x.cram> --crai <x.cram.crai> --fasta <ref.fa> --fai <ref.fa.fai>");
     process.exit(1);
   }
 
@@ -264,6 +392,12 @@ function main() {
       break;
     case 'vcf':
       runVcf(mod, rest);
+      break;
+    case 'report-bam':
+      runReportBam(mod, rest);
+      break;
+    case 'report-cram':
+      runReportCram(mod, rest);
       break;
     default:
       // Back-compat: if the first arg looks like a path, treat the whole

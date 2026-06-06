@@ -28,10 +28,12 @@ export type LabRunProgress = {
 }
 
 export type LabRunArtifact = {
+	bytes?: number[]
 	mimeType: string
 	name: string
 	path?: string
-	text: string
+	primary?: boolean
+	text?: string
 }
 
 export type RunResult = {

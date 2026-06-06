@@ -229,6 +229,8 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 		if (message.type === 'reportFromCram') {
 			const cramReadAt = makeReadAt(message.cramFile, fileReader)
 			const fastaReadAt = makeReadAt(message.fastaFile, fileReader)
+			const cramBytes = new Uint8Array(fileReader.readAsArrayBuffer(message.cramFile))
+			const fastaBytes = new Uint8Array(fileReader.readAsArrayBuffer(message.fastaFile))
 			const startedAt = Date.now()
 			const resultJson = runPackageReportFromCram(
 				message.manifestPath,
@@ -236,9 +238,11 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 				message.inputName,
 				cramReadAt,
 				message.cramFile.size,
+				cramBytes,
 				message.craiBytes,
 				fastaReadAt,
 				message.fastaFile.size,
+				fastaBytes,
 				message.faiBytes,
 				message.optionsJson,
 			)
@@ -253,6 +257,7 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 
 		if (message.type === 'reportFromBam') {
 			const bamReadAt = makeReadAt(message.bamFile, fileReader)
+			const bamBytes = new Uint8Array(fileReader.readAsArrayBuffer(message.bamFile))
 			const startedAt = Date.now()
 			const resultJson = runPackageReportFromBam(
 				message.manifestPath,
@@ -260,6 +265,7 @@ self.onmessage = async (event: MessageEvent<LookupMessage>) => {
 				message.inputName,
 				bamReadAt,
 				message.bamFile.size,
+				bamBytes,
 				message.baiBytes,
 				message.optionsJson,
 			)

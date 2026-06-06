@@ -69,6 +69,9 @@ for arg in "$@"; do
     --index-generation)
       MODE="index-generation"
       ;;
+    --vntyper)
+      MODE="vntyper"
+      ;;
     *)
       PW_EXTRA+=("$arg")
       ;;
@@ -250,6 +253,9 @@ case "$MODE" in
     ;;
   index-generation)
     SPECS=(.maestro-web/lab-index-generation.spec.ts)
+    ;;
+  vntyper)
+    SPECS=(.maestro-web/lab-vntyper-package.spec.ts)
     ;;
   *)
     echo "Unknown web test mode: $MODE" >&2

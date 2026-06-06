@@ -27,7 +27,7 @@ export function labGenomeInputFormat(genome: LabGenomeRef): AssayInputFormat {
 export function missingLabGenomeSlots(genome: LabGenomeRef): string[] {
 	if (genome.kind === 'cram') {
 		const missing: string[] = []
-		if (!genome.fasta) missing.push('reference .fa')
+		if (genome.primary.kind === 'cram' && !genome.fasta) missing.push('reference .fa')
 		return missing
 	}
 	if (genome.kind === 'vcf') {
